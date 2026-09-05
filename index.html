@@ -1634,6 +1634,7 @@
               <div id="bmi-display" style="font-family:'DM Mono',monospace;font-size:0.88rem;color:var(--text-secondary)">—</div>
             </div>
           </div>
+          <p id="ibw-method-note" class="field-hint" style="display:none;margin-top:8px;line-height:1.4"></p>
         </div>
 
       </div>
@@ -1648,10 +1649,23 @@
         <div class="field-group">
           <label class="field-label">Serum Creatinine</label>
           <div class="input-row">
-            <input type="number" id="scr" placeholder="—" min="0.1" max="20" step="0.1" oninput="updateCrCl(); if(state.calcMode==='initial') suggestInterval(); checkAKI();">
+            <input type="number" id="scr" placeholder="—" min="0.1" max="25" step="0.1" oninput="updateCrCl(); if(state.calcMode==='initial') suggestInterval(); checkAKI();">
             <span class="unit-badge">mg/dL</span>
           </div>
+          <p class="field-hint" style="margin-top:4px">Measured value is used as entered — not rounded up.</p>
         </div>
+        <!-- Cystatin C: optional. Creatinine is a poor filtration marker where
+             muscle mass is low, which is the population the SCr round-up hack
+             was invented for. Cystatin C measures it instead of guessing. -->
+        <div class="field-group">
+          <label class="field-label">Cystatin C <span style="color:var(--text-muted);font-weight:400">· optional</span></label>
+          <div class="input-row">
+            <input type="number" id="cysc" placeholder="—" min="0.1" max="10" step="0.01" oninput="updateCysC()">
+            <span class="unit-badge">mg/L</span>
+          </div>
+          <p class="field-hint" style="margin-top:4px">Enter when available — flags creatinine/cystatin discordance in low muscle mass.</p>
+        </div>
+        <div id="cysc-result" style="display:none;font-family:'DM Mono',monospace;font-size:0.8rem;color:var(--accent-blue);line-height:1.5"></div>
         <div class="field-group">
           <label class="field-label">Dosing Weight for CrCl</label>
           <div class="toggle-group" id="dosingwt-toggle">
@@ -1663,6 +1677,7 @@
           <p class="field-hint" id="crcl-hint" style="margin-top:4px">Cockcroft-Gault • AdjBW auto if TBW >20% above IBW</p>
         </div>
         <div id="crcl-result" style="display:none;font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent-amber)"></div>
+        <div id="crcl-advisory" style="display:none;font-size:0.76rem;color:var(--warning);line-height:1.45"></div>
 
         <!-- Baseline SCr / AKI -->
         <div class="field-group" style="margin-top:4px">
@@ -2537,6 +2552,10 @@ function setDosingWt(el, val) {
   document.getElementById('dosing-wt').value = val;
   el.parentElement.querySelectorAll('.toggle-opt').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
+  // Previously the displayed CrCl only refreshed when a demographic field fired
+  // its own change event, so switching TBW/IBW/AdjBW left a stale number on
+  // screen until you edited SCr and pressed Enter. Recompute immediately.
+  autoWeights();
 }
 
 function timeToMinutes(t) {
@@ -2921,55 +2940,284 @@ function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
 function s(id) { return document.getElementById(id).value; }
 
 // ══════════════════════════════════════════
+//  UNITS & SHARED CONSTANTS
+// ══════════════════════════════════════════
+const CM_PER_IN      = 2.54;
+const ML_MIN_TO_L_H  = 0.06;   // (mL/min) x 60 min/h / 1000 mL/L
+const LN2            = 0.693;  // for t1/2 = ln2 / kel
+
+function halfLife(kel) { return kel > 0 ? LN2 / kel : Infinity; }
+
+// ══════════════════════════════════════════
+//  INPUT VALIDATION  (audit A3 / A4)
+// ══════════════════════════════════════════
+// v() returns 0 for a blank or non-numeric field, and 0 is a plausible-looking
+// value for age, weight, SCr, dose and interval. Blank SCr previously produced
+// CrCl = Infinity; blank weight produced peak = Infinity. Nothing enforced an
+// upper bound either, so age 200 returned a NEGATIVE CrCl. Every numeric field
+// that reaches the engine now goes through checkField().
+const INPUT_LIMITS = {
+  age:    { min: 14,   max: 120,  label: 'Age',                  unit: 'years' },
+  weight: { min: 20,   max: 400,  label: 'Weight',               unit: 'kg' },
+  height: { min: 100,  max: 250,  label: 'Height',               unit: 'cm' },
+  scr:    { min: 0.1,  max: 25,   label: 'Serum creatinine',     unit: 'mg/dL' },
+  cysc:   { min: 0.1,  max: 10,   label: 'Cystatin C',           unit: 'mg/L' },
+  dose:   { min: 100,  max: 4000, label: 'Dose',                 unit: 'mg' },
+  tau:    { min: 4,    max: 72,   label: 'Dosing interval',      unit: 'h' },
+  tinf:   { min: 0.25, max: 24,   label: 'Infusion duration',    unit: 'h' },
+  level:  { min: 0.1,  max: 200,  label: 'Concentration',        unit: 'mg/L' },
+  auc:    { min: 200,  max: 1200, label: 'Target AUC24',         unit: 'mg·h/L' },
+};
+
+// Returns {ok, value, message}. Blank/non-numeric is an error, not a zero.
+function checkValue(raw, key, labelOverride) {
+  const lim = INPUT_LIMITS[key];
+  const name = labelOverride || (lim ? lim.label : key);
+  if (raw === '' || raw === null || raw === undefined) {
+    return { ok:false, value:NaN, message:`${name} is required.` };
+  }
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) {
+    return { ok:false, value:NaN, message:`${name} must be a number.` };
+  }
+  if (lim && (n < lim.min || n > lim.max)) {
+    return { ok:false, value:n,
+             message:`${name} must be between ${lim.min} and ${lim.max} ${lim.unit}. Got ${n}.` };
+  }
+  return { ok:true, value:n, message:null };
+}
+
+function checkField(id, key, labelOverride) {
+  const el = document.getElementById(id);
+  return checkValue(el ? el.value : '', key, labelOverride);
+}
+
+// specs: [[elementId, limitKey, optionalLabel], ...] -> {ok, values:{id:number}, errors:[str]}
+function validateFields(specs) {
+  const values = {}, errors = [];
+  for (const [id, key, label] of specs) {
+    const r = checkField(id, key, label);
+    if (r.ok) values[id] = r.value; else errors.push(r.message);
+  }
+  return { ok: errors.length === 0, values, errors };
+}
+
+function reportValidation(res) {
+  if (res.ok) return true;
+  alert('Please correct the following before calculating:\n\n• ' + res.errors.join('\n• '));
+  return false;
+}
+
+// ══════════════════════════════════════════
 //  PK CALCULATIONS
 // ══════════════════════════════════════════
+// Ideal body weight. This is the ONLY IBW implementation in the file.
+//   height >= 152.4 cm (60 in) : Devine (1974)
+//   height <  152.4 cm         : BMI method — IBW = target BMI x height(m)^2
+//
+// PROVENANCE — stated honestly, per rule 1 in CLAUDE.md:
+//   VERIFIED  the BMI method itself. Tokunaga et al., "Simple estimation of
+//             ideal body weight from body mass index with the lowest morbidity"
+//             (Int J Obes 1991; PMID 2286124) derived the lowest-morbidity BMI
+//             as 22.2 kg/m^2 in men and 21.9 in women, and proposed
+//             IBW = 22 x height(m)^2. The male target below (22.0) matches it.
+//   VERIFIED  Devine (1974) and the 0.4 AdjBW factor (ClinCalc, and standard).
+//   UNCONFIRMED  the attribution of this <60 in rule to GlobalRPH, and the
+//             female target of 21.5 specifically. GlobalRPH's calculator page
+//             refuses automated access (HTTP 403) so it could not be read, and
+//             ClinCalc — the other widely used reference — does NOT apply a BMI
+//             method below 60 in and states BMI "is rarely used within the
+//             medical community for clinical decisions". Tokunaga's female
+//             figure is 21.9, not 21.5.
+//
+// Adopted deliberately because Devine extrapolates linearly below its 60 in
+// anchor and understates IBW in short stature (at 147.3 cm it gives 40.9 kg
+// against 46.6 kg by this method). Flagged here rather than presented as
+// settled: confirm the female target against your own source before relying on
+// it, and see the boundary discontinuity noted at IBW_TARGET_BMI.
+const IBW_DEVINE_MIN_CM = 152.4;                 // 60 inches
+// GlobalRPH targets. NOTE the two methods do not meet at the boundary:
+//   at exactly 152.4 cm, Devine gives F 45.50 kg (an implied BMI of 19.59) and
+//   M 50.00 kg (implied BMI 21.53), while these targets give F 49.94 kg and
+//   M 51.10 kg — a 9.7% step for women and 2.2% for men. Below the seam the
+//   result is therefore NON-MONOTONIC: a 152.3 cm woman gets a HIGHER IBW
+//   (49.87 kg) than a 152.5 cm woman (45.59 kg).
+//
+// This is intrinsic to combining the two published methods, not an artefact of
+// this implementation — and it is the same class of defect as the Matzke Vd step
+// (audit A6), so it is surfaced in the UI rather than left silent. Setting these
+// to { M: 21.53, F: 19.59 } makes the crossover continuous at the cost of
+// departing from the published GlobalRPH targets; that is a clinical call.
+const IBW_TARGET_BMI    = { M: 22.0, F: 21.5 };
+const IBW_SEAM_CM       = 3;   // flag heights within this distance of the seam
+
 function calcIBW(sex, heightCm) {
-  const hIn = heightCm / 2.54;
-  const base = sex==='M' ? 50 : 45.5;
-  return Math.max(base + 2.3 * (hIn - 60), 30);
+  if (!(heightCm > 0)) return NaN;
+  if (heightCm < IBW_DEVINE_MIN_CM) {
+    const hM = heightCm / 100;
+    const targetBmi = IBW_TARGET_BMI[sex] !== undefined ? IBW_TARGET_BMI[sex] : IBW_TARGET_BMI.F;
+    return targetBmi * hM * hM;
+  }
+  const hIn  = heightCm / CM_PER_IN;
+  const base = sex === 'M' ? 50 : 45.5;
+  return base + 2.3 * (hIn - 60);
+}
+
+// Which method calcIBW used — drives the UI note explaining a CrCl that differs
+// from calculators applying Devine at every height.
+function ibwMethod(heightCm) {
+  return heightCm < IBW_DEVINE_MIN_CM ? 'BMI' : 'Devine';
 }
 
 function calcAdjBW(tbw, ibw) {
   return ibw + 0.4 * (tbw - ibw);
 }
 
-function calcCrCl(age, sex, scr, wtKg) {
-  const scrAdj = (age >= 65 && scr < 0.8) ? 0.8 : scr;
-  const cg = ((140 - age) * wtKg) / (72 * scrAdj);
-  return sex==='F' ? cg * 0.85 : cg;
+// ── Serum-creatinine policy (audit A1 / A7) ────────────────────────────────
+// ONE policy for the whole suite. Default is the MEASURED value.
+//
+// Rounding a low SCr up to 0.8 or 1.0 in the elderly is not evidence based and
+// systematically UNDER-doses. Fernandez de Gatta et al. (Drugs R&D 2017;17:463-70,
+// n=56, age >=65, baseline SCr <1) compared predicted with measured troughs:
+// rounded SCr missed by 8.84 mcg/mL vs 4.54 mcg/mL for actual SCr (difference
+// 4.31, 95% CI 3.2-5.41, p<0.0001; RMSE 77.68 vs 5.51), and 92.9% (52/56) of
+// rounded-SCr patients were SUBtherapeutic. Smythe (1994) found the same for
+// aminoglycosides. The effect was larger in women (6.15 vs 2.92 mcg/mL).
+//
+// The ONE exception is model fidelity, not clinical plausibility: Goti 2018
+// ESTIMATED its parameters on a dataset whose SCr was truncated, so feeding that
+// model an untruncated SCr uses its coefficients outside the covariate
+// definition they were fitted under. That truncation therefore lives ONLY on the
+// Goti path and never touches the displayed CrCl or any other model.
+const SCR_POLICY = { ACTUAL: 'actual', GOTI_MODEL: 'goti' };
+
+// Goti 2018, Methods: "Serum creatinine (Scr) values were truncated to 1 mg/dl
+// if the Scr value was <1 mg/dl and the patient's age was >60 y". The code
+// previously used >65, inflating prior CL by up to ~74% in the 61-65 band.
+const GOTI_SCR_FLOOR     = 1.0;
+const GOTI_SCR_FLOOR_AGE = 60;
+
+function applyScrPolicy(scr, age, policy) {
+  if (policy === SCR_POLICY.GOTI_MODEL && scr < GOTI_SCR_FLOOR && age > GOTI_SCR_FLOOR_AGE) {
+    return GOTI_SCR_FLOOR;
+  }
+  return scr;
+}
+
+// Cockcroft-Gault. wtKg is chosen by the caller (see pickCrClWeight).
+function calcCrCl(age, sex, scr, wtKg, policy) {
+  const scrUsed = applyScrPolicy(scr, age, policy || SCR_POLICY.ACTUAL);
+  const cg = ((140 - age) * wtKg) / (72 * scrUsed);
+  return sex === 'F' ? cg * 0.85 : cg;
+}
+
+// The single weight-selection rule, shared by every module (audit A7/A8).
+// mode: 'TBW' | 'IBW' | 'AdjBW' | 'auto'. 'AdjBW' now always returns true
+// adjusted body weight; it previously fell back to IBW for non-obese patients,
+// so selecting "AdjBW" silently gave you something else.
+function pickCrClWeight(mode, tbw, ibw) {
+  const adj = calcAdjBW(tbw, ibw);
+  switch (mode) {
+    case 'IBW':   return { wt: ibw, basis: 'IBW' };
+    case 'AdjBW': return { wt: adj, basis: 'AdjBW' };
+    case 'TBW':   return { wt: tbw, basis: 'TBW' };
+    default:      return tbw > ibw * 1.2 ? { wt: adj, basis: 'AdjBW (auto, TBW >20% over IBW)' }
+                                         : { wt: tbw, basis: 'TBW' };
+  }
+}
+
+// ── Low-muscle-mass / cystatin C advisory ─────────────────────────────────
+// The population that motivated SCr rounding is the one where creatinine is a
+// poor filtration marker: low muscle mass makes SCr fall independently of GFR,
+// so CG OVERestimates clearance. Rounding was a blunt correction for a real
+// problem. Cystatin C is the measured answer, being largely muscle-mass
+// independent. Flag the patients where creatinine alone should not be trusted.
+const LOW_MUSCLE_SCR_M = 0.7;
+const LOW_MUSCLE_SCR_F = 0.6;
+const LOW_MUSCLE_AGE   = 65;
+
+function lowMuscleMassSuspected(age, sex, scr) {
+  const floor = sex === 'M' ? LOW_MUSCLE_SCR_M : LOW_MUSCLE_SCR_F;
+  return age >= LOW_MUSCLE_AGE && scr < floor;
+}
+
+// CKD-EPI 2021 creatinine-cystatin C, race-free (Inker NEJM 2021).
+// mL/min/1.73m^2. Reported for comparison and discordance detection only — it is
+// NOT substituted into the population models, which were all built on
+// Cockcroft-Gault CrCl. Swapping an indexed eGFR into a CG-based model is a
+// unit and covariate mismatch, not a refinement.
+function ckdEpiCrCys(age, sex, scr, cysc) {
+  if (!(scr > 0) || !(cysc > 0) || !(age > 0)) return null;
+  const female = sex === 'F';
+  const kappa  = female ? 0.7 : 0.9;
+  const alpha  = female ? -0.219 : -0.144;
+  const scrMin = Math.min(scr / kappa, 1), scrMax = Math.max(scr / kappa, 1);
+  const cysMin = Math.min(cysc / 0.8, 1),  cysMax = Math.max(cysc / 0.8, 1);
+  return 135
+    * Math.pow(scrMin, alpha) * Math.pow(scrMax, -0.544)
+    * Math.pow(cysMin, -0.323) * Math.pow(cysMax, -0.778)
+    * Math.pow(0.9961, age) * (female ? 0.963 : 1);
+}
+
+// De-indexed to the patient's own BSA so it is comparable with CG (mL/min).
+function duBoisBsa(heightCm, weightKg) {
+  return 0.007184 * Math.pow(heightCm, 0.725) * Math.pow(weightKg, 0.425);
 }
 
 function calcCLv(model, crcl, tbw) {
-  // returns L/hr
+  // returns L/hr.  crcl is mL/min; ML_MIN_TO_L_H converts to L/h.
   switch(model) {
-    case 'vancopk': return (0.75 * crcl + 4) * 0.06;
-    case 'matzke':  return (0.689 * crcl + 3.66) * 0.06;
-    case 'buelga':  return (1.08 * crcl) * 0.06;
-    case 'bauer':   return (0.695 * crcl / tbw + 0.05) * tbw * 0.06;
-    default:        return (0.75 * crcl + 4) * 0.06;
+    // Buelga 2005 (AAC 2005;49:4934-41), general model, VERIFIED against source:
+    // "CL (liters/h) = 1.08 x CLCR(Cockcroft and Gault) (liters/h)"
+    case 'buelga':  return (1.08 * crcl) * ML_MIN_TO_L_H;
+    case 'vancopk': return (0.75 * crcl + 4) * ML_MIN_TO_L_H;
+    case 'matzke':  return (0.689 * crcl + 3.66) * ML_MIN_TO_L_H;
+    // Bauer: the /tbw then xtbw cancel algebraically; kept in this form to match
+    // the textbook presentation (per-kg clearance x weight).
+    case 'bauer':   return (0.695 * crcl / tbw + 0.05) * tbw * ML_MIN_TO_L_H;
+    default:        return (0.75 * crcl + 4) * ML_MIN_TO_L_H;
   }
 }
 
 function calcVd(model, age, tbw, crcl) {
   // returns L
   switch(model) {
-    case 'vancopk': return 0.29 * age + 0.33 * tbw + 11;
+    // Buelga 2005, general model: "V (liters) = 0.98 x TBW"
     case 'buelga':  return 0.98 * tbw;
+    case 'vancopk': return 0.29 * age + 0.33 * tbw + 11;
     case 'bauer':   return 0.70 * tbw;
-    case 'matzke':  return (crcl > 60 ? 0.72 : 0.89) * tbw;
+    // Matzke steps at CrCl 60: Vd falls ~19% across a 0.0001 mL/min boundary.
+    // Faithful to the published model; surfaced in the UI (audit A6) rather than
+    // smoothed, because smoothing it would no longer be Matzke.
+    case 'matzke':  return (crcl > MATZKE_VD_CRCL_BREAK ? 0.72 : 0.89) * tbw;
     default:        return 0.29 * age + 0.33 * tbw + 11;
   }
 }
+const MATZKE_VD_CRCL_BREAK = 60;
+function nearMatzkeBreak(crcl) { return Math.abs(crcl - MATZKE_VD_CRCL_BREAK) <= 5; }
 
 // 1-compartment IV infusion equations — steady state
 function calcPeakTrough(dose, tau, tinf, kel, vd) {
   const eKelTinf = Math.exp(-kel * tinf);
   const eKelTau  = Math.exp(-kel * tau);
-  // Guard against numerical issues
-  if(eKelTau >= 0.9999) return { peak: dose/vd, trough: 0 };
+  // Audit A5. This branch means kel*tau <= 1e-4, i.e. effectively NO elimination
+  // between doses. The old code returned {peak: dose/vd, trough: 0}, which states
+  // the opposite of the physiology: with no elimination the drug accumulates
+  // without bound and the trough approaches the peak. A zero trough reads as
+  // "room to increase the dose" in every downstream consumer.
+  //
+  // Reaching it requires CL ~ 0, which requires CrCl ~ 0 — only possible through
+  // input the validator now rejects (age 140, or a blank weight). Return an
+  // explicit error marker rather than a plausible-looking number.
+  if (!(kel > 0) || !(vd > 0) || eKelTau >= 0.9999) {
+    return { peak: NaN, trough: NaN, invalid: true,
+             reason: 'Estimated elimination is effectively zero (kel x tau <= 1e-4). '
+                   + 'Steady-state peak and trough are undefined: drug would accumulate '
+                   + 'without bound. Check creatinine, age and weight.' };
+  }
   const peak = (dose / (tinf * kel * vd)) * (1 - eKelTinf) / (1 - eKelTau);
   const trough = peak * Math.exp(-kel * (tau - tinf));
-  return { peak, trough };
+  return { peak, trough, invalid: false };
 }
 
 // Concentration at arbitrary time t after start of infusion (SS)
@@ -3179,37 +3427,131 @@ function autoWeights() {
   if(!tbw || !ht) return;
   const ibw = calcIBW(state.sex, ht);
   const bmi = tbw / ((ht/100)**2);
-  const adj = tbw > ibw * 1.2 ? calcAdjBW(tbw, ibw) : null;
+  // AUDIT A8: AdjBW is now always the real adjusted body weight, and is shown
+  // whenever it is computable — not blanked to N/A for non-obese patients while
+  // the selector silently handed back IBW.
+  const adj = calcAdjBW(tbw, ibw);
+  const pctOverIbw = ibw > 0 ? ((tbw - ibw) / ibw) * 100 : NaN;
 
   document.getElementById('ibw-display').textContent = ibw.toFixed(1) + ' kg';
-  document.getElementById('adjbw-display').textContent = adj ? adj.toFixed(1)+' kg' : 'N/A';
+  document.getElementById('adjbw-display').textContent = adj.toFixed(1) + ' kg';
   document.getElementById('bmi-display').textContent = bmi.toFixed(1);
   document.getElementById('weight-display').style.display = 'block';
 
-  // Auto suggest AdjBW if >20% above IBW
-  if(tbw > ibw * 1.2 && state.dosingWt === 'TBW') {
-    document.getElementById('crcl-hint').textContent = '⚠ TBW >20% above IBW — consider AdjBW for CrCl';
-    document.getElementById('crcl-hint').style.color = 'var(--warning)';
+  const hint = document.getElementById('crcl-hint');
+  const shortStature = ibwMethod(ht) === 'BMI';
+  if (tbw > ibw * 1.2 && state.dosingWt === 'TBW') {
+    hint.textContent = `⚠ TBW ${pctOverIbw.toFixed(0)}% above IBW — consider AdjBW for CrCl`;
+    hint.style.color = 'var(--warning)';
+  } else if (shortStature) {
+    hint.textContent = 'Height <60 in — BMI-based IBW in use for renal dosing (see IBW note)';
+    hint.style.color = 'var(--warning)';
   } else {
-    document.getElementById('crcl-hint').textContent = 'Cockcroft-Gault • AdjBW auto if TBW >20% above IBW';
-    document.getElementById('crcl-hint').style.color = '';
+    hint.textContent = 'Cockcroft-Gault • AdjBW auto if TBW >20% above IBW';
+    hint.style.color = '';
+  }
+
+  const ibwNote = document.getElementById('ibw-method-note');
+  if (ibwNote) {
+    let note = shortStature
+      ? `IBW by BMI method (target BMI ${IBW_TARGET_BMI[state.sex]}, height <60 in). `
+        + 'Devine extrapolates below 60 in and understates IBW, so this CrCl will '
+        + 'differ from calculators that apply Devine at every height.'
+      : 'IBW by Devine (1974). Below 60 in a BMI-based method is used instead '
+        + '(target BMI 21.5 female / 22.0 male).';
+    if (Math.abs(ht - IBW_DEVINE_MIN_CM) <= IBW_SEAM_CM) {
+      note += ' ⚠ Height is near the 152.4 cm method boundary, where the two '
+        + 'published methods do not meet — IBW steps by about 10% for women '
+        + '(2% for men) across it. Check the value before dosing on it.';
+    }
+    ibwNote.textContent = note;
+    ibwNote.style.display = 'block';
   }
   updateCrCl();
+}
+
+// ── Cystatin C comparison ─────────────────────────────────────────────────
+// Reported alongside CG, never substituted into it. Every population model in
+// this calculator (Buelga, Goti, Hughes, and all four Module-1 models) was built
+// on Cockcroft-Gault creatinine clearance in mL/min. An indexed eGFR in
+// mL/min/1.73m2 from a different equation is a different quantity; feeding it to
+// those models would be a covariate mismatch dressed up as a refinement. What it
+// IS good for is telling you when creatinine is lying.
+const CYSC_DISCORDANCE_PCT = 30;
+
+function updateCysC() {
+  const box = document.getElementById('cysc-result');
+  if (!box) return;
+  const age = v('age'), ht = v('height'), tbw = v('tbw'), scr = v('scr');
+  const cysc = v('cysc');
+  if (!cysc || !age || !scr || !ht || !tbw) { box.style.display = 'none'; return; }
+
+  const eGfrIndexed = ckdEpiCrCys(age, state.sex, scr, cysc);
+  if (eGfrIndexed === null) { box.style.display = 'none'; return; }
+
+  // De-index to the patient's own body surface area so the number is comparable
+  // with Cockcroft-Gault, which is not BSA-normalised.
+  const bsa = duBoisBsa(ht, tbw);
+  const eGfrAbs = eGfrIndexed * (bsa / 1.73);
+
+  const ibw = calcIBW(state.sex, ht);
+  const crclWt = pickCrClWeight(state.dosingWt, tbw, ibw).wt;
+  const cg = calcCrCl(age, state.sex, scr, crclWt, SCR_POLICY.ACTUAL);
+
+  const pctDiff = ((cg - eGfrAbs) / eGfrAbs) * 100;
+  const lines = [
+    `eGFR (CKD-EPI 2021 cr-cys): ${eGfrIndexed.toFixed(0)} mL/min/1.73m² · `
+      + `${eGfrAbs.toFixed(0)} mL/min at BSA ${bsa.toFixed(2)}`,
+    `Cockcroft-Gault: ${cg.toFixed(0)} mL/min · difference ${pctDiff >= 0 ? '+' : ''}${pctDiff.toFixed(0)}%`,
+  ];
+  if (pctDiff > CYSC_DISCORDANCE_PCT) {
+    lines.push('⚠ Cockcroft-Gault reads materially HIGHER than the cystatin C estimate — '
+      + 'the pattern of low muscle mass. Creatinine-based clearance is likely OVERestimated, '
+      + 'so a creatinine-driven dose may be too high. Consider the cystatin C estimate when '
+      + 'choosing the empiric dose, and obtain levels early.');
+  } else if (pctDiff < -CYSC_DISCORDANCE_PCT) {
+    lines.push('⚠ Cockcroft-Gault reads materially LOWER than the cystatin C estimate. '
+      + 'Consider whether creatinine is transiently elevated, and avoid under-dosing.');
+  } else {
+    lines.push('Creatinine and cystatin C agree within ' + CYSC_DISCORDANCE_PCT + '% — '
+      + 'creatinine-based clearance is well supported in this patient.');
+  }
+  lines.push('Advisory only: the population models are driven by Cockcroft-Gault and are '
+    + 'not re-fitted to this value.');
+  box.innerHTML = lines.map(l => `<div>${escHtml(l)}</div>`).join('');
+  box.style.display = 'block';
 }
 
 // Live CrCl display + interval suggestion
 function updateCrCl() {
   const age = v('age'), tbw = v('tbw'), ht = v('height'), scr = v('scr');
   if(!age || !tbw || !ht || !scr) { document.getElementById('crcl-result').style.display='none'; return; }
-  const ibw   = calcIBW(state.sex, ht);
-  const adjbw = tbw > ibw * 1.2 ? calcAdjBW(tbw, ibw) : ibw;
-  let wt;
-  switch(state.dosingWt){case'IBW':wt=ibw;break;case'AdjBW':wt=adjbw;break;default:wt=tbw<=ibw*1.2?tbw:adjbw;}
-  const crcl = calcCrCl(age, state.sex, scr, wt);
+  const ibw = calcIBW(state.sex, ht);
+  const { wt, basis } = pickCrClWeight(state.dosingWt, tbw, ibw);
+  const crcl = calcCrCl(age, state.sex, scr, wt, SCR_POLICY.ACTUAL);
   const el = document.getElementById('crcl-result');
-  el.textContent = `CrCl: ${crcl.toFixed(1)} mL/min`;
+  el.textContent = `CrCl: ${crcl.toFixed(1)} mL/min  •  ${basis} ${wt.toFixed(1)} kg`;
   el.style.display = 'block';
+
+  // Low-muscle-mass advisory (replaces the old silent SCr round-up).
+  const adv = document.getElementById('crcl-advisory');
+  if (adv) {
+    const msgs = [];
+    if (lowMuscleMassSuspected(age, state.sex, scr)) {
+      msgs.push('Creatinine is low for age. Cockcroft-Gault can OVERestimate clearance '
+        + 'where muscle mass is reduced. This calculator uses the measured creatinine — '
+        + 'rounding it up is not evidence based and under-doses (92.9% subtherapeutic, '
+        + 'Drugs R&D 2017). If cystatin C is available, enter it to check for discordance.');
+    }
+    if (nearMatzkeBreak(crcl) && s('vd-model') === 'matzke') {
+      msgs.push(`CrCl is near 60 mL/min, where the Matzke Vd steps between 0.89 and `
+        + `0.72 L/kg. Peak and trough shift ~5% across that boundary; AUC24 does not.`);
+    }
+    adv.innerHTML = msgs.length ? msgs.map(m => `<div class="advisory-line">⚠ ${escHtml(m)}</div>`).join('') : '';
+    adv.style.display = msgs.length ? 'block' : 'none';
+  }
   if (state.calcMode === 'initial') suggestInterval();
+  updateCysC();
 }
 
 function updateModelInfo() {
@@ -3234,7 +3576,12 @@ function calculate() {
   const isTwoLevels   = state.calcMode === 'twolevels';
   const isRandomLevel = state.calcMode === 'randomlevel';
 
-  if(!age || !tbw || !ht || !scr) { alert('Please enter age, weight, height, and serum creatinine.'); return; }
+  // AUDIT A3/A4: range-check the demographics before anything reaches the engine.
+  // Blank fields previously read as 0 (CrCl -> Infinity, peak -> Infinity) and
+  // nothing rejected an out-of-range value (age 200 -> negative CrCl).
+  if (!reportValidation(validateFields([
+        ['age', 'age'], ['tbw', 'weight'], ['height', 'height'], ['scr', 'scr'],
+      ]))) return;
 
   // ── Random Level mode: fit Kel from single level at any timepoint ──
   if (isRandomLevel) {
@@ -3249,9 +3596,9 @@ function calculate() {
 
     const ibw   = calcIBW(state.sex, ht);
     const bmi   = tbw / ((ht/100)**2);
-    const adjbw = tbw > ibw * 1.2 ? calcAdjBW(tbw, ibw) : ibw;
-    let crclWt; switch(state.dosingWt){case'IBW':crclWt=ibw;break;case'AdjBW':crclWt=adjbw;break;default:crclWt=tbw<=ibw*1.2?tbw:adjbw;}
-    const crclVal = calcCrCl(age, state.sex, scr, crclWt);
+    const adjbw = calcAdjBW(tbw, ibw);
+    const crclWt = pickCrClWeight(state.dosingWt, tbw, ibw).wt;
+    const crclVal = calcCrCl(age, state.sex, scr, crclWt, SCR_POLICY.ACTUAL);
     const popClv  = calcCLv(s('cl-model'), crclVal, tbw);
     const popVd   = calcVd(s('vd-model'), age, tbw, crclVal);
     const popKel  = popClv / popVd;
@@ -3302,9 +3649,9 @@ function calculate() {
 
     const ibw   = calcIBW(state.sex, ht);
     const bmi   = tbw / ((ht/100)**2);
-    const adjbw = tbw > ibw * 1.2 ? calcAdjBW(tbw, ibw) : ibw;
-    let crclWt; switch(state.dosingWt){case'IBW':crclWt=ibw;break;case'AdjBW':crclWt=adjbw;break;default:crclWt=tbw<=ibw*1.2?tbw:adjbw;}
-    const crclVal = calcCrCl(age, state.sex, scr, crclWt);
+    const adjbw = calcAdjBW(tbw, ibw);
+    const crclWt = pickCrClWeight(state.dosingWt, tbw, ibw).wt;
+    const crclVal = calcCrCl(age, state.sex, scr, crclWt, SCR_POLICY.ACTUAL);
     const popClv  = calcCLv(s('cl-model'), crclVal, tbw);
     const popVd   = calcVd(s('vd-model'), age, tbw, crclVal);
     const popKel  = popClv / popVd;
@@ -3340,17 +3687,12 @@ function calculate() {
 
   const ibw   = calcIBW(state.sex, ht);
   const bmi   = tbw / ((ht/100)**2);
-  const adjbw = tbw > ibw * 1.2 ? calcAdjBW(tbw, ibw) : ibw;
+  const adjbw = calcAdjBW(tbw, ibw);
 
   // Dosing weight for CrCl — auto AdjBW if TBW >20% above IBW and user left on TBW
-  let crclWt;
-  switch(state.dosingWt) {
-    case 'IBW':   crclWt = ibw; break;
-    case 'AdjBW': crclWt = adjbw; break;
-    default:      crclWt = tbw <= ibw * 1.2 ? tbw : adjbw;
-  }
+  const crclWt = pickCrClWeight(state.dosingWt, tbw, ibw).wt;
 
-  const crclVal  = calcCrCl(age, state.sex, scr, crclWt);
+  const crclVal  = calcCrCl(age, state.sex, scr, crclWt, SCR_POLICY.ACTUAL);
   const popClv   = calcCLv(clModel, crclVal, tbw);
   const vd       = calcVd(vdModel, age, tbw, crclVal);
   const popKel   = popClv / vd;
@@ -4777,19 +5119,31 @@ function setBSex(el, val) {
 }
 
 // ─── CrCl computation (scrOverride: optional — used when serial SCr is active) ───
-function getBayesCrCl(scrOverride) {
+// Shared reader for the Bayesian module's demographics. One place that decides
+// what "the patient" is, so the four CrCl variants below cannot drift apart.
+function readBayesPatient(scrOverride) {
   const age = parseFloat(document.getElementById('b-age').value);
-  const scr = scrOverride || parseFloat(document.getElementById('b-scr').value);
+  const scr = (scrOverride !== undefined && scrOverride !== null && scrOverride !== '')
+    ? parseFloat(scrOverride)
+    : parseFloat(document.getElementById('b-scr').value);
   const tbw = parseFloat(document.getElementById('b-tbw').value);
   const ht  = parseFloat(document.getElementById('b-height').value);
   const sex = bState.sex;
-  if (!age || !scr || !tbw) return null;
-  const ibw = sex==='M' ? 50 + 2.3*(ht/2.54 - 60) : 45.5 + 2.3*(ht/2.54 - 60);
-  let dosingWt = tbw;
-  if (ht && ibw > 0 && tbw > ibw * 1.2) dosingWt = ibw + 0.4*(tbw - ibw);
-  const mult = sex==='M' ? 1.0 : 0.85;
-  const scrFloor = Math.max(scr, sex==='M' ? 0.7 : 0.6);   // Cockcroft-Gault standard floor
-  return Math.max(5, Math.min(150, (140 - age) * dosingWt * mult / (72 * scrFloor)));
+  if (!(age > 0) || !(scr > 0) || !(tbw > 0) || !(ht > 0)) return null;
+  const ibw = calcIBW(sex, ht);
+  const { wt: dosingWt, basis } = pickCrClWeight('auto', tbw, ibw);
+  return { age, scr, tbw, ht, sex, ibw, dosingWt, basis };
+}
+
+// AUDIT A7: every CrCl in the suite now uses the MEASURED creatinine. The only
+// SCr transformation left is Goti's, and it lives on the Goti path alone.
+const CRCL_MODEL_FLOOR = 5, CRCL_MODEL_CAP = 150;
+
+function getBayesCrCl(scrOverride) {
+  const p = readBayesPatient(scrOverride);
+  if (!p) return null;
+  const crcl = calcCrCl(p.age, p.sex, p.scr, p.dosingWt, SCR_POLICY.ACTUAL);
+  return Math.max(CRCL_MODEL_FLOOR, Math.min(CRCL_MODEL_CAP, crcl));
 }
 
 // Phase 3 — Augmented renal clearance (ARC) detection.
@@ -4798,18 +5152,9 @@ function getBayesCrCl(scrOverride) {
 // math (Goti); this helper exists ONLY to surface the true value to the clinician.
 // scrOverride: optional — used when serial SCr is active
 function getUncappedCrCl(scrOverride) {
-  const age = parseFloat(document.getElementById('b-age').value);
-  const scr = scrOverride || parseFloat(document.getElementById('b-scr').value);
-  const tbw = parseFloat(document.getElementById('b-tbw').value);
-  const ht  = parseFloat(document.getElementById('b-height').value);
-  const sex = bState.sex;
-  if (!age || !scr || !tbw) return null;
-  const ibw = sex==='M' ? 50 + 2.3*(ht/2.54 - 60) : 45.5 + 2.3*(ht/2.54 - 60);
-  let dosingWt = tbw;
-  if (ht && ibw > 0 && tbw > ibw * 1.2) dosingWt = ibw + 0.4*(tbw - ibw);
-  const mult = sex==='M' ? 1.0 : 0.85;
-  const scrFloor = Math.max(scr, sex==='M' ? 0.7 : 0.6);
-  return (140 - age) * dosingWt * mult / (72 * scrFloor);
+  const p = readBayesPatient(scrOverride);
+  if (!p) return null;
+  return calcCrCl(p.age, p.sex, p.scr, p.dosingWt, SCR_POLICY.ACTUAL);
 }
 
 // ARC threshold per consensus literature (Udy 2010; Roberts 2013): CrCl ≥130 mL/min
@@ -5052,23 +5397,53 @@ function autoTinf(dose) {
   return 3.0;
 }
 
-// ─── Buelga 2005 population PK ───
-// CL_pop (L/h): 4.47 × (CrCl/100.8)^0.85 × (TBW/76)^0.13
-// V_pop  (L):   58.9 × (TBW/76)^0.65
+// ─── Buelga 2005 population PK — VERIFIED against the source ───
+// Buelga DS et al. "Population pharmacokinetic analysis of vancomycin in patients
+// with hematological malignancies." Antimicrob Agents Chemother 2005;49(12):4934-41.
+// General (all-patient) model, verbatim from the paper:
+//     CL (liters/h) = 1.08 x CLCR(Cockcroft and Gault) (liters/h)
+//     V  (liters)   = 0.98 x TBW
+//     CVCL = 28.16%   CVV = 37.15%   sigma = 3.52 mg/liter  (additive)
+// Study population: mean TBW 64.7 +/- 11.3 kg, mean CrCl 89.4 +/- 39.2 mL/min.
+//
+// AUDIT A2. This function previously implemented
+//     CL = 4.47 x (CrCl/100.8)^0.85 x (TBW/76)^0.13 ;  V = 58.9 x (TBW/76)^0.65
+// with omega^2 0.122/0.053 and sigma_prop 0.167 / sigma_add 1.5. That is NOT
+// Buelga 2005: the functional form is a power model rather than the published
+// linear one, and its centering values (100.8 mL/min, 76 kg) do not match
+// Buelga's population (89.4 mL/min, 64.7 kg). Its true provenance could not be
+// established, so it has been replaced rather than renamed — an unsourced prior
+// is exactly the failure mode this project has already been burned by.
+//
+// Consequence: the trough module and the AUC module now agree. They previously
+// disagreed by 15% (CrCl 20) to 55% (CrCl 150) on clearance under one name.
+const BUELGA_CL_SLOPE   = 1.08;   // CL (L/h) per CrCl (L/h)
+const BUELGA_V_PER_KG   = 0.98;   // V  (L) per kg TBW
+// Buelga Table 4 labels these "omega_CL (%)" and "omega_V (%)" — i.e. the SD of
+// eta on the log scale x100, not a true %CV — so omega^2 = (value/100)^2 directly.
+// (Goti's table says "%CV", which is why the Goti terms use ln(1+CV^2) instead.
+// The two readings differ by ~4% in variance here; the label decides which.)
+// IIV is exponential and residual error is additive: "the interindividual and
+// residual errors were best described by exponential and additive structures,
+// respectively" — Buelga 2005, Results.
+const OMEGA2_CL_BUELGA  = 0.0793; // 0.2816^2, from omega_CL 28.16%
+const OMEGA2_V_BUELGA   = 0.1380; // 0.3715^2, from omega_V  37.15%
+const SIGMA_PROP_BUELGA = 0;      // Buelga's residual model is purely additive
+const SIGMA_ADD_BUELGA  = 3.52;   // mg/L
+
 function buelgaPopPK(crcl, tbw) {
-  const CL_pop = 4.47 * Math.pow(crcl/100.8, 0.85) * Math.pow(tbw/76, 0.13);
-  const V_pop  = 58.9 * Math.pow(tbw/76, 0.65);
+  // crcl arrives in mL/min; the published equation takes CLcr in L/h.
+  const CL_pop = BUELGA_CL_SLOPE * (crcl * ML_MIN_TO_L_H);
+  const V_pop  = BUELGA_V_PER_KG * tbw;
   return { CL_pop, V_pop };
 }
 
 // ─── Burton (1985) Bayesian objective function ───
-// omega²_CL = 0.122, omega²_V = 0.053 (Buelga BSV)
-// sigma_prop = 0.167, sigma_add = 1.5 mg/L (Buelga residual)
 function burtonObjective(etaCL, etaV, CL_pop, V_pop, doses, levels) {
-  const omega2_CL  = 0.122;
-  const omega2_V   = 0.053;
-  const sigma_prop = 0.167;
-  const sigma_add  = 1.5;
+  const omega2_CL  = OMEGA2_CL_BUELGA;
+  const omega2_V   = OMEGA2_V_BUELGA;
+  const sigma_prop = SIGMA_PROP_BUELGA;
+  const sigma_add  = SIGMA_ADD_BUELGA;
 
   const CL  = CL_pop * Math.exp(etaCL);
   const V   = V_pop  * Math.exp(etaV);
@@ -5099,21 +5474,24 @@ const SIGMA_ADD_GOTI  = 3.4;
 
 /// ─── Goti-specific CrCL (erratum SCr floor: if SCr<1 AND age>65 → SCr=1) ───
 // scrOverride: optional — used when serial SCr is active
+// AUDIT A1. Goti's SCr truncation is applied here and ONLY here, because the
+// model's parameters were estimated on a truncated-SCr dataset — it is part of
+// the model's input specification, not a clinical rounding rule. The threshold
+// was >65; Goti 2018 Methods says >60. That five-year band inflated prior CL by
+// up to ~74% (63F, SCr 0.5). See docs/audit-2026-09.md finding A1.
 function getGotiCrCl(scrOverride) {
-  const age = parseFloat(document.getElementById('b-age').value);
-  const tbw = parseFloat(document.getElementById('b-tbw').value);
-  const ht  = parseFloat(document.getElementById('b-height').value);
-  const sex = bState.sex;
-  let   scr = scrOverride || parseFloat(document.getElementById('b-scr').value);
-  if (!age || !tbw || !scr) return null;
-  // Erratum-corrected SCr floor for Goti model
-  if (scr < 1.0 && age > 65) scr = 1.0;
-  const ibw = sex==='M' ? 50 + 2.3*(ht/2.54 - 60) : 45.5 + 2.3*(ht/2.54 - 60);
-  let dosingWt = tbw;
-  if (ht && ibw > 0 && tbw > ibw * 1.2) dosingWt = ibw + 0.4*(tbw - ibw);
-  const mult = sex==='M' ? 1.0 : 0.85;
-  const crcl = (140 - age) * dosingWt * mult / (72 * scr);
-  return Math.max(5, Math.min(150, crcl));  // capped at 150 per Goti
+  const p = readBayesPatient(scrOverride);
+  if (!p) return null;
+  const crcl = calcCrCl(p.age, p.sex, p.scr, p.dosingWt, SCR_POLICY.GOTI_MODEL);
+  // "CrCL greater than 150 ml/min was truncated to 150 ml/min" — Goti 2018
+  return Math.max(CRCL_MODEL_FLOOR, Math.min(CRCL_MODEL_CAP, crcl));
+}
+
+// True when the Goti path is transforming this patient's creatinine, so the UI
+// can say why the Goti CrCl differs from the displayed one.
+function gotiScrTruncationActive() {
+  const p = readBayesPatient();
+  return !!p && p.scr < GOTI_SCR_FLOOR && p.age > GOTI_SCR_FLOOR_AGE;
 }
 
 // ─── Goti 2018 population PK ───
@@ -5287,17 +5665,14 @@ function computeFFM(tbw, htCm, sex) {
 
 // Hughes CrCL: Cockcroft-Gault with FFM as body weight, no cap.
 // scrOverride: optional override for serial-SCr workflows
+// Hughes scales CG by fat-free mass rather than a dosing weight, and applies no
+// upper cap. SCr policy is the shared default (measured value) — audit A7.
 function getHughesCrCl(scrOverride) {
-  const age = parseFloat(document.getElementById('b-age').value);
-  const tbw = parseFloat(document.getElementById('b-tbw').value);
-  const ht  = parseFloat(document.getElementById('b-height').value);
-  const sex = bState.sex;
-  const scr = scrOverride || parseFloat(document.getElementById('b-scr').value);
-  if (!age || !tbw || !ht || !scr) return null;
-  const ffm = computeFFM(tbw, ht, sex);
+  const p = readBayesPatient(scrOverride);
+  if (!p) return null;
+  const ffm = computeFFM(p.tbw, p.ht, p.sex);
   if (!ffm) return null;
-  const mult = sex === 'M' ? 1.0 : 0.85;
-  return Math.max(5, (140 - age) * ffm * mult / (72 * scr));
+  return Math.max(CRCL_MODEL_FLOOR, calcCrCl(p.age, p.sex, p.scr, ffm, SCR_POLICY.ACTUAL));
 }
 
 // Hughes population PK (returns typical-value parameters scaled to FFM)
@@ -5411,14 +5786,30 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp) {
 }
 
 // ─── AUC uncertainty disclosure ───
+// AUC uncertainty disclosure — MEASURED, not asserted.
+//
+// The previous text claimed "~±15%" at one level. Simulation against the
+// verified Buelga 2005 prior (n=2000 per level count, additive sigma 3.52 mg/L)
+// puts only 66% of patients inside ±15% at one level; ±15% is roughly the 65th
+// percentile, not a bound. Stating a percentile the number does not meet
+// understates the uncertainty a clinician is being asked to act on.
+//
+// Measured relative AUC24 error, 1-compartment (Buelga) path:
+//   levels   median   p80     p90    within ±15%
+//     0      18.3%   35.4%   45.9%      42%
+//     1      10.3%   20.9%   28.3%      66%
+//     2       8.8%   18.2%   25.4%      73%
+//     3       8.1%   17.1%   23.2%      76%
+// Quoted below as the ~80th percentile, with the percentile stated explicitly.
+// The 2-compartment figures are NOT re-measured and are marked as estimates.
 function aucUncertaintyText(nLevels, model) {
-  // Dynamic uncertainty disclosure per Phase 2D spec
-  // 2-comp models (Goti, Hughes) have more parameters → slightly wider uncertainty at 1 level
   const is2comp = model === 'goti' || model === 'hughes';
-  if (nLevels === 0)  return '±30% (population prior — no levels)';
-  if (nLevels === 1)  return is2comp ? '~±18% (Bayesian posterior, 1 level, 2-comp)' : '~±15% (Bayesian posterior, 1 level)';
-  if (nLevels === 2)  return '~±12% (Bayesian posterior, 2 levels)';
-  return '~±10% (Bayesian posterior, ≥3 levels)';
+  if (nLevels === 0)  return '±35% (population prior — no levels; ~80% of patients)';
+  if (nLevels === 1)  return is2comp
+    ? '~±25% (1 level, 2-comp — estimated, not simulated)'
+    : '~±21% (1 level; ~80% of patients, median ±10%)';
+  if (nLevels === 2)  return '~±18% (2 levels; ~80% of patients, median ±9%)';
+  return '~±17% (≥3 levels; ~80% of patients, median ±8%)';
 }
 
 // ─── Format absolute timestamp ───

@@ -29,6 +29,28 @@ const fs   = require('fs');
 const vm   = require('vm');
 const path = require('path');
 
+// ─── Model constants: extracted from index.html, never copied ─────────
+// audit P3 — a hand-copied constant lets the suite pass against a value
+// the app no longer uses. extract() throws if a constant goes missing.
+const { extract: __extractConsts } = require('./harness_constants.cjs');
+const {
+  Q_GOTI,
+  OMEGA2_CL_GOTI,
+  OMEGA2_VC_GOTI,
+  OMEGA2_VP_GOTI,
+  SIGMA_PROP_GOTI,
+  SIGMA_ADD_GOTI,
+  OMEGA2_CL_BUELGA,
+  OMEGA2_V_BUELGA,
+  SIGMA_PROP_BUELGA,
+  SIGMA_ADD_BUELGA,
+  HUGHES_TVCL,
+  HUGHES_TVVC,
+  HUGHES_TVQ,
+  HUGHES_TVVP,
+} = __extractConsts();
+
+
 // ─── Sandbox setup ────────────────────────────────────────────────────
 const htmlPath = path.join(__dirname, 'index.html');
 const html = fs.readFileSync(htmlPath, 'utf8');
@@ -77,9 +99,6 @@ const {
 } = sandbox;
 
 // Constants (const-in-vm not exposed)
-const Q_GOTI = 6.5, HUGHES_TVQ_BASE = 6.36;
-const OMEGA2_CL_BUELGA = 0.122,  OMEGA2_V_BUELGA  = 0.053;
-const OMEGA2_CL_GOTI   = 0.1470, OMEGA2_VC_GOTI   = 0.5103, OMEGA2_VP_GOTI   = 0.2824;
 const OMEGA2_CL_HUGHES = 0.0602, OMEGA2_VC_HUGHES = 0.0312, OMEGA2_VP_HUGHES = 0.4974;
 const SIGMA_PROP_CLINICAL = 0.10, SIGMA_ADD_CLINICAL = 0.8;  // realistic assay noise
 

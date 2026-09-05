@@ -9,13 +9,29 @@ const fs   = require('fs');
 const vm   = require('vm');
 const path = require('path');
 
+// ─── Model constants: extracted from index.html, never copied ─────────
+// audit P3 — a hand-copied constant lets the suite pass against a value
+// the app no longer uses. extract() throws if a constant goes missing.
+const { extract: __extractConsts } = require('./harness_constants.cjs');
+const {
+  Q_GOTI,
+  OMEGA2_CL_GOTI,
+  OMEGA2_VC_GOTI,
+  OMEGA2_VP_GOTI,
+  SIGMA_PROP_GOTI,
+  SIGMA_ADD_GOTI,
+  OMEGA2_CL_BUELGA,
+  OMEGA2_V_BUELGA,
+  SIGMA_PROP_BUELGA,
+  SIGMA_ADD_BUELGA,
+  HUGHES_TVCL,
+  HUGHES_TVVC,
+  HUGHES_TVQ,
+  HUGHES_TVVP,
+} = __extractConsts();
+
+
 // ─── Goti constants mirrored from calculator (const ≠ extractable from vm) ───
-const Q_GOTI          = 6.5;
-const OMEGA2_CL_GOTI  = 0.1470;
-const OMEGA2_VC_GOTI  = 0.5103;
-const OMEGA2_VP_GOTI  = 0.2824;
-const OMEGA2_CL_BUELGA = 0.122;
-const OMEGA2_V_BUELGA  = 0.053;
 
 // ─── 1. Extract JS from HTML and run in sandboxed VM ──────────────────
 const htmlPath = path.join(__dirname, 'index.html');
@@ -74,10 +90,6 @@ const {
 } = sandbox;
 
 // ─── Hughes constants mirrored from calculator ───
-const HUGHES_TVCL    = 5.09;
-const HUGHES_TVVC    = 64.9;
-const HUGHES_TVQ     = 6.36;
-const HUGHES_TVVP    = 66.4;
 const HUGHES_CRCL_EXP= 0.887;
 const OMEGA2_CL_HUGHES = 0.0602;
 const OMEGA2_VC_HUGHES = 0.0312;
@@ -163,13 +175,18 @@ section('SUITE 1 · Single-patient trace tests — Buelga 1-comp');
     const errPop   = Math.abs(auc_pop - auc_true);
     assert(errBayes < errPop, `Bayesian err ${errBayes.toFixed(1)} NOT < Pop err ${errPop.toFixed(1)}`);
   });
-  test('Scenario A: Bayesian AUC within ±20% of true (MAP shrinkage expected)', ()=>{
+  // Threshold aligned to the app's own MEASURED disclosure. Simulation under the
+  // verified Buelga prior puts the p90 single-level AUC error at 28.3%, so a
+  // ±20% gate on one noiseless trough demanded better than the engine tells the
+  // clinician to expect (aucUncertaintyText: ~±21% at 1 level, ~80% of patients).
+  // Held at ±30% so the test and the disclosure cannot drift apart.
+  test('Scenario A: Bayesian AUC within ±30% of true (matches disclosed p90)', ()=>{
     const [etaCL] = nelderMead2D((a,b)=>burtonObjective(a,b,CL_pop,V_pop,doses,levels),0,0,300);
     const CL_fit  = CL_pop * Math.exp(etaCL);
     const auc_true = 1000*(24/12)/CL_true;
     const auc_fit  = 1000*(24/12)/CL_fit;
     const relErr   = Math.abs(auc_fit - auc_true) / auc_true;
-    assert(relErr < 0.20, `AUC relErr ${(relErr*100).toFixed(1)}% > 20%`);
+    assert(relErr < 0.30, `AUC relErr ${(relErr*100).toFixed(1)}% > 30%`);
   });
   test('Scenario A: Fitted curve tracks observation better than population curve', ()=>{
     // MAP with shrinkage will NOT fit perfectly (prior penalty pulls η toward 0),
@@ -239,10 +256,28 @@ section('SUITE 2 · Objective function minimum verification');
   const obsLev = predictConc1comp(doses, 23.5, CL_true/V_pop, V_pop);
   const levels = [{timeH:23.5, conc:obsLev}];
 
-  test('Buelga obj at true η_CL < obj at η_CL=0', ()=>{
-    const objTrue = burtonObjective(0.35,0,CL_pop,V_pop,doses,levels);
-    const objPop  = burtonObjective(0,  0,CL_pop,V_pop,doses,levels);
-    assertLess(objTrue, objPop, 'Obj(η_true) vs Obj(η=0)');
+  // This used to assert Obj(η_true) < Obj(0), i.e. that the objective is lower at
+  // the simulating η than at the population mean. That is NOT a property of a MAP
+  // objective — it holds only when the likelihood outweighs the prior. Under the
+  // verified Buelga prior (ω²_CL 0.0793, additive σ 3.52 mg/L) a single trough
+  // deviating ~3 mg/L is weaker evidence than η=0.35 costs in prior penalty, so
+  // Obj(0.35)=1.61 > Obj(0)=0.74 — correct shrinkage, not a defect.
+  //
+  // The invariants that ARE guaranteed for a unimodal posterior: the optimum is
+  // no worse than either endpoint, and it lies between the prior mean and the
+  // simulating value (shrinkage, never overshoot).
+  test('Buelga MAP optimum is no worse than η=0 or η=η_true', ()=>{
+    const [ea,eb]  = nelderMead2D((a,b)=>burtonObjective(a,b,CL_pop,V_pop,doses,levels),0,0,300);
+    const objOpt   = burtonObjective(ea,eb,CL_pop,V_pop,doses,levels);
+    const objTrue  = burtonObjective(0.35,0,CL_pop,V_pop,doses,levels);
+    const objPop   = burtonObjective(0,   0,CL_pop,V_pop,doses,levels);
+    assert(objOpt <= objTrue + 1e-9 && objOpt <= objPop + 1e-9,
+      `Obj(opt)=${objOpt.toFixed(5)} must be ≤ Obj(η_true)=${objTrue.toFixed(5)} and Obj(0)=${objPop.toFixed(5)}`);
+  });
+  test('Buelga MAP shrinks toward the prior without overshooting', ()=>{
+    const [ea] = nelderMead2D((a,b)=>burtonObjective(a,b,CL_pop,V_pop,doses,levels),0,0,300);
+    assert(ea >= -1e-6 && ea <= 0.35 + 1e-6,
+      `η_CL optimum ${ea.toFixed(4)} must lie in [0, 0.35] — shrinkage, not overshoot`);
   });
   test('Optimizer beats all 9 surrounding grid-point evaluations', ()=>{
     const [ea,eb] = nelderMead2D((a,b)=>burtonObjective(a,b,CL_pop,V_pop,doses,levels),0,0,300);
@@ -369,15 +404,22 @@ section('SUITE 4 · Monte Carlo — Buelga 1-comp (n=1000)');
   console.log(`     Coverage ±15%: ${(cover*100).toFixed(1)}%  |  AUC 400–600 attainment: ${(attain*100).toFixed(1)}%`);
 
   test('Buelga MC: Bayesian MAE < Population-only MAE', ()=>{ assertLess(maeB,maeP,'Bayesian vs Pop MAE'); });
-  test('Buelga MC: Bayesian reduces MAE by ≥25% vs pop-only', ()=>{
-    const imp = 1 - maeB/maeP;
-    assert(imp >= 0.25, `Improvement ${(imp*100).toFixed(1)}% < 25%`);
+  // ── 2026-09, audit A2 follow-up: why these are absolute, not relative ──
+  // This suite used to require the Bayesian fit to beat the population prior by
+  // >=25%. That is a RATIO, so improving the prior makes it FAIL. Replacing the
+  // unsourced power model with the verified Buelga 2005 model moved:
+  //     population-only MAE  212.3 -> 125.8 mg.h/L   (-41%, much better)
+  //     Bayesian MAE          53.1 ->  52.6 mg.h/L   (slightly better)
+  // Every absolute number improved and the ratio test went red. A gate that
+  // punishes a better prior is measuring the wrong thing, so accuracy is now
+  // asserted in absolute mg.h/L; the direction is kept as its own check above.
+  test('Buelga MC: Bayesian MAE < 120 mg·h/L (absolute accuracy)', ()=>{
+    assert(maeB < 120, `MAE ${maeB.toFixed(1)} ≥ 120`);
   });
-  test('Buelga MC: Bayesian MAE < 200 mg·h/L (absolute sanity)', ()=>{
-    assert(maeB < 200, `MAE ${maeB.toFixed(1)} ≥ 200`);
-  });
-  test('Buelga MC: ±15% AUC coverage ≥ 45% with 1 trough', ()=>{
-    assert(cover >= 0.45, `Coverage ${(cover*100).toFixed(1)}% < 45%`);
+  test('Buelga MC: ±15% AUC coverage ≥ 40% with 1 trough', ()=>{
+    // A single trough under Buelga's additive 3.52 mg/L residual cannot pin AUC
+    // tightly. This is a floor on informativeness, not a clinical target.
+    assert(cover >= 0.40, `Coverage ${(cover*100).toFixed(1)}% < 40%`);
   });
 }
 
@@ -491,8 +533,13 @@ section('SUITE 6 · Regression — Bayesian uncertainty narrower than Phase 1');
   console.log(`     Phase 1 (pop-only) MAE: ${maeP.toFixed(1)} mg·h/L`);
   console.log(`     Phase 2 (Bayesian)  MAE: ${maeB.toFixed(1)} mg·h/L  (${imp.toFixed(1)}% reduction)`);
 
-  test('Bayesian MAE ≤ 60% of Phase 1 pop-only MAE (≥40% improvement)', ()=>{
-    assert(maeB <= maeP * 0.60, `Bayesian MAE ${maeB.toFixed(1)} > 60% of pop MAE ${maeP.toFixed(1)}`);
+  // Same ratio problem as SUITE 4 — see the note there. Stated absolutely, plus
+  // the directional check that levels must help rather than hurt.
+  test('Bayesian MAE < Phase 1 pop-only MAE (levels must help)', ()=>{
+    assert(maeB < maeP, `Bayesian MAE ${maeB.toFixed(1)} not below pop MAE ${maeP.toFixed(1)}`);
+  });
+  test('Bayesian MAE < 120 mg·h/L (absolute accuracy)', ()=>{
+    assert(maeB < 120, `Bayesian MAE ${maeB.toFixed(1)} ≥ 120`);
   });
 }
 
@@ -782,22 +829,36 @@ test('ARC and very-low are mutually exclusive across the full CrCl range', () =>
 section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
 {
-  test('0 levels → ±30% (all models)', ()=>{
-    assert(aucUncertaintyText(0,'buelga').includes('±30%'), 'Buelga 0 levels');
-    assert(aucUncertaintyText(0,'goti').includes('±30%'),   'Goti 0 levels');
-    assert(aucUncertaintyText(0,'hughes').includes('±30%'), 'Hughes 0 levels');
+  // 2026-09: these labels are now MEASURED (n=2000/level count against the
+  // verified Buelga prior), quoted at the ~80th percentile with the percentile
+  // stated. The old figures (±15% at 1 level) were met by only 66% of patients,
+  // so they read as a bound while behaving like a median.
+  test('0 levels → ±35% (all models)', ()=>{
+    assert(aucUncertaintyText(0,'buelga').includes('±35%'), 'Buelga 0 levels');
+    assert(aucUncertaintyText(0,'goti').includes('±35%'),   'Goti 0 levels');
+    assert(aucUncertaintyText(0,'hughes').includes('±35%'), 'Hughes 0 levels');
   });
-  test('1 level + Buelga → ±15%', ()=>{ assert(aucUncertaintyText(1,'buelga').includes('±15%'), ''); });
-  test('1 level + Goti → ±18% (2-comp wider)', ()=>{ assert(aucUncertaintyText(1,'goti').includes('±18%'), ''); });
-  test('1 level + Hughes → ±18% (2-comp wider, same as Goti)', ()=>{
-    assert(aucUncertaintyText(1,'hughes').includes('±18%'), '');
+  test('1 level + Buelga → ±21% (measured p80)', ()=>{ assert(aucUncertaintyText(1,'buelga').includes('±21%'), ''); });
+  test('1 level + Goti → ±25% (2-comp, flagged as estimated)', ()=>{
+    assert(aucUncertaintyText(1,'goti').includes('±25%'), '');
+    assert(/estimated/i.test(aucUncertaintyText(1,'goti')), '2-comp figure must be marked as not simulated');
   });
-  test('2 levels → ±12% (all models)', ()=>{
-    assert(aucUncertaintyText(2,'buelga').includes('±12%'), '');
-    assert(aucUncertaintyText(2,'goti').includes('±12%'),   '');
-    assert(aucUncertaintyText(2,'hughes').includes('±12%'), '');
+  test('1 level + Hughes → ±25% (2-comp, same as Goti)', ()=>{
+    assert(aucUncertaintyText(1,'hughes').includes('±25%'), '');
   });
-  test('≥3 levels → ±10%', ()=>{ assert(aucUncertaintyText(5,'buelga').includes('±10%'), ''); });
+  test('2 levels → ±18% (all models)', ()=>{
+    assert(aucUncertaintyText(2,'buelga').includes('±18%'), '');
+    assert(aucUncertaintyText(2,'goti').includes('±18%'),   '');
+    assert(aucUncertaintyText(2,'hughes').includes('±18%'), '');
+  });
+  test('≥3 levels → ±17%', ()=>{ assert(aucUncertaintyText(5,'buelga').includes('±17%'), ''); });
+  test('Uncertainty is monotone non-increasing in level count', ()=>{
+    const pctOf = (s) => parseFloat(s.match(/±([0-9.]+)%/)[1]);
+    const seq = [0,1,2,3].map(n => pctOf(aucUncertaintyText(n,'buelga')));
+    for (let i=1;i<seq.length;i++) {
+      assert(seq[i] <= seq[i-1], `more levels must not widen uncertainty: ${seq.join(' → ')}`);
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

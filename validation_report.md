@@ -1,4 +1,17 @@
-# AinaDara Vancomycin TDM Calculator — Validation Report
+# AinaDara Vancomycin TDM Calculator — Validation Report — Phase 1 only (April 2026)
+
+> ## ⚠ SCOPE — read before quoting this document
+>
+> **This report covers PHASE 1 ONLY and is dated April 2026.** It was written *before*
+> the Bayesian/MAP engine existed, so its "Ready to Share" verdict says nothing about the
+> AUC Precision module, any of the four population priors, or the Continue Course module.
+>
+> It also references `validation_comprehensive.js`, which is not in this repository.
+>
+> For the current position see:
+> - `docs/audit-2026-09.md` — code and math audit, and what is verified against which paper
+> - `docs/validation-threshold-decisions.md` — the accept/reject record for failing thresholds
+
 
 **Date:** April 07, 2026  
 **Validator:** Automated validation suite (AinaDara v1.0)  

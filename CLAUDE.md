@@ -1,184 +1,129 @@
-# AinaDara Vancomycin TDM Calculator — UI Developer Context
+# Vancomycin TDM Calculator — project instructions
 
-## What this project is
+Single-file, AUC-guided vancomycin TDM calculator per the 2020 ASHP/IDSA/PIDS/SIDP
+consensus guideline. Built for a clinical pharmacist; used at the bedside.
 
-AinaDara is a single-file vancomycin therapeutic drug monitoring (TDM) calculator built for Gus, a clinical pharmacist. It runs entirely in the browser — no server, no build step, no dependencies except two Google Font families. The entire application is `vancomycin_calc.html` (~6,400 lines, ~279 KB).
+**Advisory only — not a prescription. Clinical correctness outranks everything else here.**
 
-**Your job:** Improve or rework the UI/UX. All clinical logic lives in JavaScript — do not touch that. CSS, HTML structure, component layout, and visual design are fair game.
+> Rewritten 2026-09-05. The previous version described a five-tab UI with element IDs
+> (`#section-initial`, `#b-ht`, `#model-select`) that have never existed in this file, and
+> quoted a line count and test count that were both wrong. If you are holding an older copy,
+> discard it.
 
----
+## What this is
 
-## File structure
+`index.html` — the entire application. Vanilla JS, no framework, no build step, **no
+JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
+~7,900 lines / ~360 KB.
 
-```
-AinaDaraTDM/
-  vancomycin_calc.html          ← The whole app (HTML + CSS + JS in one file)
-  phase2d_validation.js         ← Node.js unit tests (37 tests) — run to verify nothing broke
-  phase2d_comprehensive_validation.js  ← 10,475-patient simulation suite
-  validation_report.md          ← Phase 1 formal validation
-  Phase2_Plan.md                ← Architecture reference
-```
-
----
-
-## Current visual design
-
-### Design language
-- **Warm off-white** palette (not dark, not clinical blue)
-- Fonts: `Outfit` (body/UI), `DM Serif Display` (headings/brand), `DM Mono` (numbers/values)
-- Brand accent color: `--accent-terra` (#C96B3C) — a warm terracotta/rust
-- Light, clean, cross-platform (tested on macOS, Windows, Android)
-
-### CSS custom properties (`:root`)
-
-```css
---bg-deep:       #FAF9F6;   /* page background */
---bg-card:       #FFFFFF;   /* card/panel background */
---bg-elevated:   #F0EFEB;   /* slightly raised surface */
---bg-input:      #F5F4F1;   /* input field background */
---border:        #E0DDD6;   /* standard border */
---border-light:  #EBE8E2;   /* subtle border */
-
---text-primary:  #2C2C2E;   /* main text */
---text-secondary:#636366;   /* secondary labels */
---text-muted:    #8E8E93;   /* hints/placeholders */
-
---accent-terra:  #C96B3C;   /* PRIMARY accent — warm terracotta */
---accent-amber:  #BF8530;   /* secondary accent */
---accent-sage:   #3D8E5F;   /* success/green states */
---accent-rose:   #B04E60;   /* caution/alert states */
---accent-blue:   #3B6FAF;   /* informational/links */
-
---success:       #2D8A52;
---warning:       #B87D30;
---danger:        #B83B3B;
-
---radius-sm:     8px;
---radius-md:     12px;
---radius-lg:     18px;
---shadow-card:   0 2px 12px rgba(0,0,0,0.06);
---shadow-glow:   0 0 20px rgba(201,107,60,0.08);
---glass-bg:      rgba(255,255,255,0.85);
---glass-border:  rgba(0,0,0,0.04);
-```
-
----
-
-## App layout structure
-
-```
-<body>
-  .header                      ← Sticky top bar — brand logo + "CLINICAL PHARMACIST TOOL" tag
-  .main-container
-    .sidebar                   ← Left panel — patient inputs
-      .sidebar-section × 4     ← Patient Info / Dose History / Drug Levels / Bayesian Inputs
-    .content-area              ← Right panel — results + calculator tabs
-      .top-controls            ← Model selector (dropdown) + Calculate/Reset buttons
-      .tab-bar                 ← Section tabs: Initial Dosing / SS Trough / Two Levels / Random Level / Bayesian
-      .tab-content × 5         ← Each tab's form + results area
-```
-
-### The 5 calculator tabs
-
-| Tab | ID | Description |
-|---|---|---|
-| Initial Dosing | `#section-initial` | Population PK-based first dose |
-| SS Trough | `#section-sstrough` | Steady-state trough prediction |
-| Two Levels | `#section-twolevels` | Two measured levels → individual PK |
-| Random Level | `#section-random` | Random-level bayesian adjustment |
-| Bayesian MAP | `#section-bayesian` | Full MAP Bayesian estimation (main clinical tab) |
-
----
-
-## Key UI components to be aware of
-
-### Bayesian tab (most complex, most used clinically)
-- **Serial SCr table** (`#b-scr-tbody`) — rows of SCr + timestamps added dynamically
-- **KDIGO AKI badge** (`#b-kdigo-badge`) — Stage 1/2/3 shown when AKI detected
-- **ICU checkbox** (`#b-icu`) — triggers Goti 2-comp model recommendation
-- **Model recommendation banner** (`#b-model-rec-banner`) — shows after calculation
-- **Profile graph canvas** (`#b-profile-canvas`) — drawn with vanilla Canvas 2D API
-- **Tinkerer canvas** (`#b-tink-canvas`) — regimen comparison tool canvas
-
-### Canvas graphs
-There are 4+ `<canvas>` elements for PK graphs. Colors are defined in JS (not CSS), currently calibrated for the light background:
-- `#b-profile-canvas` — drawn in `drawProfileGraph()`
-- Tinkerer canvases — drawn in `drawSSTinkCanvas()` and `drawCompareCanvas()`
-
-If you change background colors significantly, search for hardcoded canvas colors in the JS. Look for `ctx.fillStyle`, `ctx.strokeStyle`, `ctx.fillText` around lines 4916–6100.
-
-### Result cards
-Results are injected as HTML strings via `innerHTML` on `.result-area` divs. The card structure is built inside `renderResults()`, `renderBayesianResults()`, `renderTwoLevels()`, `renderRandomLevel()`. Class names used in rendered output:
-- `.result-card`, `.result-card.highlight`, `.result-card.warning-card`, `.result-card.danger-card`
-- `.metric-row`, `.metric-label`, `.metric-value`, `.metric-unit`
-- `.dose-box`, `.dose-value`, `.dose-unit`
-- `.alert-box`, `.alert-box.warning`, `.alert-box.danger`, `.alert-box.info`
-- `.guideline-box` — ASHP/IDSA 2020 population dosing recommendation
-
----
-
-## What the developer should NOT change
-
-- Any `<script>` content — all clinical math lives there
-- Element `id` attributes used by JS (changing these will break the app)
-- Canvas element IDs
-- Form input IDs that are read by JS (see list below)
-
-### Critical input IDs (JS reads these directly — do not rename)
-```
-Patient: age, sex, weight, height, scr, b-age, b-sex, b-tbw, b-ht, b-scr
-Model: model-select
-Bayesian: b-icu, b-dose, b-tau, b-tinf, b-mic, b-model, b-scr-tbody
-Levels: level1-*, level2-*, b-level rows
-```
-
----
-
-## Cross-platform requirements (from Gus)
-
-Gus uses this on macOS, Windows, and Android (phone/tablet). Requirements:
-- Touch targets ≥ 44px height
-- Works in mobile Safari, Chrome Android, Firefox
-- No horizontal scroll on mobile
-- Readable without zoom at 375px viewport width
-- Print-friendly (there's a `@media print` block — keep it functional)
-
-Current responsive breakpoints:
-```css
-@media (max-width: 768px)   /* mobile layout */
-@media (max-width: 480px)   /* small phone */
-@media print                /* print styles */
-```
-
----
-
-## Testing after UI changes
-
-Run this syntax check after any edits to make sure no JS was accidentally broken:
+`index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
+diverge. After any change, confirm the deployed blob still matches:
 
 ```bash
-node -e "
-const fs=require('fs'),src=fs.readFileSync('vancomycin_calc.html','utf8');
-try{
-  new Function(src.match(/<script[^>]*>([\s\S]*?)<\/script>/g).map(s=>s.replace(/<\/?script[^>]*>/g,'')).join('\n'));
-  console.log('JS syntax: OK');
-}catch(e){console.log('JS BROKEN:',e.message)}"
+git hash-object index.html
 ```
 
-For a full validation run (requires Node.js):
+## Architecture
+
+| Range (approx) | Contents |
+|---|---|
+| 1–1,530 | CSS — `:root` tokens, cards, canvas, KDIGO badges, responsive, `@media print` |
+| 1,530–2,520 | Markup — print report, header, module tabs, the three module panels |
+| 2,520–end | One inline `<script>` — the whole engine and UI |
+
+**Three modules** (tabs, switched by `switchModule()`), not five:
+
+1. **Trough-Based** — deterministic. Four sub-modes via `setCalcMode()`: `initial`,
+   `level` (steady-state trough), `twolevels` (Sawchuk–Zaske), `randomlevel`.
+2. **AUC Precision** — MAP Bayesian, `runBayesian()`. Four priors: Buelga 2005 (1-comp),
+   Goti 2018 (2-comp), Goti-HD, Hughes 2024 (FFM-scaled, class-3 obesity).
+3. **Continue Course** — reload a saved profile's individual PK and re-dose.
+
+Cross-cutting: KDIGO AKI staging from serial creatinine, ARC and very-low-CrCl advisories,
+cystatin C discordance check, `localStorage` profiles, print report.
+
+**Not implemented — do not imply otherwise in the UI:** CRRT, paediatrics, neonates,
+continuous infusion.
+
+## Rules that are not negotiable
+
+1. **Never ship a clinical constant whose provenance you cannot state.** Every model
+   parameter carries a source comment naming the paper, table and value. If you cannot cite
+   it, do not add it. This project has already shipped one unsourced prior — a power model
+   labelled "Buelga" that was not Buelga (see `docs/audit-2026-09.md`, finding A2).
+2. **One implementation per concept.** There is exactly one `calcIBW`, one `calcCrCl`, one
+   `pickCrClWeight`, one SCr policy. Four near-duplicate CrCl functions with three different
+   SCr floor rules is how the same patient got different clearances in different tabs.
+3. **Serum creatinine is used as measured.** Rounding a low SCr up in the elderly is not
+   evidence based and under-doses — 92.9% subtherapeutic in Drugs R&D 2017;17:463-70. The
+   one exception is `SCR_POLICY.GOTI_MODEL`, which exists because Goti's parameters were
+   *estimated* on truncated SCr; it is model fidelity, not clinical rounding, and it must
+   never leak onto the displayed CrCl or another model.
+4. **Validation thresholds are stated in absolute clinical units**, never as a ratio against
+   a moving baseline. A "≥25% better than the population prior" gate fails when you improve
+   the prior. See `docs/validation-threshold-decisions.md`.
+5. **Never hand-copy a constant into the test harness.** `harness_constants.cjs` parses them
+   out of `index.html` and throws if one goes missing.
+6. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
+   in the decisions doc, and record the numbers that justify the change.
+
+## Testing
+
+No install required.
+
 ```bash
-node phase2d_validation.js
-# Expected: 37/37 tests passed
+node phase2d_validation.cjs
 ```
 
----
+| Suite | Expected |
+|---|---|
+| `phase2d_validation.cjs` | **68/68 pass** |
+| `phase3_simulation.cjs` | **21/21 pass** |
+| `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 
-## Contact / context
+Syntax check after any edit:
 
-Built by Gus (clinical pharmacist) with AI assistance in Cowork/Claude Code. Clinical logic validated against:
-- Buelga 2005 population PK model
-- Goti 2018 2-compartment model
-- ASHP/IDSA 2020 vancomycin guidelines
-- KDIGO 2012 AKI staging criteria
+```bash
+node -e "const fs=require('fs');const m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/);try{new Function(m[1]);console.log('JS syntax: OK')}catch(e){console.log('JS BROKEN:',e.message)}"
+```
 
-Questions about clinical logic → Gus. Questions about UI scope → this file has what you need.
+The suites extract the engine from `index.html` into a Node `vm` and test the shipped file.
+`const`/`let` are not visible as sandbox properties — that is why `harness_constants.cjs`
+exists. Pure `function` declarations are.
+
+## UI work
+
+Design language: warm off-white, `Outfit` body / `DM Serif Display` headings / `DM Mono`
+numbers, terracotta accent `--accent-terra: #C96B3C`. Full token set in `:root`.
+
+Used on macOS, Windows and Android. Touch targets ≥44px, no horizontal scroll at 375px,
+readable without zoom, and the `@media print` block must keep working.
+
+Canvas graphs set colours in JS, not CSS (`ctx.fillStyle` / `ctx.strokeStyle`). If you change
+background colours materially, grep for those.
+
+Results are built as HTML strings via `innerHTML`. **Any user-entered value interpolated into
+one must go through `escHtml()`** — most sites currently do not, which is an open item.
+
+## Where things are
+
+| Path | What |
+|---|---|
+| `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
+| `docs/validation-threshold-decisions.md` | The accept/reject record for failing thresholds |
+| `docs/audit/` | Probe scripts that reproduce each finding numerically |
+| `harness_constants.cjs` | Extracts model constants from `index.html` for the suites |
+| `Phase2_Plan.md` | Bayesian architecture reference |
+| `Vancomycin_TDM_Software_Instructions.md` | Clinical source-of-truth |
+| `validation_report.md` | **Phase 1 only, April 2026** — predates the Bayesian engine |
+| `archive/` | Superseded March build and the abandoned React branch |
+
+Reference PDFs live one level up, outside this repo — it is public and they are third-party
+papers.
+
+## Verified model parameters
+
+Goti 2018 is verified parameter-by-parameter against Table 2 and Methods (15 of 16 exact; the
+16th was a defect, fixed). Buelga 2005 is verified against the published general model.
+**Hughes 2024 and the Module-1 `vancopk`/`matzke`/`bauer` models are NOT yet verified** —
+their primary papers are not in `Literature/`. Treat them as unconfirmed until they are.
