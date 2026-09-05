@@ -18,7 +18,7 @@ const OMEGA2_CL_BUELGA = 0.122;
 const OMEGA2_V_BUELGA  = 0.053;
 
 // ─── 1. Extract JS from HTML and run in sandboxed VM ──────────────────
-const htmlPath = path.join(__dirname, 'vancomycin_calc.html');
+const htmlPath = path.join(__dirname, 'index.html');
 const html = fs.readFileSync(htmlPath, 'utf8');
 const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!scriptMatch) { console.error('ERROR: Could not find <script> block in HTML.'); process.exit(1); }

@@ -30,7 +30,7 @@ const vm   = require('vm');
 const path = require('path');
 
 // ─── Sandbox setup ────────────────────────────────────────────────────
-const htmlPath = path.join(__dirname, 'vancomycin_calc.html');
+const htmlPath = path.join(__dirname, 'index.html');
 const html = fs.readFileSync(htmlPath, 'utf8');
 const scriptBlocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 if (!scriptBlocks.length) { console.error('ERROR: No <script> block found.'); process.exit(1); }
