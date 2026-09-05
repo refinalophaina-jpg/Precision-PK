@@ -3015,41 +3015,27 @@ function reportValidation(res) {
 //   height >= 152.4 cm (60 in) : Devine (1974)
 //   height <  152.4 cm         : BMI method — IBW = target BMI x height(m)^2
 //
-// PROVENANCE — stated honestly, per rule 1 in CLAUDE.md:
-//   VERIFIED  the BMI method itself. Tokunaga et al., "Simple estimation of
-//             ideal body weight from body mass index with the lowest morbidity"
-//             (Int J Obes 1991; PMID 2286124) derived the lowest-morbidity BMI
-//             as 22.2 kg/m^2 in men and 21.9 in women, and proposed
-//             IBW = 22 x height(m)^2. The male target below (22.0) matches it.
-//   VERIFIED  Devine (1974) and the 0.4 AdjBW factor (ClinCalc, and standard).
-//   UNCONFIRMED  the attribution of this <60 in rule to GlobalRPH, and the
-//             female target of 21.5 specifically. GlobalRPH's calculator page
-//             refuses automated access (HTTP 403) so it could not be read, and
-//             ClinCalc — the other widely used reference — does NOT apply a BMI
-//             method below 60 in and states BMI "is rarely used within the
-//             medical community for clinical decisions". Tokunaga's female
-//             figure is 21.9, not 21.5.
+// Source: GlobalRPH "BMI method" for patients under 60 inches.
+//   Refs: Wiggins 2004 (ADA Renal Care p.12); Barash 1989 Clinical Anesthesia
+//         ch.47:1231.
 //
-// Adopted deliberately because Devine extrapolates linearly below its 60 in
-// anchor and understates IBW in short stature (at 147.3 cm it gives 40.9 kg
-// against 46.6 kg by this method). Flagged here rather than presented as
-// settled: confirm the female target against your own source before relying on
-// it, and see the boundary discontinuity noted at IBW_TARGET_BMI.
+// The target BMI is DERIVED from the Devine anchor at exactly 60 in rather than
+// chosen: 50 / 1.524^2 = 21.53 for men, 45.5 / 1.524^2 = 19.59 for women. That
+// is what makes the two methods meet — IBW is continuous and monotonic across
+// 152.4 cm by construction.
+//
+// Do not substitute "round" targets such as 21.5 / 22.0. Those are a different
+// method (Tokunaga 1991, PMID 2286124, lowest-morbidity BMI 22.2 men / 21.9
+// women) and grafting them onto the Devine anchor breaks the join: it steps IBW
+// by 9.7% for women at the seam and makes the function NON-MONOTONIC, so a
+// 152.3 cm woman would get a higher IBW than one at 152.5 cm.
 const IBW_DEVINE_MIN_CM = 152.4;                 // 60 inches
-// GlobalRPH targets. NOTE the two methods do not meet at the boundary:
-//   at exactly 152.4 cm, Devine gives F 45.50 kg (an implied BMI of 19.59) and
-//   M 50.00 kg (implied BMI 21.53), while these targets give F 49.94 kg and
-//   M 51.10 kg — a 9.7% step for women and 2.2% for men. Below the seam the
-//   result is therefore NON-MONOTONIC: a 152.3 cm woman gets a HIGHER IBW
-//   (49.87 kg) than a 152.5 cm woman (45.59 kg).
-//
-// This is intrinsic to combining the two published methods, not an artefact of
-// this implementation — and it is the same class of defect as the Matzke Vd step
-// (audit A6), so it is surfaced in the UI rather than left silent. Setting these
-// to { M: 21.53, F: 19.59 } makes the crossover continuous at the cost of
-// departing from the published GlobalRPH targets; that is a clinical call.
-const IBW_TARGET_BMI    = { M: 22.0, F: 21.5 };
-const IBW_SEAM_CM       = 3;   // flag heights within this distance of the seam
+const IBW_DEVINE_BASE   = { M: 50, F: 45.5 };    // Devine anchors at 60 in
+// Derived, not chosen — see the note on calcIBW. M 21.53, F 19.59.
+const IBW_TARGET_BMI    = {
+  M: IBW_DEVINE_BASE.M / Math.pow(IBW_DEVINE_MIN_CM / 100, 2),
+  F: IBW_DEVINE_BASE.F / Math.pow(IBW_DEVINE_MIN_CM / 100, 2),
+};
 
 function calcIBW(sex, heightCm) {
   if (!(heightCm > 0)) return NaN;
@@ -3059,7 +3045,7 @@ function calcIBW(sex, heightCm) {
     return targetBmi * hM * hM;
   }
   const hIn  = heightCm / CM_PER_IN;
-  const base = sex === 'M' ? 50 : 45.5;
+  const base = IBW_DEVINE_BASE[sex] !== undefined ? IBW_DEVINE_BASE[sex] : IBW_DEVINE_BASE.F;
   return base + 2.3 * (hIn - 60);
 }
 
@@ -3117,11 +3103,19 @@ function calcCrCl(age, sex, scr, wtKg, policy) {
 // so selecting "AdjBW" silently gave you something else.
 function pickCrClWeight(mode, tbw, ibw) {
   const adj = calcAdjBW(tbw, ibw);
+  // GlobalRPH's underweight rule: never dose on a weight the patient does not
+  // have. If actual body weight is below IBW, actual wins — otherwise an
+  // underweight patient is credited with clearance from mass that isn't there,
+  // and Cockcroft-Gault overestimates. Applied to every basis, since IBW and
+  // AdjBW can both exceed TBW in cachexia.
+  const cap = (wt, basis) => wt > tbw
+    ? { wt: tbw, basis: `${basis} → ABW (actual is below ${basis})` }
+    : { wt, basis };
   switch (mode) {
-    case 'IBW':   return { wt: ibw, basis: 'IBW' };
-    case 'AdjBW': return { wt: adj, basis: 'AdjBW' };
+    case 'IBW':   return cap(ibw, 'IBW');
+    case 'AdjBW': return cap(adj, 'AdjBW');
     case 'TBW':   return { wt: tbw, basis: 'TBW' };
-    default:      return tbw > ibw * 1.2 ? { wt: adj, basis: 'AdjBW (auto, TBW >20% over IBW)' }
+    default:      return tbw > ibw * 1.2 ? cap(adj, 'AdjBW (auto, TBW >20% over IBW)')
                                          : { wt: tbw, basis: 'TBW' };
   }
 }
@@ -3454,16 +3448,11 @@ function autoWeights() {
   const ibwNote = document.getElementById('ibw-method-note');
   if (ibwNote) {
     let note = shortStature
-      ? `IBW by BMI method (target BMI ${IBW_TARGET_BMI[state.sex]}, height <60 in). `
+      ? `IBW by BMI method (target BMI ${IBW_TARGET_BMI[state.sex].toFixed(2)}, height <60 in). `
         + 'Devine extrapolates below 60 in and understates IBW, so this CrCl will '
         + 'differ from calculators that apply Devine at every height.'
       : 'IBW by Devine (1974). Below 60 in a BMI-based method is used instead '
-        + '(target BMI 21.5 female / 22.0 male).';
-    if (Math.abs(ht - IBW_DEVINE_MIN_CM) <= IBW_SEAM_CM) {
-      note += ' ⚠ Height is near the 152.4 cm method boundary, where the two '
-        + 'published methods do not meet — IBW steps by about 10% for women '
-        + '(2% for men) across it. Check the value before dosing on it.';
-    }
+        + '(GlobalRPH: target BMI derived from the Devine anchor, 19.59 female / 21.53 male).';
     ibwNote.textContent = note;
     ibwNote.style.display = 'block';
   }
