@@ -54,17 +54,22 @@ continuous infusion.
 2. **One implementation per concept.** There is exactly one `calcIBW`, one `calcCrCl`, one
    `pickCrClWeight`, one SCr policy. Four near-duplicate CrCl functions with three different
    SCr floor rules is how the same patient got different clearances in different tabs.
-3. **Serum creatinine is used as measured.** Rounding a low SCr up in the elderly is not
+3. **Recency beats frequency for regimen detection.** The current regimen is the most
+   recent consecutive pattern, never the modal interval over the whole history. A modal
+   reading reported a deliberate q12h→q8h order change as an accidental early dose. And
+   regimen detection is a *presentation* layer: Bayesian fitting always uses the actual
+   timestamps, and history is never rewritten into an idealised schedule.
+4. **Serum creatinine is used as measured.** Rounding a low SCr up in the elderly is not
    evidence based and under-doses — 92.9% subtherapeutic in Drugs R&D 2017;17:463-70. The
    one exception is `SCR_POLICY.GOTI_MODEL`, which exists because Goti's parameters were
    *estimated* on truncated SCr; it is model fidelity, not clinical rounding, and it must
    never leak onto the displayed CrCl or another model.
-4. **Validation thresholds are stated in absolute clinical units**, never as a ratio against
+5. **Validation thresholds are stated in absolute clinical units**, never as a ratio against
    a moving baseline. A "≥25% better than the population prior" gate fails when you improve
    the prior. See `docs/validation-threshold-decisions.md`.
-5. **Never hand-copy a constant into the test harness.** `harness_constants.cjs` parses them
+6. **Never hand-copy a constant into the test harness.** `harness_constants.cjs` parses them
    out of `index.html` and throws if one goes missing.
-6. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
+7. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
    in the decisions doc, and record the numbers that justify the change.
 
 ## Testing
@@ -79,6 +84,7 @@ node phase2d_validation.cjs
 |---|---|
 | `phase2d_validation.cjs` | **68/68 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
+| `phase4_regimen_validation.cjs` | **32/32 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 
 Syntax check after any edit:
