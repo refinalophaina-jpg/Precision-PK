@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Python bytecode from validation tooling
+__pycache__/
+*.pyc
+
+# Local Claude Code permissions (machine-specific)
+.claude/settings.local.json
