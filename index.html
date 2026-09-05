@@ -6544,72 +6544,363 @@ function runBayesian() {
 }
 
 // ─── Infer current regimen SS metrics from last dose + interval ───
+// ══════════════════════════════════════════════════════════════════════════
+//  REGIMEN DETECTION
+// ══════════════════════════════════════════════════════════════════════════
+// THE BUG THIS REPLACES
+// The old logic took the MODAL interval across the whole history as "the
+// regimen", then flagged anything deviating >20% as an accidental early dose.
+// For a real transition 1000 mg q12h -> q8h the intervals were
+// [12.4, 12.4, 12.4, 7.57, 8.02]: modal 12, so the two genuine q8h doses were
+// reported as "given q8h instead of the usual q12h ... not a true q12h trough".
+// A deliberate order change was described to the clinician as an error, and the
+// projection was built on the abandoned regimen.
+//
+// Recency beats frequency: the most recent consecutive intervals define the
+// current regimen; older ones are history.
+//
+// SCOPE. This is a PRESENTATION and PROJECTION layer only. Bayesian fitting
+// continues to use every actual dose, amount, infusion duration and timestamp.
+// Nothing here rewrites history into an idealised schedule.
+const REGIMEN_OPTIONS = {
+  nominalIntervals: [4, 6, 8, 12, 18, 24, 36, 48],
+  relativeIntervalTolerance: 0.15,
+  minimumIntervalToleranceHours: 1,
+  doseSimilarityFraction: 0.2,
+  minimumDoseSimilarityMg: 250,
+  maxIntervalHours: 96,
+};
+
+function intervalTolerance(nominalH, o) {
+  return Math.max(o.minimumIntervalToleranceHours, nominalH * o.relativeIntervalTolerance);
+}
+
+// D7: adjacent tolerance bands can overlap at long intervals (q36h reaches
+// 41.4 h, q48h starts at 40.8 h). Nearest-match resolves it deterministically.
+function closestNominalInterval(observedH, o) {
+  let best = null, bestDiff = Infinity;
+  for (const nominal of o.nominalIntervals) {
+    const diff = Math.abs(observedH - nominal);
+    if (diff <= intervalTolerance(nominal, o) && diff < bestDiff) { best = nominal; bestDiff = diff; }
+  }
+  return best;
+}
+
+function dosesAreSimilar(a, b, reference, o) {
+  const tol = Math.max(o.minimumDoseSimilarityMg, reference * o.doseSimilarityFraction);
+  return Math.abs(a - b) <= tol;
+}
+
+// D2: the prior regimen must be the MODE of the older nominals, not the median.
+// A median over categories can return an interval that never occurred —
+// [12,12,24,24] medians to 18 h, a plausible-looking regimen nobody was on.
+function modeOf(values) {
+  if (!values.length) return null;
+  const freq = new Map();
+  for (const v of values) freq.set(v, (freq.get(v) || 0) + 1);
+  let best = null, bestN = 0;
+  for (const [v, n] of freq) if (n > bestN || (n === bestN && best !== null && v > best)) { best = v; bestN = n; }
+  return best;
+}
+
+function medianOf(values) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
+}
+
+function frequencyLabel(h) {
+  return h == null ? null : 'Q' + (Number.isInteger(h) ? h : h.toFixed(1)) + 'H';
+}
+
+// doses: [{mg, tinfH, timeH}] — timeH is hours on the app's own clock.
+// Returns a structured inference; never throws.
+function detectRegimen(inputDoses, partialOptions) {
+  const o = Object.assign({}, REGIMEN_OPTIONS, partialOptions || {});
+  const empty = {
+    status: 'insufficient_data', intervalHours: null, frequencyLabel: null,
+    maintenanceDoseMg: null, confidence: 'low', regimenStartIndex: null,
+    regimenStartTimeH: null, supportingIntervals: [], priorIntervalHours: null,
+    transitionDetected: false, loadingDoseDetected: false,
+    reasonCodes: ['INSUFFICIENT_MAINTENANCE_DOSES'],
+  };
+
+  // D4: reject impossible timestamps rather than letting them propagate.
+  const doses = (inputDoses || [])
+    .filter(d => d && Number.isFinite(d.mg) && d.mg > 0 && Number.isFinite(d.timeH))
+    .slice()
+    .sort((a, b) => a.timeH - b.timeH);
+  if (doses.length < 3) return Object.assign({}, empty, { maintenanceDoseMg: doses.length ? doses[doses.length-1].mg : null });
+
+  // ── Loading dose ────────────────────────────────────────────────────────
+  // D1: the old spec used firstDose >= median*1.4 while calling anything within
+  // 20% "similar", leaving a dead zone at 1.2-1.4x. The loading test is now the
+  // exact complement of the similarity test: a first dose is a loading dose iff
+  // it is NOT similar to the maintenance doses that follow, and is larger.
+  const laterDoses = doses.slice(1, Math.min(doses.length, 6)).map(d => d.mg);
+  const laterMedian = medianOf(laterDoses);
+  const firstDose = doses[0].mg;
+  const loadingDoseDetected = laterMedian != null
+    && firstDose > laterMedian
+    && !dosesAreSimilar(firstDose, laterMedian, laterMedian, o);
+
+  const maintenanceDoses = doses.slice(loadingDoseDetected ? 1 : 0);
+  if (maintenanceDoses.length < 3) {
+    return Object.assign({}, empty, {
+      loadingDoseDetected,
+      maintenanceDoseMg: medianOf(maintenanceDoses.map(d => d.mg)),
+      reasonCodes: loadingDoseDetected
+        ? ['LIKELY_LOADING_DOSE_EXCLUDED', 'INSUFFICIENT_MAINTENANCE_DOSES']
+        : ['INSUFFICIENT_MAINTENANCE_DOSES'],
+    });
+  }
+
+  const startOffset = loadingDoseDetected ? 1 : 0;
+  const intervals = [];
+  for (let i = 1; i < maintenanceDoses.length; i++) {
+    const h = maintenanceDoses[i].timeH - maintenanceDoses[i-1].timeH;
+    if (!(h > 0) || h > o.maxIntervalHours) continue;      // D4
+    intervals.push({ hours: h, fromIndex: startOffset + i - 1, toIndex: startOffset + i });
+  }
+  if (!intervals.length) return Object.assign({}, empty, { loadingDoseDetected, status: 'irregular', reasonCodes: ['INTERVALS_INCONSISTENT'] });
+
+  const maintenanceDoseMedian = medianOf(maintenanceDoses.slice(-4).map(d => d.mg));
+
+  // ── D9: use every trailing interval that agrees, not a fixed window of 2 ──
+  // More consecutive agreement is stronger evidence and should raise confidence,
+  // not be discarded.
+  const nominals = intervals.map(iv => closestNominalInterval(iv.hours, o));
+  const lastNominal = nominals[nominals.length - 1];
+  let runLength = 0;
+  if (lastNominal !== null) {
+    for (let i = nominals.length - 1; i >= 0 && nominals[i] === lastNominal; i--) runLength++;
+  }
+  const runIntervals = runLength ? intervals.slice(intervals.length - runLength) : [];
+
+  // Doses inside the run must be mutually similar for it to be one regimen.
+  const runDoses = maintenanceDoses.slice(maintenanceDoses.length - (runLength + 1));
+  let runDosesSimilar = runDoses.length >= 2;
+  for (let i = 1; i < runDoses.length && runDosesSimilar; i++) {
+    if (!dosesAreSimilar(runDoses[i-1].mg, runDoses[i].mg, maintenanceDoseMedian, o)) runDosesSimilar = false;
+  }
+
+  const olderNominals = nominals.slice(0, nominals.length - runLength).filter(n => n !== null);
+  const priorInterval = olderNominals.length ? modeOf(olderNominals) : null;   // D2
+
+  if (lastNominal !== null && runLength >= 2 && runDosesSimilar) {
+    const transitionDetected = priorInterval !== null && priorInterval !== lastNominal;
+    const reasonCodes = ['TWO_CONSECUTIVE_RECENT_INTERVALS_MATCH', 'RECENT_DOSES_SIMILAR'];
+    if (transitionDetected) reasonCodes.push('RECENT_PATTERN_OVERRIDES_OLDER_PATTERN');
+    if (loadingDoseDetected) reasonCodes.push('LIKELY_LOADING_DOSE_EXCLUDED');
+
+    // D6: two matching intervals immediately after a ~doubled gap may be
+    // catch-up dosing rather than a new order. Downgrade rather than assert.
+    let confidence = runLength >= 3 ? 'high' : 'high';
+    const beforeRun = intervals[intervals.length - runLength - 1];
+    if (beforeRun && priorInterval && beforeRun.hours >= priorInterval * 1.75 && runLength === 2) {
+      confidence = 'moderate';
+      reasonCodes.push('LIKELY_MISSED_DOSE');
+    }
+    return {
+      status: 'established',
+      intervalHours: lastNominal,
+      frequencyLabel: frequencyLabel(lastNominal),
+      maintenanceDoseMg: maintenanceDoseMedian,
+      confidence,
+      // D5: the regimen is dated from the dose that OPENED the first interval of
+      // the run — i.e. the last dose of the old spacing is when the new spacing
+      // began being applied. Documented because "started at X" and "first dose
+      // at the new interval" are different claims.
+      regimenStartIndex: runIntervals[0].fromIndex,
+      regimenStartTimeH: doses[runIntervals[0].fromIndex].timeH,
+      supportingIntervals: runIntervals.map(iv => Math.round(iv.hours * 100) / 100),
+      priorIntervalHours: priorInterval,
+      transitionDetected,
+      loadingDoseDetected,
+      reasonCodes,
+    };
+  }
+
+  // ── Moderate: only the latest interval matches something ────────────────
+  const latest = intervals[intervals.length - 1];
+  if (lastNominal !== null) {
+    return {
+      status: 'possible_transition',
+      intervalHours: lastNominal,
+      frequencyLabel: frequencyLabel(lastNominal),
+      maintenanceDoseMg: maintenanceDoseMedian,
+      confidence: 'moderate',
+      regimenStartIndex: latest.fromIndex,
+      regimenStartTimeH: doses[latest.fromIndex].timeH,
+      supportingIntervals: [Math.round(latest.hours * 100) / 100],
+      priorIntervalHours: priorInterval,
+      transitionDetected: false,
+      loadingDoseDetected,
+      reasonCodes: ['ONE_RECENT_INTERVAL_MATCHES'].concat(loadingDoseDetected ? ['LIKELY_LOADING_DOSE_EXCLUDED'] : []),
+    };
+  }
+
+  return Object.assign({}, empty, {
+    status: 'irregular',
+    maintenanceDoseMg: maintenanceDoseMedian,
+    priorIntervalHours: priorInterval,
+    loadingDoseDetected,
+    reasonCodes: ['INTERVALS_INCONSISTENT'].concat(loadingDoseDetected ? ['LIKELY_LOADING_DOSE_EXCLUDED'] : []),
+  });
+}
+
+// ── Level timing ──────────────────────────────────────────────────────────
+// D3: the reference dose is the most recent dose AT OR BEFORE the level, not
+// simply the last dose on record. Drawing a trough and then hanging the next
+// dose is routine; using the later dose yields a negative elapsed time and a
+// nonsensical classification.
+function doseBefore(doses, levelTimeH) {
+  let best = null;
+  for (const d of doses) if (d.timeH <= levelTimeH && (!best || d.timeH > best.timeH)) best = d;
+  return best;
+}
+
+function interpretLevelTiming(levelTimeH, doses, regimenIntervalHours) {
+  const ref = doseBefore(doses, levelTimeH);
+  if (!ref) {
+    return { classification: 'before_first_dose', hoursFromDoseStart: null,
+             hoursFromInfusionEnd: null, intervalFractionElapsed: null,
+             hoursUntilNominalNextDose: null, nearTrough: false, referenceDose: null };
+  }
+  const hoursFromDoseStart = levelTimeH - ref.timeH;
+  const tinf = Number.isFinite(ref.tinfH) ? ref.tinfH : null;
+  const hoursFromInfusionEnd = tinf === null ? null : hoursFromDoseStart - tinf;
+  const base = { hoursFromDoseStart, hoursFromInfusionEnd, referenceDose: ref };
+
+  if (tinf !== null && hoursFromDoseStart < tinf) {
+    return Object.assign({ classification: 'during_infusion', intervalFractionElapsed: null,
+                           hoursUntilNominalNextDose: null, nearTrough: false }, base);
+  }
+  if (!regimenIntervalHours) {
+    return Object.assign({
+      classification: (hoursFromInfusionEnd !== null && hoursFromInfusionEnd < 0.5)
+        ? 'immediate_post_infusion' : 'unknown',
+      intervalFractionElapsed: null, hoursUntilNominalNextDose: null, nearTrough: false }, base);
+  }
+  const intervalFractionElapsed = hoursFromDoseStart / regimenIntervalHours;
+  const hoursUntilNominalNextDose = regimenIntervalHours - hoursFromDoseStart;
+  const nearTrough = hoursUntilNominalNextDose >= 0
+    && (intervalFractionElapsed >= 0.85 || hoursUntilNominalNextDose <= 1);
+
+  let classification;
+  if (hoursFromDoseStart > regimenIntervalHours)                       classification = 'after_expected_next_dose';
+  else if (hoursFromInfusionEnd !== null && hoursFromInfusionEnd < 0.5) classification = 'immediate_post_infusion';
+  else if (nearTrough)                                                  classification = 'near_trough';
+  else if (intervalFractionElapsed < 0.33)                              classification = 'early_interval';
+  else if (intervalFractionElapsed < 0.75)                              classification = 'mid_interval';
+  else                                                                  classification = 'late_interval';
+
+  return Object.assign({ classification, intervalFractionElapsed,
+                         hoursUntilNominalNextDose, nearTrough }, base);
+}
+
+// Neutral, non-causal wording. Never says a level "reflects extra accumulation
+// from a short interval" — that asserts intent the data cannot establish.
+function regimenNarrative(reg, timing) {
+  if (!reg) return '';
+  const f = (x, d=1) => Number.isFinite(x) ? x.toFixed(d) : '—';
+  const dose = reg.maintenanceDoseMg != null ? `${reg.maintenanceDoseMg.toFixed(0)} mg ` : '';
+  let s;
+  if (reg.status === 'established' && reg.transitionDetected) {
+    s = `Regimen transition detected: recent administrations are consistent with a change from `
+      + `approximately ${frequencyLabel(reg.priorIntervalHours)} to ${reg.frequencyLabel}. `
+      + `Current regimen read as ${dose}${reg.frequencyLabel}.`;
+  } else if (reg.status === 'established') {
+    s = `Current regimen: ${dose}${reg.frequencyLabel}, consistent across the most recent `
+      + `${reg.supportingIntervals.length} intervals.`;
+  } else if (reg.status === 'possible_transition') {
+    s = `Recent dosing may represent a change to ${reg.frequencyLabel}. Only one recent interval `
+      + `supports it — confirm the intended maintenance interval.`;
+  } else if (reg.status === 'irregular') {
+    s = `Recent intervals do not consistently match a standard schedule. Select the intended `
+      + `future interval before relying on a steady-state projection.`;
+  } else {
+    s = `Not enough maintenance doses to establish a regimen.`;
+  }
+  if (timing && timing.classification && timing.hoursFromDoseStart != null) {
+    const lbl = {
+      during_infusion: 'drawn during the infusion — not interpretable as a trough',
+      immediate_post_infusion: 'an immediate post-infusion sample',
+      early_interval: 'an early-interval concentration',
+      mid_interval: 'a mid-interval concentration',
+      late_interval: 'a late-interval concentration',
+      near_trough: `a near-trough concentration`,
+      after_expected_next_dose: 'drawn after the next dose was due',
+      before_first_dose: 'drawn before the first recorded dose',
+    }[timing.classification] || 'of uncertain timing';
+    s += ` The level was collected ${f(timing.hoursFromDoseStart)} h after the most recent dose`;
+    if (timing.hoursUntilNominalNextDose != null && timing.hoursUntilNominalNextDose >= 0) {
+      s += `, about ${f(timing.hoursUntilNominalNextDose)} h before the next nominal `
+        + `${reg.frequencyLabel || ''} dose`;
+    }
+    s += ` — ${lbl}. Bayesian fitting uses the actual administration and level times.`;
+  }
+  return s;
+}
+
 function inferCurrentRegimen(doses, CL_ind, V_ind, goti) {
   if (!doses.length) return null;
   const last  = doses[doses.length-1];
   const dose  = last.mg;
   const tinfH = last.tinfH;
 
-  // ── Compute all consecutive intervals ──
-  let tau = null, lastIntervalH = null, irregularFlag = null;
-  let modalTau = null, snapLastH = null;
+  // Recency-based detection replaces the old modal-interval logic. `regimen`
+  // carries the structured inference; the legacy fields below are kept so the
+  // existing renderer keeps working.
+  const regimen = detectRegimen(doses);
+  let tau = regimen.intervalHours;
+  const modalTau = regimen.priorIntervalHours;
+  const lastIntervalH = doses.length >= 2
+    ? doses[doses.length-1].timeH - doses[doses.length-2].timeH
+    : null;
 
-  if (doses.length >= 2) {
-    const intervals = [];
+  // "Irregular" now means the schedule genuinely cannot be read — NOT that the
+  // most recent doses disagree with an older dominant pattern. A detected
+  // transition is a finding to report, not an error to warn about.
+  const irregularFlag = (regimen.status === 'irregular') ? true : null;
+  const snapLastH = regimen.status === 'irregular' && lastIntervalH != null
+    ? parseFloat(lastIntervalH.toFixed(1)) : null;
+
+  // Fall back to the median observed interval so a projection is still possible
+  // when no nominal schedule matches.
+  if (!tau && doses.length >= 2) {
+    const raw = [];
     for (let i = 1; i < doses.length; i++) {
-      const raw = doses[i].timeH - doses[i-1].timeH;
-      if (raw > 1 && raw < 72) intervals.push(raw);
+      const h = doses[i].timeH - doses[i-1].timeH;
+      if (h > 0 && h < 96) raw.push(h);
     }
-    lastIntervalH = intervals[intervals.length - 1];
-
-    // Modal interval: snap each to nearest standard, pick most frequent
-    const STDS = [6, 8, 12, 18, 24, 36, 48];
-    const snapped = intervals.map(h => {
-      const s = STDS.find(x => Math.abs(h - x) < 2.0);
-      return s || parseFloat(h.toFixed(1));
-    });
-    // Count frequency
-    const freq = {};
-    snapped.forEach(s => { freq[s] = (freq[s] || 0) + 1; });
-    const freqEntries = Object.entries(freq).sort((a,b) => b[1]-a[1]);
-    const topCount    = freqEntries[0][1];
-    let modal;
-    if (freqEntries.filter(e => e[1] === topCount).length > 1) {
-      // Tie — JS numeric key ordering can be misleading; fall back to median of raw intervals
-      const sortedRaw = [...intervals].sort((a,b) => a-b);
-      const medianRaw = sortedRaw[Math.floor(sortedRaw.length / 2)];
-      modal = STDS.find(x => Math.abs(medianRaw - x) < 2.5) || parseFloat(medianRaw.toFixed(1));
-    } else {
-      modal = parseFloat(freqEntries[0][0]);
-    }
-    tau = modal;
-    modalTau = modal;
-
-    // Flag if last interval deviates >20% from modal
-    if (lastIntervalH != null && Math.abs(lastIntervalH - modal) / modal > 0.20) {
-      snapLastH = STDS.find(x => Math.abs(lastIntervalH - x) < 2.0) || parseFloat(lastIntervalH.toFixed(1));
-      irregularFlag = true;  // detailed message rendered in renderBayesianResults using the numeric fields
-    }
+    tau = medianOf(raw);
   }
+  const doseForProjection = regimen.maintenanceDoseMg != null ? regimen.maintenanceDoseMg : dose;
 
   if (!tau || tau <= tinfH) return { dose, tinfH, tau, modalTau, lastIntervalH, snapLastH,
-    auc24:null, auc24_irregular:null, Ctrough:null, Cpeak:null, irregularFlag };
+    auc24:null, auc24_irregular:null, Ctrough:null, Cpeak:null, irregularFlag, regimen };
 
-  const auc24 = dose * (24/tau) / CL_ind;
-  // AUC24 equivalent during the actual irregular cycle (what happened in that one short interval)
+  // Project on the DETECTED maintenance dose, not merely the last dose given —
+  // the last dose may be a one-off. Both are reported.
+  const projDose = doseForProjection;
+  const auc24 = projDose * (24/tau) / CL_ind;
+  // Exposure during the actual most recent cycle, when that cycle genuinely
+  // does not match any standard schedule.
   const auc24_irregular = (irregularFlag && lastIntervalH > tinfH)
-    ? dose * (24/lastIntervalH) / CL_ind
+    ? projDose * (24/lastIntervalH) / CL_ind
     : null;
 
   let Ctrough, Cpeak;
 
   if (goti) {
     const { Vc_ind, Vp_ind, Q } = goti;
-    Ctrough = ssCtrough2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, Q);
-    Cpeak   = ssPeak2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, Q);
+    Ctrough = ssCtrough2comp(projDose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, Q);
+    Cpeak   = ssPeak2comp(projDose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, Q);
   } else {
     const kel   = CL_ind / V_ind;
-    const R0    = dose / tinfH;
+    const R0    = projDose / tinfH;
     const denom = 1 - Math.exp(-kel * tau);
     if (denom >= 1e-10) {
       const Cpeak_inf = (R0/(kel*V_ind))*(1-Math.exp(-kel*tinfH));
@@ -6617,8 +6908,8 @@ function inferCurrentRegimen(doses, CL_ind, V_ind, goti) {
       Cpeak   = Cpeak_inf / denom;
     }
   }
-  return { dose, tinfH, tau, modalTau, lastIntervalH, snapLastH,
-           auc24, auc24_irregular, Ctrough, Cpeak, irregularFlag };
+  return { dose: projDose, lastDoseMg: dose, tinfH, tau, modalTau, lastIntervalH, snapLastH,
+           auc24, auc24_irregular, Ctrough, Cpeak, irregularFlag, regimen };
 }
 
 // ─── Render Bayesian results ───
@@ -6754,39 +7045,63 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     <div style="font-size:0.65rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:-4px">${curLabel}</div>`;
 
   // Irregular dosing interval warning — expanded dual-AUC display
-  if (cur && cur.irregularFlag) {
-    const snapH  = parseFloat(cur.snapLastH);
-    const modal  = cur.modalTau;
-    const aucReg = cur.auc24 != null ? cur.auc24.toFixed(0) : '—';
-    const aucIrr = cur.auc24_irregular != null ? cur.auc24_irregular.toFixed(0) : '—';
-    const aucIrrColor = cur.auc24_irregular > 600 ? 'var(--danger)' : cur.auc24_irregular > 400 ? 'var(--accent-amber)' : 'var(--text-secondary)';
-    const aucRegColor = cur.auc24 > 600 ? 'var(--danger)' : cur.auc24 > 400 ? 'var(--success)' : 'var(--accent-amber)';
+  // ── Regimen banner ──────────────────────────────────────────────────────
+  // Three concepts kept visibly separate, so a change of order is never
+  // reported as a dosing error again:
+  //   1. what the patient actually received (fitted from real timestamps)
+  //   2. the CURRENT INTENDED regimen (detected, with confidence)
+  //   3. the RECOMMENDED future regimen (rendered elsewhere)
+  const reg = cur && cur.regimen;
+  if (reg && reg.status !== 'insufficient_data') {
+    const lastLevelT = levels.length ? levels[levels.length-1].timeH : null;
+    const timing = lastLevelT != null ? interpretLevelTiming(lastLevelT, doses, reg.intervalHours) : null;
+    const isIrregular = reg.status === 'irregular';
+    const isNotable   = isIrregular || reg.transitionDetected || reg.status === 'possible_transition';
+    const accent = isIrregular ? 'var(--danger)'
+                 : reg.status === 'possible_transition' ? 'var(--accent-amber)'
+                 : 'var(--accent-sage)';
+    const heading = isIrregular ? 'Irregular dosing — no consistent schedule'
+                  : reg.transitionDetected ? 'Regimen transition detected'
+                  : reg.status === 'possible_transition' ? 'Possible regimen change'
+                  : 'Current regimen';
+    const confChip = `<span style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.05);color:var(--text-muted)">${escHtml(reg.confidence)} confidence</span>`;
 
-    html += `<div class="diverge-warning" style="background:rgba(191,133,48,0.07);border-color:rgba(191,133,48,0.25);color:var(--accent-amber)">
-      <div style="font-weight:700;margin-bottom:8px">⚠ Irregular dosing interval detected</div>
+    html += `<div class="diverge-warning" style="background:rgba(0,0,0,0.02);border-color:${accent};color:${accent}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-weight:700">${isNotable ? '⚠ ' : ''}${escHtml(heading)}</span>${confChip}
+      </div>
       <div style="font-size:0.78rem;line-height:1.6;color:var(--text-secondary);margin-bottom:10px">
-        Last dose was given <strong style="color:var(--accent-amber)">Q${snapH.toFixed(0)}H</strong> (${cur.lastIntervalH.toFixed(1)}h) instead of the usual
-        <strong style="color:var(--accent-amber)">Q${modal}H</strong>. The measured level reflects extra accumulation
-        from this short interval — it is <em>not</em> a true Q${modal}H trough. The current regimen AUC and trough
-        below are projected at <strong>regular Q${modal}H</strong> going forward using this patient's fitted clearance.
+        ${escHtml(regimenNarrative(reg, timing))}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        <div style="background:rgba(240,239,235,0.5);border-radius:6px;padding:10px 12px;border:1px solid rgba(191,133,48,0.25)">
-          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">AUC₂₄ — this irregular Q${snapH.toFixed(0)}H cycle</div>
-          <div style="font-family:'DM Mono',monospace;font-size:1.1rem;font-weight:600;color:${aucIrrColor}">${aucIrr}</div>
-          <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · what happened in this one cycle</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px">
+        <div style="background:rgba(240,239,235,0.5);border-radius:6px;padding:10px 12px;border:1px solid rgba(0,0,0,0.06)">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Detected current regimen</div>
+          <div style="font-family:'DM Mono',monospace;font-size:1.05rem;font-weight:600;color:var(--text-primary)">${reg.maintenanceDoseMg != null ? reg.maintenanceDoseMg.toFixed(0)+' mg' : '—'} ${escHtml(reg.frequencyLabel || '')}</div>
+          <div style="font-size:0.64rem;color:var(--text-muted)">${reg.supportingIntervals.length ? 'intervals '+reg.supportingIntervals.map(h=>h.toFixed(2)+'h').join(' · ') : 'no consistent interval'}</div>
         </div>
-        <div style="background:rgba(240,239,235,0.5);border-radius:6px;padding:10px 12px;border:1px solid rgba(191,133,48,0.25)">
-          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">AUC₂₄ — ongoing regular Q${modal}H</div>
-          <div style="font-family:'DM Mono',monospace;font-size:1.1rem;font-weight:600;color:${aucRegColor}">${aucReg}</div>
-          <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · projected if schedule is regular</div>
+        ${reg.priorIntervalHours != null && reg.transitionDetected ? `
+        <div style="background:rgba(240,239,235,0.5);border-radius:6px;padding:10px 12px;border:1px solid rgba(0,0,0,0.06)">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Previous regimen</div>
+          <div style="font-family:'DM Mono',monospace;font-size:1.05rem;font-weight:600;color:var(--text-secondary)">${escHtml(frequencyLabel(reg.priorIntervalHours))}</div>
+          <div style="font-size:0.64rem;color:var(--text-muted)">superseded by the recent pattern</div>
+        </div>` : ''}
+        <div style="background:rgba(240,239,235,0.5);border-radius:6px;padding:10px 12px;border:1px solid rgba(0,0,0,0.06)">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Projected AUC₂₄ on this regimen</div>
+          <div style="font-family:'DM Mono',monospace;font-size:1.05rem;font-weight:600;color:${cur.auc24 > 600 ? 'var(--danger)' : cur.auc24 >= 400 ? 'var(--success)' : 'var(--accent-amber)'}">${cur.auc24 != null ? cur.auc24.toFixed(0) : '—'}</div>
+          <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · this patient's fitted CL</div>
         </div>
+        ${isIrregular && cur.auc24_irregular != null ? `
+        <div style="background:rgba(240,239,235,0.5);border-radius:6px;padding:10px 12px;border:1px solid rgba(0,0,0,0.06)">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Actual most recent cycle</div>
+          <div style="font-family:'DM Mono',monospace;font-size:1.05rem;font-weight:600;color:${cur.auc24_irregular > 600 ? 'var(--danger)' : 'var(--text-secondary)'}">${cur.auc24_irregular.toFixed(0)}</div>
+          <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · over the last ${cur.lastIntervalH != null ? cur.lastIntervalH.toFixed(1) : '—'} h</div>
+        </div>` : ''}
       </div>
-      <div style="font-size:0.72rem;color:var(--text-muted);line-height:1.5;border-top:1px solid rgba(224,159,62,0.15);padding-top:8px">
-        <strong style="color:var(--text-secondary)">Why the non-Bayesian tinkerer shows a lower AUC:</strong>
-        The Bayesian model fits this patient's individual clearance (CL<sub>ind</sub> = ${CL_ind.toFixed(2)} L/h) from the actual measured level.
-        The population tinkerer uses demographic-based CL (~4–6 L/h for typical renal function).
-        If CL<sub>ind</sub> is substantially lower than population, the Bayesian AUC will be correspondingly higher — this reflects genuine reduced clearance, not an artifact of irregular dosing.
+      ${isIrregular ? `<div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5;margin-bottom:8px">
+        Select the intended future interval before relying on a steady-state projection.
+      </div>` : ''}
+      <div style="font-size:0.68rem;color:var(--text-muted);line-height:1.5;border-top:1px solid rgba(0,0,0,0.06);padding-top:8px">
+        ${escHtml(reg.reasonCodes.join(' · '))}
       </div>
     </div>`;
   }

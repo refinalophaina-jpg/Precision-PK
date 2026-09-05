@@ -82,8 +82,19 @@ function extract() {
     CM_PER_IN:         num(src, 'CM_PER_IN'),
     ML_MIN_TO_L_H:     num(src, 'ML_MIN_TO_L_H'),
     IBW_DEVINE_MIN_CM: num(src, 'IBW_DEVINE_MIN_CM'),
-    IBW_TARGET_BMI_M:  objField(src, 'IBW_TARGET_BMI', 'M'),
-    IBW_TARGET_BMI_F:  objField(src, 'IBW_TARGET_BMI', 'F'),
+    IBW_DEVINE_BASE_M: objField(src, 'IBW_DEVINE_BASE', 'M'),
+    IBW_DEVINE_BASE_F: objField(src, 'IBW_DEVINE_BASE', 'F'),
+    // IBW_TARGET_BMI is DERIVED in the app (base / (152.4/100)^2) rather than
+    // written as a literal, so it is derived identically here instead of being
+    // parsed. Deriving it the same way is the point: if the app ever switches to
+    // hand-picked targets, these stop matching calcIBW at the seam and the
+    // continuity test in phase2d fails — which is the behaviour we want.
+    get IBW_TARGET_BMI_M() {
+      return this.IBW_DEVINE_BASE_M / Math.pow(this.IBW_DEVINE_MIN_CM / 100, 2);
+    },
+    get IBW_TARGET_BMI_F() {
+      return this.IBW_DEVINE_BASE_F / Math.pow(this.IBW_DEVINE_MIN_CM / 100, 2);
+    },
   };
 }
 
