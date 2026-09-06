@@ -651,16 +651,23 @@ test('hughesPopPK at FFM=70, CrCL=100 reproduces base parameters', () => {
   assertClose(pk.TVQ,  HUGHES_TVQ,  0.001, 'TVQ anchor');
   assertClose(pk.TVVp, HUGHES_TVVP, 0.001, 'TVVp anchor');
 });
-test('hughesPopPK scales linearly with FFM, exponentially with CrCL', () => {
+// 2026-09, audit A9. This test previously asserted that CL and Q "scale linearly
+// with FFM" — naming the very term Hughes 2024 tested and EXCLUDED:
+//   "the inclusion of the allometric exponent on clearance (CL) and
+//    intercompartmental clearance (Q) considerably worsened the model fit ...
+//    therefore, this exponent was excluded."
+// Table 2 carries no u1 row. FFM reaches CL only through the Cockcroft-Gault
+// input, which is computed on FFM; a second FFM term double-counted body size.
+// Re-pointed at the published structure, with the intent preserved.
+test('hughesPopPK: FFM scales the VOLUMES only; CL and Q carry no FFM term', () => {
   const pk1 = hughesPopPK(100, 70);
   const pk2 = hughesPopPK(100, 140);   // double FFM
-  assertClose(pk2.TVCL / pk1.TVCL, 2.0, 0.001, 'CL scales linear in FFM (CrCL term unchanged)');
-  assertClose(pk2.TVVc / pk1.TVVc, 2.0, 0.001, 'Vc scales linear in FFM');
-  assertClose(pk2.TVQ  / pk1.TVQ,  2.0, 0.001, 'Q  scales linear in FFM');
-  assertClose(pk2.TVVp / pk1.TVVp, 2.0, 0.001, 'Vp scales linear in FFM');
+  assertClose(pk2.TVVc / pk1.TVVc, 2.0, 0.001, 'Vc scales linear in FFM (u2 = 1.0 FIX)');
+  assertClose(pk2.TVVp / pk1.TVVp, 2.0, 0.001, 'Vp scales linear in FFM (u2 = 1.0 FIX)');
+  assertClose(pk2.TVCL / pk1.TVCL, 1.0, 1e-9, 'CL invariant to FFM at fixed CrCl (u1 excluded)');
+  assertClose(pk2.TVQ  / pk1.TVQ,  1.0, 1e-9, 'Q  invariant to FFM (u1 excluded)');
 
   const pk3 = hughesPopPK(50, 70);     // half CrCL
-  // CL ratio = 0.5^0.887 ≈ 0.5403
   assertClose(pk3.TVCL / pk1.TVCL, Math.pow(0.5, HUGHES_CRCL_EXP), 0.001, 'CL ∝ (CrCL)^0.887');
   assert(pk3.TVVc === pk1.TVVc, 'Vc independent of CrCL');
 });
@@ -671,12 +678,14 @@ test('Class 3 obese male 140 kg, BMI 45, CrCL_FFM ≈ 80: typical PK in expected
   // Cockcroft-Gault with FFM, age 56, SCr 0.85 → CrCL = (140-56)*79.13*1.0 / (72*0.85) = 6647 / 61.2 = 108.6
   // For test: pick CrCL_FFM = 80 directly
   const pk = hughesPopPK(80, 79.13);
-  // TVCL = 5.09 * (79.13/70) * (80/100)^0.887 = 5.09 * 1.1304 * 0.8194 ≈ 4.715
-  assertClose(pk.TVCL, 4.715, 0.05, 'TVCL ~4.7 L/h');
-  // TVVc = 64.9 * 1.1304 = 73.36
+  // Expectations recomputed for the published structure (audit A9): the FFM term
+  // is on the volumes only.
+  // TVCL = 5.09 * (80/100)^0.887 = 5.09 * 0.8204 ≈ 4.176   (no FFM factor)
+  assertClose(pk.TVCL, 4.176, 0.05, 'TVCL ~4.2 L/h');
+  // TVVc = 64.9 * (79.13/70) = 64.9 * 1.1304 = 73.36
   assertClose(pk.TVVc, 73.36, 0.5, 'TVVc ~73 L');
-  // TVQ = 6.36 * 1.1304 = 7.189
-  assertClose(pk.TVQ,  7.189, 0.05, 'TVQ ~7.2 L/h');
+  // TVQ = 6.36, unscaled
+  assertClose(pk.TVQ,  6.36, 0.05, 'TVQ 6.36 L/h (no FFM term)');
   // TVVp = 66.4 * 1.1304 = 75.05
   assertClose(pk.TVVp, 75.05, 0.5, 'TVVp ~75 L');
 });

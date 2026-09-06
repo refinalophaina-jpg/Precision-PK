@@ -3077,11 +3077,24 @@ function calcAdjBW(tbw, ibw) {
 // Goti path and never touches the displayed CrCl or any other model.
 const SCR_POLICY = { ACTUAL: 'actual', GOTI_MODEL: 'goti' };
 
-// Goti 2018, Methods: "Serum creatinine (Scr) values were truncated to 1 mg/dl
-// if the Scr value was <1 mg/dl and the patient's age was >60 y". The code
-// previously used >65, inflating prior CL by up to ~74% in the 61-65 band.
+// Goti 2018 Methods reads ">60 y", but that sentence is a KNOWN TYPO. The 2019
+// erratum corrects it:
+//
+//   Ther Drug Monit 2019 Aug;41(4):549. DOI 10.1097/FTD.0000000000000666
+//   PubMed 31306395. Corrects Ther Drug Monit 2018;40(2):212-221.
+//   "...there was a typographical error in the Methods section in the sentence
+//    'Serum creatinine values were truncated to 1 mg/dL if the SCr value was
+//    <1 mg/dL and the patient's age was >60 years...'. This should have
+//    indicated the patient's age as >65 years, not >60 years. This is only an
+//    error in description, and does not change the data or conclusions."
+//
+// So the threshold is 65. The 2026-09 audit flagged this as a defect against the
+// primary text and briefly changed it to 60 before the erratum was obtained —
+// which UNDER-dosed patients aged 61-65 with SCr <1.0 by up to ~43% on prior
+// clearance. Reverted. Do not "correct" it back to 60 by reading the 2018
+// Methods alone; the erratum is the governing text.
 const GOTI_SCR_FLOOR     = 1.0;
-const GOTI_SCR_FLOOR_AGE = 60;
+const GOTI_SCR_FLOOR_AGE = 65;
 
 function applyScrPolicy(scr, age, policy) {
   if (policy === SCR_POLICY.GOTI_MODEL && scr < GOTI_SCR_FLOOR && age > GOTI_SCR_FLOOR_AGE) {
@@ -3164,6 +3177,11 @@ function calcCLv(model, crcl, tbw) {
     // Buelga 2005 (AAC 2005;49:4934-41), general model, VERIFIED against source:
     // "CL (liters/h) = 1.08 x CLCR(Cockcroft and Gault) (liters/h)"
     case 'buelga':  return (1.08 * crcl) * ML_MIN_TO_L_H;
+    // VancoPK: CLv = 0.75(CrCl) + 4, per vancopk.com's own documentation, which
+    // states the equation was "updated November 2023 ... derived using linear
+    // regression of vancomycin clearance and creatinine clearance". Site
+    // documentation, NOT peer-reviewed — Fewel 2021 establishes the Vd model
+    // only. Provenance is stateable but weaker than the other three.
     case 'vancopk': return (0.75 * crcl + 4) * ML_MIN_TO_L_H;
     case 'matzke':  return (0.689 * crcl + 3.66) * ML_MIN_TO_L_H;
     // Bauer: the /tbw then xtbw cancel algebraically; kept in this form to match
@@ -3178,11 +3196,20 @@ function calcVd(model, age, tbw, crcl) {
   switch(model) {
     // Buelga 2005, general model: "V (liters) = 0.98 x TBW"
     case 'buelga':  return 0.98 * tbw;
+    // Fewel 2021 (J Clin Pharm Ther 46:1426-32), VERIFIED verbatim:
+    // "Vd (L) = 0.29(age) + 0.33(total BW in kg) + 11"
     case 'vancopk': return 0.29 * age + 0.33 * tbw + 11;
+    // Bauer, Pharmacotherapy 11e ch.e5 (textbook): Vd = 0.7 L/kg.
     case 'bauer':   return 0.70 * tbw;
     // Matzke steps at CrCl 60: Vd falls ~19% across a 0.0001 mL/min boundary.
     // Faithful to the published model; surfaced in the UI (audit A6) rather than
     // smoothed, because smoothing it would no longer be Matzke.
+    // AUDIT A10: Matzke reports Vd 0.72 L/kg in the higher-CrCl group (mean 87.6)
+    // and 0.89 in the lower (mean 37.4) — but states plainly: "There was no
+    // significant relationship between the steady-state volume of distribution
+    // and CLCR." Switching on CrCl 60 therefore encodes a covariate the authors
+    // explicitly disclaim. Kept for continuity with prior results and surfaced
+    // in the UI; a single pooled Vd would be the defensible alternative.
     case 'matzke':  return (crcl > MATZKE_VD_CRCL_BREAK ? 0.72 : 0.89) * tbw;
     default:        return 0.29 * age + 0.33 * tbw + 11;
   }
@@ -5463,11 +5490,11 @@ const SIGMA_ADD_GOTI  = 3.4;
 
 /// ─── Goti-specific CrCL (erratum SCr floor: if SCr<1 AND age>65 → SCr=1) ───
 // scrOverride: optional — used when serial SCr is active
-// AUDIT A1. Goti's SCr truncation is applied here and ONLY here, because the
+// Goti SCr truncation is applied here and ONLY here, because the
 // model's parameters were estimated on a truncated-SCr dataset — it is part of
-// the model's input specification, not a clinical rounding rule. The threshold
-// was >65; Goti 2018 Methods says >60. That five-year band inflated prior CL by
-// up to ~74% (63F, SCr 0.5). See docs/audit-2026-09.md finding A1.
+// the model's input specification, not a clinical rounding rule. Threshold 65
+// per the 2019 erratum (see GOTI_SCR_FLOOR_AGE) — NOT the 2018 Methods text,
+// which contains a typo the erratum corrects.
 function getGotiCrCl(scrOverride) {
   const p = readBayesPatient(scrOverride);
   if (!p) return null;
@@ -5664,13 +5691,29 @@ function getHughesCrCl(scrOverride) {
   return Math.max(CRCL_MODEL_FLOOR, calcCrCl(p.age, p.sex, p.scr, ffm, SCR_POLICY.ACTUAL));
 }
 
-// Hughes population PK (returns typical-value parameters scaled to FFM)
+// Hughes population PK (FFM scales the VOLUMES only — see A9 below)
 function hughesPopPK(crclFFM, ffm) {
   const ffmRatio = ffm / 70;
+  // AUDIT A9. The allometric exponent on CL and Q was tested and REMOVED by the
+  // authors. Hughes 2024, Results (parametric arm):
+  //   "the inclusion of the allometric exponent on clearance (CL) and
+  //    intercompartmental clearance (Q) considerably worsened the model fit when
+  //    fixed and was estimated to be close to zero when estimated; therefore,
+  //    this exponent was excluded."
+  // and the nonparametric arm: "once CrCl was included as a predictor of CL, the
+  //    inclusion of the allometric exponent on CL and Q did not improve the model
+  //    and was, therefore, removed, resulting in the same final structure as the
+  //    parametric models."
+  // Table 2 lists only u2 (FFM on Vc/Vp, FIXed at 1.0) and u3 (CrCl on CL) —
+  // there is no u1 row because u1 is not in the final model.
+  //
+  // FFM still reaches clearance, through the Cockcroft-Gault input, which is
+  // computed on FFM (getHughesCrCl). That is exactly why a second FFM term on CL
+  // added nothing to the fit. Applying it as well double-counted body size.
   return {
-    TVCL: HUGHES_TVCL * ffmRatio * Math.pow(crclFFM / 100, HUGHES_CRCL_EXP),
+    TVCL: HUGHES_TVCL * Math.pow(crclFFM / 100, HUGHES_CRCL_EXP),
     TVVc: HUGHES_TVVC * ffmRatio,
-    TVQ:  HUGHES_TVQ  * ffmRatio,
+    TVQ:  HUGHES_TVQ,
     TVVp: HUGHES_TVVP * ffmRatio
   };
 }
