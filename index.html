@@ -8646,6 +8646,16 @@ function snapshotBayesForm() {
       Q:      bState.result.goti.Q   // Phase 3: required so Hughes (Q=6.36) reloads correctly
     } : null
   } : null;
+  // CODEX F-003. Guard at the SOURCE, not only at the save button. This function
+  // paired whatever is currently in the form with whatever fit last happened to
+  // be in bState — so editing SCr from 1 to 4 produced a snapshot claiming SCr 4
+  // with the CL fitted at SCr 1, and Continue Course consumed it as that
+  // patient's individual PK. A snapshot now states whether its fit belongs to
+  // its own inputs; a stale fit is carried as `staleFit` and never as `fit`, so
+  // no consumer can mistake it for current.
+  let fitStale = false;
+  try { fitStale = typeof bayesFitIsStale === 'function' ? bayesFitIsStale() : false; }
+  catch (e) { fitStale = false; }
   return {
     demographics: { age: val('b-age'), sex: bState.sex, tbw: val('b-tbw'),
                     height: val('b-height'), scr: val('b-scr'),
@@ -8653,7 +8663,10 @@ function snapshotBayesForm() {
                     dial: document.getElementById('b-dial')?.checked || false },
     model:   bState.model || 'buelga',
     target:  { auc: val('b-auc-target'), mic: val('b-mic') },
-    doses, levels, scrRows, fit
+    doses, levels, scrRows,
+    fit: fitStale ? null : fit,
+    staleFit: fitStale ? fit : undefined,
+    dirty: fitStale
   };
 }
 
