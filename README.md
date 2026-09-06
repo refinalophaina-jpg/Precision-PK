@@ -16,8 +16,9 @@ there are byte-identical by construction. The original
 
 Audited against primary sources and externally reviewed in September 2026 — see
 [`docs/audit-2026-09.md`](docs/audit-2026-09.md),
-[`docs/dose-acceptance-bounds.md`](docs/dose-acceptance-bounds.md) and
-[`docs/validation-threshold-decisions.md`](docs/validation-threshold-decisions.md).
+[`docs/dose-acceptance-bounds.md`](docs/dose-acceptance-bounds.md),
+[`docs/validation-threshold-decisions.md`](docs/validation-threshold-decisions.md) and
+[`docs/ui-and-graphics-audit-2026-09.md`](docs/ui-and-graphics-audit-2026-09.md).
 
 **Updating the deployed copy:** copy `index.html` into `pharmacy-ainadara/public/vancomycin/`,
 recompute the CSP script hash (the command is in that repo's `public/_headers`), rebuild, and
@@ -45,7 +46,7 @@ git hash-object index.html   # must equal the deployed blob sha
 | Path | What it is |
 |---|---|
 | `index.html` | The application. ~9,000 lines: CSS to ~1,527, markup to ~2,506, one inline `<script>` after that |
-| `phase2d_validation.cjs` | Primary validation suite — 10 suites, traces, shrinkage, Monte Carlo |
+| `phase2d_validation.cjs` | Primary validation suite — 12 suites, traces, shrinkage, Monte Carlo, canvas rendering |
 | `phase3_simulation.cjs` | ~12,000 fits: per-model self-consistency, cross-model disagreement, stratified attainment |
 | `phase2d_comprehensive_validation.cjs` | 10,475 synthetic patients across 6 scenarios |
 | `Phase2_Plan.md` | The real architecture reference for the Bayesian engine |
@@ -94,7 +95,7 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-09-05) |
 |---|---|
-| `phase2d_validation.cjs` | **76 / 76 pass** |
+| `phase2d_validation.cjs` | **95 / 95 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **40 / 40 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | **6 thresholds fail** — its own verdict is "Share with caveats" |
@@ -139,3 +140,13 @@ was labelled as; a steady-state equation missing its residual term; a two-compar
 state that stopped at 12 cycles and read troughs 40% low in renal impairment; regimen
 detection that reported a deliberate order change as an error; and a dose filter whose four
 bounds had no citation and which silently returned regimens it had just rejected.
+
+A second pass in September brought the interface into line with `ainadara.com` and audited
+the rendering code, which no suite had ever executed. It found eight high-severity
+correctness defects in what the charts *drew* — a comparison chart that plotted a Q6H
+regimen's 6-hour trough at 12 hours, a y-axis that painted the therapeutic band off the top
+of the plot, x ticks that aligned with no dose boundary at most intervals, and a theme
+toggle that had never repainted the graphs because it called a function that does not exist.
+`SUITE 12` now drives the real renderer through a recording canvas. See
+[`docs/ui-and-graphics-audit-2026-09.md`](docs/ui-and-graphics-audit-2026-09.md), which also
+lists what was deliberately left open.

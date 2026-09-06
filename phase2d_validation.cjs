@@ -1210,6 +1210,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       `these colours are identical in both themes, so they are literals: ${shared.join(', ')}`);
   });
 
+  test('No renderer hard-codes the 10-20 trough band', ()=>{
+    // Three charts had it frozen at 10-20, and one read a bState field that
+    // never existed, so it silently used the defaults.
+    const src = fs.readFileSync(htmlPath,'utf8');
+    const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+    assert(/function troughTarget\s*\(/.test(script), 'troughTarget() helper is missing');
+    const frozen = script.match(/ty\(\s*(?:10|20)\s*\)/g) || [];
+    assert(frozen.length === 0,
+      `${frozen.length} chart(s) still plot a hard-coded trough bound: ${frozen.join(', ')}`);
+    assert(!/bState\s*&&\s*\+?bState\.trough(Min|Max)/.test(script),
+      'a chart still reads bState.troughMin/Max, which does not exist');
+  });
+
   test('A palette change repaints the trough-based canvases', ()=>{
     // redrawAllCanvases used to call drawGraph(), which does not exist; the
     // ReferenceError was swallowed and the canvas kept its light-theme colours.

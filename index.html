@@ -3431,6 +3431,18 @@ function themeColor(name, fallback) {
   } catch (e) { return fallback; }
 }
 // Canvas takes strings, not custom properties — so resolve the token to rgba.
+// The trough target is the clinician's, entered once in the Trough-Based panel.
+// Every chart that shades a reference band reads it from here — three charts had
+// it hard-coded to 10-20, and one of them read a bState field that never existed.
+const TROUGH_TARGET_DEFAULT = { min: 10, max: 20 };
+function troughTarget() {
+  try {
+    const lo = parseFloat((document.getElementById('trough-min') || {}).value);
+    const hi = parseFloat((document.getElementById('trough-max') || {}).value);
+    if (isFinite(lo) && isFinite(hi) && hi > lo) return { min: lo, max: hi };
+  } catch (e) {}
+  return { min: TROUGH_TARGET_DEFAULT.min, max: TROUGH_TARGET_DEFAULT.max };
+}
 function themeRGBA(name, alpha, fallback) {
   const v = String(themeColor(name, '')).trim();
   let m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(v);
@@ -6719,7 +6731,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   // Shaded for orientation only. The 2020 guideline withdrew trough as a target
   // (Rec 3, A-II); AUC governs. Retained because a trough is still the value a
   // level actually measures.
-  const yBand20 = ty(20), yBand10 = ty(10);
+  const tgt = troughTarget();
+  const yBand20 = ty(tgt.max), yBand10 = ty(tgt.min);
   ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
   ctx.fillRect(pad.left, yBand20, gW, yBand10-yBand20);
   ctx.fillStyle = themeRGBA('--moss', 0.40, 'rgba(74,92,40,0.40)');
@@ -6831,8 +6844,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     ctx.fillText(label, xMid, yLbl);
   }
 
-  // ── Population curve (dashed, steel blue — visible but clearly secondary) ──
-  ctx.strokeStyle = themeRGBA('--purple', 0.55, 'rgba(74,61,122,0.55)');
+  // ── Population curve (dashed, neutral — the reference, clearly secondary) ──
+  ctx.strokeStyle = themeRGBA('--ink-faint', 0.75, 'rgba(138,142,128,0.75)');
   ctx.lineWidth   = 1.5;
   ctx.setLineDash([5,4]);
   ctx.beginPath();
@@ -6889,21 +6902,33 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     if (relT < 0 || relT > tSpan) continue;
     const x = tx(relT), y = ty(lev.conc);
     const r = 6;
-    ctx.strokeStyle = themeColor('--accent-rose','#c45d70');
-    ctx.lineWidth   = 2.5;
+    // A paper halo lifts the mark off whatever curve passes under it.
+    ctx.strokeStyle = themeColor('--paper', '#faf5ed');
+    ctx.lineWidth   = 5;
     ctx.beginPath();
     ctx.moveTo(x-r, y-r); ctx.lineTo(x+r, y+r);
     ctx.moveTo(x+r, y-r); ctx.lineTo(x-r, y+r);
     ctx.stroke();
-    ctx.fillStyle   = themeColor('--accent-rose','#c45d70');
+    ctx.strokeStyle = themeColor('--accent-rose','#a8546a');
+    ctx.lineWidth   = 2.75;
+    ctx.beginPath();
+    ctx.moveTo(x-r, y-r); ctx.lineTo(x+r, y+r);
+    ctx.moveTo(x+r, y-r); ctx.lineTo(x-r, y+r);
+    ctx.stroke();
     ctx.font        = "600 9px 'DM Mono',monospace";
-    ctx.textAlign   = 'left';
+    const lbl = `${lev.conc.toFixed(1)}`;
+    const flip = x + 8 + ctx.measureText(lbl).width > pad.left + gW;
+    ctx.textAlign   = flip ? 'right' : 'left';
     ctx.textBaseline= 'middle';
-    ctx.fillText(`${lev.conc.toFixed(1)}`, x+8, y);
+    ctx.lineWidth   = 3;
+    ctx.strokeStyle = themeColor('--paper', '#faf5ed');
+    ctx.strokeText(lbl, x + (flip ? -8 : 8), y);
+    ctx.fillStyle   = themeColor('--accent-rose','#a8546a');
+    ctx.fillText(lbl, x + (flip ? -8 : 8), y);
   }
 
   // ── Y-axis labels ──
-  ctx.fillStyle   = themeColor('--ink-faint',themeColor('--ink-faint','#8a8e80'));
+  ctx.fillStyle   = themeColor('--ink-faint','#8a8e80');
   ctx.font        = "500 10px 'DM Mono',monospace";
   ctx.textAlign   = 'right';
   ctx.textBaseline= 'middle';
@@ -6938,10 +6963,10 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
       // Show date only when date changes or at tMark=0
       const prevD2 = new Date((tStart+tMark-tStepMajor)*3600000);
       const showDate = tMark===0 || d2.getDate() !== prevD2.getDate();
-      ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.35)');
+      ctx.fillStyle = themeColor('--ink-faint','#8a8e80');
       ctx.fillText(showDate ? `${mm}/${dd} ${hh}:${mi}` : `${hh}:${mi}`, xM, pad.top+gH+4);
       // Elapsed hours under the clock time — the axis a PK reader actually uses.
-      ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.28)');
+      ctx.fillStyle = themeColor('--ink-faint','#8a8e80');
       ctx.font = "500 7.5px 'DM Mono',monospace";
       ctx.fillText(`${tMark % 1 === 0 ? tMark : tMark.toFixed(1)}h`, xM, pad.top+gH+13);
       ctx.font = "500 8px 'DM Mono',monospace";
@@ -6949,7 +6974,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   }
 
   // ── Axis labels ──
-  ctx.fillStyle   = themeColor('--ink-faint','rgba(99,99,102,0.25)');
+  ctx.fillStyle   = themeColor('--ink-faint','#8a8e80');
   ctx.font        = "500 9px 'Outfit',sans-serif";
   ctx.textAlign   = 'center';
   ctx.textBaseline= 'alphabetic';
@@ -6961,12 +6986,12 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.restore();
 
   // ── Target label ──
-  ctx.fillStyle   = themeColor('--moss','rgba(63,172,114,0.4)');
+  ctx.fillStyle   = themeColor('--moss','#4a5c28');
   ctx.globalAlpha = 0.75;
   ctx.font        = "600 8px 'Outfit',sans-serif";
   ctx.textAlign   = 'right';
   ctx.textBaseline= 'middle';
-  ctx.fillText('Trough reference', pad.left+gW-4, (yBand20+yBand10)/2);
+  ctx.fillText(`Trough reference ${tgt.min}\u2013${tgt.max}`, pad.left+gW-4, (yBand20+yBand10)/2);
   ctx.globalAlpha = 1;
 
   // Keep everything a crosshair needs to invert a pixel back into a time and a
@@ -8513,7 +8538,8 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
 
   // Target band 10–20 mg/L
   ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
-  const y10 = ty(10), y20 = ty(20);
+  const tk = troughTarget();
+  const y10 = ty(tk.min), y20 = ty(tk.max);
   if (y10 > PAD.t && y20 < PAD.t + cH) {
     ctx.fillRect(PAD.l, Math.max(PAD.t, y20), cW, Math.min(y10, PAD.t + cH) - Math.max(PAD.t, y20));
   }
@@ -8597,8 +8623,7 @@ function drawCompareCanvas(canvas, items) {
   });
 
   // Target band — the clinician's own bounds, not a hard-coded 10-20.
-  const tgtMin = (typeof bState !== 'undefined' && bState && +bState.troughMin) || 10;
-  const tgtMax = (typeof bState !== 'undefined' && bState && +bState.troughMax) || 20;
+  const { min: tgtMin, max: tgtMax } = troughTarget();
   ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
   const yLo = ty(tgtMin), yHi = ty(tgtMax);
   ctx.fillRect(PAD.l, Math.max(PAD.t, yHi), cW, Math.max(0, Math.min(yLo, PAD.t + cH) - Math.max(PAD.t, yHi)));

@@ -89,7 +89,7 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **76/76 pass** |
+| `phase2d_validation.cjs` | **95/95 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **40/40 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
@@ -170,6 +170,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | Path | What |
 |---|---|
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
+| `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |
 | `docs/validation-threshold-decisions.md` | The accept/reject record for failing thresholds |
 | `docs/audit/` | Probe scripts that reproduce each finding numerically |
 | `harness_constants.cjs` | Extracts model constants from `index.html` for the suites |
