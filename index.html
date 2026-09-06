@@ -6335,7 +6335,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   levels.forEach(l => { cMaxVal = Math.max(cMaxVal, l.conc); });
   cMaxVal = Math.ceil(cMaxVal * 1.25 / 5) * 5;
 
-  const pad = { top:26, right:16, bottom:44, left:40 };
+  const pad = { top:26, right:16, bottom:50, left:44 };
   const gW  = cW  - pad.left - pad.right;
   const gH  = cHpx - pad.top  - pad.bottom;
   const tSpan = tEnd - tStart;
@@ -6544,13 +6544,20 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.textAlign   = 'center';
   ctx.textBaseline= 'top';
   ctx.font        = "500 8px 'DM Mono',monospace";
-  const doseXs    = doses.map(d => tx(d.timeH - tStart));
-  const MIN_SEP   = 34; // px — suppress tick label if too close to a dose marker
+  // Tick labels sit in their own band (clock at +4, elapsed at +13) ABOVE the
+  // dose labels (+24 amount, +34 time), so they cannot collide with them. The
+  // old code suppressed any tick within 34 px of a dose marker, which on a
+  // course with several closely spaced doses deleted the entire early axis —
+  // the elapsed-hours scale only began at 48 h. Suppress against the PREVIOUS
+  // TICK instead, which is the collision that can actually happen.
+  let lastTickX = -Infinity;
+  const MIN_SEP   = 44; // px between consecutive tick labels
   for (let tMark = 0; tMark <= tSpan; tMark += tStepMajor) {
     const xM   = tx(tMark);
     if (xM < pad.left || xM > pad.left+gW) continue;
-    const tooClose = doseXs.some(xD => Math.abs(xM - xD) < MIN_SEP);
+    const tooClose = (xM - lastTickX) < MIN_SEP;
     if (!tooClose) {
+      lastTickX = xM;
       const d2 = new Date((tStart+tMark)*3600000);
       const mm = d2.getMonth()+1, dd = d2.getDate();
       const hh = d2.getHours().toString().padStart(2,'0');
@@ -9132,7 +9139,9 @@ function _buildPrintReport() {
               (r.model === 'goti' || r.model === 'hughes') && r.goti ? r.goti : null);
     } catch (e) { return ''; }
     if (!cur || cur.auc24 == null) return '';
-    const band = r.targetAUC ? `${(r.targetAUC * 0.8).toFixed(0)}–${(r.targetAUC * 1.2).toFixed(0)}` : '400–600';
+    // Judge against the guideline range only. An arbitrary +/-20% band around the
+    // selected target is not a defined concept and printing it beside 400-600
+    // invited the reader to compare two different things.
     const inBand = cur.auc24 >= 400 && cur.auc24 <= 600;
     let unc = '';
     try { unc = aucUncertaintyText((r.levels || []).length, r.model); } catch (e) {}
@@ -9143,7 +9152,7 @@ function _buildPrintReport() {
         ${cur.Ctrough != null ? `<tr><td>Projected trough</td><td class="pr-val">${cur.Ctrough.toFixed(1)} mg/L</td>
             <td>Projected peak</td><td class="pr-val">${cur.Cpeak != null ? cur.Cpeak.toFixed(1) + ' mg/L' : '—'}</td></tr>` : ''}
         <tr><td>Status</td><td class="pr-val">${inBand ? 'within 400–600' : (cur.auc24 > 600 ? 'ABOVE 600' : 'BELOW 400')}</td>
-            <td>Target band</td><td class="pr-val">${band}</td></tr>
+            <td>Selected target</td><td class="pr-val">${r.targetAUC ? r.targetAUC + ' mg·h/L' : '—'}</td></tr>
       </tbody></table>
       ${unc ? `<div class="pr-note"><strong>Uncertainty:</strong> ${escHtml(unc)} on AUC₂₄ with
         ${(r.levels || []).length} level${(r.levels || []).length === 1 ? '' : 's'}. Figures are simulated against

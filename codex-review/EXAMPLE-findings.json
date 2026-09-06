@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "reviewer": "example",
+    "date": "2026-09-05",
+    "reviewed_commit": "example",
+    "suites_run": { "phase2d": "68/68", "phase3": "21/21", "phase4": "40/40" }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "dimension": "math",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Example of a finding that verifies",
+      "location": [{ "file": "index.html", "symbol": "gotiPopPK", "line": 0 }],
+      "claim": "gotiPopPK applies the published dialysis factor of 0.7 to clearance.",
+      "impact": {
+        "clinical": "Dialysis patients would be over-dosed if the factor were omitted.",
+        "magnitude": "CL is 30% lower on dialysis: 4.5 -> 3.15 L/h at CrCl 120."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const a = gotiPopPK(120, 70, false); const b = gotiPopPK(120, 70, true); print({ ratio: +(b.TVCL / a.TVCL).toFixed(4) });",
+          "expect": { "ratio": 0.7 },
+          "tolerance": 0.001
+        },
+        "citation": {
+          "source": "Goti 2018, Ther Drug Monit 40(2):212-221",
+          "locator": "Table 2, row 'DIAL on CL'",
+          "quote": "0.7 (4.3)",
+          "file": "Literature/goti2018.pdf"
+        }
+      },
+      "disconfirming_test": "If gotiPopPK(...,true).TVCL / gotiPopPK(...,false).TVCL != 0.7, the claim is wrong.",
+      "proposed_fix": { "summary": "No change needed; this is the control case.", "risk": "none" }
+    },
+    {
+      "id": "F-002",
+      "dimension": "math",
+      "severity": "critical",
+      "confidence": "high",
+      "title": "Example of a FALSE claim — reproduction contradicts it",
+      "location": [{ "file": "index.html", "symbol": "calcIBW", "line": 0 }],
+      "claim": "calcIBW returns 50 kg for a 152.4 cm female.",
+      "impact": { "clinical": "Would inflate IBW for short women.", "magnitude": "+10%" },
+      "evidence": {
+        "reproduction": {
+          "script": "print({ ibw: +calcIBW('F', 152.4).toFixed(2) });",
+          "expect": { "ibw": 50.0 },
+          "tolerance": 0.01
+        },
+        "citation": {
+          "source": "Devine 1974",
+          "locator": "anchor",
+          "quote": "45.5",
+          "file": "Literature/goti2018.pdf"
+        }
+      },
+      "disconfirming_test": "calcIBW('F',152.4) returning 45.5 disproves it.",
+      "proposed_fix": { "summary": "n/a", "risk": "n/a" }
+    },
+    {
+      "id": "F-003",
+      "dimension": "clinical",
+      "severity": "medium",
+      "confidence": "medium",
+      "title": "Example of an unverifiable citation",
+      "location": [{ "file": "index.html", "symbol": "calcCLv", "line": 0 }],
+      "claim": "Some paper says vancomycin clearance equals 9.9 times creatinine clearance.",
+      "impact": { "clinical": "n/a", "magnitude": "n/a" },
+      "evidence": {
+        "citation": {
+          "source": "Invented 2026",
+          "locator": "Table 9",
+          "quote": "clearance is exactly nine point nine times creatinine clearance",
+          "file": "Literature/goti2018.pdf"
+        }
+      },
+      "disconfirming_test": "The quote is absent from the source.",
+      "proposed_fix": { "summary": "n/a", "risk": "n/a" }
+    }
+  ]
+}
