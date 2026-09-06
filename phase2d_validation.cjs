@@ -1040,6 +1040,188 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 12 — drawPKGraph: what is actually DRAWN
+//
+// Every graph defect found in the 2026-09-05 audit shipped because no suite
+// ever executed a renderer — the canvas code had zero coverage. This drives
+// the REAL drawPKGraph through a recording 2D context and asserts on the
+// operations it emits: markers must lie on the polyline, the target band must
+// stay inside the plot, dose boundaries must be ticks, and every colour must
+// come from a token (proved by swapping the palette and requiring the output
+// to change).
+// ════════════════════════════════════════════════════════════════════
+{
+  const { drawPKGraph } = sandbox;
+
+  // Two palettes, so "did this colour come from a token?" is testable.
+  const LIGHT = { '--terracotta':'#cc785c','--terracotta-q':'#e0a98c','--moss':'#4a5c28',
+                  '--ink-faint':'#8a8e80','--paper':'#faf5ed','--accent-amber':'#96631f',
+                  '--accent-blue':'#4a3d7a','--accent-rose':'#a8546a' };
+  const DARK  = { '--terracotta':'#d88a6e','--terracotta-q':'#b56e54','--moss':'#9aad68',
+                  '--ink-faint':'#7d7666','--paper':'#1c1815','--accent-amber':'#d9a765',
+                  '--accent-blue':'#8e7dc8','--accent-rose':'#d08ba0' };
+
+  function record(palette, W, H) {
+    const ops = { arcs:[], path:[], rects:[], texts:[], colors:new Set() };
+    let cur = null, fill = '', stroke = '';
+    const ctx = {
+      set fillStyle(v){ fill = String(v); ops.colors.add(String(v)); },
+      get fillStyle(){ return fill; },
+      set strokeStyle(v){ stroke = String(v); ops.colors.add(String(v)); },
+      get strokeStyle(){ return stroke; },
+      lineWidth:1, lineJoin:'', lineCap:'', font:'', textAlign:'', textBaseline:'',
+      setTransform(){}, clearRect(){}, save(){}, restore(){}, translate(){}, rotate(){},
+      setLineDash(){},
+      beginPath(){ cur = []; },
+      moveTo(x,y){ if(cur) cur.push([x,y]); },
+      lineTo(x,y){ if(cur) cur.push([x,y]); },
+      closePath(){ if(cur && cur.length>8) ops.path.push(cur); },
+      stroke(){ if(cur && cur.length>8) ops.path.push(cur); },
+      fill(){},
+      arc(x,y,r){ ops.arcs.push({x,y,r,fill}); },
+      fillRect(x,y,w,h){ ops.rects.push({x,y,w,h,fill}); },
+      fillText(t,x,y){ ops.texts.push({t:String(t),x,y,fill}); },
+      createLinearGradient(){ return { addColorStop:(o,c)=>ops.colors.add(String(c)) }; },
+    };
+    const canvas = { width:0, height:0, getContext:()=>ctx,
+                     getBoundingClientRect:()=>({ width:W, height:H }) };
+    const prevGet = sandbox.document.getElementById;
+    const prevGCS = sandbox.getComputedStyle;
+    const prevDPR = sandbox.devicePixelRatio;
+    sandbox.document.getElementById = (id) => (id === 'pk-test' ? canvas : prevGet(id));
+    sandbox.document.documentElement = {};
+    sandbox.getComputedStyle = () => ({ getPropertyValue:(n)=> palette[n] || '' });
+    sandbox.devicePixelRatio = 1;
+    try { return { ops, run:(...a)=>{ drawPKGraph('pk-test', ...a); return ops; } }; }
+    finally { /* restore after the caller runs */
+      setImmediate?.(()=>{}); 
+      ops.__restore = () => { sandbox.document.getElementById = prevGet;
+                              sandbox.getComputedStyle = prevGCS;
+                              sandbox.devicePixelRatio = prevDPR; };
+    }
+  }
+  function draw(palette, args, W=760, H=330) {
+    const r = record(palette, W, H);
+    const ops = r.run(...args);
+    ops.__restore();
+    return ops;
+  }
+  // Interpolate the drawn polyline at x.
+  function curveYAt(path, x) {
+    const poly = path.reduce((a,b)=> b.length > a.length ? b : a, []);
+    for (let i=1;i<poly.length;i++) {
+      const [x0,y0]=poly[i-1], [x1,y1]=poly[i];
+      if (x >= Math.min(x0,x1)-1e-6 && x <= Math.max(x0,x1)+1e-6) {
+        if (Math.abs(x1-x0) < 1e-9) return y1;
+        return y0 + (y1-y0)*((x-x0)/(x1-x0));
+      }
+    }
+    return NaN;
+  }
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 12 — drawPKGraph rendering invariants');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('Peak and trough markers lie ON the drawn curve (fractional tinf)', ()=>{
+    // tinf steps by 0.25 in the UI; a uniform 0.1 h sample grid never lands on
+    // 1.25 or 1.75, so the polyline used to cut the corner under the peak dot.
+    [1.0, 1.25, 1.5, 1.75, 2.25, 2.75].forEach(tinf => {
+      const ops = draw(LIGHT, [1250, 12, tinf, 0.0866, 60, {troughMin:10,troughMax:20}]);
+      assert(ops.path.length > 0, `tinf=${tinf}: no curve drawn`);
+      const markers = ops.arcs.filter(a => a.r < 4.5);
+      assert(markers.length >= 6, `tinf=${tinf}: expected peak+trough dots, got ${markers.length}`);
+      markers.forEach(m => {
+        const y = curveYAt(ops.path, m.x);
+        assert(isFinite(y), `tinf=${tinf}: marker at x=${m.x.toFixed(1)} is off the curve's x-range`);
+        assert(Math.abs(y - m.y) < 0.75,
+          `tinf=${tinf}: marker floats ${Math.abs(y-m.y).toFixed(2)}px off the curve at x=${m.x.toFixed(1)}`);
+      });
+    });
+  });
+
+  test('Every dose boundary is an x-axis tick, for every realistic interval', ()=>{
+    [4,6,8,10,12,18,24,36,48,72].forEach(tau => {
+      const ops = draw(LIGHT, [1000, tau, 1, 0.0693, 60, {troughMin:10,troughMax:20}]);
+      const ticks = ops.texts.filter(t => /^[\d.]+h$/.test(t.t)).map(t => parseFloat(t.t));
+      for (let i=0;i<=3;i++) {
+        assert(ticks.some(v => Math.abs(v - i*tau) < 1e-6),
+          `tau=${tau}: dose boundary ${i*tau}h is not a tick (ticks: ${ticks.join(',')})`);
+      }
+      assert(ticks.length >= 5 && ticks.length <= 9,
+        `tau=${tau}: ${ticks.length} x ticks — the old fixed-8h rule gave 3 at Q6H and 19 at Q48H`);
+    });
+  });
+
+  test('Target band stays inside the plot even when troughMax exceeds the peak', ()=>{
+    // 250 mg Q12H in a fast clearer: peak ~8 mg/L, target top 20 mg/L. The old
+    // axis was derived from the curve alone, so the band was painted off-canvas.
+    const ops = draw(LIGHT, [250, 12, 1, 0.12, 60, {troughMin:10,troughMax:20}]);
+    const band = ops.rects.filter(r => r.h > 2 && r.w > 100);
+    assert(band.length >= 1, 'target band was not drawn at all');
+    band.forEach(r => {
+      assert(r.y >= 15.5, `band top ${r.y.toFixed(1)} is above the plot area`);
+      assert(r.y + r.h <= 330 - 42 + 0.5, `band bottom ${(r.y+r.h).toFixed(1)} spills past the plot`);
+    });
+    const label = ops.texts.find(t => /TARGET/.test(t.t));
+    assert(label && /10/.test(label.t) && /20/.test(label.t),
+      `target band must be labelled with the clinician's own bounds, got: ${label && label.t}`);
+  });
+
+  test('Target label reflects a non-default trough target', ()=>{
+    const ops = draw(LIGHT, [1000, 12, 1, 0.0693, 60, {troughMin:15,troughMax:25}]);
+    const label = ops.texts.find(t => /TARGET/.test(t.t));
+    assert(label && /15/.test(label.t) && /25/.test(label.t),
+      `band must honour the entered target, got: ${label && label.t}`);
+  });
+
+  test('Observed level survives t=0 and exact multiples of the window', ()=>{
+    const inPlot = (ops) => ops.arcs.filter(a => a.r > 4.5);
+    let ops = draw(LIGHT, [1000, 12, 1, 0.0693, 60, {troughMin:10,troughMax:20,obsLevel:14.2,obsTime:0}]);
+    assert(inPlot(ops).length === 1, 'a level drawn at t=0 was dropped by the truthiness guard');
+    ops = draw(LIGHT, [1000, 12, 1, 0.0693, 60, {troughMin:10,troughMax:20,obsLevel:14.2,obsTime:72}]);
+    const m = inPlot(ops)[0];
+    assert(m, 'observed level at t = 2*tMax was dropped');
+    assert(m.x >= 54 && m.x <= 760 - 24, `observed marker drawn off-canvas at x=${m.x.toFixed(1)}`);
+  });
+
+  test('Y-axis top is round and always contains the target band', ()=>{
+    [[250,0.12],[1000,0.0693],[2000,0.035],[500,0.17]].forEach(([dose,kel]) => {
+      const ops = draw(LIGHT, [dose, 12, 1, kel, 60, {troughMin:10,troughMax:20}]);
+      const nums = ops.texts.filter(t => /^-?[\d.]+$/.test(t.t)).map(t => parseFloat(t.t));
+      assert(nums.length >= 4 && nums.length <= 9,
+        `dose=${dose}: ${nums.length} y gridlines — the old ladder gave 2 at the bottom and 12 at the top`);
+      assert(Math.max(...nums) >= 20,
+        `dose=${dose}: axis top ${Math.max(...nums)} excludes the 20 mg/L target ceiling`);
+    });
+  });
+
+  test('Every colour is a token — swapping the palette changes the output', ()=>{
+    const args = [1000, 12, 1, 0.0693, 60, {troughMin:10,troughMax:20,obsLevel:14,obsTime:11}];
+    const light = draw(LIGHT, args), dark = draw(DARK, args);
+    // A gradient object assigned to fillStyle stringifies to [object Object];
+    // its stops are recorded separately by createLinearGradient.
+    const real = (set) => [...set].filter(c => /^#|^rgba?\(/i.test(c));
+    const onlyLight = real(light.colors).filter(c => !dark.colors.has(c));
+    const shared    = real(light.colors).filter(c => dark.colors.has(c));
+    assert(onlyLight.length >= 6,
+      `only ${onlyLight.length} colours changed with the palette — the rest are hard-coded literals`);
+    assert(shared.length === 0,
+      `these colours are identical in both themes, so they are literals: ${shared.join(', ')}`);
+  });
+
+  test('A palette change repaints the trough-based canvases', ()=>{
+    // redrawAllCanvases used to call drawGraph(), which does not exist; the
+    // ReferenceError was swallowed and the canvas kept its light-theme colours.
+    assert(typeof sandbox.redrawAllCanvases === 'function', 'redrawAllCanvases missing');
+    const src = sandbox.redrawAllCanvases.toString();
+    assert(!/\bdrawGraph\s*\(/.test(src), 'redrawAllCanvases still calls the undefined drawGraph()');
+    assert(/drawPKGraph/.test(src), 'redrawAllCanvases does not replay the PK graphs');
+    assert(!/catch\s*\(\s*e\s*\)\s*\{\s*\}/.test(src), 'redrawAllCanvases still swallows errors silently');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

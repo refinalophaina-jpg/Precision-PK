@@ -134,8 +134,33 @@ exception, because it cannot resolve a custom property: use `themeColor()` /
 Used on macOS, Windows and Android. Touch targets ≥44px, no horizontal scroll at 375px,
 readable without zoom, and the `@media print` block must keep working.
 
-Canvas graphs set colours in JS, not CSS (`ctx.fillStyle` / `ctx.strokeStyle`). If you change
-background colours materially, grep for those.
+Canvas graphs set colours in JS, not CSS (`ctx.fillStyle` / `ctx.strokeStyle`). **Every one
+must go through `themeColor()` / `themeRGBA()`** — a bare literal will not re-theme, and
+`var(--x)` is silently ignored by canvas. `SUITE 12` enforces this by drawing the same graph
+under two palettes and requiring every colour to change.
+
+### Reading a graph is a clinical act
+
+These charts are read to estimate a concentration at a timepoint, so what is *drawn* has to
+be true, not merely pretty:
+
+- **Markers must lie on the curve.** Sample the polyline at the breakpoints (end of infusion,
+  interval boundary) as well as on the grid — a uniform step misses `t = tinf` whenever the
+  infusion time is not a multiple of it, and the peak dot then floats above the line.
+- **X ticks come from the interval, not a constant.** `tau/2` gives exactly seven ticks and
+  puts every dose boundary on one, for every interval from Q4H to Q72H. The old fixed 8 h
+  step aligned with nothing at Q6H/Q12H/Q18H and drew nineteen labels at Q48H.
+- **The axis must contain everything drawn on it** — the target band and any observed level,
+  not just the curve. Deriving the top from the curve alone painted the band off-canvas for
+  any regimen whose peak fell below the target ceiling.
+- **The target band is the clinician's own**, never a hard-coded 10–20.
+- **Never rescale one series onto another's axis.** The comparison chart used to stretch each
+  regimen onto the longest interval, so a Q6H trough was drawn at 12 h under an axis reading
+  12 h. Plot true elapsed time and repeat the cycle instead.
+
+`redrawAllCanvases()` must replay every renderer on a palette change, and must **not** swallow
+errors — it previously called a `drawGraph()` that does not exist, inside an empty `catch`, so
+the trough-based graphs kept their light-theme colours on the dark page for months.
 
 Results are built as HTML strings via `innerHTML`. **Any user-entered value interpolated into
 one must go through `escHtml()`** — most sites currently do not, which is an open item.

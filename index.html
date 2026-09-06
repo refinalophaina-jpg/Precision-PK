@@ -138,9 +138,11 @@
     color: var(--text-primary);
     font-family: 'Outfit', sans-serif;
     font-weight: 400;
-    min-height: 100vh;
+    min-height: 100dvh;
     line-height: 1.6;
     position: relative;
+    display: flex;
+    flex-direction: column;
   }
 
   /* The page ground is the atmosphere wash further down — three barely-there
@@ -157,6 +159,7 @@
     padding: 16px 32px;
     border-bottom: 1px solid var(--border);
     background: var(--glass-bg);
+    width: 100%; max-width: 1800px; margin-inline: auto;
     backdrop-filter: blur(8px) saturate(1.2);
     -webkit-backdrop-filter: blur(8px) saturate(1.2);
     position: sticky;
@@ -225,10 +228,17 @@
   }
 
   /* ─── LAYOUT ─── */
+  /* The input column was pinned to 400px at every width from 1001px to 2560px,
+     so widening the monitor only ever grew the empty results panel — 73% of a
+     1500px viewport, 84% of a 2560px one. Now the left column takes a share of
+     the extra width and the right one is capped by .panel-inner below. */
   .app-shell {
     display: grid;
-    grid-template-columns: 400px 1fr;
-    min-height: calc(100vh - 60px);
+    grid-template-columns: minmax(400px, 30%) minmax(0, 1fr);
+    flex: 1;
+    width: 100%;
+    max-width: 1800px;
+    margin-inline: auto;
   }
   .panel-left {
     background: var(--glass-bg);
@@ -248,6 +258,14 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
+  }
+  /* Everything in the results column shares one measure. Without this, result
+     cards grew to 510px to hold 46px of ink and advisory prose reached ~372
+     characters per line — the format in which a clinical caveat gets skipped. */
+  .panel-right > * { width: 100%; max-width: 1040px; margin-inline: auto; }
+  /* Sentences get a reading measure; numbers may use the full column. */
+  .arc-advisory, .lowcrcl-advisory, .rec-interpretation, .result-note {
+    max-width: 68ch;
   }
 
   /* ─── SECTION HEADERS ─── */
@@ -369,6 +387,11 @@
     min-height: 44px;
   }
   .calc-btn:hover { transform: translateY(-2px); background: var(--terracotta-q); border-color: var(--terracotta-q); }
+  /* A second action in the same panel is an outline, not a second colour. */
+  .calc-btn.reset-style-secondary {
+    background: transparent; color: var(--terracotta); border-color: var(--terracotta-q);
+  }
+  .calc-btn.reset-style-secondary:hover { background: var(--paper-deep); color: var(--terracotta); }
   .calc-btn:active { transform: translateY(0); }
   .reset-btn {
     width: 100%;
@@ -401,18 +424,33 @@
   }
 
   /* ─── RIGHT PANEL — RESULTS ─── */
+  /* Anchored near the top, not centred on the sibling grid track: `flex: 1`
+     plus `justify-content: center` centred this in a box as tall as the LEFT
+     column (2190px in the Trough module), putting the one instruction the app
+     gives below the fold. De-emphasis now comes from the token, not from an
+     opacity multiplier stacked on --text-muted (which composited to 1.54:1). */
   .results-placeholder {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    gap: 18px;
-    min-height: 400px;
-    opacity: 0.35;
+    align-items: flex-start;
+    flex: 0 0 auto;
+    gap: 14px;
+    max-width: 62ch;
+    margin-top: 8px;
+    padding: 26px 28px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    background: var(--paper-deep);
   }
-  .results-placeholder svg { width: 56px; height: 56px; color: var(--text-muted); }
-  .results-placeholder p { font-size: 0.88rem; color: var(--text-muted); }
+  .results-placeholder svg { width: 30px; height: 30px; color: var(--terracotta-q); }
+  .results-placeholder p { font-size: 0.9rem; color: var(--ink-soft); margin: 0; }
+  .rp-eyebrow {
+    font-size: 0.68rem; font-weight: 500; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--ink-faint);
+  }
+  .rp-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; }
+  .rp-list li { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.5; }
+  .rp-list b { font-weight: 500; color: var(--ink); }
 
   /* ─── RESULT CARDS ─── */
   .result-section { display: flex; flex-direction: column; gap: 16px; }
@@ -1067,7 +1105,10 @@
   }
   .pk-graph-canvas-wrap canvas {
     width: 100%;
-    height: 220px;
+    aspect-ratio: 16 / 7;
+    height: auto;
+    min-height: 200px;
+    max-height: 340px;
     display: block;
   }
 
@@ -2419,10 +2460,14 @@
 
     <!-- Placeholder -->
     <div class="results-placeholder" id="results-placeholder">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-        <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
-      </svg>
-      <p>Enter patient parameters and press <strong>Calculate</strong></p>
+      <span class="rp-eyebrow">Results</span>
+      <p>Enter the patient's demographics and renal function, then press
+         <b>Calculate Regimen</b>.</p>
+      <ul class="rp-list">
+        <li><b>Population PK</b> — CrCl, clearance, volume, half-life</li>
+        <li><b>A maintenance regimen</b> against an AUC<sub>24</sub> of 400–600 mg·h/L</li>
+        <li><b>The predicted steady-state curve</b>, with peak, trough and target band</li>
+      </ul>
     </div>
 
     <!-- Results (hidden until calculated) -->
@@ -2686,8 +2731,7 @@
 
     <!-- Action buttons -->
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      <button class="calc-btn" onclick="runBayesian()"
-        style="background:var(--accent-blue)">
+      <button class="calc-btn" onclick="runBayesian()">
         Run Bayesian Analysis<kbd>⏎</kbd></button>
       <button class="reset-btn" onclick="resetBayesian()">Reset Bayesian Form</button>
     </div>
@@ -2700,11 +2744,15 @@
 
     <!-- Placeholder -->
     <div class="results-placeholder" id="b-placeholder">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-        <path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-6"/>
-      </svg>
-      <p>Enter patient demographics and dosing history, then press <strong>Run Bayesian Analysis</strong>.<br>
-      Add observed vancomycin levels to individualize the estimate.</p>
+      <span class="rp-eyebrow">Results</span>
+      <p>Enter the patient, the dosing history and any measured levels, then press
+         <b>Run Bayesian Analysis</b>.</p>
+      <ul class="rp-list">
+        <li><b>An individualised fit</b> — MAP Bayesian, against the chosen population prior</li>
+        <li><b>AUC<sub>24</sub> with its uncertainty</b>, and how far the fit moved from the prior</li>
+        <li><b>The concentration-time profile</b> with your measured levels on it</li>
+      </ul>
+      <p>Levels are optional — without them this is the population estimate.</p>
     </div>
 
     <!-- Results container -->
@@ -2806,12 +2854,10 @@
 
     <!-- Action buttons -->
     <div id="continue-actions" style="display:none;flex-direction:column;gap:8px;margin-top:14px">
-      <button class="calc-btn" onclick="runContinueTinker()"
-        style="background:var(--accent-sage)">
+      <button class="calc-btn" onclick="runContinueTinker()">
         Calculate Predicted AUC/Peak/Trough
       </button>
-      <button class="calc-btn" onclick="runContinueOptimizer()"
-        style="background:var(--accent-blue)">
+      <button class="calc-btn reset-style-secondary" onclick="runContinueOptimizer()">
         Recommend Optimal Regimen
       </button>
     </div>
@@ -2821,10 +2867,14 @@
   <!-- ─── RIGHT PANEL — results ─── -->
   <div class="panel-right">
     <div class="results-placeholder" id="continue-placeholder">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-        <path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-6"/>
-      </svg>
-      <p>Select a saved profile with a Bayesian fit to continue dosing with its individualized PK.</p>
+      <span class="rp-eyebrow">Results</span>
+      <p>Select a saved profile that already carries a Bayesian fit, then press
+         <b>Calculate Predicted AUC/Peak/Trough</b>.</p>
+      <ul class="rp-list">
+        <li><b>That patient's own PK</b> — reused, not re-estimated</li>
+        <li><b>Predicted AUC<sub>24</sub>, peak and trough</b> for a regimen you choose</li>
+        <li><b>An optimal regimen</b> against their individual clearance</li>
+      </ul>
     </div>
     <div id="continue-results" style="display:none;flex-direction:column;gap:16px"></div>
   </div>
@@ -3382,17 +3432,43 @@ function themeColor(name, fallback) {
 }
 // Canvas takes strings, not custom properties — so resolve the token to rgba.
 function themeRGBA(name, alpha, fallback) {
-  const hex = themeColor(name, '');
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
-  if (!m) return fallback;
-  return `rgba(${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)},${alpha})`;
+  const v = String(themeColor(name, '')).trim();
+  let m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(v);
+  if (m) return `rgba(${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)},${alpha})`;
+  m = /^#([a-f\d])([a-f\d])([a-f\d])$/i.exec(v);
+  if (m) return `rgba(${parseInt(m[1]+m[1],16)},${parseInt(m[2]+m[2],16)},${parseInt(m[3]+m[3],16)},${alpha})`;
+  m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(v);
+  if (m) return `rgba(${+m[1]},${+m[2]},${+m[3]},${alpha})`;
+  return fallback;
+}
+// Every drawPKGraph call records its arguments here so a palette change can
+// replay it. The previous version called drawGraph(), which does not exist —
+// the ReferenceError was swallowed and the trough-based canvases kept their
+// light-theme gridlines and dots on the dark page, at ~1.03:1 contrast.
+const _pkGraphArgs = {};
+// Canvases size their backing store once, at draw time. Rotating a tablet or
+// dragging a window left the drawn curve stretched and the crosshair reporting
+// the wrong time and concentration. Debounced so a drag does not thrash.
+let _resizeTimer = null;
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('resize', () => {
+    if (_resizeTimer) clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => { _resizeTimer = null; redrawAllCanvases(); }, 150);
+  });
 }
 function redrawAllCanvases() {
-  // Re-run whichever renderers have live results. Guarded so a missing module
-  // never breaks the toggle.
-  try { if (typeof _pk !== 'undefined' && _pk) drawGraph(); } catch (e) {}
+  // Guarded so a missing module never breaks the toggle — but never silently.
+  try {
+    Object.keys(_pkGraphArgs).forEach(id => {
+      if (document.getElementById(id)) drawPKGraph.apply(null, _pkGraphArgs[id]);
+    });
+  } catch (e) { if (typeof console !== 'undefined') console.warn('PK graph redraw failed', e); }
   try { if (bState && bState.result) renderBayesianResults(bState.result, bState.divergeMsg,
-        bState.levelWarnings, bState.mic, bState.p2c); } catch (e) {}
+        bState.levelWarnings, bState.mic, bState.p2c); } catch (e) {
+    if (typeof console !== 'undefined') console.warn('bayes redraw failed', e); }
+  try { if (typeof renderComparisonSection === 'function' && bState &&
+            bState.tinkCompare && bState.tinkCompare.length) renderComparisonSection(); } catch (e) {
+    if (typeof console !== 'undefined') console.warn('compare redraw failed', e); }
 }
 
 // ══════════════════════════════════════════
@@ -5420,166 +5496,186 @@ function tinkererHTML(suffix, tau) {
 function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
+  opts = opts || {};
+  // Record the call so a palette change can replay it (see redrawAllCanvases).
+  _pkGraphArgs[canvasId] = [canvasId, dose, tau, tinf, kel, vd, opts];
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
+  if (!(rect.width > 0)) return;
+  canvas.width  = Math.round(rect.width  * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = rect.width, H = rect.height;
-  const pad = { top: 16, right: 20, bottom: 36, left: 52 };
+  const pad = { top: 16, right: 24, bottom: 42, left: 54 };
   const gW = W - pad.left - pad.right;
   const gH = H - pad.top - pad.bottom;
+  if (!(gW > 0 && gH > 0)) return;
 
-  // Clear
   ctx.clearRect(0, 0, W, H);
 
-  // Time range: 3 dosing intervals
   const numCycles = 3;
   const tMax = tau * numCycles;
-  const dt = 0.1;
 
-  // Generate concentration-time data for steady-state
-  const points = [];
-  for (let t = 0; t <= tMax; t += dt) {
-    const cycleT = t % tau;
-    const c = calcCssAtTime(dose, tau, tinf, kel, vd, cycleT);
-    points.push({ t, c });
+  // Sample on a fixed grid, but force the breakpoints in: the curve has a
+  // corner at end-of-infusion and the interval boundary, and a uniform 0.1 h
+  // grid misses both whenever tinf is not a multiple of 0.1 (the input steps
+  // by 0.25). The peak dot then floats off the polyline it should sit on.
+  const dt = Math.min(0.1, tau / 240);
+  const tSet = [];
+  const nGrid = Math.ceil(tMax / dt);
+  for (let i = 0; i <= nGrid; i++) tSet.push(Math.min(i * dt, tMax));   // index-based: no float drift
+  for (let i = 0; i < numCycles; i++) {
+    tSet.push(i * tau + Math.min(tinf, tau));
+    tSet.push((i + 1) * tau);
   }
-  const cMax = Math.max(...points.map(p => p.c)) * 1.15;
+  tSet.sort((a, b) => a - b);
+  const points = [];
+  for (let i = 0; i < tSet.length; i++) {
+    const t = tSet[i];
+    if (i && Math.abs(t - tSet[i - 1]) < 1e-9) continue;               // dedupe
+    const cycleT = Math.min(t - Math.floor(t / tau + 1e-9) * tau, tau);
+    points.push({ t, c: calcCssAtTime(dose, tau, tinf, kel, vd, cycleT) });
+  }
 
-  // Helper: data coords to canvas coords
+  const pt = calcPeakTrough(dose, tau, tinf, kel, vd);
+  const troughMin = opts.troughMin || 10;
+  const troughMax = opts.troughMax || 20;
+
+  // The axis must contain everything that gets drawn on it. Deriving the top
+  // from the curve alone painted the target band off the top of the plot for
+  // any regimen whose peak sat below troughMax — an open-topped green wash
+  // reading "everything above 10 is on target".
+  const cPeakForAxis = Math.max(pt.peak, ...points.map(p => p.c));
+  const cRaw  = Math.max(cPeakForAxis, troughMax, opts.obsLevel || 0) * 1.15;
+  const cStep = niceStep(cRaw, 6);
+  const cMax  = Math.max(cStep, Math.ceil(cRaw / cStep) * cStep);
+
   const tx = t => pad.left + (t / tMax) * gW;
   const ty = c => pad.top + gH - (c / cMax) * gH;
+  const clampY = y => Math.max(pad.top, Math.min(pad.top + gH, y));
 
-  // ─ Grid lines ─
-  ctx.strokeStyle = themeColor('--rule','rgba(0,0,0,0.06)');
+  const cFaint = themeColor('--ink-faint', '#8a8e80');
+
+  // ─ Grid ─
+  ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
   ctx.lineWidth = 1;
-  // Horizontal grid
-  const cStep = cMax > 80 ? 20 : cMax > 40 ? 10 : 5;
-  for (let c = 0; c <= cMax; c += cStep) {
-    const y = ty(c);
+  for (let c = 0; c <= cMax + 1e-9; c += cStep) {
+    const y = Math.round(ty(c)) + 0.5;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
   }
-  // Vertical grid — every 8 hours
-  const xTickStep = 8;
-  for (let t = 0; t <= tMax; t += xTickStep) {
-    const x = tx(t);
+  // Ticks derived from the interval, not a fixed 8 h: tau/2 gives exactly seven
+  // ticks and puts every dose boundary on one, for every realistic interval.
+  const xTickStep = tau / 2;
+  for (let t = 0; t <= tMax + 1e-9; t += xTickStep) {
+    const x = Math.round(tx(t)) + 0.5;
     ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + gH); ctx.stroke();
   }
 
-  // ─ Trough target zone ─
-  const troughMin = opts.troughMin || 10;
-  const troughMax = opts.troughMax || 20;
-  const yMin = ty(troughMax);
-  const yMax = ty(troughMin);
-  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
-  ctx.fillRect(pad.left, yMin, gW, yMax - yMin);
-  // Dashed border lines for target zone
+  // ─ Target band, clipped to the plot ─
+  const bandTop = clampY(ty(troughMax));
+  const bandBot = clampY(ty(troughMin));
+  if (bandBot > bandTop) {
+    ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
+    ctx.fillRect(pad.left, bandTop, gW, bandBot - bandTop);
+  }
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = themeColor('--moss','#4a5c28')+'4d';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad.left, yMin); ctx.lineTo(W - pad.right, yMin); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(pad.left, yMax); ctx.lineTo(W - pad.right, yMax); ctx.stroke();
+  ctx.strokeStyle = themeRGBA('--moss', 0.42, 'rgba(74,92,40,0.42)');
+  [troughMax, troughMin].forEach(v => {
+    const y = ty(v);
+    if (y >= pad.top && y <= pad.top + gH) {
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    }
+  });
   ctx.setLineDash([]);
 
-  // ─ Concentration curve ─
-  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + gH);
-  grad.addColorStop(0, 'rgba(217,123,74,0.9)');
-  grad.addColorStop(1, 'rgba(217,123,74,0.4)');
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 2.5;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = tx(p.t), y = ty(p.c);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+  // ─ Dose boundaries ─ (the only mark showing where the next dose is given)
+  ctx.fillStyle = themeRGBA('--terracotta-q', 0.55, 'rgba(224,169,140,0.55)');
+  for (let i = 1; i < numCycles; i++) ctx.fillRect(Math.round(tx(tau * i)) - 0.5, pad.top, 1, gH);
 
-  // ─ Fill under curve ─
+  // ─ Fill under the curve, then the curve ─
+  const cCurve = themeColor('--terracotta', '#cc785c');
   const fillGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + gH);
-  fillGrad.addColorStop(0, 'rgba(217,123,74,0.12)');
-  fillGrad.addColorStop(1, 'rgba(217,123,74,0.01)');
+  fillGrad.addColorStop(0, themeRGBA('--terracotta', 0.14, 'rgba(204,120,92,0.14)'));
+  fillGrad.addColorStop(1, themeRGBA('--terracotta', 0.01, 'rgba(204,120,92,0.01)'));
   ctx.fillStyle = fillGrad;
   ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = tx(p.t), y = ty(p.c);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.lineTo(tx(tMax), ty(0));
-  ctx.lineTo(tx(0), ty(0));
-  ctx.closePath();
-  ctx.fill();
+  points.forEach((p, i) => { const x = tx(p.t), y = ty(p.c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.lineTo(tx(tMax), ty(0)); ctx.lineTo(tx(0), ty(0)); ctx.closePath(); ctx.fill();
 
-  // ─ Peak/trough dots ─
-  const pt = calcPeakTrough(dose, tau, tinf, kel, vd);
+  ctx.strokeStyle = cCurve;
+  ctx.lineWidth = 2.25;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  points.forEach((p, i) => { const x = tx(p.t), y = ty(p.c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke();
+
+  // ─ Peak / trough markers, on the curve rather than near it ─
+  const cRing = themeColor('--paper', '#faf5ed');
   for (let i = 0; i < numCycles; i++) {
-    // Peak at end of infusion
-    const peakX = tx(i * tau + tinf), peakY = ty(pt.peak);
-    ctx.fillStyle = themeColor('--accent-amber','#BF8530');
-    ctx.beginPath(); ctx.arc(peakX, peakY, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = themeColor('--ink-faint','rgba(0,0,0,0.3)'); ctx.lineWidth = 1;
-    ctx.stroke();
-    // Trough at end of interval
-    const trX = tx((i + 1) * tau - dt), trY = ty(pt.trough);
-    ctx.fillStyle = themeColor('--accent-blue','#3B6FAF');
-    ctx.beginPath(); ctx.arc(trX, trY, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.stroke();
+    ctx.fillStyle = themeColor('--accent-amber', '#96631f');
+    ctx.strokeStyle = cRing; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(tx(i * tau + Math.min(tinf, tau)), ty(pt.peak), 3.5, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = themeColor('--accent-blue', '#4a3d7a');
+    ctx.beginPath(); ctx.arc(tx((i + 1) * tau), ty(pt.trough), 3.5, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
   }
 
-  // ─ Observed level marker ─
-  if (opts.obsLevel && opts.obsTime) {
-    const ox = tx(opts.obsTime % tMax || opts.obsTime);
+  // ─ Observed level ─
+  // Two narrow defects here, not the folding itself: tMax is 3*tau, so `t % tMax`
+  // does preserve phase. What broke was (a) the `|| obsTime` fallback, which fired
+  // whenever obsTime was an exact multiple of tMax (48 h at Q8H, 72 h at Q12H) and
+  // pushed the marker off-canvas, and (b) a truthiness guard that dropped the
+  // marker entirely for a level drawn at t = 0.
+  if (opts.obsLevel != null && opts.obsTime != null && isFinite(opts.obsTime)) {
+    const foldT = ((opts.obsTime % tau) + tau) % tau;
+    const ox = tx(opts.obsTime <= tMax ? opts.obsTime : foldT);
     const oy = ty(opts.obsLevel);
-    ctx.fillStyle = themeColor('--accent-rose','#B04E60');
-    ctx.strokeStyle = themeColor('--paper','#fff');
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(ox, oy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    // Label
-    ctx.fillStyle = themeColor('--accent-rose','#B04E60');
-    ctx.font = "600 10px 'DM Mono', monospace";
-    ctx.fillText(`${opts.obsLevel.toFixed(1)}`, ox + 10, oy - 4);
+    if (oy >= pad.top - 4 && oy <= pad.top + gH + 4) {
+      ctx.fillStyle = themeColor('--accent-rose', '#a8546a');
+      ctx.strokeStyle = cRing; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(ox, oy, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = themeColor('--accent-rose', '#a8546a');
+      ctx.font = "600 10px 'DM Mono', monospace";
+      ctx.textAlign = ox > pad.left + gW - 44 ? 'right' : 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(opts.obsLevel.toFixed(1), ox + (ctx.textAlign === 'right' ? -9 : 9), oy - 5);
+    }
   }
 
-  // ─ Axes labels ─
-  ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.4)');
+  // ─ Axis labels ─
+  ctx.fillStyle = cFaint;
   ctx.font = "500 10px 'DM Mono', monospace";
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let c = 0; c <= cMax; c += cStep) {
-    ctx.fillText(c.toFixed(0), pad.left - 6, ty(c));
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let c = 0; c <= cMax + 1e-9; c += cStep) {
+    ctx.fillText(cStep < 1 ? c.toFixed(1) : c.toFixed(0), pad.left - 7, ty(c));
   }
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  // X-axis ticks every 8 hours
-  for (let t = 0; t <= tMax; t += xTickStep) {
-    ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.4)');
-    ctx.fillText(t + 'h', tx(t), pad.top + gH + 6);
-  }
-  // Dose markers at interval boundaries
-  for (let i = 1; i < numCycles; i++) {
-    const x = tx(tau * i);
-    ctx.fillStyle = 'rgba(201,107,60,0.2)';
-    ctx.fillRect(x - 0.5, pad.top, 1, gH);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const tDec = Number.isInteger(xTickStep) ? 0 : 1;
+  for (let t = 0; t <= tMax + 1e-9; t += xTickStep) {
+    ctx.fillText(t.toFixed(tDec) + 'h', tx(t), pad.top + gH + 7);
   }
 
-  // ─ Axis titles ─
-  ctx.fillStyle = 'rgba(99,99,102,0.35)';
+  // ─ Axis titles ─ (drawn on an explicit baseline; 'top' put these below the
+  //   bottom edge of the bitmap, so the x axis was effectively unlabelled)
+  ctx.fillStyle = cFaint;
   ctx.font = "500 10px 'Outfit', sans-serif";
-  ctx.textAlign = 'center';
-  ctx.fillText('Time (hours)', pad.left + gW / 2, H - 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Time (hours)', pad.left + gW / 2, H - 5);
   ctx.save();
-  ctx.translate(12, pad.top + gH / 2);
+  ctx.translate(13, pad.top + gH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('Conc (mg/L)', 0, 0);
   ctx.restore();
 
-  // ─ Target zone label ─
-  ctx.fillStyle = 'rgba(45,138,82,0.4)';
-  ctx.font = "600 9px 'Outfit', sans-serif";
-  ctx.textAlign = 'right';
-  ctx.fillText('Target', W - pad.right - 4, yMin + 12);
+  // ─ Target label ─
+  if (bandBot > bandTop) {
+    ctx.fillStyle = themeColor('--moss', '#4a5c28');
+    ctx.font = "600 9px 'Outfit', sans-serif";
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText('TARGET ' + troughMin + '–' + troughMax, W - pad.right - 4, bandTop + 3);
+  }
 }
 
 // ══════════════════════════════════════════
@@ -6624,14 +6720,14 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   // (Rec 3, A-II); AUC governs. Retained because a trough is still the value a
   // level actually measures.
   const yBand20 = ty(20), yBand10 = ty(10);
-  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
+  ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
   ctx.fillRect(pad.left, yBand20, gW, yBand10-yBand20);
-  ctx.fillStyle = 'rgba(45,138,82,0.2)';
+  ctx.fillStyle = themeRGBA('--moss', 0.40, 'rgba(74,92,40,0.40)');
   ctx.fillRect(pad.left, yBand20, gW, 1);
   ctx.fillRect(pad.left, yBand10, gW, 1);
 
   // ── Horizontal concentration grid ──
-  ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+  ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
   ctx.lineWidth   = 1;
   // Aim for ~6 horizontal lines whatever the scale, on round values.
   const cStep = niceStep(cMaxVal, 6);
@@ -6668,12 +6764,12 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const nowRel = tNow - tStart;
   if (nowRel > 0 && nowRel < tSpan) {
     const xNow = tx(nowRel);
-    ctx.strokeStyle = 'rgba(99,99,102,0.12)';
+    ctx.strokeStyle = themeRGBA('--ink-faint', 0.55, 'rgba(138,142,128,0.55)');
     ctx.lineWidth   = 1;
     ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.moveTo(xNow, pad.top); ctx.lineTo(xNow, pad.top+gH); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle   = 'rgba(99,99,102,0.2)';
+    ctx.fillStyle   = themeColor('--ink-faint', '#8a8e80');
     ctx.font        = "500 9px 'Outfit',sans-serif";
     ctx.textAlign   = 'center';
     ctx.textBaseline= 'alphabetic';
@@ -6752,7 +6848,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const projPts    = nProj > 0 ? ptsInd.filter(p => p.t+tStart >= tProjStart) : [];
 
   // Historic (solid orange)
-  ctx.strokeStyle = 'rgba(201,107,60,0.9)';
+  ctx.strokeStyle = themeRGBA('--terracotta', 0.95, 'rgba(204,120,92,0.95)');
   ctx.lineWidth   = 2;
   if (pastPts.length > 1) {
     ctx.beginPath();
@@ -6766,7 +6862,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
 
   // Future without projected doses (dashed orange)
   if (futPts.length > 1) {
-    ctx.strokeStyle = 'rgba(201,107,60,0.35)';
+    ctx.strokeStyle = themeRGBA('--terracotta', 0.65, 'rgba(204,120,92,0.65)');
     ctx.setLineDash([7,4]);
     ctx.beginPath();
     if (pastPts.length) ctx.moveTo(tx(pastPts[pastPts.length-1].t), ty(pastPts[pastPts.length-1].c));
@@ -8325,7 +8421,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <button class="compare-clear-btn" onclick="clearComparison()">Clear all</button>
       </div>
       <div class="compare-legend"></div>
-      <canvas id="b-compare-canvas" style="width:100%;display:block;padding:4px 14px 10px"></canvas>
+      <div style="padding:4px 14px 10px"><canvas id="b-compare-canvas" style="width:100%;display:block"></canvas></div>
     </div>`;
 
   // ── Population-only advisory ──
@@ -8398,17 +8494,17 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   const ty    = c => PAD.t + cH - (c / maxC) * cH;
 
   // Background
-  ctx.fillStyle = 'rgba(255,255,255,0.0)';
+  // (was a fully transparent fillRect — a no-op)
   ctx.fillRect(0, 0, W, H);
 
   // Grid lines
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
   ctx.lineWidth   = 0.5;
   [0, 0.25, 0.5, 0.75, 1].forEach(f => {
     const y = ty(maxC * f);
     ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke();
     if (f > 0) {
-      ctx.fillStyle   = 'rgba(99,99,102,0.3)';
+      ctx.fillStyle   = themeColor('--ink-faint', '#8a8e80');
       ctx.font        = `${9 * DPR / DPR}px "DM Mono", monospace`;
       ctx.textAlign   = 'right';
       ctx.fillText((maxC * f).toFixed(1), PAD.l - 4, y + 3);
@@ -8416,7 +8512,7 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   });
 
   // Target band 10–20 mg/L
-  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
+  ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
   const y10 = ty(10), y20 = ty(20);
   if (y10 > PAD.t && y20 < PAD.t + cH) {
     ctx.fillRect(PAD.l, Math.max(PAD.t, y20), cW, Math.min(y10, PAD.t + cH) - Math.max(PAD.t, y20));
@@ -8428,7 +8524,7 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   ctx.textAlign = 'center';
   [0, 0.25, 0.5, 0.75, 1].forEach(f => {
     const x = tx(tau * f);
-    ctx.beginPath(); ctx.strokeStyle = 'rgba(80,90,120,0.18)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)'); ctx.lineWidth = 0.5;
     ctx.moveTo(x, PAD.t + cH); ctx.lineTo(x, PAD.t + cH + 4); ctx.stroke();
     ctx.fillText((tau * f).toFixed(0) + 'h', x, H - 5);
   });
@@ -8447,7 +8543,7 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   ctx.save();
   ctx.translate(11, PAD.t + cH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle   = 'rgba(99,99,102,0.3)';
+  ctx.fillStyle   = themeColor('--ink-faint', '#8a8e80');
   ctx.font        = '8px "DM Mono", monospace';
   ctx.textAlign   = 'center';
   ctx.fillText('mg/L', 0, 0);
@@ -8455,14 +8551,17 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
 }
 
 // ─── Draw comparison canvas with multiple SS profiles overlaid ───
-const COMPARE_COLORS = [
-  'rgba(83,136,204,0.9)',    // blue
-  'rgba(84,168,122,0.9)',    // sage
-  'rgba(224,159,62,0.9)',    // amber
-  'rgba(196,93,112,0.9)',    // rose
-  'rgba(153,102,204,0.9)',   // purple
-  'rgba(80,180,200,0.9)',    // cyan
-];
+// Series colours come from the palette so they re-theme; the order is chosen so
+// adjacent regimens are far apart in hue in BOTH themes. Resolved per draw, not
+// frozen at load, because the palette changes under the theme toggle.
+const COMPARE_TOKENS = ['--terracotta', '--accent-blue', '--moss', '--accent-rose',
+                        '--accent-amber', '--ink-soft'];
+const COMPARE_FALLBACK = ['rgba(204,120,92,0.9)','rgba(74,61,122,0.9)','rgba(74,92,40,0.9)',
+                          'rgba(168,84,106,0.9)','rgba(150,99,31,0.9)','rgba(90,97,81,0.9)'];
+function compareColor(i) {
+  const k = i % COMPARE_TOKENS.length;
+  return themeRGBA(COMPARE_TOKENS[k], 0.9, COMPARE_FALLBACK[k]);
+}
 
 function drawCompareCanvas(canvas, items) {
   if (!items.length) return;
@@ -8488,7 +8587,7 @@ function drawCompareCanvas(canvas, items) {
   // Grid
   [0, 0.25, 0.5, 0.75, 1].forEach(f => {
     const y = ty(maxC * f);
-    ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)'); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke();
     if (f > 0) {
       ctx.fillStyle = themeColor('--ink-faint','#8a8e80');
@@ -8497,29 +8596,36 @@ function drawCompareCanvas(canvas, items) {
     }
   });
 
-  // Target band
-  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
-  const y10 = ty(10), y20 = ty(20);
-  ctx.fillRect(PAD.l, Math.max(PAD.t, y20), cW, Math.max(0, Math.min(y10, PAD.t + cH) - Math.max(PAD.t, y20)));
+  // Target band — the clinician's own bounds, not a hard-coded 10-20.
+  const tgtMin = (typeof bState !== 'undefined' && bState && +bState.troughMin) || 10;
+  const tgtMax = (typeof bState !== 'undefined' && bState && +bState.troughMax) || 20;
+  ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
+  const yLo = ty(tgtMin), yHi = ty(tgtMax);
+  ctx.fillRect(PAD.l, Math.max(PAD.t, yHi), cW, Math.max(0, Math.min(yLo, PAD.t + cH) - Math.max(PAD.t, yHi)));
 
   // X ticks (use maxTau)
   ctx.fillStyle = themeColor('--ink-faint','#8a8e80'); ctx.font = '9px "DM Mono", monospace';
-  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
-    const x = tx(maxTau * f);
-    ctx.textAlign = 'center';
-    ctx.fillText((maxTau * f).toFixed(0) + 'h', x, H - 6);
-  });
+  const cmpStep = niceTimeStep(maxTau, 4);
+  ctx.textAlign = 'center';
+  for (let t = 0; t <= maxTau + 1e-9; t += cmpStep) {
+    ctx.fillText(t.toFixed(Number.isInteger(cmpStep) ? 0 : 1) + 'h', tx(t), H - 6);
+  }
 
-  // Each regimen — scale t to maxTau space
+  // Each regimen on TRUE elapsed time, its cycle repeated across the window.
   items.forEach((it, idx) => {
-    const col = COMPARE_COLORS[idx % COMPARE_COLORS.length];
     ctx.beginPath();
-    ctx.strokeStyle = col; ctx.lineWidth = 2;
-    it.pts.forEach((p, i) => {
-      const x = tx(p.t * (maxTau / it.tau));  // stretch shorter intervals to maxTau width
-      const y = ty(p.c);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
+    ctx.strokeStyle = compareColor(idx);
+    ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    let started = false;
+    const reps = Math.max(1, Math.ceil(maxTau / it.tau));
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < it.pts.length; i++) {
+        const t = rep * it.tau + it.pts[i].t;
+        if (t > maxTau + 1e-9) break;
+        const x = tx(t), y = ty(it.pts[i].c);
+        started ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), started = true);
+      }
+    }
     ctx.stroke();
   });
 
@@ -8625,7 +8731,7 @@ function renderComparisonSection() {
   const legendEl = sec.querySelector('.compare-legend');
   if (legendEl) {
     legendEl.innerHTML = items.map((it, idx) => {
-      const col = COMPARE_COLORS[idx % COMPARE_COLORS.length];
+      const col = compareColor(idx);
       return `<div class="compare-legend-item">
         <div class="compare-legend-swatch" style="background:${col}"></div>
         <span>${it.label}</span>
