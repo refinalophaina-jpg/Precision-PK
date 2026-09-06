@@ -1314,7 +1314,28 @@
     .pr-dose-rec { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 700; color: var(--accent-terra, #C96B3C); }
     .pr-metric { font-family: 'DM Mono', monospace; font-size: 10px; }
 
-    .pr-graph img { max-width: 100%; max-height: 220px; margin: 6px 0; }
+    .pr-graph img { width: 100%; max-height: 300px; object-fit: contain; margin: 6px 0; }
+    .pr-caption {
+      font-size: 8px; color: #777; line-height: 1.45; margin-top: 3px; font-style: italic;
+    }
+    .pr-note {
+      font-size: 9.5px; color: #444; line-height: 1.5; margin-top: 5px;
+      padding: 5px 8px; background: #faf8f4; border-left: 2px solid var(--accent-terra, #C96B3C);
+    }
+    /* Two columns for the short reference tables, so the report stays to a page
+       or two instead of a ribbon of half-empty rows. The graph and any wide
+       table opt back out with .pr-section-wide. */
+    .pr-body { column-count: 2; column-gap: 18px; }
+    .pr-section { break-inside: avoid; -webkit-column-break-inside: avoid; }
+    .pr-section-wide { column-span: all; break-inside: avoid; }
+    .pr-table th { font-size: 8.5px; line-height: 1.25; }
+    /* Header repeats on every page so a detached second sheet is still identifiable. */
+    .pr-runhead {
+      position: running(prhead);
+      font-size: 8px; color: #777;
+    }
+    @page { size: letter; margin: 0.5in; }
+    @page :first { margin-top: 0.45in; }
 
     .pr-alert {
       padding: 6px 8px; border-radius: 4px; font-size: 10px; margin-bottom: 6px;
@@ -6240,6 +6261,34 @@ function fmtDT(timeH) {
 
 // ─── Draw Dosing Profile canvas ───
 // nProj: number of trailing entries in `doses` that are projected (future) doses
+// ══════════════════════════════════════════════════════════════════════════
+//  GRAPH AXES
+// ══════════════════════════════════════════════════════════════════════════
+// The old axes stepped concentration in fixed 5/10/20 jumps and drew time
+// gridlines every 8 h regardless of how long the course was. Over a 6-day
+// course that is 18 unlabelled lines; over 12 h it is almost none. You could
+// not read a concentration off the plot at a chosen time, which is the whole
+// point of the picture.
+//
+// niceStep picks a 1-2-5x10^n interval so ticks land on round numbers a reader
+// can interpolate between, and the count adapts to the axis length.
+function niceStep(span, targetTicks) {
+  if (!(span > 0)) return 1;
+  const raw = span / Math.max(1, targetTicks);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const mult = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return mult * mag;
+}
+// Time reads better on human intervals than on decimal ones — nobody thinks in
+// 2.5 h steps. Snap to the durations a pharmacist actually uses.
+const TIME_STEPS_H = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72];
+function niceTimeStep(spanH, targetTicks) {
+  const raw = spanH / Math.max(1, targetTicks);
+  for (const s of TIME_STEPS_H) if (s >= raw) return s;
+  return Math.ceil(raw / 24) * 24;
+}
+
 function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiInd, gotiPop, nProj) {
   // gotiInd / gotiPop: {k10,k12,k21,Vc} for 2-comp model (optional)
   nProj = nProj || 0;
@@ -6307,21 +6356,36 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   // ── Horizontal concentration grid ──
   ctx.strokeStyle = 'rgba(0,0,0,0.05)';
   ctx.lineWidth   = 1;
-  const cStep = cMaxVal <= 30 ? 5 : cMaxVal <= 60 ? 10 : 20;
+  // Aim for ~6 horizontal lines whatever the scale, on round values.
+  const cStep = niceStep(cMaxVal, 6);
   for (let c=0; c<=cMaxVal; c+=cStep) {
     ctx.beginPath(); ctx.moveTo(pad.left, ty(c)); ctx.lineTo(pad.left+gW, ty(c)); ctx.stroke();
   }
 
-  // ── Vertical 8h gridlines ──
-  ctx.strokeStyle = 'rgba(99,99,102,0.15)';
+  // ── Vertical time gridlines — step adapts to the course length ──
+  // Roughly one major line per 90 px, so a 12 h course and a 6 day course are
+  // both readable instead of one being bare and the other a picket fence.
+  const tStepMajor = niceTimeStep(tSpan, Math.max(3, Math.floor(gW / 90)));
+  const tStepMinor = tStepMajor / (tStepMajor % 3 === 0 ? 3 : 2);
+  ctx.strokeStyle = themeColor('--rule','rgba(0,0,0,0.05)');
+  ctx.lineWidth   = 0.5;
+  for (let tMark = tStepMinor; tMark <= tSpan; tMark += tStepMinor) {
+    if (Math.abs(tMark % tStepMajor) < 1e-6) continue;      // majors drawn below
+    const xM = tx(tMark);
+    if (xM < pad.left || xM > pad.left+gW) continue;
+    ctx.beginPath(); ctx.moveTo(xM, pad.top); ctx.lineTo(xM, pad.top+gH); ctx.stroke();
+  }
+  ctx.strokeStyle = themeColor('--ink-faint','rgba(99,99,102,0.15)');
+  ctx.globalAlpha = 0.28;
   ctx.lineWidth   = 0.75;
   ctx.setLineDash([2,5]);
-  for (let tMark = 8; tMark <= tSpan; tMark += 8) {
+  for (let tMark = tStepMajor; tMark <= tSpan; tMark += tStepMajor) {
     const xM = tx(tMark);
     if (xM < pad.left || xM > pad.left+gW) continue;
     ctx.beginPath(); ctx.moveTo(xM, pad.top); ctx.lineTo(xM, pad.top+gH); ctx.stroke();
   }
   ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 
   // ── "Now" line ──
   const nowRel = tNow - tStart;
@@ -6466,12 +6530,13 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   }
 
   // ── Y-axis labels ──
-  ctx.fillStyle   = 'rgba(142,150,176,0.6)';
+  ctx.fillStyle   = themeColor('--ink-faint','rgba(142,150,176,0.6)');
   ctx.font        = "500 10px 'DM Mono',monospace";
   ctx.textAlign   = 'right';
   ctx.textBaseline= 'middle';
-  for (let c=0; c<=cMaxVal; c+=cStep) {
-    ctx.fillText(c.toFixed(0), pad.left-5, ty(c));
+  const cDec = cStep < 1 ? (cStep < 0.2 ? 2 : 1) : 0;
+  for (let c=0; c<=cMaxVal + 1e-9; c+=cStep) {
+    ctx.fillText(c.toFixed(cDec), pad.left-5, ty(c));
   }
 
   // ── X-axis: every 8h tick with date/time label ──
@@ -6480,8 +6545,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.textBaseline= 'top';
   ctx.font        = "500 8px 'DM Mono',monospace";
   const doseXs    = doses.map(d => tx(d.timeH - tStart));
-  const MIN_SEP   = 38; // px — suppress tick label if too close to a dose marker
-  for (let tMark = 0; tMark <= tSpan; tMark += 8) {
+  const MIN_SEP   = 34; // px — suppress tick label if too close to a dose marker
+  for (let tMark = 0; tMark <= tSpan; tMark += tStepMajor) {
     const xM   = tx(tMark);
     if (xM < pad.left || xM > pad.left+gW) continue;
     const tooClose = doseXs.some(xD => Math.abs(xM - xD) < MIN_SEP);
@@ -6491,19 +6556,24 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
       const hh = d2.getHours().toString().padStart(2,'0');
       const mi = d2.getMinutes().toString().padStart(2,'0');
       // Show date only when date changes or at tMark=0
-      const prevD2 = new Date((tStart+tMark-8)*3600000);
+      const prevD2 = new Date((tStart+tMark-tStepMajor)*3600000);
       const showDate = tMark===0 || d2.getDate() !== prevD2.getDate();
-      ctx.fillStyle = 'rgba(99,99,102,0.35)';
+      ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.35)');
       ctx.fillText(showDate ? `${mm}/${dd} ${hh}:${mi}` : `${hh}:${mi}`, xM, pad.top+gH+4);
+      // Elapsed hours under the clock time — the axis a PK reader actually uses.
+      ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.28)');
+      ctx.font = "500 7.5px 'DM Mono',monospace";
+      ctx.fillText(`${tMark % 1 === 0 ? tMark : tMark.toFixed(1)}h`, xM, pad.top+gH+13);
+      ctx.font = "500 8px 'DM Mono',monospace";
     }
   }
 
   // ── Axis labels ──
-  ctx.fillStyle   = 'rgba(99,99,102,0.25)';
+  ctx.fillStyle   = themeColor('--ink-faint','rgba(99,99,102,0.25)');
   ctx.font        = "500 9px 'Outfit',sans-serif";
   ctx.textAlign   = 'center';
   ctx.textBaseline= 'alphabetic';
-  ctx.fillText('Time', pad.left+gW/2, cHpx-2);
+  ctx.fillText('Time  ·  hours from first dose', pad.left+gW/2, cHpx-2);
   ctx.save();
   ctx.translate(11, pad.top+gH/2);
   ctx.rotate(-Math.PI/2);
@@ -6511,11 +6581,98 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.restore();
 
   // ── Target label ──
-  ctx.fillStyle   = 'rgba(63,172,114,0.4)';
+  ctx.fillStyle   = themeColor('--moss','rgba(63,172,114,0.4)');
+  ctx.globalAlpha = 0.75;
   ctx.font        = "600 8px 'Outfit',sans-serif";
   ctx.textAlign   = 'right';
   ctx.textBaseline= 'middle';
   ctx.fillText('Trough target', pad.left+gW-4, (yBand20+yBand10)/2);
+  ctx.globalAlpha = 1;
+
+  // Keep everything a crosshair needs to invert a pixel back into a time and a
+  // concentration. Stored on the canvas so multiple graphs stay independent.
+  canvas._pkPlot = {
+    pad, gW, gH, cW, cHpx, tStart, tSpan, cMaxVal, dpr,
+    predInd, predPop,
+    doses: doses.map(d => ({ mg: d.mg, timeH: d.timeH, tinfH: d.tinfH })),
+    levels: levels.map(l => ({ conc: l.conc, timeH: l.timeH })),
+    baseImage: ctx.getImageData(0, 0, canvas.width, canvas.height),
+  };
+  attachPlotCrosshair(canvas);
+}
+
+// ── Crosshair readout ─────────────────────────────────────────────────────
+// "What is the level at 03:00?" should be answerable by pointing at the plot,
+// not by estimating between gridlines. Hovering (or dragging on touch) snaps a
+// vertical rule to the cursor and prints the fitted concentration, the clock
+// time, hours since the first dose, and hours since the most recent dose.
+function attachPlotCrosshair(canvas) {
+  if (!canvas || canvas._pkCrosshairBound) return;
+  canvas._pkCrosshairBound = true;
+
+  const draw = (clientX) => {
+    const P = canvas._pkPlot; if (!P) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    ctx.putImageData(P.baseImage, 0, 0);
+    if (x < P.pad.left || x > P.pad.left + P.gW) return;
+
+    const rel = ((x - P.pad.left) / P.gW) * P.tSpan;
+    const tAbs = P.tStart + rel;
+    const c = P.predInd(tAbs);
+    if (!Number.isFinite(c)) return;
+    const y = P.pad.top + P.gH - Math.max(0, Math.min(1, c / P.cMaxVal)) * P.gH;
+
+    ctx.save();
+    ctx.strokeStyle = themeColor('--terracotta', '#cc785c');
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x, P.pad.top); ctx.lineTo(x, P.pad.top + P.gH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = themeColor('--terracotta', '#cc785c'); ctx.fill();
+    ctx.strokeStyle = themeColor('--paper', '#fff'); ctx.lineWidth = 1.5; ctx.stroke();
+
+    const d = new Date(tAbs * 3600000);
+    const p2 = (v) => String(v).padStart(2, '0');
+    const last = P.doses.filter(dd => dd.timeH <= tAbs).sort((a, b) => b.timeH - a.timeH)[0];
+    const lines = [
+      `${c.toFixed(1)} mg/L`,
+      `${p2(d.getMonth()+1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}  ·  ${rel.toFixed(1)}h`,
+    ];
+    if (last) lines.push(`${(tAbs - last.timeH).toFixed(1)} h after ${last.mg} mg`);
+
+    ctx.font = "500 9.5px 'DM Mono',monospace";
+    const wBox = Math.max(...lines.map(l => ctx.measureText(l).width)) + 14;
+    const hBox = lines.length * 13 + 8;
+    let bx = x + 10; if (bx + wBox > P.cW - 2) bx = x - wBox - 10;
+    let by = Math.max(P.pad.top + 2, Math.min(y - hBox / 2, P.pad.top + P.gH - hBox - 2));
+    ctx.fillStyle = themeColor('--card', '#fff');
+    ctx.globalAlpha = 0.97;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx, by, wBox, hBox, 4); else ctx.rect(bx, by, wBox, hBox);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = themeColor('--paper-edge', '#e8e0d0'); ctx.lineWidth = 1; ctx.stroke();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    lines.forEach((l, i) => {
+      ctx.fillStyle = i === 0 ? themeColor('--terracotta', '#cc785c') : themeColor('--ink-soft', '#5a6151');
+      ctx.font = i === 0 ? "600 11px 'DM Mono',monospace" : "500 9px 'DM Mono',monospace";
+      ctx.fillText(l, bx + 7, by + 4 + i * 13);
+    });
+    ctx.restore();
+  };
+  const clear = () => {
+    const P = canvas._pkPlot; if (!P) return;
+    canvas.getContext('2d').putImageData(P.baseImage, 0, 0);
+  };
+  canvas.style.cursor = 'crosshair';
+  canvas.addEventListener('mousemove', e => draw(e.clientX));
+  canvas.addEventListener('mouseleave', clear);
+  canvas.addEventListener('touchstart', e => { if (e.touches[0]) { draw(e.touches[0].clientX); } }, { passive: true });
+  canvas.addEventListener('touchmove',  e => { if (e.touches[0]) { e.preventDefault(); draw(e.touches[0].clientX); } }, { passive: false });
+  canvas.addEventListener('touchend', clear);
 }
 
 // ─── PK row helper ───
@@ -8730,6 +8887,105 @@ function updatePrintFabVisibility() {
   updatePrintFabVisibility();
 })();
 
+// Render a print-quality profile: forced light theme, 2x device pixels, wider
+// aspect than the on-screen panel so a full course reads across the page.
+function _buildPrintGraph(r) {
+  if (!r || !r.doses || !r.doses.length) return '';
+  const root = document.documentElement;
+  const prevTheme = root.getAttribute('data-theme');
+  const off = document.createElement('canvas');
+  off.style.width = '1040px';
+  Object.defineProperty(off, 'offsetWidth', { value: 1040, configurable: true });
+  try {
+    root.setAttribute('data-theme', 'light');       // tokens read light for the render
+    const prevDpr = window.devicePixelRatio;
+    try { Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true }); } catch (e) {}
+    drawProfileGraph(off, r.doses, r.levels || [], r.CL_ind, r.V_ind, r.CL_pop, r.V_pop,
+                     r.gotiInd || null, r.gotiPop || null, r.nProj || 0);
+    try { Object.defineProperty(window, 'devicePixelRatio', { value: prevDpr, configurable: true }); } catch (e) {}
+    const url = off.toDataURL('image/png');
+    return `<div class="pr-section pr-section-wide"><div class="pr-section-title">Concentration–Time Profile</div>
+      <div class="pr-graph"><img src="${url}" alt="Vancomycin concentration-time profile"></div>
+      <div class="pr-caption">Solid line: individual (Bayesian) fit. Dashed: population prediction.
+        Points: measured levels. Shaded band: trough target. Vertical marks: doses.</div></div>`;
+  } catch (e) {
+    return '';
+  } finally {
+    if (prevTheme) root.setAttribute('data-theme', prevTheme); else root.removeAttribute('data-theme');
+  }
+}
+
+// Everything the calculator concluded, in the order a reader needs it.
+function _prRegimenSection(r) {
+  let cur = null;
+  try {
+    cur = inferCurrentRegimen(r.doses, r.CL_ind, r.V_ind,
+            (r.model === 'goti' || r.model === 'hughes') && r.goti ? r.goti : null);
+  } catch (e) { return ''; }
+  const reg = cur && cur.regimen;
+  if (!reg) return '';
+  const lastLevelT = (r.levels && r.levels.length) ? r.levels[r.levels.length-1].timeH : null;
+  let timing = null;
+  try { timing = lastLevelT != null ? interpretLevelTiming(lastLevelT, r.doses, reg.intervalHours) : null; } catch (e) {}
+  const rows = [
+    ['Detected regimen', reg.overrideActive
+        ? `${escHtml(reg.detectedFrequencyLabel || 'none')} (overridden)`
+        : escHtml(reg.frequencyLabel || 'no consistent schedule')],
+    ['Projecting on', escHtml(reg.frequencyLabel || '—')],
+    ['Maintenance dose', reg.maintenanceDoseMg != null ? `${reg.maintenanceDoseMg.toFixed(0)} mg` : '—'],
+    ['Confidence', escHtml(reg.overrideActive ? 'clinician override' : reg.confidence)],
+  ];
+  if (reg.transitionDetected && reg.priorIntervalHours != null)
+    rows.push(['Previous regimen', escHtml(frequencyLabel(reg.priorIntervalHours))]);
+  if (reg.loadingDoseDetected) rows.push(['Loading dose', 'detected, excluded from the interval read']);
+  if (reg.supportingIntervals && reg.supportingIntervals.length)
+    rows.push(['Supporting intervals', reg.supportingIntervals.map(h => h.toFixed(2) + ' h').join(' · ')]);
+  let h = `<div class="pr-section"><div class="pr-section-title">Current Regimen</div><table class="pr-table"><tbody>`;
+  for (const [k, v] of rows) h += `<tr><td>${k}</td><td class="pr-val">${v}</td></tr>`;
+  h += `</tbody></table>`;
+  try {
+    const narrative = regimenNarrative(reg, timing);
+    if (narrative) h += `<div class="pr-note">${escHtml(narrative)}</div>`;
+  } catch (e) {}
+  h += `</div>`;
+  return h;
+}
+
+// Per-level timing, so a reader can see WHICH level each number is.
+function _prLevelRows(r, fmtAbsH, t0) {
+  let cur = null, tau = null;
+  try {
+    cur = inferCurrentRegimen(r.doses, r.CL_ind, r.V_ind,
+            (r.model === 'goti' || r.model === 'hughes') && r.goti ? r.goti : null);
+    tau = cur && cur.regimen ? cur.regimen.intervalHours : null;
+  } catch (e) {}
+  const LBL = {
+    during_infusion: 'during infusion', immediate_post_infusion: 'immediate post-infusion',
+    early_interval: 'early interval', mid_interval: 'mid interval', late_interval: 'late interval',
+    near_trough: 'near trough', after_expected_next_dose: 'after next dose was due',
+    before_first_dose: 'before first dose', unknown: '—',
+  };
+  let rows = '';
+  for (const lev of r.levels) {
+    let cls = '—', since = '—', pred = '—';
+    try {
+      const t = interpretLevelTiming(lev.timeH, r.doses, tau);
+      cls = LBL[t.classification] || t.classification;
+      if (t.hoursFromDoseStart != null) since = t.hoursFromDoseStart.toFixed(2) + ' h';
+    } catch (e) {}
+    try {
+      const p = (r.model === 'goti' || r.model === 'hughes') && r.gotiInd
+        ? predictConc2comp(r.doses, lev.timeH, r.gotiInd.k10, r.gotiInd.k12, r.gotiInd.k21, r.gotiInd.Vc)
+        : predictConc1comp(r.doses, lev.timeH, r.CL_ind / r.V_ind, r.V_ind);
+      if (Number.isFinite(p)) pred = p.toFixed(1);
+    } catch (e) {}
+    rows += `<tr><td class="pr-val">${lev.conc.toFixed(1)}</td><td class="pr-val">${pred}</td>`
+          + `<td class="pr-val">${fmtAbsH(lev.timeH)}</td><td class="pr-val">${(lev.timeH - t0).toFixed(1)} h</td>`
+          + `<td class="pr-val">${since}</td><td>${escHtml(cls)}</td></tr>`;
+  }
+  return rows;
+}
+
 function _buildPrintReport() {
   const r = bState.result;
   if (!r) {
@@ -8768,6 +9024,7 @@ function _buildPrintReport() {
     <div class="pr-tag">Vancomycin TDM Report &middot; Clinical Pharmacist Tool</div>
     <div class="pr-meta">Generated ${now} &middot; Model: ${modelName}</div>
   </div>`;
+  html += `<div class="pr-body">`;
 
   // Demographics
   html += `<div class="pr-section">
@@ -8776,9 +9033,32 @@ function _buildPrintReport() {
       <tr><td>Age</td><td class="pr-val">${age} yr</td><td>Sex</td><td class="pr-val">${sex}</td></tr>
       <tr><td>Weight</td><td class="pr-val">${tbw} kg</td><td>Height</td><td class="pr-val">${ht} cm</td></tr>
       <tr><td>BMI</td><td class="pr-val">${bmi} kg/m²</td><td>SCr</td><td class="pr-val">${scr} mg/dL</td></tr>
-      ${r.crcl ? `<tr><td>CrCl (est.)</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td></td><td></td></tr>` : ''}
+      ${r.crcl ? `<tr><td>CrCl (Cockcroft-Gault)</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td>Uncapped</td><td class="pr-val">${(() => { try { const u = getUncappedCrCl(); return u != null ? u.toFixed(0) + ' mL/min' : '—'; } catch (e) { return '—'; } })()}</td></tr>` : ''}
+      ${(() => {
+        try {
+          const htN = parseFloat(ht), tbwN = parseFloat(tbw);
+          if (!(htN > 0) || !(tbwN > 0)) return '';
+          const ibw = calcIBW(sex === 'F' ? 'F' : 'M', htN);
+          const adj = calcAdjBW(tbwN, ibw);
+          return `<tr><td>IBW (${escHtml(ibwMethod(htN))})</td><td class="pr-val">${ibw.toFixed(1)} kg</td>`
+               + `<td>AdjBW</td><td class="pr-val">${adj.toFixed(1)} kg</td></tr>`;
+        } catch (e) { return ''; }
+      })()}
+      ${(() => {
+        try {
+          const cy = parseFloat((document.getElementById('cysc') || {}).value);
+          if (!(cy > 0)) return '';
+          const e = ckdEpiCrCys(parseFloat(age), sex === 'F' ? 'F' : 'M', parseFloat(scr), cy);
+          if (e == null) return '';
+          return `<tr><td>Cystatin C</td><td class="pr-val">${cy.toFixed(2)} mg/L</td>`
+               + `<td>eGFR (CKD-EPI cr-cys)</td><td class="pr-val">${e.toFixed(0)} mL/min/1.73m²</td></tr>`;
+        } catch (e) { return ''; }
+      })()}
     </tbody></table>
   </div>`;
+
+  // What regimen the calculator believes the patient is on, and why.
+  html += _prRegimenSection(r);
 
   // Helper: absolute hours → readable date/time (24h format)
   const _fmtAbsH = (h) => {
@@ -8801,14 +9081,16 @@ function _buildPrintReport() {
     html += '</tbody></table></div>';
   }
 
-  // Observed Levels
+  // Observed levels, each with what it actually is — measured against fitted, and
+  // where in the interval it was drawn. A bare number cannot be checked.
   if (r.levels && r.levels.length) {
     html += `<div class="pr-section"><div class="pr-section-title">Observed Levels</div><table class="pr-table">
-      <thead><tr><th>Concentration</th><th>Date/Time</th><th>Hour</th></tr></thead><tbody>`;
-    for (const lev of r.levels) {
-      html += `<tr><td class="pr-val">${lev.conc.toFixed(1)} mg/L</td><td class="pr-val">${_fmtAbsH(lev.timeH)}</td><td class="pr-val">${(lev.timeH - t0).toFixed(1)} h</td></tr>`;
-    }
-    html += '</tbody></table></div>';
+      <thead><tr><th>Measured<br>mg/L</th><th>Fitted<br>mg/L</th><th>Date/Time</th><th>Hour of<br>course</th><th>After last<br>dose</th><th>Timing</th></tr></thead><tbody>`;
+    html += _prLevelRows(r, _fmtAbsH, t0);
+    html += '</tbody></table>';
+    html += `<div class="pr-caption">"Fitted" is this patient's individual model evaluated at the draw time —
+      the gap between measured and fitted is the residual the Bayesian fit had to absorb.</div>`;
+    html += '</div>';
   }
 
   // PK Parameters
@@ -8842,19 +9124,67 @@ function _buildPrintReport() {
     html += '</div>';
   }
 
-  // Profile Graph (canvas → image)
-  const canvasIds = ['b-profile-canvas','profile-canvas','continue-profile-canvas'];
-  for (const cid of canvasIds) {
-    const canv = document.getElementById(cid);
-    if (canv && canv.width > 0 && canv.height > 0) {
-      try {
-        const dataURL = canv.toDataURL('image/png');
-        html += `<div class="pr-section"><div class="pr-section-title">Concentration–Time Profile</div>
-          <div class="pr-graph"><img src="${dataURL}" alt="PK profile"></div></div>`;
-        break;
-      } catch(e) {}
-    }
-  }
+  // Exposure achieved on the CURRENT regimen, plus how certain any of it is.
+  html += (() => {
+    let cur = null;
+    try {
+      cur = inferCurrentRegimen(r.doses, r.CL_ind, r.V_ind,
+              (r.model === 'goti' || r.model === 'hughes') && r.goti ? r.goti : null);
+    } catch (e) { return ''; }
+    if (!cur || cur.auc24 == null) return '';
+    const band = r.targetAUC ? `${(r.targetAUC * 0.8).toFixed(0)}–${(r.targetAUC * 1.2).toFixed(0)}` : '400–600';
+    const inBand = cur.auc24 >= 400 && cur.auc24 <= 600;
+    let unc = '';
+    try { unc = aucUncertaintyText((r.levels || []).length, r.model); } catch (e) {}
+    return `<div class="pr-section"><div class="pr-section-title">Exposure on the Current Regimen</div>
+      <table class="pr-table"><tbody>
+        <tr><td>Projected AUC₂₄</td><td class="pr-val">${cur.auc24.toFixed(0)} mg·h/L</td>
+            <td>Guideline range</td><td class="pr-val">400–600</td></tr>
+        ${cur.Ctrough != null ? `<tr><td>Projected trough</td><td class="pr-val">${cur.Ctrough.toFixed(1)} mg/L</td>
+            <td>Projected peak</td><td class="pr-val">${cur.Cpeak != null ? cur.Cpeak.toFixed(1) + ' mg/L' : '—'}</td></tr>` : ''}
+        <tr><td>Status</td><td class="pr-val">${inBand ? 'within 400–600' : (cur.auc24 > 600 ? 'ABOVE 600' : 'BELOW 400')}</td>
+            <td>Target band</td><td class="pr-val">${band}</td></tr>
+      </tbody></table>
+      ${unc ? `<div class="pr-note"><strong>Uncertainty:</strong> ${escHtml(unc)} on AUC₂₄ with
+        ${(r.levels || []).length} level${(r.levels || []).length === 1 ? '' : 's'}. Figures are simulated against
+        this model's own prior, not asserted.</div>` : ''}
+    </div>`;
+  })();
+
+  // Advisories that changed the interpretation — recorded so the report stands alone.
+  html += (() => {
+    const items = [];
+    try {
+      const u = getUncappedCrCl();
+      if (u != null && detectARC(u)) items.push(['warning',
+        `Augmented renal clearance: uncapped CrCl ${u.toFixed(0)} mL/min (≥130). Clearance may exceed the model's range.`]);
+      if (u != null && detectVeryLowCrCl(u)) items.push(['danger',
+        `Very low CrCl (${u.toFixed(0)} mL/min, <10) without RRT. The population models were not validated in this range.`]);
+    } catch (e) {}
+    try {
+      const ageN = parseFloat(age), scrN = parseFloat(scr);
+      if (lowMuscleMassSuspected(ageN, sex === 'F' ? 'F' : 'M', scrN)) items.push(['info',
+        'Creatinine is low for age — Cockcroft-Gault can overestimate clearance where muscle mass is reduced. ' +
+        'Measured creatinine is used as entered; it is not rounded up.']);
+    } catch (e) {}
+    try {
+      if (typeof gotiScrTruncationActive === 'function' && r.model === 'goti' && gotiScrTruncationActive())
+        items.push(['info', 'Goti SCr truncation applied (SCr <1.0 and age >65, per the 2019 erratum). ' +
+          'This affects the Goti model input only, not the displayed CrCl.']);
+    } catch (e) {}
+    if (!items.length) return '';
+    return `<div class="pr-section"><div class="pr-section-title">Advisories</div>`
+      + items.map(([k, t]) => `<div class="pr-alert ${k}">${escHtml(t)}</div>`).join('')
+      + `</div>`;
+  })();
+
+  // Concentration–time profile.
+  // The screen canvas is not reused: it is sized for the panel, drawn at screen
+  // DPI, and — if the user is in dark mode — painted in dark colours that would
+  // print as a black slab. Render a fresh one, wide, at 2x, forced light.
+  html += _buildPrintGraph(r);
+
+  html += `</div>`;   // .pr-body
 
   // Footer
   html += `<div class="pr-footer">
