@@ -1434,6 +1434,8 @@
   .profile-legend { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
   .legend-item { display:flex; align-items:center; gap:6px; font-size:0.68rem; color:var(--text-muted); }
   .legend-line { width:22px; height:2px; border-radius:1px; flex-shrink:0; }
+  /* Dashed series get a dashed swatch, so the key matches the stroke. */
+  .legend-line-dashed { background:none; height:0; border-top:2px dashed currentColor; }
   .legend-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 
   /* ─── Tinkerer SS canvas + comparison ─── */
@@ -8246,11 +8248,11 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <div class="profile-canvas-title">Dosing Profile</div>
         <div class="profile-legend">
           <div class="legend-item">
-            <div class="legend-line" style="background:rgba(201,107,60,0.9)"></div>
+            <div class="legend-line" style="background:var(--terracotta)"></div>
             Individual (Bayesian)
           </div>
           <div class="legend-item">
-            <div class="legend-line" style="background:color-mix(in srgb, var(--purple) 55.00000000000001%, transparent);border-top:2px dashed color-mix(in srgb, var(--purple) 60%, transparent)"></div>
+            <div class="legend-line legend-line-dashed" style="border-top-color:var(--ink-faint)"></div>
             Population avg
           </div>
           <div class="legend-item">

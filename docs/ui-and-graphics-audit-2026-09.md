@@ -81,6 +81,7 @@ is **left open** — see [Deferred](#deferred).
 | G12 | Observed levels — the only measured numbers on the chart — were the lowest-contrast mark on it | paper halo behind both the × and its value label, heavier stroke, label flips near the right edge |
 | G13 | Population fit and projection were both `--purple`, separated only by alpha — **1.65:1 apart** in dark | population moved to neutral `--ink-faint`, giving four distinct roles: rose = measured, terracotta = this patient's fit, purple = projected, neutral = population reference |
 | G14 | Axis numbers at ~1.4:1 in both themes | `--ink-faint` at full opacity |
+| G17 | The legend contradicted the chart — the "Individual" swatch was still the old hard-coded orange (it lives in an HTML string, so the canvas sweep missed it), and the "Population" swatch stayed purple after G13 moved that curve to neutral | every swatch reads the same token the renderer strokes; dashed series get a dashed swatch |
 | G15 | Empty-state text at **1.54:1** — `opacity: .35` stacked on `--text-muted` | de-emphasis comes from the token; the opacity multiplier is gone |
 | G16 | Dose markers had no overlap suppression | **deferred** — see below |
 
@@ -165,7 +166,6 @@ value; all are legibility or polish in `drawProfileGraph` and the smaller canvas
 - **Status badge overlaps its own stat label** from 1420px down, total collision at
   1001–1200px.
 - **KDIGO AKI badge is not refreshed** when serial-creatinine rows are edited.
-- **Legend glyph does not match the mark drawn**, and one drawn series has no legend entry.
 - **Compare-chart controls are ~20px tall**, under the 44px touch minimum.
 
 ---
