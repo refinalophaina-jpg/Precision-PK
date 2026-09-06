@@ -454,8 +454,11 @@
 
   /* ─── RESULT CARDS ─── */
   .result-section { display: flex; flex-direction: column; gap: 16px; }
-  .result-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .result-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  /* auto-fit against a real minimum removes the breakpoint cliff entirely:
+     the row reflows when a card would go under ~225px instead of at one
+     hard-coded viewport width. */
+  .result-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; }
+  .result-row-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 
   .stat-card {
     background: var(--glass-bg);
@@ -467,6 +470,9 @@
     position: relative;
     overflow: hidden;
     transition: transform .35s ease, border-color .35s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
   }
   .stat-card:hover {
     transform: translateY(-2px);
@@ -507,9 +513,10 @@
     font-family: 'DM Mono', monospace;
   }
   .stat-badge {
-    position: absolute;
-    top: 14px;
-    right: 12px;
+    order: -1;              /* the badge leads the card, in flow */
+    align-self: flex-end;
+    margin-bottom: 4px;
+    max-width: 100%;
     font-size: 0.62rem;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -1219,13 +1226,13 @@
   @media (max-width: 1000px) {
     .app-shell { grid-template-columns: 1fr; }
     .panel-left { border-right: none; border-bottom: 1px solid var(--border); }
-    .result-row { grid-template-columns: repeat(2,1fr); }
+    /* .result-row reflows on its own (auto-fit); no override needed. */
     .header { padding: 14px 20px; flex-wrap: wrap; gap: 10px; }
   }
   @media (max-width: 600px) {
     .panel-left { padding: 20px 16px; }
     .panel-right { padding: 20px 16px; }
-    .result-row { grid-template-columns: 1fr; }
+    /* .result-row reflows on its own (auto-fit); no override needed. */
     .rec-dose { font-size: 1.6rem; }
     .stat-value { font-size: 1.3rem; }
     input[type="number"], input[type="text"], select, button {
@@ -1451,9 +1458,10 @@
   }
   .tink-add-btn {
     background:color-mix(in srgb, var(--purple) 10%, transparent); border:1px solid color-mix(in srgb, var(--purple) 30%, transparent);
-    color:var(--accent-blue); padding:3px 10px; border-radius:4px;
+    color:var(--accent-blue); padding:3px 10px; border-radius:var(--radius-sm);
     font-size:0.68rem; font-weight:600; cursor:pointer; letter-spacing:0.05em;
     transition:background 0.15s;
+    min-height:44px;
   }
   .tink-add-btn:hover { background:color-mix(in srgb, var(--purple) 20%, transparent); }
   .compare-section {
@@ -1470,8 +1478,9 @@
   }
   .compare-clear-btn {
     background:rgba(184,59,59,0.1); border:1px solid rgba(184,59,59,0.25);
-    color:var(--danger); padding:3px 10px; border-radius:4px;
+    color:var(--danger); padding:3px 10px; border-radius:var(--radius-sm);
     font-size:0.68rem; cursor:pointer; transition:background 0.15s;
+    min-height:44px;
   }
   .compare-clear-btn:hover { background:rgba(184,59,59,0.2); }
   .compare-legend {
@@ -1848,7 +1857,7 @@
     <button class="module-tab" onclick="switchModule('auc')">AUC Precision</button>
     <button class="module-tab" onclick="switchModule('continue')">Continue Course</button>
   </div>
-  <div class="header-tag">Vancomycin TDM v2.0</div>
+  <div class="header-tag">Vancomycin TDM v2.1</div>
   <button class="theme-toggle" onclick="toggleTheme()" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3039,7 +3048,7 @@ function setCalcMode(mode) {
     initial:      'Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady State Trough</strong> once a steady-state level is available.',
     level:        'Enter the current dose, interval, and a measured steady-state level to fit individual PK and adjust the regimen.',
     twolevels:    'Two post-infusion levels from the <strong>first dose</strong> determine individual Kel &amp; Vd directly — useful when Cockcroft-Gault CrCl is unreliable (bedbound, AKI, obesity).',
-    randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.'
+    randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-faint)">On the graph the level is plotted where it was drawn, but the curve shown is the predicted steady state — so the point will not sit on the line. Read the fitted parameters, not the visual fit.</span>'
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
   document.getElementById('results-placeholder').style.display = 'flex';
@@ -3469,6 +3478,33 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
     if (_resizeTimer) clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(() => { _resizeTimer = null; redrawAllCanvases(); }, 150);
   });
+}
+// Serial-SCr rows are built by addScrRow with no input handlers, so an edited
+// value left the KDIGO stage, the direction and the percent change computed
+// from the OLD numbers. Delegate once — a stale AKI stage is a clinical read.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('input', (e) => {
+    try {
+      const t = e && e.target;
+      if (t && t.closest && t.closest('[id^="b-scr-row-"]') &&
+          typeof updateScrTrendDisplay === 'function') updateScrTrendDisplay();
+    } catch (err) {}
+  });
+  document.addEventListener('change', (e) => {
+    try {
+      const t = e && e.target;
+      if (t && t.closest && t.closest('[id^="b-scr-row-"]') &&
+          typeof updateScrTrendDisplay === 'function') updateScrTrendDisplay();
+    } catch (err) {}
+  });
+}
+// clearComparison() wipes bState.tinkCompare outright with no undo, and its
+// control sits next to '+ Add to comparison' on a phone.
+function confirmClearComparison() {
+  const n = (bState && bState.tinkCompare) ? bState.tinkCompare.length : 0;
+  if (n > 1 && typeof confirm === 'function' &&
+      !confirm(`Remove all ${n} regimens from the comparison? This cannot be undone.`)) return;
+  clearComparison();
 }
 function redrawAllCanvases() {
   // Guarded so a missing module never breaks the toggle — but never silently.
@@ -6656,13 +6692,37 @@ function fmtDT(timeH) {
 //
 // niceStep picks a 1-2-5x10^n interval so ticks land on round numbers a reader
 // can interpolate between, and the count adapts to the axis length.
+// Rounding the raw interval UP only made the tick count collapse whenever it
+// landed just past a boundary: a 55 mg/L peak gave four gridlines at 20 mg/L
+// apart, so reading a trough meant interpolating by eye across a 58 px gap.
+// Pick whichever candidate lands nearest the target, never going below four.
+const NICE_MULTS = [1, 2, 5, 10];
 function niceStep(span, targetTicks) {
   if (!(span > 0)) return 1;
-  const raw = span / Math.max(1, targetTicks);
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const norm = raw / mag;
-  const mult = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return mult * mag;
+  const target = Math.max(1, targetTicks);
+  const mag = Math.pow(10, Math.floor(Math.log10(span / target)));
+  let best = null, bestScore = Infinity, bestTicks = 0;
+  const seen = new Set();
+  for (const m of NICE_MULTS) {
+    for (const scale of [mag, mag * 10]) {
+      const step = m * scale;
+      if (seen.has(step)) continue;                  // 1x10 and 10x1 are the same step
+      seen.add(step);
+      const ticks = Math.floor(span / step) + 1;
+      if (ticks < 4) continue;                       // too coarse to read against
+      const score = Math.abs(ticks - target) + (ticks > 12 ? 100 : 0);
+      // On a tie prefer the FINER step — more gridlines is the readable side.
+      if (score < bestScore || (score === bestScore && ticks > bestTicks)) {
+        bestScore = score; best = step; bestTicks = ticks;
+      }
+    }
+  }
+  // Nothing met the floor (a very small span): fall back to the old behaviour.
+  if (best === null) {
+    const norm = (span / target) / mag;
+    best = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+  }
+  return best;
 }
 // Time reads better on human intervals than on decimal ones — nobody thinks in
 // 2.5 h steps. Snap to the durations a pharmacist actually uses.
@@ -6678,7 +6738,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   nProj = nProj || 0;
   const dpr  = window.devicePixelRatio || 1;
   const cW   = canvas.offsetWidth;
-  const cHpx = 280;
+  const cHpx = 284;
   canvas.width  = cW * dpr;
   canvas.height = cHpx * dpr;
   canvas.style.height = `${cHpx}px`;
@@ -6691,7 +6751,13 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const kelPop = CLpop / Vpop;
 
   const tStart = doses[0].timeH;
-  const tEnd   = doses[doses.length-1].timeH + doses[doses.length-1].tinfH + 48;
+  const _lastD = doses[doses.length-1];
+  const _courseSpan = _lastD.timeH - doses[0].timeH;
+  // Enough tail to show the terminal decay without letting it dominate: about
+  // three half-lives, at least 12 h, never more than the previous fixed 48 h.
+  const _tail  = Math.min(48, Math.max(12, _courseSpan * 0.5,
+                          (kelInd > 0 ? 3 * Math.LN2 / kelInd : 24)));
+  const tEnd   = _lastD.timeH + _lastD.tinfH + _tail;
   const tNow   = Date.now() / 3600000;
 
   // Dispatch to 1-comp or 2-comp based on gotiInd presence
@@ -6707,8 +6773,22 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const dt   = (tEnd - tStart) / nPts;
   let cMaxVal = 8;
   const ptsInd = [], ptsPop = [];
-  for (let i = 0; i <= nPts; i++) {
-    const t  = tStart + i*dt;
+  // Uniform grid, plus every vertex the model actually has: each dose start,
+  // each end-of-infusion (the corner), the instant after it, and every observed
+  // timepoint. ~120 extra points at most, and the polyline then passes through
+  // the peaks instead of cutting them.
+  const tSamples = [];
+  for (let i = 0; i <= nPts; i++) tSamples.push(tStart + i*dt);
+  doses.forEach(d => {
+    tSamples.push(d.timeH, d.timeH + d.tinfH, d.timeH + d.tinfH + 1e-6);
+  });
+  levels.forEach(l => tSamples.push(l.timeH));
+  const tSorted = tSamples
+    .filter(t => t >= tStart && t <= tEnd)
+    .sort((a, b) => a - b);
+  for (let i = 0; i < tSorted.length; i++) {
+    const t = tSorted[i];
+    if (i && Math.abs(t - tSorted[i-1]) < 1e-9) continue;
     const ci = predInd(t);
     const cp = predPop(t);
     ptsInd.push({ t: t-tStart, c: ci });
@@ -6717,9 +6797,15 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   }
   // Also include observed levels in max
   levels.forEach(l => { cMaxVal = Math.max(cMaxVal, l.conc); });
-  cMaxVal = Math.ceil(cMaxVal * 1.25 / 5) * 5;
+  // Nothing is ever drawn above the peak — the 'Now' label sits outside the
+  // plot — so 25% headroom was pure dead space, and quantising to multiples of
+  // 5 left the top strip unlabelled. 5% headroom, snapped to the gridline step,
+  // gives back ~20% of the plot height in the band a trough is read from.
+  const _cRaw  = Math.max(cMaxVal * 1.05, cMaxVal + 2);
+  const _cStep = niceStep(_cRaw, 6);
+  cMaxVal = Math.max(_cStep, Math.ceil(_cRaw / _cStep) * _cStep);
 
-  const pad = { top:26, right:16, bottom:50, left:44 };
+  const pad = { top:26, right:16, bottom:54, left:44 };
   const gW  = cW  - pad.left - pad.right;
   const gH  = cHpx - pad.top  - pad.bottom;
   const tSpan = tEnd - tStart;
@@ -6746,7 +6832,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.lineWidth   = 1;
   // Aim for ~6 horizontal lines whatever the scale, on round values.
   const cStep = niceStep(cMaxVal, 6);
-  for (let c=0; c<=cMaxVal; c+=cStep) {
+  for (let c=0; c<=cMaxVal + 1e-9; c+=cStep) {
     ctx.beginPath(); ctx.moveTo(pad.left, ty(c)); ctx.lineTo(pad.left+gW, ty(c)); ctx.stroke();
   }
 
@@ -6792,30 +6878,47 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   }
 
   // ── Dose event markers ──
+  // A tick is the EVENT and belongs on the axis; a full-height rule per dose
+  // built a picket fence at 7.8 px pitch behind both curves on a 7-day Q8H
+  // course, on top of three other full-height line families. Only the first
+  // projected dose — a real regime boundary — still spans the plot.
   const nHistoric = doses.length - nProj;
+  let lastLabelX = -Infinity;
+  const DOSE_LABEL_SEP = 30;   // px; below this the labels overlap each other
   for (let di = 0; di < doses.length; di++) {
     const d   = doses[di];
     const isP = di >= nHistoric;  // projected dose
     const xD  = tx(d.timeH - tStart);
-    // Vertical tick
-    ctx.strokeStyle = isP ? themeRGBA('--purple', 0.3, 'rgba(74,61,122,0.3)') : 'rgba(201,107,60,0.15)';
+    const firstProjected = isP && di === nHistoric;
+    ctx.strokeStyle = isP ? themeRGBA('--purple', 0.45, 'rgba(74,61,122,0.45)')
+                          : themeRGBA('--terracotta', 0.45, 'rgba(204,120,92,0.45)');
     ctx.lineWidth   = 1;
     if (isP) ctx.setLineDash([3,3]);
-    ctx.beginPath(); ctx.moveTo(xD, pad.top); ctx.lineTo(xD, pad.top+gH); ctx.stroke();
+    ctx.beginPath();
+    if (firstProjected) { ctx.moveTo(xD, pad.top); ctx.lineTo(xD, pad.top + gH); }
+    else                { ctx.moveTo(xD, pad.top + gH - 8); ctx.lineTo(xD, pad.top + gH); }
+    ctx.stroke();
     ctx.setLineDash([]);
-    // Dose amount label
-    ctx.fillStyle   = isP ? themeRGBA('--purple', 0.55, 'rgba(74,61,122,0.55)') : 'rgba(201,107,60,0.55)';
+
+    // Decimate the annotations, never the ticks. A strength change is always
+    // labelled, so a regimen change can never be hidden by decimation.
+    const strengthChange = di === 0 || d.mg !== doses[di-1].mg;
+    if (!strengthChange && xD - lastLabelX < DOSE_LABEL_SEP) continue;
+    lastLabelX = xD;
+
+    ctx.fillStyle   = isP ? themeRGBA('--purple', 0.75, 'rgba(74,61,122,0.75)')
+                          : themeRGBA('--terracotta', 0.8, 'rgba(204,120,92,0.8)');
     ctx.font        = "600 8px 'DM Mono',monospace";
     ctx.textAlign   = 'center';
     ctx.textBaseline= 'alphabetic';
-    ctx.fillText(`${d.mg}`, xD, pad.top+gH+24);
-    // Dose time label (smaller, below amount)
+    ctx.fillText(`${d.mg}`, xD, pad.top+gH+27);
     const dDt = new Date(d.timeH * 3600000);
     const hh  = dDt.getHours().toString().padStart(2,'0');
     const mi  = dDt.getMinutes().toString().padStart(2,'0');
-    ctx.fillStyle   = isP ? themeRGBA('--purple', 0.35, 'rgba(74,61,122,0.35)') : 'rgba(201,107,60,0.35)';
+    ctx.fillStyle   = isP ? themeRGBA('--purple', 0.5, 'rgba(74,61,122,0.5)')
+                          : themeRGBA('--terracotta', 0.55, 'rgba(204,120,92,0.55)');
     ctx.font        = "500 7px 'DM Mono',monospace";
-    ctx.fillText(`${hh}:${mi}`, xD, pad.top+gH+34);
+    ctx.fillText(`${hh}:${mi}`, xD, pad.top+gH+37);
   }
 
   // ── Inter-dose interval annotations (show hours between consecutive doses) ──
@@ -6827,12 +6930,11 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     const xPrev= tx(doses[di-1].timeH - tStart);
     const xCurr= tx(doses[di].timeH   - tStart);
     const xMid = (xPrev + xCurr) / 2;
-    // Only label if gap is wide enough to fit text
-    if (xCurr - xPrev < 28) continue;
     const isP  = di >= nHistoric;
     const label= `+${dtH.toFixed(1)}h`;
-    // Pill background
+    // Measure the pill BEFORE deciding whether it fits.
     const tw   = ctx.measureText(label).width + 8;
+    if (xCurr - xPrev < tw + 6) continue;
     const yLbl = pad.top + 14;
     ctx.fillStyle = isP ? themeRGBA('--purple', 0.2, 'rgba(74,61,122,0.2)') : themeRGBA('--paper-deep', 0.3, 'rgba(242,236,223,0.3)');
     ctx.beginPath();
@@ -6842,7 +6944,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
       ctx.rect(xMid - tw/2, yLbl-9, tw, 13);
     }
     ctx.fill();
-    ctx.fillStyle = isP ? themeRGBA('--purple', 0.8, 'rgba(74,61,122,0.8)') : 'rgba(99,99,102,0.5)';
+    ctx.fillStyle = isP ? themeRGBA('--purple', 0.8, 'rgba(74,61,122,0.8)')
+                       : themeRGBA('--ink-soft', 0.85, 'rgba(90,97,81,0.85)');
     ctx.fillText(label, xMid, yLbl);
   }
 
@@ -8445,7 +8548,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     <div id="b-compare-section" class="compare-section" style="display:none">
       <div class="compare-header">
         <div class="compare-title">Regimen Comparison</div>
-        <button class="compare-clear-btn" onclick="clearComparison()">Clear all</button>
+        <button class="compare-clear-btn" onclick="confirmClearComparison()">Clear all</button>
       </div>
       <div class="compare-legend"></div>
       <div style="padding:4px 14px 10px"><canvas id="b-compare-canvas" style="width:100%;display:block"></canvas></div>
@@ -8559,7 +8662,7 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
 
   // Curve
   ctx.beginPath();
-  ctx.strokeStyle = color || 'rgba(217,123,74,0.9)';
+  ctx.strokeStyle = color || themeRGBA('--terracotta', 0.95, 'rgba(204,120,92,0.95)');
   ctx.lineWidth   = 2;
   pts.forEach((p, i) => {
     const x = tx(p.t), y = ty(p.c);
@@ -8854,7 +8957,7 @@ function runBayesTinkerer() {
     if (ssCanvas) {
       // For Goti, pass pre-computed 2-comp pts; for Buelga, compute from 1-comp ssCurve
       drawSSTinkCanvas(ssCanvas, dose, tau, tinfH, CL_ind/V_ind, V_ind,
-        'rgba(217,123,74,0.9)', ssProfilePts || null);
+        themeRGBA('--terracotta', 0.95, 'rgba(204,120,92,0.95)'), ssProfilePts || null);
     }
   });
 }

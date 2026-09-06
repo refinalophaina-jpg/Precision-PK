@@ -143,30 +143,39 @@ recording 2D context and asserts on the operations it emits — it does not test
 
 ---
 
-## Deferred
+## Deferred list — closed 2026-09-06
 
-Honest list of what was found and **not** fixed. None is a correctness defect in a drawn
-value; all are legibility or polish in `drawProfileGraph` and the smaller canvases.
+Every item that was left open on 2026-09-05 has since been resolved, with `SUITE 13`
+added to hold them.
 
-- **Dose-marker label collision** (`drawProfileGraph`). Dose ticks are undecimated
-  full-height rules layered over two other vertical grids and the "Now" line; the
-  interval-pill collision guard is 28px against a ~39px pill, and elapsed-hour labels
-  overlap dose amounts by ~2px.
-- **Uniform 500-point sampling in `drawProfileGraph`** cuts the infusion-end corner by up
-  to 2.7 mg/L, so the crosshair dot can float off the drawn curve — the same class as G4,
-  in the other renderer.
-- **25% headroom plus quantisation to multiples of 5** throws away a fifth of the plot
-  height and squeezes the trough band to 3.4px per mg/L.
-- **A fixed +48 h tail** regardless of course length compresses short courses into a fifth
-  of the plot.
-- **Random-level mode plots a single-dose-fitted level on a steady-state curve** (see the
-  rejected finding above). The marker cannot lie on the curve because they are different
-  models. The honest fix is to say so in the UI, not to move the dot.
-- **The 1000px breakpoint cliff** — cards jump from 454px to 120px across one pixel.
-- **Status badge overlaps its own stat label** from 1420px down, total collision at
-  1001–1200px.
-- **KDIGO AKI badge is not refreshed** when serial-creatinine rows are edited.
-- **Compare-chart controls are ~20px tall**, under the 44px touch minimum.
+| Item | Resolution |
+|---|---|
+| Dose-marker label mush — 21 doses at 7.8 px pitch, labels overlapping ~3 deep | labels decimated to a 30 px minimum separation; **a dose-strength change is always labelled**, so a regimen change can never be hidden by decimation |
+| Dose ticks were full-height rules stacked on three other line families | a tick is now an **8 px axis stub** — it is an event on the axis, not a rule through the plot. Only the first *projected* dose still spans the plot, because that is a real regime boundary |
+| Interval-pill guard was a fixed 28 px against a ~39 px pill | the pill is measured **before** the guard runs: `if (xCurr - xPrev < tw + 6) continue` |
+| Elapsed-hour labels overlapped dose amounts by ~2 px | dose labels moved to +27/+37, `pad.bottom` 50 → 54 and the canvas 280 → 284 px so the caption keeps its clearance |
+| Uniform 500-point sampling cut the infusion corner by up to **2.68 mg/L** | the sample vector is now the union of the uniform grid with every dose start, every end-of-infusion, the instant after it, and every observed timepoint |
+| 25% headroom + rounding to multiples of 5 wasted ~24% of plot height | 5% headroom snapped to the gridline step — the trough band gains roughly a fifth more vertical resolution |
+| `niceStep` rounded **up only**, so a 55 mg/L peak got four gridlines 20 mg/L apart | picks the candidate nearest the target with a floor of four, preferring the finer step on a tie. A 35 mg/L scale went from 4 gridlines to 8 |
+| Fixed +48 h tail squeezed a single-dose assessment into the leftmost 4% | tail scales to the course — about three half-lives, at least 12 h, never more than 48 |
+| Random-level mode plots a single-dose-fitted level on a steady-state curve | **stated in the UI** rather than fixed: the mode hint now says the point will not sit on the line and to read the fitted parameters instead. It is a modelling mismatch, not a plotting bug |
+| 1000 px breakpoint cliff — cards 454 px → 120 px across one pixel | `repeat(auto-fit, minmax(225px, 1fr))` removes the breakpoint entirely |
+| Status badge printed on top of its own label from 1420 px down | the card is a flex column and the badge is ordered into flow — fixed in CSS rather than across 11 markup sites |
+| KDIGO AKI badge went stale when a serial-SCr row was edited | one delegated `input`/`change` listener; a stale AKI stage is a clinical read |
+| Comparison controls were ~20 px hit targets, and `Clear all` is irreversible | both at 44 px; `Clear all` confirms when more than one regimen would be lost |
+
+Two further literals surfaced while writing the colour test — a `ctx.fillStyle` inside a
+**ternary** and a `color || 'literal'` default — neither of which the original sweep's regex
+reached. Canvas colour literals: **0**.
+
+### A test that passed for the wrong reason
+
+`SUITE 13`'s first version asserted the polyline passes through every infusion corner, and
+it passed immediately. It should not have: `drawProfileGraph` sizes itself from
+`canvas.offsetWidth`, the stub only supplied `clientWidth`, so the plot geometry was `NaN`,
+no vertex ever matched, and the loop asserted over an empty set. The suite now fails loudly
+if the geometry is not finite or if fewer corners are checked than there are doses. Recorded
+because a vacuous pass is worse than no test — it reports coverage that does not exist.
 
 ---
 

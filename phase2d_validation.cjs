@@ -1235,6 +1235,187 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 13 — drawProfileGraph: the Bayesian concentration-time plot
+//
+// The chart a clinician reads their measured levels off. Same approach as
+// SUITE 12: drive the REAL renderer through a recording context.
+// ════════════════════════════════════════════════════════════════════
+{
+  const { drawProfileGraph, predictConc1comp } = sandbox;
+  const PALETTE = { '--terracotta':'#cc785c','--terracotta-q':'#e0a98c','--moss':'#4a5c28',
+                    '--ink-faint':'#8a8e80','--paper':'#faf5ed','--paper-deep':'#f2ecdf',
+                    '--purple':'#4a3d7a','--accent-rose':'#a8546a','--rule':'rgba(45,52,40,.1)',
+                    '--ink-soft':'#5a6151' };
+
+  function runProfile(doses, levels, CL, V, W = 900, H = 284) {
+    const ops = { path:[], texts:[], lines:[], colors:new Set() };
+    let cur = null, fill = '', stroke = '';
+    const ctx = {
+      set fillStyle(v){ fill = String(v); ops.colors.add(String(v)); },
+      get fillStyle(){ return fill; },
+      set strokeStyle(v){ stroke = String(v); ops.colors.add(String(v)); },
+      get strokeStyle(){ return stroke; },
+      lineWidth:1, globalAlpha:1, font:'', textAlign:'', textBaseline:'', lineJoin:'', lineCap:'',
+      scale(){}, setTransform(){}, clearRect(){}, save(){}, restore(){}, translate(){}, rotate(){},
+      setLineDash(){}, roundRect(){}, rect(){}, fill(){}, arc(){},
+      beginPath(){ cur = []; },
+      moveTo(x,y){ if(cur) cur.push([x,y]); },
+      lineTo(x,y){ if(cur) cur.push([x,y]); },
+      closePath(){},
+      stroke(){ if(cur){ if(cur.length>8) ops.path.push(cur.slice());
+                         else if(cur.length===2) ops.lines.push(cur.slice()); } },
+      strokeText(){}, fillRect(){},
+      fillText(t,x,y){ ops.texts.push({t:String(t),x,y}); },
+      measureText(t){ return { width: String(t).length * 5.1 }; },
+      createLinearGradient(){ return { addColorStop(){} }; },
+      getImageData(){ return {}; },
+    };
+    const canvas = { width:0, height:0, style:{}, clientWidth:W, offsetWidth:W,
+                     getContext:()=>ctx, getBoundingClientRect:()=>({width:W,height:H}),
+                     addEventListener(){}, removeEventListener(){} };
+    const prevGCS = sandbox.getComputedStyle, prevDPR = sandbox.devicePixelRatio;
+    sandbox.document.documentElement = {};
+    sandbox.getComputedStyle = () => ({ getPropertyValue:(n)=> PALETTE[n] || '' });
+    sandbox.devicePixelRatio = 1;
+    try { drawProfileGraph(canvas, doses, levels, CL, V, CL*0.85, V*1.05, null, null, 0); }
+    finally { sandbox.getComputedStyle = prevGCS; sandbox.devicePixelRatio = prevDPR; }
+    return { ops, plot: canvas._pkPlot };
+  }
+
+  // A realistic 7-day Q8H course — the case the audit measured.
+  const t0 = 1000;
+  const q8h = [];
+  for (let i = 0; i < 21; i++) q8h.push({ mg: 1000, timeH: t0 + i*8, tinfH: 1 });
+  const lev = [{ conc: 14.7, timeH: t0 + 7*8 + 7 }];
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 13 — drawProfileGraph rendering invariants');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('Drawn polyline tracks the model through every infusion corner', ()=>{
+    const { ops, plot } = runProfile(q8h, lev, 4.5, 60);
+    assert(plot, 'no plot geometry recorded');
+    const poly = ops.path.reduce((a,b)=> b.length > a.length ? b : a, []);
+    assert(poly.length > 100, `expected a sampled curve, got ${poly.length} vertices`);
+    const { pad, gW, gH, tStart, tSpan, cMaxVal } = plot;
+    const invT = x => ((x - pad.left) / gW) * tSpan + tStart;
+    const invC = y => ((pad.top + gH - y) / gH) * cMaxVal;
+    // Compare the drawn line against the true model at each end-of-infusion,
+    // which is where a uniform grid cuts the corner.
+    assert(Number.isFinite(gW) && gW > 0, `plot geometry is NaN (gW=${gW}) — the test would pass vacuously`);
+    let worst = 0, worstAt = 0, checked = 0;
+    for (const d of q8h) {
+      const tCorner = d.timeH + d.tinfH;
+      let near = null;
+      for (const [x,y] of poly) if (Math.abs(invT(x) - tCorner) < 1e-4) { near = [x,y]; break; }
+      if (!near) continue;
+      checked++;
+      const drawn = invC(near[1]);
+      // The unbroken full-span polyline is the population curve.
+      const truth = predictConc1comp(q8h, tCorner, (4.5*0.85)/(60*1.05), 60*1.05);
+      const err = Math.abs(drawn - truth);
+      if (err > worst) { worst = err; worstAt = tCorner - t0; }
+    }
+    assert(checked >= q8h.length - 1,
+      `only ${checked}/${q8h.length} infusion corners are polyline vertices — the union sampling is not working`);
+    assert(worst < 0.15,
+      `polyline misses the infusion corner by ${worst.toFixed(2)} mg/L at t=${worstAt}h ` +
+      `(a uniform grid cut it by up to 2.68)`);
+  });
+
+  test('Dose labels are decimated; a strength change is never hidden', ()=>{
+    const { ops } = runProfile(q8h, lev, 4.5, 60, 700);
+    const mgLabels = ops.texts.filter(t => t.t === '1000' && Number.isFinite(t.x))
+                              .sort((a,b)=>a.x-b.x);
+    if (!mgLabels.length) {
+      const sample = ops.texts.slice(0,8).map(t=>`${t.t}@${t.x}`).join(' ');
+      assert(false, `no finite-x '1000' labels; sample: ${sample}`);
+    }
+    assert(mgLabels.length >= 2, 'no dose labels drawn at all');
+    for (let i=1;i<mgLabels.length;i++) {
+      assert(mgLabels[i].x - mgLabels[i-1].x >= 29,
+        `dose labels ${(mgLabels[i].x - mgLabels[i-1].x).toFixed(1)}px apart — they overlap`);
+    }
+    // A strength change must always be labelled, even inside a dense run.
+    const mixed = q8h.map((d,i) => ({ ...d, mg: i >= 12 ? 1250 : 1000 }));
+    const r2 = runProfile(mixed, lev, 4.5, 60, 700);
+    assert(r2.ops.texts.some(t => t.t === '1250'),
+      'the dose-strength change was decimated away — a regimen change must survive');
+  });
+
+  test('Dose ticks are axis stubs, not a full-height picket fence', ()=>{
+    const { ops, plot } = runProfile(q8h, lev, 4.5, 60);
+    const { gH } = plot;
+    const vertical = ops.lines.filter(l => l.length === 2 && Math.abs(l[0][0]-l[1][0]) < 0.01);
+    const stubs = vertical.filter(l => Math.abs(Math.abs(l[0][1]-l[1][1]) - 8) < 0.5);
+    const fullHeight = vertical.filter(l => Math.abs(Math.abs(l[0][1]-l[1][1]) - gH) < 1.5);
+    // Every dose is a stub on the axis; none of them spans the plot (no dose
+    // here is projected, so there is no regime boundary to mark full-height).
+    assert(stubs.length === q8h.length,
+      `${stubs.length} axis stubs against ${q8h.length} doses — expected one each`);
+    // The minor/major time grid legitimately spans the plot (~26 rules over a
+    // 208 h span). The regression to catch is 21 dose rules stacked on top.
+    assert(fullHeight.length < 26 + q8h.length - 5,
+      `${fullHeight.length} full-height rules over ${q8h.length} doses — the time grid alone ` +
+      `accounts for ~26, so the dose ticks are spanning the plot again`);
+  });
+
+  test('Axis headroom is tight and the top gridline is reachable', ()=>{
+    const { plot } = runProfile(q8h, lev, 4.5, 60);
+    // The axis must contain BOTH curves — the population fit uses a lower
+    // clearance here, so it peaks above the individual one.
+    let peak = 0;
+    for (let t = t0; t < t0 + 21*8; t += 0.05) {
+      peak = Math.max(peak, predictConc1comp(q8h, t, 4.5/60, 60),
+                            predictConc1comp(q8h, t, (4.5*0.85)/(60*1.05), 60*1.05));
+    }
+    assert(plot.cMaxVal >= peak,
+      `axis top ${plot.cMaxVal} is below the peak ${peak.toFixed(1)}`);
+    assert(plot.cMaxVal <= peak * 1.35,
+      `axis top ${plot.cMaxVal} wastes ${(100*(1-peak/plot.cMaxVal)).toFixed(0)}% of the plot ` +
+      `above a peak of ${peak.toFixed(1)} (the old 25%-plus-round-to-5 wasted ~24%)`);
+  });
+
+  test('A short course is not squeezed into a corner by a fixed 48h tail', ()=>{
+    const single = [{ mg: 1500, timeH: t0, tinfH: 1.5 }];
+    const { plot } = runProfile(single, [{conc: 22.0, timeH: t0 + 4}], 4.5, 60);
+    assert(plot.tSpan <= 40,
+      `a single-dose course spans ${plot.tSpan.toFixed(1)}h — the old fixed +48h tail ` +
+      `pushed the informative region into the leftmost few percent`);
+    assert(plot.tSpan >= 12, `tail too short to show terminal decay: ${plot.tSpan.toFixed(1)}h`);
+  });
+
+  test('Every colour is a token', ()=>{
+    const DARK = Object.assign({}, PALETTE, { '--terracotta':'#d88a6e','--ink-faint':'#7d7666',
+      '--moss':'#9aad68','--paper':'#1c1815','--purple':'#8e7dc8','--accent-rose':'#d08ba0',
+      '--paper-deep':'#252119','--rule':'rgba(236,228,210,.1)','--ink-soft':'#b8af9d' });
+    const light = runProfile(q8h, lev, 4.5, 60).ops;
+    const prev = sandbox.getComputedStyle;
+    sandbox.getComputedStyle = () => ({ getPropertyValue:(n)=> DARK[n] || '' });
+    let dark;
+    try {
+      const ops = { }; // re-run under the dark palette
+      dark = (function(){
+        const saved = sandbox.getComputedStyle;
+        const r = runProfileDark();
+        return r;
+      })();
+    } finally { sandbox.getComputedStyle = prev; }
+    function runProfileDark() {
+      const savedPal = PALETTE;
+      Object.assign(PALETTE, DARK);
+      const r = runProfile(q8h, lev, 4.5, 60).ops;
+      Object.assign(PALETTE, savedPal);
+      return r;
+    }
+    const real = (set) => [...set].filter(c => /^#|^rgba?\(/i.test(c));
+    const shared = real(light.colors).filter(c => dark.colors.has(c));
+    assert(shared.length === 0,
+      `these colours are identical in both themes, so they are literals: ${shared.join(', ')}`);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
