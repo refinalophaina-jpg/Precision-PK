@@ -1761,6 +1761,30 @@
   }
   @media (max-width: 768px) { .calc-btn kbd { display: none; } }
 
+
+  /* ── Model picker: all four visible, no horizontal scroll ─────────────── */
+  .model-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .model-opt {
+    display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+    padding: 8px 10px; text-align: left; cursor: pointer;
+    background: var(--bg-input); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: 'Outfit', sans-serif;
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+  }
+  .model-opt:hover { border-color: var(--terracotta-q); color: var(--text-primary); }
+  .model-opt:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
+  .model-opt.active {
+    background: var(--bg-card); border-color: var(--accent-blue); color: var(--text-primary);
+    box-shadow: 0 0 0 1px var(--accent-blue) inset;
+  }
+  .model-opt-name { font-size: 0.78rem; font-weight: 600; line-height: 1.2; }
+  .model-opt-sub  { font-size: 0.63rem; color: var(--text-muted); line-height: 1.25; }
+  .model-opt.active .model-opt-sub { color: var(--text-secondary); }
+  @media (max-width: 420px) { .model-grid { grid-template-columns: 1fr; } }
+
 </style>
 </head>
 <body>
@@ -1802,8 +1826,8 @@
   </div>
   <div class="module-tabs">
     <button class="module-tab active" onclick="switchModule('trough')">Trough-Based</button>
-    <button class="module-tab" onclick="switchModule('auc')">AUC Precision · <span style="color:var(--accent-amber);font-size:0.65rem">PHASE 2</span></button>
-    <button class="module-tab" onclick="switchModule('continue')">Continue Course · <span style="color:var(--accent-sage);font-size:0.65rem">PHASE 3</span></button>
+    <button class="module-tab" onclick="switchModule('auc')">AUC Precision</button>
+    <button class="module-tab" onclick="switchModule('continue')">Continue Course</button>
   </div>
   <div class="header-tag">Vancomycin TDM v2.0</div>
   <button class="theme-toggle" onclick="toggleTheme()" aria-label="Switch between light and dark" title="Light / dark">
@@ -2148,8 +2172,20 @@
     <div id="section-twolevels" style="display:none">
       <hr class="section-divider">
       <div>
-        <p class="section-label">First Dose</p>
-        <p class="field-hint" style="margin-bottom:8px">Use when CrCl is unreliable (bedbound, AKI, obese). Two post-infusion levels from the first dose determine individual Kel and Vd directly.</p>
+        <p class="section-label">Two Levels — Sawchuk-Zaske</p>
+        <p class="field-hint" style="margin-bottom:8px">Use when CrCl is unreliable (bedbound, AKI, obese). Two post-infusion levels determine individual Kel and Vd directly.</p>
+        <div class="field-group" style="margin-bottom:10px">
+          <label class="field-label">Where in the course were these levels drawn?</label>
+          <div class="toggle-group" id="tl-basis-toggle">
+            <button class="toggle-opt active" onclick="setTlBasis(this,'firstdose')">After the first dose</button>
+            <button class="toggle-opt" onclick="setTlBasis(this,'steadystate')">At steady state</button>
+          </div>
+          <p class="field-hint" id="tl-basis-hint" style="margin-top:4px">
+            Elimination is the same either way; <strong>volume is not</strong>. Levels drawn at steady state
+            include drug already in the body, and treating them as first-dose levels understates Vd by
+            roughly a third and overstates AUC₂₄ by about half.
+          </p>
+        </div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
@@ -2434,16 +2470,32 @@
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <div>
         <div class="section-label" style="color:var(--accent-blue);margin-bottom:4px">Bayesian Precision Dosing</div>
-        <div class="bayes-model-badge" id="b-model-badge">Buelga 2005 · 1-Compartment · Phase 2A</div>
+        <div class="bayes-model-badge" id="b-model-badge">Buelga 2005 · 1-compartment</div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
-      <span style="font-size:0.67rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap">Model</span>
-      <div class="toggle-group" style="flex:none">
-        <button class="toggle-opt active" id="b-model-btn-buelga" onclick="setBModel(this,'buelga')">Buelga 2005 (1-comp)</button>
-        <button class="toggle-opt"        id="b-model-btn-goti"   onclick="setBModel(this,'goti')">Goti 2018 (2-comp)</button>
-        <button class="toggle-opt"        id="b-model-btn-hughes" onclick="setBModel(this,'hughes')">Hughes 2024 (obese)</button>
-        <button class="toggle-opt"        id="b-model-btn-gotihd" onclick="setBModel(this,'gotihd')">Goti 2018 (HD)</button>
+    <div style="margin-top:8px">
+      <span style="display:block;font-size:0.67rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px">Model</span>
+      <!-- A 2x2 grid rather than one flex row: four models in a 400px rail could
+           not fit side by side, so the last two sat off-screen behind a
+           horizontal scroll nobody discovers. Each cell now names the model and
+           the population it was fitted to, which is the thing you are choosing. -->
+      <div class="model-grid" id="b-model-toggle">
+        <button class="model-opt active" id="b-model-btn-buelga" onclick="setBModel(this,'buelga')">
+          <span class="model-opt-name">Buelga 2005</span>
+          <span class="model-opt-sub">1-comp · general adult</span>
+        </button>
+        <button class="model-opt" id="b-model-btn-goti" onclick="setBModel(this,'goti')">
+          <span class="model-opt-name">Goti 2018</span>
+          <span class="model-opt-sub">2-comp · hospitalised</span>
+        </button>
+        <button class="model-opt" id="b-model-btn-hughes" onclick="setBModel(this,'hughes')">
+          <span class="model-opt-name">Hughes 2024</span>
+          <span class="model-opt-sub">2-comp · BMI ≥ 40 only</span>
+        </button>
+        <button class="model-opt" id="b-model-btn-gotihd" onclick="setBModel(this,'gotihd')">
+          <span class="model-opt-name">Goti 2018 · HD</span>
+          <span class="model-opt-sub">2-comp · haemodialysis</span>
+        </button>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
@@ -2807,7 +2859,7 @@
 // ══════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════
-let state = { sex:'M', dosingWt:'TBW', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose' };
+let state = { sex:'M', dosingWt:'TBW', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose' };
 
 // ══════════════════════════════════════════
 //  UI HELPERS
@@ -2826,15 +2878,23 @@ function switchModule(m) {
 function setSex(el, val) {
   state.sex = val;
   document.getElementById('sex').value = val;
-  el.parentElement.querySelectorAll('.toggle-opt').forEach(b=>b.classList.remove('active'));
+  el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   autoWeights();
+}
+
+// Which point in the course the two entered levels come from. Elimination is
+// basis-independent; volume is not — see solveTwoLevelsPK.
+function setTlBasis(el, val) {
+  state.tlBasis = val;
+  el.parentElement.querySelectorAll('.toggle-opt').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
 }
 
 function setDosingWt(el, val) {
   state.dosingWt = val;
   document.getElementById('dosing-wt').value = val;
-  el.parentElement.querySelectorAll('.toggle-opt').forEach(b=>b.classList.remove('active'));
+  el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   // Previously the displayed CrCl only refreshed when a demographic field fired
   // its own change event, so switching TBW/IBW/AdjBW left a stale number on
@@ -2922,7 +2982,7 @@ function updateLevelInterpretation() {
 function setSS(el, val) {
   state.isSS = val;
   document.getElementById('is-ss').value = val;
-  el.parentElement.querySelectorAll('.toggle-opt').forEach(b=>b.classList.remove('active'));
+  el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
 }
 
@@ -3166,25 +3226,55 @@ function calcRLDelta() {
 }
 
 // ── Solve individual PK from two post-infusion first-dose levels ──
-function solveTwoLevelsPK(dose, tinf, c1, t1, c2, t2, tauTarget) {
+// Sawchuk-Zaske from two post-infusion levels.
+//
+// THE BASIS MATTERS, AND IT USED TO BE ASSUMED. Elimination comes from the slope
+// between the two levels and is correct either way — accumulation does not change
+// a log-linear slope. VOLUME does. The Vd equation solves the peak of a SINGLE
+// dose, so applying it to levels drawn at steady state attributes the drug
+// already in the body to a smaller volume:
+//
+//   true ke 0.0866, true Vd 52 L, 1000 mg q12h over 1 h
+//     levels after the first dose   -> Vd 52.0 L  (exact),  AUC24 444
+//     levels at steady state        -> Vd 33.6 L  (-35%),   AUC24 687  (+55%)
+//
+// A 55% over-read of AUC prompts a dose REDUCTION in a patient already at target.
+// Steady-state levels are the common case, so the basis is now an explicit input
+// rather than a silent assumption.
+//
+// basis: 'firstdose' (default, backwards-compatible) | 'steadystate'
+function solveTwoLevelsPK(dose, tinf, c1, t1, c2, t2, tauTarget, basis) {
   if (t2 <= t1 || c1 <= 0 || c2 <= 0) return null;
   if (c2 >= c1) return null; // must be declining
 
   const kel = Math.log(c1 / c2) / (t2 - t1);
   if (kel <= 0 || !isFinite(kel)) return null;
 
-  // Back-extrapolate to peak at end of infusion
+  // Back-extrapolate to the concentration at end of infusion.
   const peak = t1 > tinf ? c1 * Math.exp(kel * (t1 - tinf)) : c1;
 
-  // Vd from single first-dose peak equation
-  const vd = (dose / (tinf * kel * peak)) * (1 - Math.exp(-kel * tinf));
+  let vd;
+  if (basis === 'steadystate') {
+    // At steady state the same peak is reached from an accumulation factor of
+    // 1/(1 - e^(-ke*tau)), so the volume that produces it is correspondingly
+    // larger:  Cmax_ss = (R0/(ke*V))(1 - e^(-ke*tinf)) / (1 - e^(-ke*tau))
+    const accum = 1 - Math.exp(-kel * tauTarget);
+    if (!(accum > 1e-10)) return null;
+    vd = (dose / (tinf * kel * peak)) * (1 - Math.exp(-kel * tinf)) / accum;
+  } else {
+    // Single-dose peak equation — correct only for levels drawn after a first
+    // dose, before appreciable accumulation.
+    vd = (dose / (tinf * kel * peak)) * (1 - Math.exp(-kel * tinf));
+  }
   if (vd <= 0 || !isFinite(vd)) return null;
 
   const clv   = kel * vd;
-  const t12   = 0.693 / kel;
+  const t12   = LN2 / kel;
   const pt    = calcPeakTrough(dose, tauTarget, tinf, kel, vd);
   const auc24 = calcAUC(dose, tauTarget, clv);
-  return { kel, vd, clv, t12, peak, c1, t1, c2, t2, ssPeak:pt.peak, ssTrough:pt.trough, auc24 };
+  return { kel, vd, clv, t12, peak, c1, t1, c2, t2,
+           basis: basis === 'steadystate' ? 'steadystate' : 'firstdose',
+           ssPeak:pt.peak, ssTrough:pt.trough, auc24 };
 }
 
 // ── Solve Kel from a single level after the first dose (pop Vd fixed) ──
@@ -4098,7 +4188,7 @@ function calculate() {
     const popVd   = calcVd(s('vd-model'), age, tbw, crclVal);
     const popKel  = popClv / popVd;
 
-    const tlPK = solveTwoLevelsPK(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, tlTau);
+    const tlPK = solveTwoLevelsPK(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, tlTau, state.tlBasis);
     if (!tlPK) { alert('Could not solve PK — check that Level 2 is lower than Level 1 and both are post-infusion.'); return; }
 
     // Find optimal maintenance dose using individual PK
@@ -5555,7 +5645,7 @@ let bLevelCount = 0;
 function setBSex(el, val) {
   bState.sex = val;
   document.getElementById('b-sex').value = val;
-  el.parentElement.querySelectorAll('.toggle-opt').forEach(b=>b.classList.remove('active'));
+  el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   updateBayesCrCl();
 }
@@ -6161,6 +6251,9 @@ function ssCurve2comp(dose, tau, tinfH, CL, Vc, Vp, nCycles, nPts, Q) {
 // FFM via Janmahasatian; final residual error per Table 3 (15.6% + 1.2 mg/L)
 // Q has no IIV (excluded — not significant); 3D Nelder-Mead on (η_CL, η_Vc, η_Vp)
 // ══════════════════════════════════════════════════════════════
+// Hughes 2024 enrolment floor: "a BMI of at least 40 kg/m2" (median 46.3,
+// range 40-70.3). Do not recommend this model below it.
+const HUGHES_MIN_BMI = 40;
 const HUGHES_TVCL    = 5.09;       // L/h, nlmixr2 SAEM final
 const HUGHES_TVVC    = 64.9;       // L
 const HUGHES_TVQ     = 6.36;       // L/h
@@ -6252,9 +6345,9 @@ function setBModel(el, m) {
   if (badge) {
     badge.textContent =
       isGotiHD             ? 'Goti 2018 · 2-Compartment · Hemodialysis' :
-      m === 'goti'         ? 'Goti 2018 · 2-Compartment · Phase 2B' :
+      m === 'goti'         ? 'Goti 2018 · 2-compartment' :
       m === 'hughes'       ? 'Hughes 2024 · 2-Compartment · Obese (Phase 3)' :
-                             'Buelga 2005 · 1-Compartment · Phase 2A';
+                             'Buelga 2005 · 1-compartment';
   }
   const dialWrap = document.getElementById('b-dial-wrap');
   const dialCb   = document.getElementById('b-dial');
@@ -7002,8 +7095,14 @@ function updateScrTrendDisplay() {
 function getModelRecommendation(nLevels, isICU, tbw, htCm) {
   const htM  = htCm && htCm > 0 ? htCm / 100 : null;
   const bmi  = htM ? tbw / (htM * htM) : null;
+  // HUGHES IS A CLASS-3 MODEL. Hughes 2024 enrolled only patients with
+  // "a BMI of at least 40 kg/m2" (median 46.3, range 40-70.3). Recommending it
+  // from BMI 30 put every class-1 and class-2 patient on a model never fitted to
+  // anyone like them — and its FFM-scaled clearance diverges most exactly where
+  // FFM and total weight diverge. The threshold is now the paper's own.
   const isObese    = bmi ? bmi >= 30 : (tbw > 115);
-  const isClass3   = bmi ? bmi >= 40 : false;
+  const isClass3   = bmi ? bmi >= HUGHES_MIN_BMI : false;
+  const isObeseSub40 = bmi ? (bmi >= 30 && bmi < HUGHES_MIN_BMI) : false;
 
   let recommended = 'buelga';
   let reason      = 'Standard adult — Buelga 2005 (1-comp) is appropriate';
@@ -7011,10 +7110,18 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
 
   if (isClass3) {
     recommended = 'hughes';
-    reason = `Class 3 obesity (BMI ${bmi.toFixed(1)} ≥ 40) — Hughes 2024 (obese) is the recommended model`;
-  } else if (isObese) {
-    recommended = 'hughes';
-    reason = `Obese patient (BMI ${bmi.toFixed(1)} ≥ 30) — Hughes 2024 (obese) is preferred over Buelga/Goti for obese PK`;
+    reason = `Class 3 obesity (BMI ${bmi.toFixed(1)} ≥ ${HUGHES_MIN_BMI}) — Hughes 2024 is fitted to exactly this population`;
+  } else if (isObeseSub40) {
+    // No published vancomycin model is specific to BMI 30-39.9. Goti is the best
+    // available compromise: much the largest development dataset (n=1,812), a
+    // weight covariate on central volume, and the best predictive performance of
+    // eight models in independent evaluation (Duong 2024). Say plainly that no
+    // model is validated here rather than implying one is.
+    recommended = 'goti';
+    reason = `Obesity class ${bmi < 35 ? 'I' : 'II'} (BMI ${bmi.toFixed(1)}) — Goti 2018 (2-comp) carries a weight covariate and the largest dataset`;
+    advisory = `No vancomycin population model is validated specifically for BMI 30–${HUGHES_MIN_BMI}. `
+      + `Hughes 2024 was developed only in class 3 obesity (BMI ≥ ${HUGHES_MIN_BMI}, median 46.3) and is NOT recommended here; `
+      + `Buelga 2005 came from a lean population (mean weight 64.7 kg). Obtain levels early and let the Bayesian fit do the work.`;
   } else if (isICU) {
     recommended = 'goti';
     reason = 'ICU / critically ill — Goti 2018 (2-comp) preferred for complex PK';
@@ -7803,8 +7910,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
                            'Buelga 2005 (1-comp)';
   const modelBadge =
     r.model === 'hughes' ? 'Hughes 2024 · 2-Compartment · Obese (Phase 3)' :
-    r.model === 'goti'   ? 'Goti 2018 · 2-Compartment · Phase 2B' :
-                           'Buelga 2005 · 1-Compartment · Phase 2A';
+    r.model === 'goti'   ? 'Goti 2018 · 2-compartment' :
+                           'Buelga 2005 · 1-compartment';
 
   // ── Current regimen inference ──
   const cur = inferCurrentRegimen(doses, CL_ind, V_ind, isGotiRes && r.goti ? r.goti : null);
@@ -8676,7 +8783,7 @@ function resetBayesian() {
     if (tGroups[1]) tGroups[1].querySelectorAll('.toggle-opt').forEach((b,i)=>b.classList.toggle('active',i===0));
   }
   const badge = document.getElementById('b-model-badge');
-  if (badge) badge.textContent = 'Buelga 2005 · 1-Compartment · Phase 2A';
+  if (badge) badge.textContent = 'Buelga 2005 · 1-compartment';
   const dialWrap = document.getElementById('b-dial-wrap');
   if (dialWrap) { dialWrap.style.display = 'none'; }
   const dialCb = document.getElementById('b-dial');

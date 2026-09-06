@@ -82,6 +82,7 @@ const {
   predictConc1comp, predictConc2comp,
   autoTinf, aucUncertaintyText,
   calcCssAtTime, ssCtrough2comp, ssPeak2comp, ssCycles2comp,
+  solveTwoLevelsPK, getModelRecommendation,
   // Phase 3 — Hughes 2024 obese model
   computeFFM, hughesPopPK, burtonObj3D_hughes,
   // Phase 3 Step 5 — ARC detection
@@ -925,6 +926,78 @@ section('SUITE 10 · Steady-state helpers (F-006 / F-007 regression)');
       assert(c < prev, `longer interval must give a lower trough: tau ${tau} -> ${c.toFixed(2)}`);
       prev = c;
     }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SUITE 11 — Two-level basis, and the Hughes population floor (2026-09-06)
+// ════════════════════════════════════════════════════════════════════════
+section('SUITE 11 · Two-level dosing basis + Hughes BMI floor');
+
+{
+  const ke = 0.0866, Vd = 52, dose = 1000, tinf = 1, tau = 12;
+  const fd = [{mg: dose, tinfH: tinf, timeH: 0}];
+  const a1 = predictConc1comp(fd, 2, ke, Vd), a2 = predictConc1comp(fd, 10, ke, Vd);
+  const b1 = calcCssAtTime(dose, tau, tinf, ke, Vd, 2), b2 = calcCssAtTime(dose, tau, tinf, ke, Vd, 10);
+
+  test('two-level: ke is recovered exactly on BOTH bases', () => {
+    const A = solveTwoLevelsPK(dose, tinf, a1, 2, a2, 10, tau, 'firstdose');
+    const B = solveTwoLevelsPK(dose, tinf, b1, 2, b2, 10, tau, 'steadystate');
+    assertClose(A.kel, ke, 1e-6, 'first-dose ke');
+    assertClose(B.kel, ke, 1e-6, 'steady-state ke');
+  });
+  test('two-level: first-dose basis recovers Vd', () => {
+    const A = solveTwoLevelsPK(dose, tinf, a1, 2, a2, 10, tau, 'firstdose');
+    assertClose(A.vd, Vd, 0.05, 'Vd from first-dose levels');
+  });
+  test('two-level: steady-state basis recovers Vd', () => {
+    const B = solveTwoLevelsPK(dose, tinf, b1, 2, b2, 10, tau, 'steadystate');
+    assertClose(B.vd, Vd, 0.05, 'Vd from steady-state levels');
+  });
+  test('two-level: the WRONG basis is materially wrong (guards the toggle)', () => {
+    // If this ever stops being wrong, the basis distinction has been lost and the
+    // toggle is dead code — which would be worse than the original bug, because
+    // the UI would claim to ask a question that no longer matters.
+    const wrong = solveTwoLevelsPK(dose, tinf, b1, 2, b2, 10, tau, 'firstdose');
+    const err = Math.abs(wrong.vd - Vd) / Vd;
+    assert(err > 0.25, `treating SS levels as first-dose should understate Vd by >25%; got ${(err*100).toFixed(1)}%`);
+  });
+  test('two-level: AUC24 agrees with the truth on both bases', () => {
+    const truth = dose * (24/tau) / (ke * Vd);
+    for (const [lv1, lv2, basis] of [[a1, a2, 'firstdose'], [b1, b2, 'steadystate']]) {
+      const r = solveTwoLevelsPK(dose, tinf, lv1, 2, lv2, 10, tau, basis);
+      assertClose(r.auc24, truth, truth * 0.01, `AUC24 (${basis})`);
+    }
+  });
+  test('two-level: default basis stays first-dose (backwards compatible)', () => {
+    const d = solveTwoLevelsPK(dose, tinf, a1, 2, a2, 10, tau);
+    assert(d.basis === 'firstdose', `default basis was ${d.basis}`);
+  });
+}
+
+{
+  // Hughes 2024 enrolled only BMI >= 40 ("median 46.3, range 40-70.3"). It must
+  // not be recommended below that.
+  const rec = (tbw, htCm, nLev = 0, icu = false) => getModelRecommendation(nLev, icu, tbw, htCm);
+  test('Hughes is recommended at BMI >= 40', () => {
+    const r = rec(130, 175);                       // BMI 42.4
+    assert(r.recommended === 'hughes', `BMI ${r.bmi.toFixed(1)} recommended ${r.recommended}`);
+  });
+  test('Hughes is NOT recommended for BMI 30-39.9', () => {
+    for (const [w, h] of [[95, 175], [105, 175], [115, 178]]) {
+      const r = rec(w, h);
+      assert(r.bmi >= 30 && r.bmi < 40, `test case BMI ${r.bmi.toFixed(1)} out of band`);
+      assert(r.recommended !== 'hughes',
+        `BMI ${r.bmi.toFixed(1)} must not get Hughes (validated only >= 40); got ${r.recommended}`);
+    }
+  });
+  test('BMI 30-39.9 carries an explicit "no validated model" advisory', () => {
+    const r = rec(105, 175);
+    assert(!!r.advisory && /not validated|No vancomycin population model is validated/i.test(r.advisory),
+      `expected a caveat, got: ${r.advisory}`);
+  });
+  test('lean adult still gets Buelga', () => {
+    assert(rec(75, 175).recommended === 'buelga', 'BMI 24.5 should be Buelga');
   });
 }
 
