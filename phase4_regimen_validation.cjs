@@ -113,5 +113,34 @@ check('D6 flags likely missed dose / lowers confidence', d6.confidence==='modera
 const d9=detectRegimen(fromIntervals(1000,[12,8,8,8,8,8]));
 check('D9 uses the whole matching run', d9.supportingIntervals.length>=4, d9.supportingIntervals.length);
 
+console.log('\n=== CLINICIAN OVERRIDE (spec Test 10) ===');
+{
+  // bState is declared with `let` inside the vm and is therefore NOT reachable as
+  // sb.bState. Drive the override through setRegimenOverride(), the same entry
+  // point the UI uses — which is what we actually want to test anyway.
+  const {applyRegimenOverride,setRegimenOverride}=sb;
+  const base=detectRegimen(fromIntervals(1000,[12.2,12.4,7.6,8.0]));
+  check('auto-detect finds q8h', base.intervalHours===8, base.intervalHours);
+
+  setRegimenOverride('12');
+  const ov=applyRegimenOverride(base);
+  check('override forces q12h projection', ov.intervalHours===12, ov.intervalHours);
+  check('override records what was detected', ov.detectedIntervalHours===8, ov.detectedIntervalHours);
+  check('override flagged active', ov.overrideActive===true, ov.overrideActive);
+  check('override reason code present', ov.reasonCodes.includes('EXPLICIT_REGIMEN_USED'), ov.reasonCodes.join(','));
+  check('historical fit input untouched (detect result unchanged)', base.intervalHours===8, base.intervalHours);
+
+  // An explicit interval resolves an otherwise unreadable schedule.
+  const messy=detectRegimen(fromIntervals(1000,[11.8,7.1,14.5,9.7]));
+  setRegimenOverride('12');
+  const messyOv=applyRegimenOverride(messy);
+  check('override makes an irregular course projectable', messyOv.status==='established' && messyOv.intervalHours===12,
+        messyOv.status+'/'+messyOv.intervalHours);
+
+  setRegimenOverride('auto');
+  const back=applyRegimenOverride(base);
+  check('clearing the override returns to auto-detect', back.intervalHours===8 && !back.overrideActive, back.intervalHours);
+}
+
 console.log('\n  passed '+pass+'  failed '+fail);
 process.exit(fail?1:0);

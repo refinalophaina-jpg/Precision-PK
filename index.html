@@ -4,34 +4,127 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AinaDara — Vancomycin TDM Calculator</title>
+<meta name="theme-color" content="#faf5ed">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23faf5ed'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23ede8dd' stroke='%232d3428' stroke-width='1.3'/%3E%3Cg stroke='%23cc785c' fill='none' stroke-width='1.1' stroke-linecap='round'%3E%3Ccircle cx='23' cy='27' r='6'/%3E%3Ccircle cx='23' cy='27' r='3.3'/%3E%3Ccircle cx='23' cy='27' r='1.3'/%3E%3C/g%3E%3Cg stroke='%234a3d7a' stroke-width='1.1' stroke-linecap='round'%3E%3Cline x1='43' y1='25' x2='47' y2='20'/%3E%3Cline x1='43' y1='25' x2='49' y2='25'/%3E%3Cline x1='43' y1='25' x2='47' y2='30'/%3E%3Cline x1='43' y1='25' x2='41' y2='32'/%3E%3C/g%3E%3Cpath d='M 19 42 Q 32 51 45 42' stroke='%234a5c28' stroke-width='1.3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* ── AinaDara design tokens ──────────────────────────────────────────
+     Canonical values mirrored from the live ainadara.com stylesheet via
+     ~/mission-control/domains/ainadara/philosophy/design-tokens.md.
+     Do not re-derive the look here; if the site changes, re-extract there.
+
+     The system is warm, quiet and organic — bone-paper, ink and earth. Boldness
+     is spent in exactly one place: terracotta. Moss means "alive". Purple is the
+     quiet structural accent.
+
+     Two documented extensions, because a clinical tool needs what a marketing
+     site does not:
+       1. A raised CARD level. The site has page + inset; a dense calculator
+          needs page + raised + inset + input.
+       2. A DANGER red. The site has no failure state; clinical alerts do.
+          Tuned warm so it sits in the palette rather than shouting over it.
+     ------------------------------------------------------------------- */
   :root {
-    --bg-deep:       #FAF9F6;
-    --bg-card:       #FFFFFF;
-    --bg-elevated:   #F0EFEB;
-    --bg-input:      #F5F4F1;
-    --border:        #E0DDD6;
-    --border-light:  #EBE8E2;
-    --text-primary:  #2C2C2E;
-    --text-secondary:#636366;
-    --text-muted:    #8E8E93;
-    --accent-terra:  #C96B3C;
-    --accent-amber:  #BF8530;
-    --accent-sage:   #3D8E5F;
-    --accent-rose:   #B04E60;
-    --accent-blue:   #3B6FAF;
-    --success:       #2D8A52;
-    --warning:       #B87D30;
-    --danger:        #B83B3B;
-    --radius-sm:     8px;
-    --radius-md:     12px;
-    --radius-lg:     18px;
-    --shadow-card:   0 2px 12px rgba(0,0,0,0.06);
-    --shadow-glow:   0 0 20px rgba(201,107,60,0.08);
-    --glass-bg:      rgba(255,255,255,0.85);
-    --glass-border:  rgba(0,0,0,0.04);
+    color-scheme: light;
+    /* canonical */
+    --paper:        #faf5ed;
+    --paper-deep:   #f2ecdf;
+    --paper-edge:   #e8e0d0;
+    --ink:          #2d3428;
+    --ink-soft:     #5a6151;
+    --ink-faint:    #8a8e80;
+    --terracotta:   #cc785c;
+    --terracotta-q: #e0a98c;
+    --purple:       #4a3d7a;
+    --moss:         #4a5c28;
+    --rule:         rgba(45, 52, 40, .1);
+    /* extensions */
+    --card:         #fffdf8;
+    --input:        #f7f2e8;
+    --amber:        #96631f;   /* darkened from #a8722a to clear WCAG AA (4.72:1) on paper */
+    --red:          #b3402f;
+    --rose:         #a8546a;
+
+    /* ── semantic aliases: the rest of the stylesheet speaks these ── */
+    --bg-deep:       var(--paper);
+    --bg-card:       var(--card);
+    --bg-elevated:   var(--paper-deep);
+    --bg-input:      var(--input);
+    --border:        var(--paper-edge);
+    --border-light:  var(--rule);
+    --text-primary:  var(--ink);
+    --text-secondary:var(--ink-soft);
+    --text-muted:    var(--ink-faint);
+    --accent-terra:  var(--terracotta);
+    --accent-amber:  var(--amber);
+    --accent-sage:   var(--moss);
+    --accent-rose:   var(--rose);
+    --accent-blue:   var(--purple);
+    --success:       var(--moss);
+    --warning:       var(--amber);
+    --danger:        var(--red);
+
+    --radius-sm:     4px;
+    --radius-md:     6px;
+    --radius-lg:     10px;
+    --radius-pill:   999px;
+    --shadow-card:   0 1px 2px rgba(45,52,40,0.04), 0 4px 16px rgba(45,52,40,0.04);
+    --shadow-glow:   0 0 20px rgba(204,120,92,0.08);
+    --glass-bg:      rgba(250,245,237,0.88);
+    --glass-border:  var(--rule);
   }
+
+  /* Dark. Explicit choice wins; system preference is the default. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper:        #1c1815;
+    --paper-deep:   #252119;
+    --paper-edge:   #322d24;
+    --ink:          #ece4d2;
+    --ink-soft:     #b8af9d;
+    --ink-faint:    #7d7666;
+    --terracotta:   #d88a6e;
+    --terracotta-q: #b56e54;
+    --purple:       #8e7dc8;
+    --moss:         #9aad68;
+    --rule:         rgba(236, 228, 210, .1);
+    --card:         #221e18;
+    --input:        #2a251d;
+    --amber:        #d9a765;
+    --red:          #e08977;
+    --rose:         #d08ba0;
+    --shadow-card:  0 1px 2px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.24);
+    --glass-bg:     rgba(28,24,21,0.88);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper:        #1c1815;
+      --paper-deep:   #252119;
+      --paper-edge:   #322d24;
+      --ink:          #ece4d2;
+      --ink-soft:     #b8af9d;
+      --ink-faint:    #7d7666;
+      --terracotta:   #d88a6e;
+      --terracotta-q: #b56e54;
+      --purple:       #8e7dc8;
+      --moss:         #9aad68;
+      --rule:         rgba(236, 228, 210, .1);
+      --card:         #221e18;
+      --input:        #2a251d;
+      --amber:        #d9a765;
+      --red:          #e08977;
+      --rose:         #d08ba0;
+      --shadow-card:  0 1px 2px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.24);
+      --glass-bg:     rgba(28,24,21,0.88);
+    }
+  }
+  /* Print is always light — the guide rule, applied here too. */
+  @media print { :root, :root[data-theme="dark"] { color-scheme: light; } }
+
+  ::selection { background: var(--terracotta); color: var(--paper); }
+  :focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1524,6 +1617,53 @@
   .continue-status-ok      { color:var(--accent-sage); }
   .continue-status-warn    { color:var(--accent-amber); }
   .continue-status-danger  { color:var(--accent-rose); }
+
+  /* ── Theme toggle ─────────────────────────────────────────────────── */
+  .theme-toggle {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:36px; height:36px; min-width:36px;
+    margin-left:8px; padding:0;
+    background:transparent; border:1px solid var(--rule);
+    border-radius:var(--radius-pill); cursor:pointer;
+    color:var(--ink-soft); transition:color .18s ease, border-color .18s ease, background .18s ease;
+  }
+  .theme-toggle:hover { color:var(--terracotta); border-color:var(--terracotta-q); background:var(--paper-deep); }
+  .theme-toggle svg { width:17px; height:17px; }
+  .theme-icon-dark  { display:none; }
+  :root[data-theme="dark"] .theme-icon-light { display:none; }
+  :root[data-theme="dark"] .theme-icon-dark  { display:block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-icon-light { display:none; }
+    :root:not([data-theme="light"]) .theme-icon-dark  { display:block; }
+  }
+  @media print { .theme-toggle { display:none !important; } }
+
+  /* Brand mark carries the real AinaDara logo; let it fill its box. */
+  .brand-mark svg { width:100%; height:100%; display:block; }
+
+  /* Wordmark: DM Serif Display, one word light, one bold — as the site sets it. */
+  .brand-name { font-family:'DM Serif Display', Georgia, serif; letter-spacing:.01em; }
+  .brand-name > span { color:var(--terracotta); }
+
+  /* The atmosphere wash from ainadara.com — three barely-there radials. */
+  body {
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 1200px 800px at 15% 10%, rgba(204,120,92,.05), transparent 60%),
+      radial-gradient(ellipse 900px 700px at 85% 70%, rgba(74,61,122,.03), transparent 60%),
+      radial-gradient(ellipse 800px 600px at 50% 100%, rgba(74,92,40,.025), transparent 60%);
+    background-attachment: fixed;
+  }
+  :root[data-theme="dark"] body,
+  :root:not([data-theme="light"]) body {
+    background-image:
+      radial-gradient(ellipse 1200px 800px at 15% 10%, rgba(204,120,92,.08), transparent 60%),
+      radial-gradient(ellipse 900px 700px at 85% 70%, rgba(74,61,122,.06), transparent 60%),
+      radial-gradient(ellipse 800px 600px at 50% 100%, rgba(74,92,40,.04), transparent 60%);
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+  @media print { body { background-image:none !important; } }
+
 </style>
 </head>
 <body>
@@ -1547,9 +1687,18 @@
 <header class="header">
   <div class="brand">
     <div class="brand-mark">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent-terra)">
-        <circle cx="12" cy="12" r="9" stroke-dasharray="3 2"/>
-        <path d="M8 12 Q10 8 12 12 Q14 16 16 12" stroke-linecap="round"/>
+      <!-- The AinaDara mark, from ainadara.com/favicon.svg. Terracotta rings
+           (the signal), purple rays (structure), moss arc (growth). -->
+      <svg viewBox="0 0 64 64" aria-label="AinaDara" role="img">
+        <circle cx="32" cy="32" r="24" fill="var(--paper-deep)" stroke="var(--ink)" stroke-width="1.3"/>
+        <g stroke="var(--terracotta)" fill="none" stroke-width="1.1" stroke-linecap="round">
+          <circle cx="23" cy="27" r="6"/><circle cx="23" cy="27" r="3.3"/><circle cx="23" cy="27" r="1.3"/>
+        </g>
+        <g stroke="var(--purple)" stroke-width="1.1" stroke-linecap="round">
+          <line x1="43" y1="25" x2="47" y2="20"/><line x1="43" y1="25" x2="49" y2="25"/>
+          <line x1="43" y1="25" x2="47" y2="30"/><line x1="43" y1="25" x2="41" y2="32"/>
+        </g>
+        <path d="M 19 42 Q 32 51 45 42" stroke="var(--moss)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
       </svg>
     </div>
     <span class="brand-name">Aina<span>Dara</span></span>
@@ -1560,6 +1709,18 @@
     <button class="module-tab" onclick="switchModule('continue')">Continue Course · <span style="color:var(--accent-sage);font-size:0.65rem">PHASE 3</span></button>
   </div>
   <div class="header-tag">Vancomycin TDM v1.0</div>
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Switch between light and dark" title="Light / dark">
+    <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.5"/>
+      <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+      <line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
+      <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+      <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
+    </svg>
+    <svg class="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+    </svg>
+  </button>
 </header>
 
 <!-- APP SHELL -->
@@ -2321,6 +2482,32 @@
           </table>
         </div>
         <button class="course-add-btn" onclick="addBayesDose()">+ Add Dose</button>
+
+        <!-- Clinician override for the detected regimen.
+             Affects PROJECTIONS and recommendation comparisons only. It never
+             alters the administration times used for Bayesian fitting. -->
+        <div class="field-group" style="margin-top:12px">
+          <label class="field-label" for="b-regimen-override">Current intended regimen</label>
+          <select id="b-regimen-override" onchange="setRegimenOverride(this.value)">
+            <option value="auto" selected>Auto-detect from dose history</option>
+            <option value="6">Q6H</option>
+            <option value="8">Q8H</option>
+            <option value="12">Q12H</option>
+            <option value="18">Q18H</option>
+            <option value="24">Q24H</option>
+            <option value="36">Q36H</option>
+            <option value="48">Q48H</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <div id="b-regimen-custom-wrap" style="display:none;margin-top:6px">
+            <div class="input-row">
+              <input type="number" id="b-regimen-custom" placeholder="—" min="4" max="72" step="0.5"
+                     oninput="setRegimenOverride('custom')">
+              <span class="unit-badge">h</span>
+            </div>
+          </div>
+          <p class="field-hint" id="b-regimen-detected" style="margin-top:4px">Detection runs when you calculate.</p>
+        </div>
       </div>
 
       <!-- Observed Levels -->
@@ -2938,6 +3125,73 @@ function showResultTab(id) {
 
 function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
 function s(id) { return document.getElementById(id).value; }
+
+// ══════════════════════════════════════════
+//  THEME
+// ══════════════════════════════════════════
+// Three states, matching ainadara.com: explicit light, explicit dark, or follow
+// the system. Only an explicit choice is stored, so a user who never touches the
+// toggle keeps tracking their OS setting.
+const THEME_KEY = 'ainadara_theme';
+function applyTheme(mode) {
+  // Guarded: the validation harness runs this file's script in a Node `vm` with
+  // a minimal DOM stub that has no documentElement. Theme code must never be the
+  // reason the engine fails to load.
+  const root = document.documentElement;
+  if (!root || typeof root.setAttribute !== 'function') return;
+  if (mode === 'light' || mode === 'dark') root.setAttribute('data-theme', mode);
+  else if (typeof root.removeAttribute === 'function') root.removeAttribute('data-theme');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    const dark = mode === 'dark' ||
+      (mode !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    meta.setAttribute('content', dark ? '#1c1815' : '#faf5ed');
+  }
+}
+function currentTheme() {
+  const root = document.documentElement;
+  const explicit = root && typeof root.getAttribute === 'function' ? root.getAttribute('data-theme') : null;
+  if (explicit) return explicit;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+function toggleTheme() {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  applyTheme(next);
+  redrawAllCanvases();
+}
+(function initTheme() {
+  if (typeof document === 'undefined' || !document.documentElement) return;
+  let stored = null;
+  try { stored = localStorage.getItem(THEME_KEY); } catch (e) {}
+  applyTheme(stored === 'light' || stored === 'dark' ? stored : null);
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      let s2 = null; try { s2 = localStorage.getItem(THEME_KEY); } catch (e) {}
+      if (s2 !== 'light' && s2 !== 'dark') { applyTheme(null); redrawAllCanvases(); }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+})();
+
+// Canvas graphs paint with literal colours, so they must be repainted when the
+// palette changes. Read tokens at draw time via themeColor().
+function themeColor(name, fallback) {
+  try {
+    if (typeof getComputedStyle !== 'function' || !document.documentElement) return fallback;
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  } catch (e) { return fallback; }
+}
+function redrawAllCanvases() {
+  // Re-run whichever renderers have live results. Guarded so a missing module
+  // never breaks the toggle.
+  try { if (typeof _pk !== 'undefined' && _pk) drawGraph(); } catch (e) {}
+  try { if (bState && bState.result) renderBayesianResults(bState.result, bState.divergeMsg,
+        bState.levelWarnings, bState.mic, bState.p2c); } catch (e) {}
+}
 
 // ══════════════════════════════════════════
 //  UNITS & SHARED CONSTANTS
@@ -4954,7 +5208,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   const ty = c => pad.top + gH - (c / cMax) * gH;
 
   // ─ Grid lines ─
-  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.strokeStyle = themeColor('--rule','rgba(0,0,0,0.06)');
   ctx.lineWidth = 1;
   // Horizontal grid
   const cStep = cMax > 80 ? 20 : cMax > 40 ? 10 : 5;
@@ -4974,11 +5228,11 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   const troughMax = opts.troughMax || 20;
   const yMin = ty(troughMax);
   const yMax = ty(troughMin);
-  ctx.fillStyle = 'rgba(45,138,82,0.08)';
+  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
   ctx.fillRect(pad.left, yMin, gW, yMax - yMin);
   // Dashed border lines for target zone
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = 'rgba(45,138,82,0.3)';
+  ctx.strokeStyle = themeColor('--moss','#4a5c28')+'4d';
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.left, yMin); ctx.lineTo(W - pad.right, yMin); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(pad.left, yMax); ctx.lineTo(W - pad.right, yMax); ctx.stroke();
@@ -5018,13 +5272,13 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   for (let i = 0; i < numCycles; i++) {
     // Peak at end of infusion
     const peakX = tx(i * tau + tinf), peakY = ty(pt.peak);
-    ctx.fillStyle = '#BF8530';
+    ctx.fillStyle = themeColor('--accent-amber','#BF8530');
     ctx.beginPath(); ctx.arc(peakX, peakY, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = themeColor('--ink-faint','rgba(0,0,0,0.3)'); ctx.lineWidth = 1;
     ctx.stroke();
     // Trough at end of interval
     const trX = tx((i + 1) * tau - dt), trY = ty(pt.trough);
-    ctx.fillStyle = '#3B6FAF';
+    ctx.fillStyle = themeColor('--accent-blue','#3B6FAF');
     ctx.beginPath(); ctx.arc(trX, trY, 4, 0, Math.PI * 2); ctx.fill();
     ctx.stroke();
   }
@@ -5033,18 +5287,18 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   if (opts.obsLevel && opts.obsTime) {
     const ox = tx(opts.obsTime % tMax || opts.obsTime);
     const oy = ty(opts.obsLevel);
-    ctx.fillStyle = '#B04E60';
-    ctx.strokeStyle = 'white';
+    ctx.fillStyle = themeColor('--accent-rose','#B04E60');
+    ctx.strokeStyle = themeColor('--paper','#fff');
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(ox, oy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     // Label
-    ctx.fillStyle = '#B04E60';
+    ctx.fillStyle = themeColor('--accent-rose','#B04E60');
     ctx.font = "600 10px 'DM Mono', monospace";
     ctx.fillText(`${opts.obsLevel.toFixed(1)}`, ox + 10, oy - 4);
   }
 
   // ─ Axes labels ─
-  ctx.fillStyle = 'rgba(99,99,102,0.4)';
+  ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.4)');
   ctx.font = "500 10px 'DM Mono', monospace";
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -5055,7 +5309,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   ctx.textBaseline = 'top';
   // X-axis ticks every 8 hours
   for (let t = 0; t <= tMax; t += xTickStep) {
-    ctx.fillStyle = 'rgba(99,99,102,0.4)';
+    ctx.fillStyle = themeColor('--ink-faint','rgba(99,99,102,0.4)');
     ctx.fillText(t + 'h', tx(t), pad.top + gH + 6);
   }
   // Dose markers at interval boundaries
@@ -5121,7 +5375,7 @@ function resetForm() {
 // ══════════════════════════════════════════════════════════════
 
 // ─── State ───
-let bState = { sex:'M', result:null, tinkCompare:[] };
+let bState = { sex:'M', result:null, tinkCompare:[], regimenOverrideH:null };
 let bDoseCount = 0;
 let bLevelCount = 0;
 
@@ -5911,7 +6165,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
 
   // ── Target trough band 10–20 ──
   const yBand20 = ty(20), yBand10 = ty(10);
-  ctx.fillStyle = 'rgba(45,138,82,0.08)';
+  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
   ctx.fillRect(pad.left, yBand20, gW, yBand10-yBand20);
   ctx.fillStyle = 'rgba(45,138,82,0.2)';
   ctx.fillRect(pad.left, yBand20, gW, 1);
@@ -6065,13 +6319,13 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     if (relT < 0 || relT > tSpan) continue;
     const x = tx(relT), y = ty(lev.conc);
     const r = 6;
-    ctx.strokeStyle = '#c45d70';
+    ctx.strokeStyle = themeColor('--accent-rose','#c45d70');
     ctx.lineWidth   = 2.5;
     ctx.beginPath();
     ctx.moveTo(x-r, y-r); ctx.lineTo(x+r, y+r);
     ctx.moveTo(x+r, y-r); ctx.lineTo(x-r, y+r);
     ctx.stroke();
-    ctx.fillStyle   = '#c45d70';
+    ctx.fillStyle   = themeColor('--accent-rose','#c45d70');
     ctx.font        = "600 9px 'DM Mono',monospace";
     ctx.textAlign   = 'left';
     ctx.textBaseline= 'middle';
@@ -6887,6 +7141,47 @@ function regimenNarrative(reg, timing) {
   return s;
 }
 
+// ── Clinician override ────────────────────────────────────────────────────
+// The detector reads intent from timing, which is inference. A clinician who
+// knows the order outranks it. The override changes the regimen used for
+// PROJECTION and for recommendation comparisons; it never touches the doses,
+// times or levels the Bayesian fit consumes, and it never rewrites history.
+function setRegimenOverride(value) {
+  const wrap = document.getElementById('b-regimen-custom-wrap');
+  if (wrap) wrap.style.display = (value === 'custom') ? 'block' : 'none';
+  if (value === 'auto') {
+    bState.regimenOverrideH = null;
+  } else if (value === 'custom') {
+    const h = parseFloat((document.getElementById('b-regimen-custom') || {}).value);
+    bState.regimenOverrideH = (Number.isFinite(h) && h >= 4 && h <= 72) ? h : null;
+  } else {
+    const h = parseFloat(value);
+    bState.regimenOverrideH = Number.isFinite(h) ? h : null;
+  }
+  // Re-render against the new intent if a fit already exists.
+  if (bState.result) { try { runBayesian(); } catch (e) {} }
+}
+
+// Returns the regimen to PROJECT on, folding in any clinician override.
+function applyRegimenOverride(detected) {
+  const h = bState.regimenOverrideH;
+  if (!h || !detected) return detected;
+  const overridden = Object.assign({}, detected, {
+    intervalHours: h,
+    frequencyLabel: frequencyLabel(h),
+    overrideActive: true,
+    detectedIntervalHours: detected.intervalHours,
+    detectedFrequencyLabel: detected.frequencyLabel,
+    confidence: 'high',
+    reasonCodes: ['EXPLICIT_REGIMEN_USED'].concat(detected.reasonCodes || []),
+  });
+  // An explicit interval resolves the ambiguity that made it irregular.
+  if (overridden.status === 'irregular' || overridden.status === 'insufficient_data') {
+    overridden.status = 'established';
+  }
+  return overridden;
+}
+
 function inferCurrentRegimen(doses, CL_ind, V_ind, goti) {
   if (!doses.length) return null;
   const last  = doses[doses.length-1];
@@ -6896,7 +7191,20 @@ function inferCurrentRegimen(doses, CL_ind, V_ind, goti) {
   // Recency-based detection replaces the old modal-interval logic. `regimen`
   // carries the structured inference; the legacy fields below are kept so the
   // existing renderer keeps working.
-  const regimen = detectRegimen(doses);
+  const detected = detectRegimen(doses);
+  const regimen = applyRegimenOverride(detected);
+  // Surface what detection found, even when overridden.
+  const detNote = document.getElementById('b-regimen-detected');
+  if (detNote) {
+    detNote.textContent = regimen.overrideActive
+      ? `Override active — projecting on ${regimen.frequencyLabel}. Detected: `
+        + `${detected.frequencyLabel || 'no consistent schedule'}`
+        + `${detected.frequencyLabel ? ' (' + detected.confidence + ' confidence)' : ''}. `
+        + `Bayesian fitting still uses the actual dose and level times.`
+      : `Detected ${detected.frequencyLabel || 'no consistent schedule'}`
+        + `${detected.frequencyLabel ? ' — ' + detected.confidence + ' confidence' : ''}`
+        + `${detected.transitionDetected ? ', transition from ' + frequencyLabel(detected.priorIntervalHours) : ''}.`;
+  }
   let tau = regimen.intervalHours;
   const modalTau = regimen.priorIntervalHours;
   const lastIntervalH = doses.length >= 2
@@ -7103,16 +7411,26 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const accent = isIrregular ? 'var(--danger)'
                  : reg.status === 'possible_transition' ? 'var(--accent-amber)'
                  : 'var(--accent-sage)';
-    const heading = isIrregular ? 'Irregular dosing — no consistent schedule'
+    const heading = reg.overrideActive ? 'Current regimen — clinician override'
+                  : isIrregular ? 'Irregular dosing — no consistent schedule'
                   : reg.transitionDetected ? 'Regimen transition detected'
                   : reg.status === 'possible_transition' ? 'Possible regimen change'
                   : 'Current regimen';
-    const confChip = `<span style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.05);color:var(--text-muted)">${escHtml(reg.confidence)} confidence</span>`;
+    const confChip = reg.overrideActive
+      ? `<span style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;padding:2px 6px;border-radius:4px;background:rgba(59,111,175,0.12);color:var(--accent-blue)">override</span>`
+      : `<span style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.05);color:var(--text-muted)">${escHtml(reg.confidence)} confidence</span>`;
+    const overrideNote = reg.overrideActive ? `
+      <div style="font-size:0.74rem;line-height:1.5;color:var(--text-secondary);background:rgba(59,111,175,0.06);border-left:2px solid var(--accent-blue);padding:8px 10px;border-radius:4px;margin-bottom:10px">
+        Projecting on <strong>${escHtml(reg.frequencyLabel)}</strong> as selected, not the
+        ${reg.detectedFrequencyLabel ? `detected <strong>${escHtml(reg.detectedFrequencyLabel)}</strong>` : 'auto-detected schedule'}.
+        Historical dose and level times are unchanged — the Bayesian fit is identical either way.
+      </div>` : '';
 
     html += `<div class="diverge-warning" style="background:rgba(0,0,0,0.02);border-color:${accent};color:${accent}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span style="font-weight:700">${isNotable ? '⚠ ' : ''}${escHtml(heading)}</span>${confChip}
       </div>
+      ${overrideNote}
       <div style="font-size:0.78rem;line-height:1.6;color:var(--text-secondary);margin-bottom:10px">
         ${escHtml(regimenNarrative(reg, timing))}
       </div>
@@ -7472,7 +7790,7 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   });
 
   // Target band 10–20 mg/L
-  ctx.fillStyle = 'rgba(45,138,82,0.08)';
+  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
   const y10 = ty(10), y20 = ty(20);
   if (y10 > PAD.t && y20 < PAD.t + cH) {
     ctx.fillRect(PAD.l, Math.max(PAD.t, y20), cW, Math.min(y10, PAD.t + cH) - Math.max(PAD.t, y20));
@@ -7554,7 +7872,7 @@ function drawCompareCanvas(canvas, items) {
   });
 
   // Target band
-  ctx.fillStyle = 'rgba(45,138,82,0.08)';
+  ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
   const y10 = ty(10), y20 = ty(20);
   ctx.fillRect(PAD.l, Math.max(PAD.t, y20), cW, Math.max(0, Math.min(y10, PAD.t + cH) - Math.max(PAD.t, y20)));
 
@@ -7784,7 +8102,11 @@ function runBayesTinkerer() {
 
 // ─── Reset ───
 function resetBayesian() {
-  bState = { sex:'M', result:null, tinkCompare:[], model:'buelga', dial:false };
+  bState = { sex:'M', result:null, tinkCompare:[], model:'buelga', dial:false, regimenOverrideH:null };
+  const _ro = document.getElementById('b-regimen-override');
+  if (_ro) { _ro.value = 'auto'; }
+  const _rw = document.getElementById('b-regimen-custom-wrap');
+  if (_rw) { _rw.style.display = 'none'; }
   bDoseCount  = 0;
   bLevelCount = 0;
   bScrCount   = 0;
