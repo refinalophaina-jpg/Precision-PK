@@ -106,6 +106,21 @@ exists. Pure `function` declarations are.
 
 ## UI work
 
+**No inline `on*` handlers. Ever.** The app ships under a hash-pinned CSP with no
+`'unsafe-inline'` and no `'unsafe-hashes'`. A hash authorises the `<script>` **block**; it
+does **not** authorise event-handler attributes. Inline handlers therefore die silently in
+production — the page renders, the engine loads, and nothing responds to a click.
+
+Handlers live in the `__ACT` registry and are bound by delegation (`__bindActions`). To add
+one: add an entry, then put `data-onclick="kN"` (or `data-oninput` / `data-onchange` /
+`data-onkeydown`) on the element, plus `data-arg="${...}"` if it takes a value. Delegation
+also means markup rendered later via `innerHTML` is bound for free. `SUITE 14` fails the
+build if an inline handler, a `javascript:` URL, or an `eval`-family call reappears.
+
+**Verify UI changes with a real click, in a browser, under the production CSP** — not by
+calling the function from the console. Every check that missed the CSP failure above was
+programmatic. `scratchpad/csptest/serve.py` serves the file locally under the real policy.
+
 Design language: warm off-white, `Outfit` body / `DM Serif Display` headings / `DM Mono`
 numbers, terracotta accent `--accent-terra: #C96B3C`. Full token set in `:root`.
 

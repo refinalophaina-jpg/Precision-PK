@@ -1818,7 +1818,7 @@
 <body>
 
 <!-- ═══ PHASE 3 — PRINT REPORT ═══ -->
-<button class="print-fab" onclick="window.print()" title="Print or save this report as PDF">
+<button class="print-fab" data-onclick="k0" title="Print or save this report as PDF">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="6 9 6 2 18 2 18 9"/>
     <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
@@ -1853,12 +1853,12 @@
     <span class="brand-name">Aina<span>Dara</span></span>
   </div>
   <div class="module-tabs">
-    <button class="module-tab active" onclick="switchModule('trough')">Trough-Based</button>
-    <button class="module-tab" onclick="switchModule('auc')">AUC Precision</button>
-    <button class="module-tab" onclick="switchModule('continue')">Continue Course</button>
+    <button class="module-tab active" data-onclick="k1">Trough-Based</button>
+    <button class="module-tab" data-onclick="k2">AUC Precision</button>
+    <button class="module-tab" data-onclick="k3">Continue Course</button>
   </div>
   <div class="header-tag">Vancomycin TDM v2.1</div>
-  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Switch between light and dark" title="Light / dark">
+  <button class="theme-toggle" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
       <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
@@ -1880,10 +1880,10 @@
 
     <!-- Calc Mode Selector -->
     <div class="calc-mode-bar">
-      <button class="calc-mode-btn active" id="mode-btn-initial" onclick="setCalcMode('initial')">Initial Dosing</button>
-      <button class="calc-mode-btn" id="mode-btn-level" onclick="setCalcMode('level')">Steady State Trough</button>
-      <button class="calc-mode-btn" id="mode-btn-twolevels" onclick="setCalcMode('twolevels')">Two Levels</button>
-      <button class="calc-mode-btn" id="mode-btn-randomlevel" onclick="setCalcMode('randomlevel')">Random Level</button>
+      <button class="calc-mode-btn active" id="mode-btn-initial" data-onclick="k5">Initial Dosing</button>
+      <button class="calc-mode-btn" id="mode-btn-level" data-onclick="k6">Steady State Trough</button>
+      <button class="calc-mode-btn" id="mode-btn-twolevels" data-onclick="k7">Two Levels</button>
+      <button class="calc-mode-btn" id="mode-btn-randomlevel" data-onclick="k8">Random Level</button>
     </div>
     <p class="calc-mode-hint" id="calc-mode-hint">Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady State Trough</strong> once a steady-state level is available.</p>
 
@@ -1903,8 +1903,8 @@
           <div class="field-group">
             <label class="field-label" for="sex">Sex</label>
             <div class="toggle-group">
-              <button class="toggle-opt active" onclick="setSex(this,'M')">Male</button>
-              <button class="toggle-opt" onclick="setSex(this,'F')">Female</button>
+              <button class="toggle-opt active" data-onclick="k9">Male</button>
+              <button class="toggle-opt" data-onclick="k10">Female</button>
             </div>
             <input type="hidden" id="sex" value="M">
           </div>
@@ -1914,14 +1914,14 @@
           <div class="field-group">
             <label class="field-label" for="tbw">Total Body Weight</label>
             <div class="input-row">
-              <input type="number" id="tbw" placeholder="—" min="30" max="340" oninput="autoWeights()">
+              <input type="number" id="tbw" placeholder="—" min="30" max="340" data-oninput="k11">
               <span class="unit-badge">kg</span>
             </div>
           </div>
           <div class="field-group">
             <label class="field-label" for="height">Height</label>
             <div class="input-row">
-              <input type="number" id="height" placeholder="—" min="120" max="220" oninput="autoWeights()">
+              <input type="number" id="height" placeholder="—" min="120" max="220" data-oninput="k11">
               <span class="unit-badge">cm</span>
             </div>
           </div>
@@ -1959,7 +1959,7 @@
         <div class="field-group">
           <label class="field-label" for="scr">Serum Creatinine</label>
           <div class="input-row">
-            <input type="number" id="scr" placeholder="—" min="0.1" max="25" step="0.1" oninput="updateCrCl(); if(state.calcMode==='initial') suggestInterval(); checkAKI();">
+            <input type="number" id="scr" placeholder="—" min="0.1" max="25" step="0.1" data-oninput="k12">
             <span class="unit-badge">mg/dL</span>
           </div>
           <p class="field-hint" style="margin-top:4px">Measured value is used as entered — not rounded up.</p>
@@ -1970,7 +1970,7 @@
         <div class="field-group">
           <label class="field-label" for="cysc">Cystatin C <span style="color:var(--text-muted);font-weight:400">· optional</span></label>
           <div class="input-row">
-            <input type="number" id="cysc" placeholder="—" min="0.1" max="10" step="0.01" oninput="updateCysC()">
+            <input type="number" id="cysc" placeholder="—" min="0.1" max="10" step="0.01" data-oninput="k13">
             <span class="unit-badge">mg/L</span>
           </div>
           <p class="field-hint" style="margin-top:4px">Enter when available — flags creatinine/cystatin discordance in low muscle mass.</p>
@@ -1979,9 +1979,9 @@
         <div class="field-group">
           <label class="field-label" for="dosing-wt">Dosing Weight for CrCl</label>
           <div class="toggle-group" id="dosingwt-toggle">
-            <button class="toggle-opt active" onclick="setDosingWt(this,'TBW')">TBW</button>
-            <button class="toggle-opt" onclick="setDosingWt(this,'IBW')">IBW</button>
-            <button class="toggle-opt" onclick="setDosingWt(this,'AdjBW')">AdjBW</button>
+            <button class="toggle-opt active" data-onclick="k14">TBW</button>
+            <button class="toggle-opt" data-onclick="k15">IBW</button>
+            <button class="toggle-opt" data-onclick="k16">AdjBW</button>
           </div>
           <input type="hidden" id="dosing-wt" value="TBW">
           <p class="field-hint" id="crcl-hint" style="margin-top:4px">Cockcroft-Gault • AdjBW auto if TBW >20% above IBW</p>
@@ -1999,11 +1999,11 @@
             <div class="input-row" style="flex:0 0 auto">
               <input type="number" id="scr-baseline" placeholder="—" min="0.1" max="20" step="0.1"
                 style="width:90px"
-                oninput="checkAKI()">
+                data-oninput="k17">
               <span class="unit-badge">mg/dL</span>
             </div>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.78rem;color:var(--text-muted)">
-              <input type="checkbox" id="aki-manual" onchange="checkAKI()"
+              <input type="checkbox" id="aki-manual" data-onchange="k17"
                 style="accent-color:var(--accent-amber);width:14px;height:14px;cursor:pointer">
               Known AKI
             </label>
@@ -2022,7 +2022,7 @@
           <div class="form-grid-2">
             <div class="field-group">
               <label class="field-label" for="init-interval">Preferred Interval</label>
-              <select id="init-interval" onchange="onIntervalChange()">
+              <select id="init-interval" data-onchange="k18">
                 <option value="6">Q6H</option>
                 <option value="8">Q8H</option>
                 <option value="12" selected>Q12H</option>
@@ -2093,7 +2093,7 @@
       <div class="level-toggle-row">
         <p class="section-label" style="margin-bottom:0">Loading Dose</p>
         <label class="toggle-switch">
-          <input type="checkbox" id="has-ld" onchange="toggleLD()">
+          <input type="checkbox" id="has-ld" data-onchange="k19">
           <span class="slider"></span>
         </label>
       </div>
@@ -2126,7 +2126,7 @@
       <div class="level-toggle-row">
         <p class="section-label" style="margin-bottom:0">Drug Level</p>
         <label class="toggle-switch">
-          <input type="checkbox" id="has-level" onchange="toggleLevel()">
+          <input type="checkbox" id="has-level" data-onchange="k20">
           <span class="slider"></span>
         </label>
       </div>
@@ -2138,8 +2138,8 @@
         <div class="field-group">
           <label class="field-label" for="is-ss">Steady State?</label>
           <div class="toggle-group">
-            <button class="toggle-opt active" onclick="setSS(this,true)">Yes (≥3 doses)</button>
-            <button class="toggle-opt" onclick="setSS(this,false)">No (1st/2nd dose)</button>
+            <button class="toggle-opt active" data-onclick="k21">Yes (≥3 doses)</button>
+            <button class="toggle-opt" data-onclick="k22">No (1st/2nd dose)</button>
           </div>
           <input type="hidden" id="is-ss" value="true">
         </div>
@@ -2160,12 +2160,12 @@
           <div class="form-grid-2">
             <div class="field-group">
               <label class="field-label" for="time-dose-given">Last dose given</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-dose-given" oninput="calcTimeDelta()" onchange="calcTimeDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
+              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-dose-given" data-oninput="k23" data-onchange="k23" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
               <p class="field-hint">Start of infusion</p>
             </div>
             <div class="field-group">
               <label class="field-label" for="time-level-drawn">Level drawn at</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-level-drawn" oninput="calcTimeDelta()" onchange="calcTimeDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
+              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-level-drawn" data-oninput="k23" data-onchange="k23" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
               <p class="field-hint">Time of blood draw</p>
             </div>
           </div>
@@ -2173,7 +2173,7 @@
           <!-- Next-day toggle for overnight doses -->
           <div style="display:flex;align-items:center;gap:8px">
             <label class="toggle-switch" style="width:32px;height:18px">
-              <input type="checkbox" id="next-day" onchange="calcTimeDelta()">
+              <input type="checkbox" id="next-day" data-onchange="k23">
               <span class="slider"></span>
             </label>
             <span style="font-size:0.72rem;color:var(--text-muted)">Level drawn next calendar day (e.g. dose 21:00, level 09:00)</span>
@@ -2205,8 +2205,8 @@
         <div class="field-group" style="margin-bottom:10px">
           <label class="field-label">Where in the course were these levels drawn?</label>
           <div class="toggle-group" id="tl-basis-toggle">
-            <button class="toggle-opt active" onclick="setTlBasis(this,'firstdose')">After the first dose</button>
-            <button class="toggle-opt" onclick="setTlBasis(this,'steadystate')">At steady state</button>
+            <button class="toggle-opt active" data-onclick="k24">After the first dose</button>
+            <button class="toggle-opt" data-onclick="k25">At steady state</button>
           </div>
           <p class="field-hint" id="tl-basis-hint" style="margin-top:4px">
             Elimination is the same either way; <strong>volume is not</strong>. Levels drawn at steady state
@@ -2233,7 +2233,7 @@
           </div>
           <div class="field-group">
             <label class="field-label" for="tl-dose-time">Dose start time</label>
-            <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-dose-time" oninput="calcTLDeltas()" onchange="calcTLDeltas()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+            <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-dose-time" data-oninput="k26" data-onchange="k26" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
           </div>
         </div>
       </div>
@@ -2253,7 +2253,7 @@
             </div>
             <div class="field-group">
               <label class="field-label" for="tl-t1-time">Drawn at</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t1-time" oninput="calcTLDeltas()" onchange="calcTLDeltas()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t1-time" data-oninput="k26" data-onchange="k26" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             </div>
           </div>
           <div id="tl-t1-display" style="display:none;font-size:0.78rem;font-family:'DM Mono',monospace;color:var(--accent-amber)"></div>
@@ -2275,7 +2275,7 @@
             </div>
             <div class="field-group">
               <label class="field-label" for="tl-t2-time">Drawn at</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t2-time" oninput="calcTLDeltas()" onchange="calcTLDeltas()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t2-time" data-oninput="k26" data-onchange="k26" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             </div>
           </div>
           <div id="tl-t2-display" style="display:none;font-size:0.78rem;font-family:'DM Mono',monospace;color:var(--accent-amber)"></div>
@@ -2309,8 +2309,8 @@
       <div>
         <p class="section-label">Sampling Scenario</p>
         <div class="calc-mode-bar" style="margin-bottom:10px">
-          <button class="calc-mode-btn active" id="rl-btn-firstdose" onclick="setRLMode('firstdose')">First Dose</button>
-          <button class="calc-mode-btn" id="rl-btn-ss" onclick="setRLMode('steadystate')">Steady State</button>
+          <button class="calc-mode-btn active" id="rl-btn-firstdose" data-onclick="k27">First Dose</button>
+          <button class="calc-mode-btn" id="rl-btn-ss" data-onclick="k28">Steady State</button>
         </div>
         <p class="field-hint" id="rl-mode-hint">Level drawn at any time after the first dose. Uses population Vd to solve individual Kel — no dosing interval needed.</p>
       </div>
@@ -2351,7 +2351,7 @@
           </div>
           <div class="field-group">
             <label class="field-label" for="rl-dose-time">Dose start date &amp; time</label>
-            <input type="datetime-local" id="rl-dose-time" oninput="calcRLDelta()" onchange="calcRLDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+            <input type="datetime-local" id="rl-dose-time" data-oninput="k29" data-onchange="k29" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             <p class="field-hint">Enter date + time to support cross-day intervals</p>
           </div>
         </div>
@@ -2372,7 +2372,7 @@
             </div>
             <div class="field-group">
               <label class="field-label" for="rl-draw-time">Level drawn (date &amp; time)</label>
-              <input type="datetime-local" id="rl-draw-time" oninput="calcRLDelta()" onchange="calcRLDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+              <input type="datetime-local" id="rl-draw-time" data-oninput="k29" data-onchange="k29" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             </div>
           </div>
           <div id="rl-t-display" style="display:none;font-size:0.78rem;font-family:'DM Mono',monospace;color:var(--accent-amber)"></div>
@@ -2406,7 +2406,7 @@
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
           <label class="field-label" for="cl-model">Clearance Model</label>
-          <select id="cl-model" onchange="updateModelInfo()">
+          <select id="cl-model" data-onchange="k30">
             <option value="vancopk" selected>VancoPK (Default) — 0.75(CrCl) + 4</option>
             <option value="matzke">Matzke — 0.689(CrCl) + 3.66</option>
             <option value="buelga">Buelga — 1.08(CrCl)</option>
@@ -2415,7 +2415,7 @@
         </div>
         <div class="field-group">
           <label class="field-label" for="vd-model">Volume of Distribution Model</label>
-          <select id="vd-model" onchange="updateModelInfo()">
+          <select id="vd-model" data-onchange="k30">
             <option value="vancopk" selected>VancoPK — 0.29(age) + 0.33(TBW) + 11</option>
             <option value="buelga">Buelga — 0.98 L/kg TBW</option>
             <option value="bauer">Bauer — 0.70 L/kg TBW</option>
@@ -2459,8 +2459,8 @@
 
     <!-- Buttons -->
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      <button class="calc-btn" onclick="calculate()">Calculate Regimen<kbd>⏎</kbd></button>
-      <button class="reset-btn" onclick="resetForm()">Reset All Fields</button>
+      <button class="calc-btn" data-onclick="k31">Calculate Regimen<kbd>⏎</kbd></button>
+      <button class="reset-btn" data-onclick="k32">Reset All Fields</button>
     </div>
 
   </div><!-- /panel-left -->
@@ -2512,19 +2512,19 @@
            horizontal scroll nobody discovers. Each cell now names the model and
            the population it was fitted to, which is the thing you are choosing. -->
       <div class="model-grid" id="b-model-toggle">
-        <button class="model-opt active" id="b-model-btn-buelga" onclick="setBModel(this,'buelga')">
+        <button class="model-opt active" id="b-model-btn-buelga" data-onclick="k33">
           <span class="model-opt-name">Buelga 2005</span>
           <span class="model-opt-sub">1-comp · general adult</span>
         </button>
-        <button class="model-opt" id="b-model-btn-goti" onclick="setBModel(this,'goti')">
+        <button class="model-opt" id="b-model-btn-goti" data-onclick="k34">
           <span class="model-opt-name">Goti 2018</span>
           <span class="model-opt-sub">2-comp · hospitalised</span>
         </button>
-        <button class="model-opt" id="b-model-btn-hughes" onclick="setBModel(this,'hughes')">
+        <button class="model-opt" id="b-model-btn-hughes" data-onclick="k35">
           <span class="model-opt-name">Hughes 2024</span>
           <span class="model-opt-sub">2-comp · BMI ≥ 40 only</span>
         </button>
-        <button class="model-opt" id="b-model-btn-gotihd" onclick="setBModel(this,'gotihd')">
+        <button class="model-opt" id="b-model-btn-gotihd" data-onclick="k36">
           <span class="model-opt-name">Goti 2018 · HD</span>
           <span class="model-opt-sub">2-comp · haemodialysis</span>
         </button>
@@ -2544,7 +2544,7 @@
       <p class="section-label" style="margin:0">Saved Profiles</p>
       <div class="profile-save-row">
         <input type="text" id="profile-label-input" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
-        <button class="profile-save-btn" onclick="saveCurrentProfile()">Save Current</button>
+        <button class="profile-save-btn" data-onclick="k37">Save Current</button>
       </div>
       <div class="profile-list" id="profile-list"></div>
       <div class="profile-privacy-note">
@@ -2560,15 +2560,15 @@
           <div class="field-group">
             <label class="field-label" for="b-age">Age</label>
             <div class="input-row">
-              <input type="number" id="b-age" placeholder="—" min="18" max="100" oninput="updateBayesCrCl()">
+              <input type="number" id="b-age" placeholder="—" min="18" max="100" data-oninput="k38">
               <span class="unit-badge">yr</span>
             </div>
           </div>
           <div class="field-group">
             <label class="field-label" for="b-sex">Sex</label>
             <div class="toggle-group">
-              <button class="toggle-opt active" onclick="setBSex(this,'M')">Male</button>
-              <button class="toggle-opt" onclick="setBSex(this,'F')">Female</button>
+              <button class="toggle-opt active" data-onclick="k39">Male</button>
+              <button class="toggle-opt" data-onclick="k40">Female</button>
             </div>
             <input type="hidden" id="b-sex" value="M">
           </div>
@@ -2577,14 +2577,14 @@
           <div class="field-group">
             <label class="field-label" for="b-tbw">Total Body Weight</label>
             <div class="input-row">
-              <input type="number" id="b-tbw" placeholder="—" min="30" max="340" oninput="updateBayesCrCl()">
+              <input type="number" id="b-tbw" placeholder="—" min="30" max="340" data-oninput="k38">
               <span class="unit-badge">kg</span>
             </div>
           </div>
           <div class="field-group">
             <label class="field-label" for="b-height">Height</label>
             <div class="input-row">
-              <input type="number" id="b-height" placeholder="—" min="120" max="220" oninput="updateBayesCrCl()">
+              <input type="number" id="b-height" placeholder="—" min="120" max="220" data-oninput="k38">
               <span class="unit-badge">cm</span>
             </div>
           </div>
@@ -2601,7 +2601,7 @@
         <div class="field-group">
           <label class="field-label" for="b-scr">Serum Creatinine</label>
           <div class="input-row">
-            <input type="number" id="b-scr" placeholder="—" min="0.1" max="20" step="0.1" oninput="updateBayesCrCl()">
+            <input type="number" id="b-scr" placeholder="—" min="0.1" max="20" step="0.1" data-oninput="k38">
             <span class="unit-badge">mg/dL</span>
           </div>
         </div>
@@ -2609,7 +2609,7 @@
         <div id="b-goti-scr-note" style="display:none;font-size:0.70rem;color:var(--accent-amber);font-style:italic"></div>
         <p class="field-hint">Cockcroft-Gault · AdjBW auto if TBW &gt;20% above IBW · Used as fallback if no serial SCr entries below</p>
         <div id="b-dial-wrap" style="display:none;align-items:center;gap:8px;margin-top:4px">
-          <input type="checkbox" id="b-dial" onchange="bState.dial=this.checked;updateBayesCrCl()" style="accent-color:var(--accent-blue);width:14px;height:14px;cursor:pointer">
+          <input type="checkbox" id="b-dial" data-onchange="k41" style="accent-color:var(--accent-blue);width:14px;height:14px;cursor:pointer">
           <label for="b-dial" style="font-size:0.78rem;color:var(--text-secondary);cursor:pointer">Hemodialysis patient (HD)</label>
         </div>
       </div>
@@ -2634,7 +2634,7 @@
           </tbody>
         </table>
       </div>
-      <button class="course-add-btn" onclick="addScrRow()">+ Add SCr</button>
+      <button class="course-add-btn" data-onclick="k42">+ Add SCr</button>
       <p class="field-hint" style="margin-top:6px">When entries are present, Bayesian uses the SCr closest in time to the last dose. Enables AKI/recovery trend detection.</p>
       <div id="b-scr-trend-display" style="display:none;margin-top:8px"></div>
     </div>
@@ -2663,14 +2663,14 @@
             </tbody>
           </table>
         </div>
-        <button class="course-add-btn" onclick="addBayesDose()">+ Add Dose</button>
+        <button class="course-add-btn" data-onclick="k43">+ Add Dose</button>
 
         <!-- Clinician override for the detected regimen.
              Affects PROJECTIONS and recommendation comparisons only. It never
              alters the administration times used for Bayesian fitting. -->
         <div class="field-group" style="margin-top:12px">
           <label class="field-label" for="b-regimen-override">Current intended regimen</label>
-          <select id="b-regimen-override" onchange="setRegimenOverride(this.value)">
+          <select id="b-regimen-override" data-onchange="k44">
             <option value="auto" selected>Auto-detect from dose history</option>
             <option value="6">Q6H</option>
             <option value="8">Q8H</option>
@@ -2684,7 +2684,7 @@
           <div id="b-regimen-custom-wrap" style="display:none;margin-top:6px">
             <div class="input-row">
               <input type="number" id="b-regimen-custom" placeholder="—" min="4" max="72" step="0.5"
-                     oninput="setRegimenOverride('custom')">
+                     data-oninput="k45">
               <span class="unit-badge">h</span>
             </div>
           </div>
@@ -2709,7 +2709,7 @@
             </tbody>
           </table>
         </div>
-        <button class="course-add-btn" onclick="addBayesLevel()">+ Add Level</button>
+        <button class="course-add-btn" data-onclick="k46">+ Add Level</button>
         <p class="field-hint" style="margin-top:6px">Levels can be drawn at any time point (not restricted to trough). More levels → narrower AUC uncertainty.</p>
       </div>
     </div>
@@ -2742,9 +2742,9 @@
 
     <!-- Action buttons -->
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      <button class="calc-btn" onclick="runBayesian()">
+      <button class="calc-btn" data-onclick="k47">
         Run Bayesian Analysis<kbd>⏎</kbd></button>
-      <button class="reset-btn" onclick="resetBayesian()">Reset Bayesian Form</button>
+      <button class="reset-btn" data-onclick="k48">Reset Bayesian Form</button>
     </div>
 
   </div><!-- /panel-left bayesian -->
@@ -2798,7 +2798,7 @@
     <!-- Profile selector -->
     <div>
       <p class="section-label">Select Saved Profile</p>
-      <select class="continue-profile-select" id="continue-profile-select" onchange="loadContinueProfile(this.value)">
+      <select class="continue-profile-select" id="continue-profile-select" data-onchange="k49">
         <option value="">— choose a profile with a saved PK fit —</option>
       </select>
       <p class="field-hint" style="margin-top:6px">Only profiles saved after running a Bayesian fit are listed.</p>
@@ -2842,7 +2842,7 @@
         <div class="field-group">
           <label class="field-label" for="c-dose">Dose</label>
           <div class="input-row">
-            <input type="number" id="c-dose" placeholder="1000" min="250" max="4000" step="50" oninput="autoFillTinf(this.value,'c-tinf')">
+            <input type="number" id="c-dose" placeholder="1000" min="250" max="4000" step="50" data-oninput="k50">
             <span class="unit-badge">mg</span>
           </div>
         </div>
@@ -2865,10 +2865,10 @@
 
     <!-- Action buttons -->
     <div id="continue-actions" style="display:none;flex-direction:column;gap:8px;margin-top:14px">
-      <button class="calc-btn" onclick="runContinueTinker()">
+      <button class="calc-btn" data-onclick="k51">
         Calculate Predicted AUC/Peak/Trough
       </button>
-      <button class="calc-btn reset-style-secondary" onclick="runContinueOptimizer()">
+      <button class="calc-btn reset-style-secondary" data-onclick="k52">
         Recommend Optimal Regimen
       </button>
     </div>
@@ -2893,6 +2893,103 @@
 
 
 <script>
+
+// ── Event binding ────────────────────────────────────────────────────────────
+// Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
+// to event handlers. The page rendered and the engine loaded, but nothing
+// responded to a click. These handlers are the same code, generated into a
+// registry and dispatched by delegation — no eval, so the CSP stays strict.
+// Delegation also means content rendered later via innerHTML is bound for free.
+const __ACT = {
+  k0: (el, ev, arg) => { window.print() },   /* window.print() */
+  k1: (el, ev, arg) => { switchModule('trough') },   /* switchModule('trough') */
+  k2: (el, ev, arg) => { switchModule('auc') },   /* switchModule('auc') */
+  k3: (el, ev, arg) => { switchModule('continue') },   /* switchModule('continue') */
+  k4: (el, ev, arg) => { toggleTheme() },   /* toggleTheme() */
+  k5: (el, ev, arg) => { setCalcMode('initial') },   /* setCalcMode('initial') */
+  k6: (el, ev, arg) => { setCalcMode('level') },   /* setCalcMode('level') */
+  k7: (el, ev, arg) => { setCalcMode('twolevels') },   /* setCalcMode('twolevels') */
+  k8: (el, ev, arg) => { setCalcMode('randomlevel') },   /* setCalcMode('randomlevel') */
+  k9: (el, ev, arg) => { setSex(el,'M') },   /* setSex(this,'M') */
+  k10: (el, ev, arg) => { setSex(el,'F') },   /* setSex(this,'F') */
+  k11: (el, ev, arg) => { autoWeights() },   /* autoWeights() */
+  k12: (el, ev, arg) => { updateCrCl(); if(state.calcMode==='initial') suggestInterval(); checkAKI(); },   /* updateCrCl(); if(state.calcMode==='initial') suggestInterval(); checkA */
+  k13: (el, ev, arg) => { updateCysC() },   /* updateCysC() */
+  k14: (el, ev, arg) => { setDosingWt(el,'TBW') },   /* setDosingWt(this,'TBW') */
+  k15: (el, ev, arg) => { setDosingWt(el,'IBW') },   /* setDosingWt(this,'IBW') */
+  k16: (el, ev, arg) => { setDosingWt(el,'AdjBW') },   /* setDosingWt(this,'AdjBW') */
+  k17: (el, ev, arg) => { checkAKI() },   /* checkAKI() */
+  k18: (el, ev, arg) => { onIntervalChange() },   /* onIntervalChange() */
+  k19: (el, ev, arg) => { toggleLD() },   /* toggleLD() */
+  k20: (el, ev, arg) => { toggleLevel() },   /* toggleLevel() */
+  k21: (el, ev, arg) => { setSS(el,true) },   /* setSS(this,true) */
+  k22: (el, ev, arg) => { setSS(el,false) },   /* setSS(this,false) */
+  k23: (el, ev, arg) => { calcTimeDelta() },   /* calcTimeDelta() */
+  k24: (el, ev, arg) => { setTlBasis(el,'firstdose') },   /* setTlBasis(this,'firstdose') */
+  k25: (el, ev, arg) => { setTlBasis(el,'steadystate') },   /* setTlBasis(this,'steadystate') */
+  k26: (el, ev, arg) => { calcTLDeltas() },   /* calcTLDeltas() */
+  k27: (el, ev, arg) => { setRLMode('firstdose') },   /* setRLMode('firstdose') */
+  k28: (el, ev, arg) => { setRLMode('steadystate') },   /* setRLMode('steadystate') */
+  k29: (el, ev, arg) => { calcRLDelta() },   /* calcRLDelta() */
+  k30: (el, ev, arg) => { updateModelInfo() },   /* updateModelInfo() */
+  k31: (el, ev, arg) => { calculate() },   /* calculate() */
+  k32: (el, ev, arg) => { resetForm() },   /* resetForm() */
+  k33: (el, ev, arg) => { setBModel(el,'buelga') },   /* setBModel(this,'buelga') */
+  k34: (el, ev, arg) => { setBModel(el,'goti') },   /* setBModel(this,'goti') */
+  k35: (el, ev, arg) => { setBModel(el,'hughes') },   /* setBModel(this,'hughes') */
+  k36: (el, ev, arg) => { setBModel(el,'gotihd') },   /* setBModel(this,'gotihd') */
+  k37: (el, ev, arg) => { saveCurrentProfile() },   /* saveCurrentProfile() */
+  k38: (el, ev, arg) => { updateBayesCrCl() },   /* updateBayesCrCl() */
+  k39: (el, ev, arg) => { setBSex(el,'M') },   /* setBSex(this,'M') */
+  k40: (el, ev, arg) => { setBSex(el,'F') },   /* setBSex(this,'F') */
+  k41: (el, ev, arg) => { bState.dial=el.checked;updateBayesCrCl() },   /* bState.dial=this.checked;updateBayesCrCl() */
+  k42: (el, ev, arg) => { addScrRow() },   /* addScrRow() */
+  k43: (el, ev, arg) => { addBayesDose() },   /* addBayesDose() */
+  k44: (el, ev, arg) => { setRegimenOverride(el.value) },   /* setRegimenOverride(this.value) */
+  k45: (el, ev, arg) => { setRegimenOverride('custom') },   /* setRegimenOverride('custom') */
+  k46: (el, ev, arg) => { addBayesLevel() },   /* addBayesLevel() */
+  k47: (el, ev, arg) => { runBayesian() },   /* runBayesian() */
+  k48: (el, ev, arg) => { resetBayesian() },   /* resetBayesian() */
+  k49: (el, ev, arg) => { loadContinueProfile(el.value) },   /* loadContinueProfile(this.value) */
+  k50: (el, ev, arg) => { autoFillTinf(el.value,'c-tinf') },   /* autoFillTinf(this.value,'c-tinf') */
+  k51: (el, ev, arg) => { runContinueTinker() },   /* runContinueTinker() */
+  k52: (el, ev, arg) => { runContinueOptimizer() },   /* runContinueOptimizer() */
+  k53: (el, ev, arg) => { showResultTab('tab-initial') },   /* showResultTab('tab-initial') */
+  k54: (el, ev, arg) => { showResultTab('tab-level') },   /* showResultTab('tab-level') */
+  k55: (el, ev, arg) => { showResultTab('tab-twolevels') },   /* showResultTab('tab-twolevels') */
+  k56: (el, ev, arg) => { showResultTab('tab-randomlevel') },   /* showResultTab('tab-randomlevel') */
+  k57: (el, ev, arg) => { calcPRNDose() },   /* calcPRNDose() */
+  k58: (el, ev, arg) => { if(ev.key==='Enter')tinkerDose(String(arg)) },   /* if(event.key==='Enter')tinkerDose('${suffix}') */
+  k59: (el, ev, arg) => { tinkerDose(String(arg)) },   /* tinkerDose('${suffix}') */
+  k60: (el, ev, arg) => { autoFillTinf(el.value,('b-dose-tinf-'+arg)) },   /* autoFillTinf(this.value,'b-dose-tinf-${id}') */
+  k61: (el, ev, arg) => { removeBayesDose(Number(arg)) },   /* removeBayesDose(${id}) */
+  k62: (el, ev, arg) => { removeBayesLevel(Number(arg)) },   /* removeBayesLevel(${id}) */
+  k63: (el, ev, arg) => { removeScrRow(Number(arg)) },   /* removeScrRow(${id}) */
+  k64: (el, ev, arg) => { toggleProjectForward() },   /* toggleProjectForward() */
+  k65: (el, ev, arg) => { refreshProfileGraph() },   /* refreshProfileGraph() */
+  k66: (el, ev, arg) => { runBayesTinkerer() },   /* runBayesTinkerer() */
+  k67: (el, ev, arg) => { confirmClearComparison() },   /* confirmClearComparison() */
+  k68: (el, ev, arg) => { addToComparison() },   /* addToComparison() */
+  k69: (el, ev, arg) => { loadProfileIntoForm(String(arg)) },   /* loadProfileIntoForm('${p.id}') */
+  k70: (el, ev, arg) => { deleteProfile(String(arg)) },   /* deleteProfile('${p.id}') */
+};
+function __bindActions() {
+  ['click','input','change','keydown'].forEach(type => {
+    document.addEventListener(type, (ev) => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      const el = t.closest('[data-on' + type + ']');
+      if (!el) return;
+      const fn = __ACT[el.getAttribute('data-on' + type)];
+      if (!fn) return;
+      try { fn(el, ev, el.getAttribute('data-arg')); }
+      catch (e) { if (typeof console !== 'undefined') console.error('handler ' +
+        el.getAttribute('data-on' + type) + ' failed', e); }
+    });
+  });
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') __bindActions();
+
 // ══════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════
@@ -4637,8 +4734,8 @@ function renderResults(d) {
   rc.innerHTML = `
     <!-- Tab bar -->
     <div class="result-tabs">
-      <button class="result-tab ${defaultTab==='tab-initial'?'active':''}" data-tab="tab-initial" onclick="showResultTab('tab-initial')">Initial Dosing</button>
-      <button class="result-tab ${defaultTab==='tab-level'?'active':''}" data-tab="tab-level" onclick="showResultTab('tab-level')">Steady State Trough</button>
+      <button class="result-tab ${defaultTab==='tab-initial'?'active':''}" data-tab="tab-initial" data-onclick="k53">Initial Dosing</button>
+      <button class="result-tab ${defaultTab==='tab-level'?'active':''}" data-tab="tab-level" data-onclick="k54">Steady State Trough</button>
     </div>
 
     <!-- Initial Dosing tab -->
@@ -4882,7 +4979,7 @@ function renderTwoLevels(d) {
   rc.innerHTML = `
     <!-- Tab bar -->
     <div class="result-tabs">
-      <button class="result-tab active" data-tab="tab-twolevels" onclick="showResultTab('tab-twolevels')">Two Levels</button>
+      <button class="result-tab active" data-tab="tab-twolevels" data-onclick="k55">Two Levels</button>
     </div>
 
     <!-- Two Levels tab -->
@@ -5113,7 +5210,7 @@ function renderRandomLevel(d) {
 
   rc.innerHTML = `
     <div class="result-tabs">
-      <button class="result-tab active" data-tab="tab-randomlevel" onclick="showResultTab('tab-randomlevel')">Random Level</button>
+      <button class="result-tab active" data-tab="tab-randomlevel" data-onclick="k56">Random Level</button>
     </div>
 
     <div class="result-tab-panel active" id="tab-randomlevel" style="gap:20px">
@@ -5226,7 +5323,7 @@ function renderRandomLevel(d) {
           <label style="margin-left:8px">Infusion over:</label>
           <input type="number" class="prn-ctrl-input" id="prn-tinf" value="${d.rlTinf}" min="0.5" max="4" step="0.5">
           <span style="font-size:0.72rem;color:var(--text-muted)">hr</span>
-          <button class="prn-calc-btn" onclick="calcPRNDose()">Calculate PRN Dose</button>
+          <button class="prn-calc-btn" data-onclick="k57">Calculate PRN Dose</button>
         </div>
 
         <div id="prn-result" style="margin-top:4px">
@@ -5529,11 +5626,11 @@ function tinkererHTML(suffix, tau) {
       <div class="tinkerer-header">Try an alternative dose &amp; interval</div>
       <div class="tinkerer-row">
         <input type="number" class="tinkerer-input" id="tinker-dose-${suffix}" placeholder="mg" step="250"
-          onkeydown="if(event.key==='Enter')tinkerDose('${suffix}')">
+          data-onkeydown="k58" data-arg="${suffix}">
         <select class="tinkerer-tau" id="tinker-tau-${suffix}" title="Dosing interval">
           ${tauOpts}
         </select>
-        <button class="tinkerer-btn" onclick="tinkerDose('${suffix}')">Predict</button>
+        <button class="tinkerer-btn" data-onclick="k59" data-arg="${suffix}">Predict</button>
         <span style="font-size:0.68rem;color:var(--text-muted);white-space:nowrap">Rec: Q${tau || '?'}H</span>
       </div>
       <div class="tinkerer-result" id="tinker-result-${suffix}"></div>
@@ -5901,13 +5998,13 @@ function addBayesDose() {
   tr.id = `b-dose-row-${id}`;
   tr.innerHTML = `
     <td><input type="number" id="b-dose-mg-${id}" placeholder="1000" min="100" max="4000" step="50" style="width:68px"
-         oninput="autoFillTinf(this.value,'b-dose-tinf-${id}')"></td>
+         data-oninput="k60" data-arg="${id}"></td>
     <td><input type="number" id="b-dose-tinf-${id}" placeholder="auto" min="0.25" max="6" step="0.25" style="width:52px" title="Auto-set by dose; override as needed"></td>
     <td><div class="course-dt-cell">
       <input type="date" id="b-dose-date-${id}" value="${dateStr}">
       <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="b-dose-time-${id}" value="${timeStr}">
     </div></td>
-    <td><button class="course-remove-btn" onclick="removeBayesDose(${id})" title="Remove">✕</button></td>`;
+    <td><button class="course-remove-btn" data-onclick="k61" data-arg="${id}" title="Remove">✕</button></td>`;
   tbody.appendChild(tr);
 }
 
@@ -5940,7 +6037,7 @@ function addBayesLevel() {
       <input type="date" id="b-lvl-date-${id}" value="${dateStr}">
       <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="b-lvl-time-${id}" value="${timeStr}">
     </div></td>
-    <td><button class="course-remove-btn" onclick="removeBayesLevel(${id})" title="Remove">✕</button></td>`;
+    <td><button class="course-remove-btn" data-onclick="k62" data-arg="${id}" title="Remove">✕</button></td>`;
   tbody.appendChild(tr);
 }
 
@@ -7218,7 +7315,7 @@ function addScrRow() {
         <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" class="b-scr-time" value="${now}">
       </div>
     </td>
-    <td><button class="course-remove-btn" onclick="removeScrRow(${id})">×</button></td>`;
+    <td><button class="course-remove-btn" data-onclick="k63" data-arg="${id}">×</button></td>`;
   tbody.appendChild(tr);
   updateScrTrendDisplay();
 }
@@ -8108,7 +8205,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── PDF export: screen-only Save button + print-only generated stamp ──
   const _pdfStamp = (() => { const _d=new Date(), _p=(v)=>String(v).padStart(2,'0'); return `${_d.getFullYear()}-${_p(_d.getMonth()+1)}-${_p(_d.getDate())} ${_p(_d.getHours())}:${_p(_d.getMinutes())}`; })();
-  html += `<div class="pdf-save-btn-wrap"><button class="pdf-save-btn" onclick="window.print()" title="Save this report as PDF">Save PDF</button></div>`;
+  html += `<div class="pdf-save-btn-wrap"><button class="pdf-save-btn" data-onclick="k0" title="Save this report as PDF">Save PDF</button></div>`;
   html += `<div class="pdf-print-stamp">AinaDara · Bayesian MAP Report · Generated ${_pdfStamp}</div>`;
 
   const isHughesRes = (r.model === 'hughes');
@@ -8371,14 +8468,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <canvas id="b-profile-canvas" style="width:100%;display:block"></canvas>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--border);background:var(--paper-deep)">
         <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text-secondary);cursor:pointer;user-select:none">
-          <input type="checkbox" id="b-proj-fwd" onchange="toggleProjectForward()" style="accent-color:var(--accent-blue)">
+          <input type="checkbox" id="b-proj-fwd" data-onchange="k64" style="accent-color:var(--accent-blue)">
           Project next doses:
         </label>
         <input type="number" id="b-proj-dose" value="${projDefaultDose}" min="250" max="4000" step="250"
           style="width:72px;padding:3px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;font-size:0.75rem;color:var(--text-primary);font-family:'DM Mono',monospace"
-          oninput="refreshProfileGraph()">
+          data-oninput="k65">
         <span style="font-size:0.72rem;color:var(--text-muted)">mg Q</span>
-        <select id="b-proj-tau" style="padding:3px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;font-size:0.75rem;color:var(--text-primary)" onchange="refreshProfileGraph()">
+        <select id="b-proj-tau" style="padding:3px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;font-size:0.75rem;color:var(--text-primary)" data-onchange="k65">
           <option value="6" ${projDefaultTau===6?'selected':''}>6H</option>
           <option value="8" ${projDefaultTau===8?'selected':''}>8H</option>
           <option value="12" ${projDefaultTau===12?'selected':''}>12H</option>
@@ -8390,7 +8487,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <span style="font-size:0.72rem;color:var(--text-muted)">×</span>
         <input type="number" id="b-proj-n" value="4" min="1" max="8" step="1"
           style="width:44px;padding:3px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;font-size:0.75rem;color:var(--text-primary);font-family:'DM Mono',monospace"
-          oninput="refreshProfileGraph()">
+          data-oninput="k65">
         <span style="font-size:0.72rem;color:var(--text-muted)">doses</span>
         <span id="b-proj-auc-note" style="font-size:0.7rem;color:var(--text-muted);margin-left:4px"></span>
       </div>
@@ -8541,14 +8638,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <option value="36">36H</option>
           <option value="48">48H</option>
         </select>
-        <button class="tinkerer-btn" onclick="runBayesTinkerer()">Preview</button>
+        <button class="tinkerer-btn" data-onclick="k66">Preview</button>
       </div>
       <div id="b-tink-result" style="margin-top:12px;display:none"></div>
     </div>
     <div id="b-compare-section" class="compare-section" style="display:none">
       <div class="compare-header">
         <div class="compare-title">Regimen Comparison</div>
-        <button class="compare-clear-btn" onclick="confirmClearComparison()">Clear all</button>
+        <button class="compare-clear-btn" data-onclick="k67">Clear all</button>
       </div>
       <div class="compare-legend"></div>
       <div style="padding:4px 14px 10px"><canvas id="b-compare-canvas" style="width:100%;display:block"></canvas></div>
@@ -8946,7 +9043,7 @@ function runBayesTinkerer() {
     <div class="tink-ss-wrap">
       <div class="tink-ss-header">
         <span>SS Dosing Profile — ${dose} mg Q${tau}H</span>
-        <button class="tink-add-btn" onclick="addToComparison()">+ Add to comparison</button>
+        <button class="tink-add-btn" data-onclick="k68">+ Add to comparison</button>
       </div>
       <canvas id="b-tink-ss-canvas" style="width:100%;display:block"></canvas>
     </div>`;
@@ -9262,8 +9359,8 @@ function renderProfileList() {
           <div class="profile-item-meta">${dtStr} · ${model} · ${nDoses}d/${nLevels}l</div>
         </div>
         <div class="profile-item-actions">
-          <button class="profile-item-btn load"   onclick="loadProfileIntoForm('${p.id}')">Load</button>
-          <button class="profile-item-btn delete" onclick="deleteProfile('${p.id}')">Delete</button>
+          <button class="profile-item-btn load"   data-onclick="k69" data-arg="${p.id}">Load</button>
+          <button class="profile-item-btn delete" data-onclick="k70" data-arg="${p.id}">Delete</button>
         </div>
       </div>`;
   }).join('');

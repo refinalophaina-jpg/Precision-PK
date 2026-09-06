@@ -1416,6 +1416,75 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 14 — CSP compatibility
+//
+// The app ships under a hash-pinned CSP with no 'unsafe-inline' and no
+// 'unsafe-hashes'. A hash authorises the <script> BLOCK; it does not authorise
+// inline event-handler attributes. For a while every on* attribute in this file
+// was silently blocked in production: the page rendered, the engine loaded, and
+// nothing responded to a click. Every "verification" had called the functions
+// from the console, which bypasses handlers entirely.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src  = fs.readFileSync(htmlPath, 'utf8');
+  const body = src.slice(src.indexOf('<body>'));
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 14 — CSP compatibility');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('No inline on* event-handler attributes anywhere in the body', ()=>{
+    const found = body.match(/\son[a-z]+\s*=\s*"/g) || [];
+    assert(found.length === 0,
+      `${found.length} inline handler attribute(s) — CSP blocks these, so they are dead in ` +
+      `production: ${[...new Set(found)].join(', ')}`);
+  });
+
+  test('No javascript: URLs', ()=>{
+    const found = body.match(/href\s*=\s*"javascript:/gi) || [];
+    assert(found.length === 0, `${found.length} javascript: URL(s) — also blocked by CSP`);
+  });
+
+  test('Nothing needs unsafe-eval', ()=>{
+    // new Function / eval would need 'unsafe-eval'; the handler registry is
+    // generated source precisely so it does not.
+    const evil = script.match(/\bnew\s+Function\s*\(|(?<![.\w])eval\s*\(/g) || [];
+    assert(evil.length === 0, `${evil.length} eval-family call(s) — would need 'unsafe-eval'`);
+  });
+
+  test('Every data-on* attribute resolves to a registry entry', ()=>{
+    const keys = new Set([...script.matchAll(/^\s*(k\d+):\s*\(el, ev, arg\)/gm)].map(m => m[1]));
+    assert(keys.size > 50, `registry looks empty: ${keys.size} entries`);
+    const used = [...body.matchAll(/\sdata-on[a-z]+="(k\d+)"/g)].map(m => m[1]);
+    assert(used.length > 80, `only ${used.length} bound handlers — expected ~92`);
+    const missing = [...new Set(used)].filter(k => !keys.has(k));
+    assert(missing.length === 0, `handlers reference missing registry keys: ${missing.join(', ')}`);
+  });
+
+  test('Handlers taking a dynamic argument also carry data-arg', ()=>{
+    const needArg = new Set([...script.matchAll(/^\s*(k\d+): \(el, ev, arg\) => \{[^\n]*\barg\b/gm)]
+                            .map(m => m[1]));
+    assert(needArg.size >= 6, `expected the dynamic handlers, found ${needArg.size}`);
+    for (const m of body.matchAll(/\sdata-on[a-z]+="(k\d+)"((?:\s+data-arg="[^"]*")?)/g)) {
+      if (needArg.has(m[1])) {
+        assert(m[2].includes('data-arg'), `${m[1]} takes an argument but its element has no data-arg`);
+      }
+    }
+  });
+
+  test('A delegated dispatcher is installed for every event type in use', ()=>{
+    assert(/function __bindActions\s*\(/.test(script), '__bindActions is missing');
+    const types = new Set([...body.matchAll(/\sdata-on([a-z]+)="/g)].map(m => m[1]));
+    const dispatched = (script.match(/\['click','input','change','keydown'\]/) || [])[0];
+    assert(dispatched, 'dispatcher event list not found');
+    for (const t of types) {
+      assert(dispatched.includes(`'${t}'`), `events of type '${t}' are used but never dispatched`);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
