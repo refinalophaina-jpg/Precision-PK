@@ -1664,6 +1664,82 @@
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
   @media print { body { background-image:none !important; } }
 
+
+  /* ══════════════════════════════════════════════════════════════════════
+     POLISH PASS — feedback, focus, motion, numerics
+     Restraint is the house style, so this adds responsiveness rather than
+     decoration: you should always be able to tell what is focused, what just
+     changed, and which numbers line up.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  /* Theme switches should feel like a dimmer, not a strobe. Colour-only, and
+     scoped so layout properties never animate. */
+  body, .panel-left, .panel-right, .header, .card, input, select, textarea,
+  .toggle-opt, .module-tab, .calc-mode-btn, .result-card, .model-info-box {
+    transition: background-color .22s ease, border-color .22s ease, color .22s ease;
+  }
+
+  /* Inputs: a real focus state, and a hover that says "this is editable". */
+  input[type="number"], input[type="text"], input[type="time"], input[type="date"], select, textarea {
+    border-radius: var(--radius-sm);
+    caret-color: var(--terracotta);
+  }
+  input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
+    border-color: var(--terracotta-q);
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--terracotta);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--terracotta) 18%, transparent);
+  }
+  /* Numbers should line up in columns — tabular figures everywhere numeric. */
+  input[type="number"], .metric-value, .dose-value, .result-card, td, th {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  /* Strip spinners: they invite mis-clicks on a dosing field. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  /* Buttons: press feedback you can feel. */
+  .calc-btn, .reset-btn, .course-add-btn, .tinkerer-btn, .tink-add-btn,
+  .profile-save-btn, .toggle-opt, .module-tab, .calc-mode-btn {
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .08s ease;
+  }
+  .calc-btn:active, .reset-btn:active, .course-add-btn:active,
+  .tinkerer-btn:active, .profile-save-btn:active { transform: translateY(1px); }
+  .calc-btn:focus-visible, .reset-btn:focus-visible, .toggle-opt:focus-visible,
+  .module-tab:focus-visible, .calc-mode-btn:focus-visible, .course-add-btn:focus-visible {
+    outline: 2px solid var(--terracotta); outline-offset: 2px;
+  }
+
+  /* Segmented controls read as one object with a clear selection. */
+  .toggle-opt:hover:not(.active) { color: var(--terracotta); }
+  .toggle-opt.active { font-weight: 500; }
+
+  /* Results arrive with one quiet fade — never a bounce. */
+  @keyframes ad-rise { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .result-card, .diverge-warning { animation: ad-rise .26s ease both; }
+  @media (prefers-reduced-motion: reduce) { .result-card, .diverge-warning { animation: none; } }
+
+  /* Empty state should invite the first action rather than look broken. */
+  .results-placeholder { color: var(--ink-faint); }
+
+  /* Touch targets: the phone is a primary reader for this tool. */
+  @media (max-width: 768px) {
+    .toggle-opt, .module-tab, .calc-mode-btn, .calc-btn, .reset-btn,
+    .course-add-btn, .theme-toggle { min-height: 44px; }
+    input, select { min-height: 44px; font-size: 16px; } /* 16px stops iOS zoom-on-focus */
+  }
+
+  /* Keyboard hint on the calculate button, desktop only. */
+  .calc-btn kbd {
+    font: inherit; font-size: .72em; opacity: .65; margin-left: .5em;
+    border: 1px solid currentColor; border-radius: 3px; padding: 0 .35em;
+  }
+  @media (max-width: 768px) { .calc-btn kbd { display: none; } }
+
 </style>
 </head>
 <body>
@@ -2258,7 +2334,8 @@
             <option value="vancopk" selected>VancoPK — 0.29(age) + 0.33(TBW) + 11</option>
             <option value="buelga">Buelga — 0.98 L/kg TBW</option>
             <option value="bauer">Bauer — 0.70 L/kg TBW</option>
-            <option value="matzke">Matzke — CrCl-dependent</option>
+            <option value="matzke">Matzke — CrCl-split (0.72 / 0.89 L/kg)</option>
+            <option value="matzke_pooled">Matzke — pooled 0.875 L/kg (all 56 patients)</option>
           </select>
         </div>
         <div id="model-info-box" class="model-info-box"></div>
@@ -2297,7 +2374,7 @@
 
     <!-- Buttons -->
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      <button class="calc-btn" onclick="calculate()">Calculate Regimen</button>
+      <button class="calc-btn" onclick="calculate()">Calculate Regimen<kbd>⏎</kbd></button>
       <button class="reset-btn" onclick="resetForm()">Reset All Fields</button>
     </div>
 
@@ -2562,8 +2639,7 @@
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
       <button class="calc-btn" onclick="runBayesian()"
         style="background:linear-gradient(135deg,var(--accent-blue),#3a6699)">
-        Run Bayesian Analysis
-      </button>
+        Run Bayesian Analysis<kbd>⏎</kbd></button>
       <button class="reset-btn" onclick="resetBayesian()">Reset Bayesian Form</button>
     </div>
 
@@ -3126,6 +3202,38 @@ function showResultTab(id) {
 function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
 function s(id) { return document.getElementById(id).value; }
 
+// ── Keyboard: Enter calculates from any input in the active module ─────────
+// A dosing tool is used at speed, one hand on the keyboard. Enter in a field
+// runs the calculation for whichever module is showing; Shift+Enter is left
+// alone so textareas keep their newline.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function')
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
+  const t = e.target;
+  if (!t || !t.tagName) return;
+  const tag = t.tagName.toLowerCase();
+  if (tag === 'textarea' || tag === 'button' || tag === 'a') return;
+  if (tag !== 'input' && tag !== 'select') return;
+  const inBayes = !!t.closest && !!t.closest('#app-shell-bayesian');
+  const inCont  = !!t.closest && !!t.closest('#app-shell-continue');
+  try {
+    if (inBayes)      { e.preventDefault(); runBayesian(); }
+    else if (inCont)  { e.preventDefault(); runContinueOptimizer(); }
+    else              { e.preventDefault(); calculate(); }
+  } catch (err) { /* a validation alert is the expected path; never trap the key */ }
+});
+
+// After calculating on a narrow screen the results are below the fold, so the
+// page looks like nothing happened. Bring them into view.
+function scrollResultsIntoView(id) {
+  if (typeof window === 'undefined' || !window.innerWidth || window.innerWidth > 768) return;
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try { el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
+}
+
 // ══════════════════════════════════════════
 //  THEME
 // ══════════════════════════════════════════
@@ -3437,7 +3545,8 @@ function calcCLv(model, crcl, tbw) {
     // documentation, NOT peer-reviewed — Fewel 2021 establishes the Vd model
     // only. Provenance is stateable but weaker than the other three.
     case 'vancopk': return (0.75 * crcl + 4) * ML_MIN_TO_L_H;
-    case 'matzke':  return (0.689 * crcl + 3.66) * ML_MIN_TO_L_H;
+    case 'matzke':
+    case 'matzke_pooled':  return (0.689 * crcl + 3.66) * ML_MIN_TO_L_H;
     // Bauer: the /tbw then xtbw cancel algebraically; kept in this form to match
     // the textbook presentation (per-kg clearance x weight).
     case 'bauer':   return (0.695 * crcl / tbw + 0.05) * tbw * ML_MIN_TO_L_H;
@@ -3458,17 +3567,32 @@ function calcVd(model, age, tbw, crcl) {
     // Matzke steps at CrCl 60: Vd falls ~19% across a 0.0001 mL/min boundary.
     // Faithful to the published model; surfaced in the UI (audit A6) rather than
     // smoothed, because smoothing it would no longer be Matzke.
-    // AUDIT A10: Matzke reports Vd 0.72 L/kg in the higher-CrCl group (mean 87.6)
-    // and 0.89 in the lower (mean 37.4) — but states plainly: "There was no
+    // AUDIT A10. Matzke studied THREE groups and states plainly: "There was no
     // significant relationship between the steady-state volume of distribution
-    // and CLCR." Switching on CrCl 60 therefore encodes a covariate the authors
-    // explicitly disclaim. Kept for continuity with prior results and surfaced
-    // in the UI; a single pooled Vd would be the defensible alternative.
-    case 'matzke':  return (crcl > MATZKE_VD_CRCL_BREAK ? 0.72 : 0.89) * tbw;
+    // and CLCR." Switching Vd on CrCl therefore encodes a covariate the authors
+    // explicitly disclaim.
+    //
+    //   group I    CrCl >60      n= 7   Vd 0.72 +/- 0.35 L/kg   (SD is 49% of the mean)
+    //   group II   CrCl 10-60    n=13   Vd 0.89 +/- 0.31
+    //   group III  CrCl <10      n=36   Vd 0.90 +/- 0.21
+    //
+    // 'matzke' reproduces the historical split. Note what it actually does: it
+    // applies group I's 0.72 — seven patients, SD 49% of the mean — to everyone
+    // above CrCl 60, and group II's 0.89 to everyone below, never using group
+    // III's 0.90 despite that being the largest group by far.
+    //
+    // 'matzke_pooled' uses the n-weighted mean of all 56 patients:
+    //   (7*0.72 + 13*0.89 + 36*0.90) / 56 = 0.8752 L/kg
+    // which is what "no significant relationship with CLCR" implies you should
+    // do. Both are offered so they can be compared on the same patient.
+    case 'matzke':        return (crcl > MATZKE_VD_CRCL_BREAK ? 0.72 : 0.89) * tbw;
+    case 'matzke_pooled': return MATZKE_VD_POOLED * tbw;
     default:        return 0.29 * age + 0.33 * tbw + 11;
   }
 }
 const MATZKE_VD_CRCL_BREAK = 60;
+// n-weighted mean Vd across all 56 Matzke patients (see calcVd).
+const MATZKE_VD_POOLED = 0.8752;
 function nearMatzkeBreak(crcl) { return Math.abs(crcl - MATZKE_VD_CRCL_BREAK) <= 5; }
 
 // 1-compartment IV infusion equations — steady state
@@ -3827,12 +3951,21 @@ function updateCrCl() {
 function updateModelInfo() {
   const cl = s('cl-model'), vdm = s('vd-model');
   const info = {
-    vancopk: 'Derived from real-world steady-state peak/trough data across US hospitals. Uses AdjBW for BMI>25. Best validated CL equation for general adults.',
-    matzke: 'Matzke (1984) linear CL–CrCl relationship. Same Y-intercept as VancoPK. Slightly lower estimates at high CrCl.',
-    buelga: 'Buelga (2005) — population PK model used as Bayesian prior in DoseMeRx. Tends to overestimate CL; use with caution as standalone.',
-    bauer: 'Bauer method from Applied Clinical Pharmacokinetics textbook. Normalizes to TBW. Classic reference approach.'
+    vancopk: 'VancoPK — CL = 0.75(CrCl) + 4. Per vancopk.com\'s own documentation, an in-house linear regression "updated November 2023". Site documentation, not peer-reviewed. The Vd model (0.29·age + 0.33·TBW + 11) IS published — Fewel 2021, J Clin Pharm Ther 46:1426–32.',
+    matzke: 'Matzke 1984 (AAC 25:433–7) — CL = 3.66 + 0.689(CrCl), r = 0.8807, verified verbatim. 56 patients across three renal strata.',
+    matzke_pooled: 'Matzke 1984, same clearance equation. Vd uses the n-weighted mean of all 56 patients (0.875 L/kg) instead of switching on CrCl 60 — the paper found "no significant relationship between the steady-state volume of distribution and CLCR".',
+    buelga: 'Buelga 2005 (AAC 49:4934–41), general model, verified verbatim: CL (L/h) = 1.08 × CLcr (L/h), V = 0.98 × TBW. Developed in haematological malignancy. Same model the AUC module uses as its Bayesian prior.',
+    bauer: 'Bauer, Pharmacotherapy 11e ch.e5 — textbook method, Vd 0.7 L/kg, normalised to TBW. No standalone source paper.'
   };
-  document.getElementById('model-info-box').innerHTML = `<strong>CL:</strong> ${info[cl]}<br><br><strong>Note:</strong> VancoPK Vd model (age + weight-based) performs better than fixed L/kg in obesity and elderly.`;
+  const vdNote = {
+    matzke: 'Vd switches 0.89 → 0.72 L/kg at CrCl 60. That split is <em>not</em> a published covariate relationship — 0.72 comes from group I alone (n = 7, SD 49% of the mean) and group III (n = 36, Vd 0.90) is never used. Offered for continuity; compare against the pooled option.',
+    matzke_pooled: 'Vd = 0.875 L/kg, the n-weighted mean of all 56 patients (7×0.72 + 13×0.89 + 36×0.90)/56. Continuous in CrCl, and consistent with the paper\'s own finding of no Vd–CLCR relationship.',
+    vancopk: 'Vd = 0.29(age) + 0.33(TBW) + 11 — Fewel 2021, verified. Age- and weight-based rather than a fixed L/kg.',
+    buelga: 'Vd = 0.98 L/kg TBW.',
+    bauer: 'Vd = 0.70 L/kg TBW.'
+  }[vdm] || '';
+  document.getElementById('model-info-box').innerHTML =
+    `<strong>Clearance:</strong> ${info[cl] || '—'}<br><br><strong>Volume:</strong> ${vdNote}`;
 }
 
 // ══════════════════════════════════════════
@@ -4098,8 +4231,8 @@ function renderResults(d) {
   const aucBadge = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[d.aucStatus];
   const aucText  = {ok:'In Range', warn:'Subtherapeutic', danger:'Supratherapeutic'}[d.aucStatus];
 
-  const clModelNames = {vancopk:'VancoPK',matzke:'Matzke',buelga:'Buelga',bauer:'Bauer'};
-  const vdModelNames = {vancopk:'VancoPK',buelga:'Buelga',bauer:'Bauer',matzke:'Matzke'};
+  const clModelNames = {vancopk:'VancoPK',matzke:'Matzke',matzke_pooled:'Matzke',buelga:'Buelga',bauer:'Bauer'};
+  const vdModelNames = {vancopk:'VancoPK',buelga:'Buelga',bauer:'Bauer',matzke:'Matzke (CrCl-split)',matzke_pooled:'Matzke (pooled)'};
 
   // ── Recommendation logic ──
   const a = d.assessment;
@@ -4170,7 +4303,7 @@ function renderResults(d) {
   }
 
   // Build Initial Dosing tab HTML
-  const clModelNames2 = {vancopk:'VancoPK',matzke:'Matzke',buelga:'Buelga',bauer:'Bauer'};
+  const clModelNames2 = {vancopk:'VancoPK',matzke:'Matzke',matzke_pooled:'Matzke',buelga:'Buelga',bauer:'Bauer'};
   const vdModelNames2 = {vancopk:'VancoPK',buelga:'Buelga',bauer:'Bauer',matzke:'Matzke'};
   const popT12Fmt = d.popT12.toFixed(1);
 
@@ -7714,6 +7847,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   }
 
   cont.innerHTML = html;
+  scrollResultsIntoView('b-results');
 
   // ── Draw graph and pre-select tinkerer interval ──
   requestAnimationFrame(() => {
