@@ -109,6 +109,28 @@ exists. Pure `function` declarations are.
 Design language: warm off-white, `Outfit` body / `DM Serif Display` headings / `DM Mono`
 numbers, terracotta accent `--accent-terra: #C96B3C`. Full token set in `:root`.
 
+**Shape and depth are mirrored from ainadara.com, and the site's vocabulary is small:**
+
+| | The site uses | So this file uses |
+|---|---|---|
+| Rectangular radius | `4px`, one value | `--radius-sm/md/lg`, all `4px` |
+| Pill | `999px` | `--radius-pill` — chips, badges, the switch, the print FAB |
+| Circle | `50%` | dots and the brand mark |
+| `box-shadow` | **none, anywhere** | focus rings only |
+| Gradients | none | one: the therapeutic-range gauge, which is data |
+
+Depth comes from a hairline (`--rule`), a background step (`--paper` → `--paper-deep`),
+and a small hover lift — never a shadow. Selection is a background step plus terracotta
+ink, never a nested border: a bordered group holding bordered items each with their own
+shadow is what made this read as a stack of boxes.
+
+**Every colour must come from a token.** Two classes of bug lived here and both were
+invisible until dark mode: 17 hard-coded near-whites (`rgba(240,239,235,α)`) that painted
+light slabs on dark paper, and legend swatches hard-coded to a *fallback* hex while the
+plot drew from the token — so the key disagreed with the curve. Canvas is the one
+exception, because it cannot resolve a custom property: use `themeColor()` /
+`themeRGBA()`, never a bare literal and never `var(--…)`.
+
 Used on macOS, Windows and Android. Touch targets ≥44px, no horizontal scroll at 375px,
 readable without zoom, and the `@media print` block must keep working.
 
