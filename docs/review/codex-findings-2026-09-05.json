@@ -1,0 +1,418 @@
+{
+  "meta": {
+    "reviewer": "codex",
+    "date": "2026-09-05",
+    "reviewed_commit": "069c7b77df545af410dd0b0c9ef3771f38cc4cf2",
+    "suites_run": {
+      "phase2d": "68/68",
+      "phase3": "21/21",
+      "phase4": "40/40",
+      "comprehensive": "Exit 1: scenario 3 MAE; scenario 4 MAE, improvement, coverage. Scenarios 1, 2, 5 and 6 pass."
+    },
+    "scope_notes": [
+      "Working tree was clean at inspection. Application source was not modified.",
+      "Reviewed review-package instructions, source pathways, prior audit and threshold record; executed all four named suites. Findings concern reproducible application behavior, not independently validated clinical treatment recommendations.",
+      "DOM-dependent reproductions execute the shipped function source with injected minimal DOM/state fixtures; no algorithm is copied or changed.",
+      "Browser testing reproduced the date-default and stale-print behavior before responsive/mobile inspection was blocked by the Codex usage-limit auto-review; source-level accessibility checks were still completed.",
+      "Comprehensive scenario 4 improvement is 14.6% against 15%, an additional failing gate beyond the three failures enumerated in the decision record; not reported as a new engine limitation."
+    ]
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "dimension": "code",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Above-target trough is reported as below target",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 3734,
+          "symbol": "findOptimalDose"
+        }
+      ],
+      "claim": "findOptimalDose classifies an above-maximum trough as auc_therapeutic_trough_low because the P2 filter has no upper bound, making the P3 high-trough branch unreachable.",
+      "impact": {
+        "clinical": "The recommendation presents the opposite direction of the measured target comparison and omits the intended high-trough warning.",
+        "magnitude": "For trough targets 10\u201315, interval 8 h, infusion 1 h, CL 1.5 L/h and V 100 L, the selected 250 mg dose has a trough above 15 but the message says below 10."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const r=findOptimalDose(10,15,8,1,0.015,100,1.5); print({dose:r.dose,troughAboveMax:r.trough>15,flag:r.flag,messageSaysBelow:r.flagMsg.includes('below the 10')});",
+          "expect": {
+            "dose": 250,
+            "troughAboveMax": true,
+            "flag": "auc_therapeutic_trough_low",
+            "messageSaysBelow": true
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Constrain P2 to troughs below troughMin and at least 80% of troughMin; allow P3 to handle above-maximum troughs. Assert both the comparison and the warning text.",
+      "proposed_fix": {
+        "summary": "Constrain P2 to troughs below troughMin and at least 80% of troughMin; allow P3 to handle above-maximum troughs. Assert both the comparison and the warning text.",
+        "risk": "Check all priority branches so this correction preserves the intended AUC-first candidate selection."
+      }
+    },
+    {
+      "id": "F-002",
+      "dimension": "code",
+      "severity": "high",
+      "confidence": "high",
+      "title": "An incomplete administration is silently removed from the fitted course",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 5713,
+          "symbol": "parseBayesCourse"
+        }
+      ],
+      "claim": "When one of two entered administrations has a blank infusion duration, parseBayesCourse silently returns only the other administration without an error.",
+      "impact": {
+        "clinical": "The Bayesian caller continues whenever any dose remains, so its fitted history can omit a documented administration. The reproduction tests parsing, not a quantified patient outcome.",
+        "magnitude": "Two 1000 mg administration rows become one dose: recorded dose total decreases from 2000 mg to 1000 mg."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const fields={'b-dose-mg-1':'1000','b-dose-tinf-1':'1','b-dose-date-1':'2026-09-01','b-dose-time-1':'08:00','b-dose-mg-2':'1000','b-dose-tinf-2':'','b-dose-date-2':'2026-09-01','b-dose-time-2':'20:00'}; const doc={querySelectorAll:s=>s.includes('b-dose-row')?[{id:'b-dose-row-1'},{id:'b-dose-row-2'}]:[],getElementById:id=>({value:fields[id]||''})}; const r=Function('document','return ('+parseBayesCourse.toString()+')()')(doc); print({doses:r.doses.length,totalMg:r.doses.reduce((s,d)=>s+d.mg,0),reportsErrors:Object.hasOwn(r,'errors')});",
+          "expect": {
+            "doses": 1,
+            "totalMg": 1000,
+            "reportsErrors": false
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Return row-specific validation errors for partially completed dose or level rows and stop runBayesian until corrected. Distinguish an entirely empty row from an incomplete administration; validate finite timestamps and positive amounts and durations.",
+      "proposed_fix": {
+        "summary": "Return row-specific validation errors for partially completed dose or level rows and stop runBayesian until corrected. Distinguish an entirely empty row from an incomplete administration; validate finite timestamps and positive amounts and durations.",
+        "risk": "Existing saved drafts may contain incomplete rows; show actionable errors instead of silently discarding them."
+      }
+    },
+    {
+      "id": "F-003",
+      "dimension": "code",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Saving edited demographics retains the previous PK fit",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 8507,
+          "symbol": "snapshotBayesForm"
+        }
+      ],
+      "claim": "snapshotBayesForm combines current form demographics with the previous bState.result without verifying that the fit belongs to those inputs.",
+      "impact": {
+        "clinical": "A saved profile can associate revised patient data with an old fit, which Continue Course then consumes as that profile\u2019s individual PK.",
+        "magnitude": "Changing SCr from 1 to 4 saves SCr 4 alongside the unchanged CL_ind of 4 L/h; no dirty-fit marker is present."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const fields={'b-age':'60','b-tbw':'70','b-height':'170','b-scr':'1'}; const doc={getElementById:id=>({value:fields[id]||'',checked:false}),querySelectorAll:()=>[]}; const st={sex:'M',model:'buelga',result:{model:'buelga',CL_ind:4,V_ind:60,CL_pop:4,V_pop:60,goti:null}}; const snap=Function('document','bState','return ('+snapshotBayesForm.toString()+')')(doc,st); const before=snap(); fields['b-scr']='4'; const after=snap(); print({beforeScr:before.demographics.scr,afterScr:after.demographics.scr,beforeCL:before.fit.CL_ind,afterCL:after.fit.CL_ind,hasDirtyMarker:Object.hasOwn(after,'dirty')});",
+          "expect": {
+            "beforeScr": "1",
+            "afterScr": "4",
+            "beforeCL": 4,
+            "afterCL": 4,
+            "hasDirtyMarker": false
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Associate each completed fit with a fingerprint or immutable snapshot of its actual inputs. On saving, omit or explicitly invalidate the fit if current inputs differ; require a fresh fit before Continue Course uses it.",
+      "proposed_fix": {
+        "summary": "Associate each completed fit with a fingerprint or immutable snapshot of its actual inputs. On saving, omit or explicitly invalidate the fit if current inputs differ; require a fresh fit before Continue Course uses it.",
+        "risk": "Preserve draft-profile saving and do not relabel an old fit as newly calculated. Include model, dialysis, doses, levels, demographics and serial SCr in the comparison."
+      }
+    },
+    {
+      "id": "F-004",
+      "dimension": "ui",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "Switching Continue Course profiles leaves the prior results visible",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 8694,
+          "symbol": "loadContinueProfile"
+        }
+      ],
+      "claim": "Loading another valid Continue Course profile updates the PK card but neither clears nor recomputes the visible results from the previous profile.",
+      "impact": {
+        "clinical": "The screen simultaneously shows the newly selected profile\u2019s PK and a prior profile\u2019s dose predictions. The old result banner still names the old profile, but the mismatch should not require detection by the user.",
+        "magnitude": "The reproduction switches to a profile with CL 1 L/h while the existing result HTML and visible display state remain unchanged."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const els={}; const el=id=>els[id]||(els[id]={value:'',innerHTML:'',style:{}}); el('continue-results').innerHTML='Prior profile A: AUC 500'; el('continue-results').style.display='flex'; const entry={id:'B',label:'B',savedAt:0,snapshot:{fit:{model:'buelga',CL_ind:1,V_ind:60,CL_pop:1,V_pop:60},target:{},doses:[]}}; const run=Function('document','loadProfiles','escHtml','autoTinf','let continueState=null; ('+loadContinueProfile.toString()+')(\"B\"); return continueState;'); const st=run({getElementById:el},()=>[entry],escHtml,autoTinf); print({selected:st.profileId,newCL:st.CL_ind,results:el('continue-results').innerHTML,display:el('continue-results').style.display});",
+          "expect": {
+            "selected": "B",
+            "newCL": 1,
+            "results": "Prior profile A: AUC 500",
+            "display": "flex"
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Clear and hide Continue Course results whenever the selected profile changes, including valid-to-valid switches, or recompute them explicitly using the new profile and clearly identified inputs.",
+      "proposed_fix": {
+        "summary": "Clear and hide Continue Course results whenever the selected profile changes, including valid-to-valid switches, or recompute them explicitly using the new profile and clearly identified inputs.",
+        "risk": "Avoid retaining another profile\u2019s dose/infusion defaults accidentally when deciding whether to recompute."
+      }
+    },
+    {
+      "id": "F-005",
+      "dimension": "code",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Print report uses a stale Bayesian result over the visible module",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 8996,
+          "symbol": "_buildPrintReport"
+        }
+      ],
+      "claim": "_buildPrintReport always renders bState.result when it exists, even when the active visible result is from the trough-based calculator.",
+      "impact": {
+        "clinical": "The printed handoff can recommend a different regimen than the one shown on screen after switching modules.",
+        "magnitude": "The reproduction makes results-content visible with \u201cACTIVE TROUGH OUTPUT\u201d while bState.result contains a Buelga recommendation; the report contains \u201cBuelga 2005\u201d and \u201c750 mg Q8H\u201d and omits the visible trough output."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const els={}; function mk(id){return els[id]||(els[id]={value:'',innerHTML:'',style:{display:'none'},children:[],getAttribute:()=>null,setAttribute(){},removeAttribute(){}})}; mk('results-content').innerHTML='ACTIVE TROUGH OUTPUT'; mk('results-content').style.display='block'; mk('results-content').children=[{}]; mk('bayes-shell').style.display='none'; Object.assign(mk('b-age'),{value:'60'}); Object.assign(mk('b-tbw'),{value:'70'}); Object.assign(mk('b-height'),{value:'170'}); Object.assign(mk('b-scr'),{value:'1'}); const doc={getElementById:mk,documentElement:mk('root'),createElement:()=>({style:{},toDataURL:()=>''})}; const st={sex:'M'}; const bs={sex:'M',result:{model:'buelga',doses:[{mg:1000,tinfH:1,timeH:0}],levels:[],CL_ind:5.04,V_ind:60,CL_pop:4.5,V_pop:60,crcl:80,t12_ind:8.25,t12_pop:9.24,etaCL:0.1,targetAUC:450,goti:null,rec:{dose:750,tau:8,tinfH:1,auc24:446,Ctrough:10.2,Cpeak:27.5}}}; const run=Function('document','bState','state','getUncappedCrCl','calcIBW','calcAdjBW','ibwMethod','ckdEpiCrCys','_prRegimenSection','_prLevelRows','_buildPrintGraph','escHtml','autoTinf','return ('+_buildPrintReport.toString()+')()'); const html=run(doc,bs,st,()=>null,calcIBW,calcAdjBW,ibwMethod,()=>null,()=>'',()=>'',()=>'',escHtml,autoTinf); print({usesBayes:html.includes('Buelga 2005'),printsStaleDose:html.includes('750 mg Q8H'),includesVisible:html.includes('ACTIVE TROUGH OUTPUT')});",
+          "expect": {
+            "usesBayes": true,
+            "printsStaleDose": true,
+            "includesVisible": false
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Select the print source from the currently active/visible module, or invalidate/clear bState.result when leaving Bayesian mode. Add a browser or DOM test that switches modules, prints, and asserts the report regimen matches the visible card.",
+      "proposed_fix": {
+        "summary": "Select the print source from the currently active/visible module, or invalidate/clear bState.result when leaving Bayesian mode. Add a browser or DOM test that switches modules, prints, and asserts the report regimen matches the visible card.",
+        "risk": "Be careful not to break printing immediately after a Bayesian run; the active module state should decide which report path is authoritative."
+      }
+    },
+    {
+      "id": "F-006",
+      "dimension": "math",
+      "severity": "high",
+      "confidence": "high",
+      "title": "One-compartment steady-state curve is too low during infusion",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 3644,
+          "symbol": "calcCssAtTime"
+        }
+      ],
+      "claim": "calcCssAtTime omits the residual trough concentration during the infusion phase, so concentrations between dose start and infusion end are underestimated.",
+      "impact": {
+        "clinical": "A during-infusion level can be fitted to an artificially slow elimination rate, and any UI curve using this helper shows the wrong early-interval concentration.",
+        "magnitude": "For 1000 mg q12h over 1 h, ke 0.08 h^-1 and V 60 L, the shipped function returns 13.24 mg/L at 0.5 h; the independent steady-state formula is 18.51 mg/L."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "function oracle(dose,tau,tinf,kel,vd,t){const r=dose/(tinf*vd);const peak=r/kel*(1-Math.exp(-kel*tinf))/(1-Math.exp(-kel*tau));const trough=peak*Math.exp(-kel*(tau-tinf));return t<=tinf?trough*Math.exp(-kel*t)+r/(kel)*(1-Math.exp(-kel*t)):peak*Math.exp(-kel*(t-tinf));} const points=[0,0.25,0.5,1].map(t=>({t,actual:+calcCssAtTime(1000,12,1,0.08,60,t).toFixed(3),expected:+oracle(1000,12,1,0.08,60,t).toFixed(3)})); print({points,underAtHalf:+(oracle(1000,12,1,0.08,60,0.5)-calcCssAtTime(1000,12,1,0.08,60,0.5)).toFixed(3)});",
+          "expect": {
+            "points": [
+              {
+                "t": 0,
+                "actual": 0,
+                "expected": 10.766
+              },
+              {
+                "t": 0.25,
+                "actual": 6.685,
+                "expected": 14.678
+              },
+              {
+                "t": 0.5,
+                "actual": 13.237,
+                "expected": 18.513
+              },
+              {
+                "t": 1,
+                "actual": 25.956,
+                "expected": 25.956
+              }
+            ],
+            "underAtHalf": 5.275
+          },
+          "tolerance": 0.001
+        },
+        "citation": {
+          "source": "Buelga 2005, Antimicrob Agents Chemother 49(12):4934-4939",
+          "locator": "Abstract",
+          "quote": "A one-compartment PK model was selected.",
+          "file": "Literature/Buelga_2005.pdf"
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Use the periodic steady-state boundary condition during infusion: residual trough times exp(-ke*t) plus zero-order infusion input. Add tests for t=0, mid-infusion, end-infusion and post-infusion continuity.",
+      "proposed_fix": {
+        "summary": "Use the periodic steady-state boundary condition during infusion: residual trough times exp(-ke*t) plus zero-order infusion input. Add tests for t=0, mid-infusion, end-infusion and post-infusion continuity.",
+        "risk": "Changing this helper will move concentration-time curves and single-level kel fitting for levels drawn during infusion; those outputs should be reviewed as intended clinical changes."
+      }
+    },
+    {
+      "id": "F-007",
+      "dimension": "math",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Two-compartment steady-state helpers stop before steady state",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 6025,
+          "symbol": "ssCtrough2comp"
+        }
+      ],
+      "claim": "The two-compartment steady-state helpers simulate exactly 12 cycles and call that steady state, which substantially underestimates troughs when terminal elimination is slow.",
+      "impact": {
+        "clinical": "Bayesian recommendations, Continue Course projections and tinkerer curves can be based on concentrations far below the true repeated-dose steady state for slow-clearance patients.",
+        "magnitude": "For a Goti population patient at CrCl 10 mL/min, 250 mg q12h over 1 h, the shipped 12-cycle trough is 19.19 mg/L; the closed-form infinite-series trough is 32.21 mg/L."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "function oracle(pk,dose,tau,tinf){const CL=pk.TVCL,Vc=pk.TVVc,Vp=pk.TVVp,Q=pk.Q,k10=CL/Vc,k12=Q/Vc,k21=Q/Vp,s=k10+k12+k21,disc=Math.sqrt(s*s-4*k10*k21),a=(s+disc)/2,b=(s-disc)/2,A=(a-k21)/(a-b),B=1-A,rate=dose/tinf/Vc;return rate*(A/a*(1-Math.exp(-a*tinf))*Math.exp(-a*(tau-tinf))/(1-Math.exp(-a*tau))+B/b*(1-Math.exp(-b*tinf))*Math.exp(-b*(tau-tinf))/(1-Math.exp(-b*tau)));} const pk=gotiPopPK(10,70,false); const actual=ssCtrough2comp(250,12,1,pk.TVCL,pk.TVVc,pk.TVVp,pk.Q); const expected=oracle(pk,250,12,1); print({actual:+actual.toFixed(3),expected:+expected.toFixed(3),percentLow:+((expected-actual)/expected*100).toFixed(1)});",
+          "expect": {
+            "actual": 19.185,
+            "expected": 32.212,
+            "percentLow": 40.4
+          },
+          "tolerance": 0.001
+        },
+        "citation": {
+          "source": "Goti 2018, Ther Drug Monit 40(2):212-221",
+          "locator": "Results, Population Pharmacokinetic Model Development",
+          "quote": "Vancomycin pharmacokinetics was best described by a two-compartment model",
+          "file": "Literature/goti2018.pdf"
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Replace the fixed 12-cycle approximation with a closed-form steady-state calculation or iterate until the residual contribution is below a concentration tolerance. Test slow-clearance cases across q8, q12, q24 and q48.",
+      "proposed_fix": {
+        "summary": "Replace the fixed 12-cycle approximation with a closed-form steady-state calculation or iterate until the residual contribution is below a concentration tolerance. Test slow-clearance cases across q8, q12, q24 and q48.",
+        "risk": "A correct steady-state value may increase projected troughs and lower acceptable doses for some slow-clearance two-compartment patients; review thresholds and wording together."
+      }
+    },
+    {
+      "id": "F-008",
+      "dimension": "code",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Bayesian date rows mix UTC dates with local times",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 5636,
+          "symbol": "addBayesDose"
+        }
+      ],
+      "claim": "addBayesDose and addBayesLevel default each new row with dateStr from toISOString() and timeStr from toTimeString(), mixing a UTC calendar date with a local clock time.",
+      "impact": {
+        "clinical": "Near midnight UTC, a documented administration or level can be shifted by 24 hours when the user accepts the default date and local time.",
+        "magnitude": "With a local clock of 2026-09-05 20:48 in America/Chicago and ISO time 2026-09-06T01:48Z, the new dose row receives date 2026-09-06 and time 20:48."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "function FakeDate(){return{setSeconds(){},toISOString(){return '2026-09-06T01:48:00.000Z'},toTimeString(){return '20:48:00 GMT-0500 (Central Daylight Time)'}}} const row={innerHTML:'',style:{}}; const tbody={querySelector:()=>null,appendChild(x){this.row=x}}; const doc={getElementById:id=>id==='b-dose-tbody'?tbody:null,createElement:()=>row}; Function('document','Date','autoTinf','let bDoseCount=0; ('+addBayesDose.toString()+')()')(doc,FakeDate,autoTinf); const date=(row.innerHTML.match(/id=\"b-dose-date-1\" value=\"([^\"]+)\"/)||[])[1]; const time=(row.innerHTML.match(/id=\"b-dose-time-1\" value=\"([^\"]+)\"/)||[])[1]; print({date,time,usesUtcDateWithLocalTime:date==='2026-09-06'&&time==='20:48'});",
+          "expect": {
+            "date": "2026-09-06",
+            "time": "20:48",
+            "usesUtcDateWithLocalTime": true
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Build default dates from local getFullYear/getMonth/getDate, or use one local datetime formatter for both fields. Apply the same helper to dose, level and SCr rows and test a timezone west of UTC after 19:00 local time.",
+      "proposed_fix": {
+        "summary": "Build default dates from local getFullYear/getMonth/getDate, or use one local datetime formatter for both fields. Apply the same helper to dose, level and SCr rows and test a timezone west of UTC after 19:00 local time.",
+        "risk": "Saved profiles already use absolute timestamps downstream, so the main risk is preserving existing parse behavior while changing only row defaults."
+      }
+    },
+    {
+      "id": "F-009",
+      "dimension": "code",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "Print graph drops two-compartment parameters",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 8910,
+          "symbol": "_buildPrintGraph"
+        }
+      ],
+      "claim": "_buildPrintGraph passes r.gotiInd and r.gotiPop to drawProfileGraph, but Bayesian results store the two-compartment parameter bag on r.goti, so the print graph falls back to one-compartment drawing.",
+      "impact": {
+        "clinical": "Printed Goti/Hughes reports can show a concentration curve generated with CL/V rather than the fitted two-compartment model used elsewhere in the report.",
+        "magnitude": "The reproduction supplies a Goti result with r.goti present; drawProfileGraph receives null two-compartment arguments even though the source result has the parameters."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "let captured=null; const doc={documentElement:{getAttribute:()=>null,setAttribute(){},removeAttribute(){}},createElement:()=>({style:{},toDataURL:()=>'data:image/png;base64,x'})}; const win={devicePixelRatio:1}; const r={model:'goti',doses:[{mg:1000,tinfH:1,timeH:0}],levels:[],CL_ind:4,V_ind:60,CL_pop:4,V_pop:60,nProj:0,goti:{k10_ind:0.07,k12_ind:0.1,k21_ind:0.16,Vc_ind:58,k10_pop:0.06,k12_pop:0.1,k21_pop:0.16,Vc_pop:58}}; const run=Function('document','window','drawProfileGraph','return ('+_buildPrintGraph.toString()+')'); run(doc,win,function(){captured=Array.from(arguments);})(r); print({htmlReturned:true,gotiIndPassed:captured[7]!==null,gotiPopPassed:captured[8]!==null,sourceHadGoti:!!r.goti});",
+          "expect": {
+            "htmlReturned": true,
+            "gotiIndPassed": false,
+            "gotiPopPassed": false,
+            "sourceHadGoti": true
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Map r.goti into the object shape drawProfileGraph expects, or update drawProfileGraph to consume the stored r.goti structure directly. Add a print-report test for Goti and Hughes that asserts two-compartment arguments are passed.",
+      "proposed_fix": {
+        "summary": "Map r.goti into the object shape drawProfileGraph expects, or update drawProfileGraph to consume the stored r.goti structure directly. Add a print-report test for Goti and Hughes that asserts two-compartment arguments are passed.",
+        "risk": "Coordinate with _prLevelRows, which has a similar r.gotiInd check for fitted level predictions."
+      }
+    },
+    {
+      "id": "F-010",
+      "dimension": "ui",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "Visible field labels are not programmatic labels",
+      "location": [
+        {
+          "file": "index.html",
+          "line": 1845,
+          "symbol": "initial patient inputs"
+        }
+      ],
+      "claim": "The main patient and Bayesian patient inputs use adjacent label.field-label elements without for attributes and without aria-labels on the controls.",
+      "impact": {
+        "clinical": "Screen-reader and speech-input users encounter unnamed numeric controls for demographics and SCr despite visible labels.",
+        "magnitude": "Eight key inputs checked in the reproduction have neither an associated label for= attribute nor an aria-label: age, weight, height, SCr and their Bayesian counterparts."
+      },
+      "evidence": {
+        "reproduction": {
+          "script": "const ids=['age','weight','height','scr','b-age','b-tbw','b-height','b-scr']; const missing=ids.filter(id=>{const hasAria=new RegExp('<input[^>]*id=\"'+id+'\"[^>]*(aria-label|aria-labelledby)=','i').test(SRC); const hasFor=new RegExp('<label[^>]*for=\"'+id+'\"','i').test(SRC); return !hasAria&&!hasFor;}); print({checked:ids.length,missingCount:missing.length,missing});",
+          "expect": {
+            "checked": 8,
+            "missingCount": 8,
+            "missing": [
+              "age",
+              "weight",
+              "height",
+              "scr",
+              "b-age",
+              "b-tbw",
+              "b-height",
+              "b-scr"
+            ]
+          },
+          "tolerance": 0.01
+        }
+      },
+      "disconfirming_test": "Repeat the supplied reproduction after the change; the faulty behavior described in the claim must no longer occur. Add for attributes to the visible labels or wrap each input in its label, and add explicit accessible names where the visible text is not sufficient. Include an accessibility smoke test for the demographic and SCr inputs.",
+      "proposed_fix": {
+        "summary": "Add for attributes to the visible labels or wrap each input in its label, and add explicit accessible names where the visible text is not sufficient. Include an accessibility smoke test for the demographic and SCr inputs.",
+        "risk": "Keep the visual layout intact while making the existing visible labels programmatic; no new UI copy is required."
+      }
+    }
+  ]
+}

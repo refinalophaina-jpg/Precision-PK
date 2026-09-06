@@ -1842,14 +1842,14 @@
 
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label">Age</label>
+            <label class="field-label" for="age">Age</label>
             <div class="input-row">
               <input type="number" id="age" placeholder="—" min="18" max="100">
               <span class="unit-badge">yr</span>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Sex</label>
+            <label class="field-label" for="sex">Sex</label>
             <div class="toggle-group">
               <button class="toggle-opt active" onclick="setSex(this,'M')">Male</button>
               <button class="toggle-opt" onclick="setSex(this,'F')">Female</button>
@@ -1860,14 +1860,14 @@
 
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label">Total Body Weight</label>
+            <label class="field-label" for="tbw">Total Body Weight</label>
             <div class="input-row">
               <input type="number" id="tbw" placeholder="—" min="30" max="340" oninput="autoWeights()">
               <span class="unit-badge">kg</span>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Height</label>
+            <label class="field-label" for="height">Height</label>
             <div class="input-row">
               <input type="number" id="height" placeholder="—" min="120" max="220" oninput="autoWeights()">
               <span class="unit-badge">cm</span>
@@ -1905,7 +1905,7 @@
       <p class="section-label">Renal Function</p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label">Serum Creatinine</label>
+          <label class="field-label" for="scr">Serum Creatinine</label>
           <div class="input-row">
             <input type="number" id="scr" placeholder="—" min="0.1" max="25" step="0.1" oninput="updateCrCl(); if(state.calcMode==='initial') suggestInterval(); checkAKI();">
             <span class="unit-badge">mg/dL</span>
@@ -1916,7 +1916,7 @@
              muscle mass is low, which is the population the SCr round-up hack
              was invented for. Cystatin C measures it instead of guessing. -->
         <div class="field-group">
-          <label class="field-label">Cystatin C <span style="color:var(--text-muted);font-weight:400">· optional</span></label>
+          <label class="field-label" for="cysc">Cystatin C <span style="color:var(--text-muted);font-weight:400">· optional</span></label>
           <div class="input-row">
             <input type="number" id="cysc" placeholder="—" min="0.1" max="10" step="0.01" oninput="updateCysC()">
             <span class="unit-badge">mg/L</span>
@@ -1925,7 +1925,7 @@
         </div>
         <div id="cysc-result" style="display:none;font-family:'DM Mono',monospace;font-size:0.8rem;color:var(--accent-blue);line-height:1.5"></div>
         <div class="field-group">
-          <label class="field-label">Dosing Weight for CrCl</label>
+          <label class="field-label" for="dosing-wt">Dosing Weight for CrCl</label>
           <div class="toggle-group" id="dosingwt-toggle">
             <button class="toggle-opt active" onclick="setDosingWt(this,'TBW')">TBW</button>
             <button class="toggle-opt" onclick="setDosingWt(this,'IBW')">IBW</button>
@@ -1939,7 +1939,7 @@
 
         <!-- Baseline SCr / AKI -->
         <div class="field-group" style="margin-top:4px">
-          <label class="field-label" style="display:flex;align-items:center;gap:8px">
+          <label class="field-label" for="scr-baseline" style="display:flex;align-items:center;gap:8px">
             Baseline SCr
             <span style="font-size:0.62rem;color:var(--text-muted);font-weight:400;letter-spacing:0;text-transform:none">(optional — for AKI detection)</span>
           </label>
@@ -1969,7 +1969,7 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Preferred Interval</label>
+              <label class="field-label" for="init-interval">Preferred Interval</label>
               <select id="init-interval" onchange="onIntervalChange()">
                 <option value="6">Q6H</option>
                 <option value="8">Q8H</option>
@@ -1982,7 +1982,7 @@
               <p class="field-hint" id="interval-hint" style="color:var(--accent-amber)"></p>
             </div>
             <div class="field-group">
-              <label class="field-label">Infusion Duration</label>
+              <label class="field-label" for="init-tinf">Infusion Duration</label>
               <div class="input-row">
                 <input type="number" id="init-tinf" placeholder="1.0" value="1" min="0.5" max="4" step="0.25">
                 <span class="unit-badge">hr</span>
@@ -2003,14 +2003,14 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Dose</label>
+              <label class="field-label" for="dose">Dose</label>
               <div class="input-row">
                 <input type="number" id="dose" placeholder="—" min="100" max="4000" step="250">
                 <span class="unit-badge">mg</span>
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label">Interval</label>
+              <label class="field-label" for="interval">Interval</label>
               <select id="interval">
                 <option value="6">Q6H</option>
                 <option value="8">Q8H</option>
@@ -2023,7 +2023,7 @@
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Infusion Duration</label>
+            <label class="field-label" for="tinf">Infusion Duration</label>
             <div class="input-row">
               <input type="number" id="tinf" placeholder="1.0" value="1" min="0.5" max="4" step="0.25">
               <span class="unit-badge">hr</span>
@@ -2049,14 +2049,14 @@
       <div class="ld-fields" id="ld-fields">
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label">Target peak concentration</label>
+            <label class="field-label" for="ld-target-peak">Target peak concentration</label>
             <div class="input-row">
               <input type="number" id="ld-target-peak" value="25" min="15" max="40" step="1">
               <span class="unit-badge">mg/L</span>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Time to first maintenance dose</label>
+            <label class="field-label" for="ld-delta">Time to first maintenance dose</label>
             <div class="input-row">
               <input type="number" id="ld-delta" placeholder="= interval" min="4" max="48" step="0.5">
               <span class="unit-badge">hr</span>
@@ -2084,7 +2084,7 @@
 
         <!-- Steady State toggle -->
         <div class="field-group">
-          <label class="field-label">Steady State?</label>
+          <label class="field-label" for="is-ss">Steady State?</label>
           <div class="toggle-group">
             <button class="toggle-opt active" onclick="setSS(this,true)">Yes (≥3 doses)</button>
             <button class="toggle-opt" onclick="setSS(this,false)">No (1st/2nd dose)</button>
@@ -2094,7 +2094,7 @@
 
         <!-- Measured concentration -->
         <div class="field-group">
-          <label class="field-label">Measured Concentration</label>
+          <label class="field-label" for="level-val">Measured Concentration</label>
           <div class="input-row">
             <input type="number" id="level-val" placeholder="—" min="0.1" max="100" step="0.1">
             <span class="unit-badge">mg/L</span>
@@ -2107,12 +2107,12 @@
 
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Last dose given</label>
+              <label class="field-label" for="time-dose-given">Last dose given</label>
               <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-dose-given" oninput="calcTimeDelta()" onchange="calcTimeDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
               <p class="field-hint">Start of infusion</p>
             </div>
             <div class="field-group">
-              <label class="field-label">Level drawn at</label>
+              <label class="field-label" for="time-level-drawn">Level drawn at</label>
               <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-level-drawn" oninput="calcTimeDelta()" onchange="calcTimeDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
               <p class="field-hint">Time of blood draw</p>
             </div>
@@ -2153,14 +2153,14 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Dose given</label>
+              <label class="field-label" for="tl-dose">Dose given</label>
               <div class="input-row">
                 <input type="number" id="tl-dose" placeholder="—" min="100" max="4000" step="250">
                 <span class="unit-badge">mg</span>
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label">Infusion Duration</label>
+              <label class="field-label" for="tl-tinf">Infusion Duration</label>
               <div class="input-row">
                 <input type="number" id="tl-tinf" placeholder="1.0" value="1" min="0.5" max="4" step="0.25">
                 <span class="unit-badge">hr</span>
@@ -2168,7 +2168,7 @@
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Dose start time</label>
+            <label class="field-label" for="tl-dose-time">Dose start time</label>
             <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-dose-time" oninput="calcTLDeltas()" onchange="calcTLDeltas()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
           </div>
         </div>
@@ -2181,14 +2181,14 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Concentration</label>
+              <label class="field-label" for="tl-c1">Concentration</label>
               <div class="input-row">
                 <input type="number" id="tl-c1" placeholder="—" min="0.1" max="100" step="0.1">
                 <span class="unit-badge">mg/L</span>
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label">Drawn at</label>
+              <label class="field-label" for="tl-t1-time">Drawn at</label>
               <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t1-time" oninput="calcTLDeltas()" onchange="calcTLDeltas()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             </div>
           </div>
@@ -2203,14 +2203,14 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Concentration</label>
+              <label class="field-label" for="tl-c2">Concentration</label>
               <div class="input-row">
                 <input type="number" id="tl-c2" placeholder="—" min="0.1" max="100" step="0.1">
                 <span class="unit-badge">mg/L</span>
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label">Drawn at</label>
+              <label class="field-label" for="tl-t2-time">Drawn at</label>
               <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t2-time" oninput="calcTLDeltas()" onchange="calcTLDeltas()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             </div>
           </div>
@@ -2258,14 +2258,14 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Dose</label>
+              <label class="field-label" for="rl-dose">Dose</label>
               <div class="input-row">
                 <input type="number" id="rl-dose" placeholder="—" min="100" max="4000" step="250">
                 <span class="unit-badge">mg</span>
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label">Infusion Duration</label>
+              <label class="field-label" for="rl-tinf">Infusion Duration</label>
               <div class="input-row">
                 <input type="number" id="rl-tinf" placeholder="1.0" value="1" min="0.5" max="4" step="0.25">
                 <span class="unit-badge">hr</span>
@@ -2274,7 +2274,7 @@
           </div>
           <div id="rl-interval-row" style="display:none">
             <div class="field-group">
-              <label class="field-label">Current Dosing Interval</label>
+              <label class="field-label" for="rl-interval">Current Dosing Interval</label>
               <select id="rl-interval" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none">
                 <option value="8">Q8H</option>
                 <option value="12" selected>Q12H</option>
@@ -2286,7 +2286,7 @@
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Dose start date &amp; time</label>
+            <label class="field-label" for="rl-dose-time">Dose start date &amp; time</label>
             <input type="datetime-local" id="rl-dose-time" oninput="calcRLDelta()" onchange="calcRLDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             <p class="field-hint">Enter date + time to support cross-day intervals</p>
           </div>
@@ -2300,14 +2300,14 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label">Concentration</label>
+              <label class="field-label" for="rl-c">Concentration</label>
               <div class="input-row">
                 <input type="number" id="rl-c" placeholder="—" min="0.1" max="100" step="0.1">
                 <span class="unit-badge">mg/L</span>
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label">Level drawn (date &amp; time)</label>
+              <label class="field-label" for="rl-draw-time">Level drawn (date &amp; time)</label>
               <input type="datetime-local" id="rl-draw-time" oninput="calcRLDelta()" onchange="calcRLDelta()" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
             </div>
           </div>
@@ -2341,7 +2341,7 @@
       <p class="section-label">PK Model</p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label">Clearance Model</label>
+          <label class="field-label" for="cl-model">Clearance Model</label>
           <select id="cl-model" onchange="updateModelInfo()">
             <option value="vancopk" selected>VancoPK (Default) — 0.75(CrCl) + 4</option>
             <option value="matzke">Matzke — 0.689(CrCl) + 3.66</option>
@@ -2350,7 +2350,7 @@
           </select>
         </div>
         <div class="field-group">
-          <label class="field-label">Volume of Distribution Model</label>
+          <label class="field-label" for="vd-model">Volume of Distribution Model</label>
           <select id="vd-model" onchange="updateModelInfo()">
             <option value="vancopk" selected>VancoPK — 0.29(age) + 0.33(TBW) + 11</option>
             <option value="buelga">Buelga — 0.98 L/kg TBW</option>
@@ -2370,7 +2370,7 @@
       <p class="section-label">Therapeutic Target</p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label">Trough Target Range</label>
+          <label class="field-label" for="trough-min">Trough Target Range</label>
           <div class="form-grid-2">
             <div class="input-row">
               <input type="number" id="trough-min" value="10" min="5" max="25">
@@ -2384,7 +2384,7 @@
           <p class="field-hint">mg/L — default 10–20; severe infections 15–20</p>
         </div>
         <div class="field-group">
-          <label class="field-label">MIC (for AUC:MIC)</label>
+          <label class="field-label" for="mic">MIC (for AUC:MIC)</label>
           <div class="input-row">
             <input type="number" id="mic" value="1" min="0.5" max="2" step="0.5">
             <span class="unit-badge">mg/L</span>
@@ -2474,14 +2474,14 @@
       <div style="display:flex;flex-direction:column;gap:12px">
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label">Age</label>
+            <label class="field-label" for="b-age">Age</label>
             <div class="input-row">
               <input type="number" id="b-age" placeholder="—" min="18" max="100" oninput="updateBayesCrCl()">
               <span class="unit-badge">yr</span>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Sex</label>
+            <label class="field-label" for="b-sex">Sex</label>
             <div class="toggle-group">
               <button class="toggle-opt active" onclick="setBSex(this,'M')">Male</button>
               <button class="toggle-opt" onclick="setBSex(this,'F')">Female</button>
@@ -2491,14 +2491,14 @@
         </div>
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label">Total Body Weight</label>
+            <label class="field-label" for="b-tbw">Total Body Weight</label>
             <div class="input-row">
               <input type="number" id="b-tbw" placeholder="—" min="30" max="340" oninput="updateBayesCrCl()">
               <span class="unit-badge">kg</span>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">Height</label>
+            <label class="field-label" for="b-height">Height</label>
             <div class="input-row">
               <input type="number" id="b-height" placeholder="—" min="120" max="220" oninput="updateBayesCrCl()">
               <span class="unit-badge">cm</span>
@@ -2515,7 +2515,7 @@
       <p class="section-label">Renal Function</p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label">Serum Creatinine</label>
+          <label class="field-label" for="b-scr">Serum Creatinine</label>
           <div class="input-row">
             <input type="number" id="b-scr" placeholder="—" min="0.1" max="20" step="0.1" oninput="updateBayesCrCl()">
             <span class="unit-badge">mg/dL</span>
@@ -2638,14 +2638,14 @@
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label">AUC₂₄ Target</label>
+            <label class="field-label" for="b-auc-target">AUC₂₄ Target</label>
             <div class="input-row">
               <input type="number" id="b-auc-target" value="450" min="400" max="600" step="25">
               <span class="unit-badge">mg·h/L</span>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label">MIC</label>
+            <label class="field-label" for="b-mic">MIC</label>
             <div class="input-row">
               <input type="number" id="b-mic" value="1" min="0.5" max="2" step="0.5">
               <span class="unit-badge">mg/L</span>
@@ -2730,14 +2730,14 @@
       <p class="section-label">Therapeutic Target</p>
       <div class="form-grid-2">
         <div class="field-group">
-          <label class="field-label">AUC₂₄ Target</label>
+          <label class="field-label" for="c-auc-target">AUC₂₄ Target</label>
           <div class="input-row">
             <input type="number" id="c-auc-target" value="450" min="400" max="600" step="25">
             <span class="unit-badge">mg·h/L</span>
           </div>
         </div>
         <div class="field-group">
-          <label class="field-label">MIC</label>
+          <label class="field-label" for="c-mic">MIC</label>
           <div class="input-row">
             <input type="number" id="c-mic" value="1" min="0.5" max="2" step="0.5">
             <span class="unit-badge">mg/L</span>
@@ -2753,14 +2753,14 @@
       <p class="section-label">Dose Regimen</p>
       <div class="form-grid-2">
         <div class="field-group">
-          <label class="field-label">Dose</label>
+          <label class="field-label" for="c-dose">Dose</label>
           <div class="input-row">
             <input type="number" id="c-dose" placeholder="1000" min="250" max="4000" step="50" oninput="autoFillTinf(this.value,'c-tinf')">
             <span class="unit-badge">mg</span>
           </div>
         </div>
         <div class="field-group">
-          <label class="field-label">Interval</label>
+          <label class="field-label" for="c-tau">Interval</label>
           <div class="input-row">
             <input type="number" id="c-tau" placeholder="12" min="4" max="48" step="2">
             <span class="unit-badge">h</span>
@@ -2768,7 +2768,7 @@
         </div>
       </div>
       <div class="field-group" style="margin-top:10px">
-        <label class="field-label">Infusion Time</label>
+        <label class="field-label" for="c-tinf">Infusion Time</label>
         <div class="input-row">
           <input type="number" id="c-tinf" placeholder="auto" min="0.5" max="6" step="0.25">
           <span class="unit-badge">h</span>
@@ -3642,15 +3642,29 @@ function calcPeakTrough(dose, tau, tinf, kel, vd) {
 
 // Concentration at arbitrary time t after start of infusion (SS)
 function calcCssAtTime(dose, tau, tinf, kel, vd, t) {
-  const eKT = Math.exp(-kel * tau);
-  if(t <= tinf) {
-    // During infusion
-    return (dose / (tinf * kel * vd)) * (1 - Math.exp(-kel*t)) / (1 - eKT);
-  } else {
-    // After infusion ends: use peak then decay
-    const peak = (dose / (tinf * kel * vd)) * (1 - Math.exp(-kel*tinf)) / (1 - eKT);
-    return peak * Math.exp(-kel * (t - tinf));
+  // CODEX F-006. The during-infusion branch used
+  //     (R0/(ke*V)) * (1 - e^-ke*t) / (1 - e^-ke*tau)
+  // which is the accumulation-scaled INPUT term only. At steady state the drug
+  // already in the body at the start of the interval has to be carried forward:
+  //     C(t) = (R0/(ke*V))*(1 - e^-ke*t)  +  C_trough * e^-ke*t     for 0 <= t <= tinf
+  // The old form happens to agree at t = tinf (both collapse to C_peak), which
+  // is why it survived — but it returned 0 at t = 0, i.e. "no drug present"
+  // immediately before a dose at steady state. For 1000 mg q12h, tinf 1 h,
+  // ke 0.08, V 60 it gave 13.24 mg/L at 0.5 h against a true 18.51.
+  //
+  // That mattered because fitKelFromLevel bisects on this function: a level
+  // drawn during an infusion was matched against an artificially low curve and
+  // therefore fitted to an artificially slow elimination rate.
+  const eKT   = Math.exp(-kel * tau);
+  if (!(eKT < 1)) return NaN;                 // no elimination: undefined at SS
+  const R0    = dose / tinf;
+  const cInf  = R0 / (kel * vd);              // plateau of the zero-order input
+  const peak  = cInf * (1 - Math.exp(-kel*tinf)) / (1 - eKT);
+  if (t <= tinf) {
+    const cTrough = peak * Math.exp(-kel * (tau - tinf));
+    return cInf * (1 - Math.exp(-kel*t)) + cTrough * Math.exp(-kel*t);
   }
+  return peak * Math.exp(-kel * (t - tinf));
 }
 
 // Extrapolate observed concentration to true trough using known Ke
@@ -3729,7 +3743,11 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
   // P2: AUC in range + trough borderline low (≥80% of min) — AUC wins per guidelines
   // This is the key clinical scenario: dose would get increased for trough alone
   const aucOkTroughLow = candidates.filter(c =>
-    c.auc >= 400 && c.auc <= 600 && c.trough >= troughMin * 0.80
+    // CODEX F-001. This had no upper bound, so a trough ABOVE troughMax still
+    // satisfied "trough >= 80% of troughMin" and was caught here — reporting it
+    // as BELOW target and making the P3 high-trough branch unreachable. The
+    // band is now explicitly the borderline-LOW window only.
+    c.auc >= 400 && c.auc <= 600 && c.trough >= troughMin * 0.80 && c.trough < troughMin
   );
   if(aucOkTroughLow.length > 0) return {
     ...aucOkTroughLow[0],
@@ -5633,6 +5651,22 @@ function autoFillTinf(doseVal, tinfFieldId) {
 }
 
 // ─── Add/remove dose rows ───
+// CODEX F-008. New dose/level rows defaulted their date from toISOString()
+// (UTC) and their time from toTimeString() (local). West of UTC after ~19:00
+// local, the date is already tomorrow while the clock says today — so accepting
+// the defaults recorded an administration 24 hours in the future. Both fields
+// must come from the same local clock.
+function localDateStr(d) {
+  d = d || new Date();
+  const p = (v) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function localTimeStr(d) {
+  d = d || new Date();
+  const p = (v) => String(v).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function addBayesDose() {
   const id    = ++bDoseCount;
   const tbody = document.getElementById('b-dose-tbody');
@@ -5641,8 +5675,8 @@ function addBayesDose() {
 
   const now      = new Date();
   now.setSeconds(0, 0);
-  const dateStr  = now.toISOString().slice(0,10);
-  const timeStr  = now.toTimeString().slice(0,5);
+  const dateStr  = localDateStr(now);
+  const timeStr  = localTimeStr(now);
 
   const tr = document.createElement('tr');
   tr.id = `b-dose-row-${id}`;
@@ -5676,8 +5710,8 @@ function addBayesLevel() {
 
   const now      = new Date();
   now.setSeconds(0, 0);
-  const dateStr  = now.toISOString().slice(0,10);
-  const timeStr  = now.toTimeString().slice(0,5);
+  const dateStr  = localDateStr(now);
+  const timeStr  = localTimeStr(now);
 
   const tr = document.createElement('tr');
   tr.id = `b-level-row-${id}`;
@@ -5701,29 +5735,66 @@ function removeBayesLevel(id) {
 }
 
 // ─── Parse course data from DOM ───
+// CODEX F-002. This dropped any row that failed its truthiness test and said
+// nothing. A dose row with a blank infusion duration simply vanished from the
+// fitted course: two documented 1000 mg administrations became one, and the fit
+// proceeded on a history that did not match the chart.
+//
+// A row is now one of three things, and the difference matters:
+//   EMPTY      — nothing typed. Ignored silently; that is what a spare row is.
+//   COMPLETE   — used.
+//   INCOMPLETE — something typed but not enough, or not plausible. Reported by
+//                row number and never silently discarded.
+// Returns { doses, levels, errors }; callers must refuse to run on errors.
 function parseBayesCourse() {
-  const doses = [];
+  const doses = [], levels = [], errors = [];
+  const rowNum = (id) => id;
+
   document.querySelectorAll('[id^="b-dose-row-"]').forEach(row => {
-    const id   = row.id.replace('b-dose-row-','');
-    const mg    = parseFloat(document.getElementById(`b-dose-mg-${id}`)?.value);
-    const tinf  = parseFloat(document.getElementById(`b-dose-tinf-${id}`)?.value);
-    const dateS = document.getElementById(`b-dose-date-${id}`)?.value;
-    const timeS = document.getElementById(`b-dose-time-${id}`)?.value || '00:00';
-    if (mg && tinf && dateS) doses.push({ mg, tinfH: tinf, timeH: new Date(`${dateS}T${timeS}`).getTime() / 3600000 });
+    const id    = row.id.replace('b-dose-row-','');
+    const mgRaw = (document.getElementById(`b-dose-mg-${id}`)   || {}).value;
+    const tiRaw = (document.getElementById(`b-dose-tinf-${id}`) || {}).value;
+    const dateS = (document.getElementById(`b-dose-date-${id}`) || {}).value;
+    const timeS = (document.getElementById(`b-dose-time-${id}`) || {}).value || '00:00';
+    const anything = [mgRaw, tiRaw, dateS].some(v => v !== undefined && String(v).trim() !== '');
+    if (!anything) return;                                  // an untouched spare row
+    const mg = parseFloat(mgRaw), tinf = parseFloat(tiRaw);
+    const miss = [];
+    if (!(mg > 0))   miss.push('dose (mg)');
+    if (!(tinf > 0)) miss.push('infusion duration');
+    if (!dateS)      miss.push('date');
+    const tMs = dateS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
+    if (dateS && !Number.isFinite(tMs)) miss.push('a valid date/time');
+    if (miss.length) {
+      errors.push(`Dose row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
+      return;
+    }
+    doses.push({ mg, tinfH: tinf, timeH: tMs / 3600000 });
   });
 
-  const levels = [];
   document.querySelectorAll('[id^="b-level-row-"]').forEach(row => {
-    const id   = row.id.replace('b-level-row-','');
-    const conc  = parseFloat(document.getElementById(`b-lvl-conc-${id}`)?.value);
-    const dateS = document.getElementById(`b-lvl-date-${id}`)?.value;
-    const timeS = document.getElementById(`b-lvl-time-${id}`)?.value || '00:00';
-    if (conc && dateS) levels.push({ conc, timeH: new Date(`${dateS}T${timeS}`).getTime() / 3600000 });
+    const id    = row.id.replace('b-level-row-','');
+    const cRaw  = (document.getElementById(`b-lvl-conc-${id}`) || {}).value;
+    const dateS = (document.getElementById(`b-lvl-date-${id}`) || {}).value;
+    const timeS = (document.getElementById(`b-lvl-time-${id}`) || {}).value || '00:00';
+    const anything = [cRaw, dateS].some(v => v !== undefined && String(v).trim() !== '');
+    if (!anything) return;
+    const conc = parseFloat(cRaw);
+    const miss = [];
+    if (!(conc > 0)) miss.push('concentration');
+    if (!dateS)      miss.push('date');
+    const tMs = dateS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
+    if (dateS && !Number.isFinite(tMs)) miss.push('a valid date/time');
+    if (miss.length) {
+      errors.push(`Level row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
+      return;
+    }
+    levels.push({ conc, timeH: tMs / 3600000 });
   });
 
   doses.sort((a,b) => a.timeH - b.timeH);
   levels.sort((a,b) => a.timeH - b.timeH);
-  return { doses, levels };
+  return { doses, levels, errors };
 }
 
 // ─── 1-compartment superposition ───
@@ -6022,17 +6093,42 @@ function burtonObj3D(etaCL, etaVc, etaVp, TVCL, TVVc, TVVp, doses, levels) {
 // ─── 2-comp SS simulation (12 cycles, read trough of last) ───
 // Q defaults to Q_GOTI (6.5) for backward compatibility with all Phase 2 callers.
 // Phase 3 Hughes model passes Q=6.36; future 2-comp models can pass their own Q.
+// CODEX F-007. These simulated a fixed 12 doses and called the result steady
+// state. Twelve q12h cycles is 144 h; a Goti patient at CrCl 10 has CL ~0.6 L/h
+// against ~97 L of volume, so the terminal half-life is ~109 h and 144 h is
+// barely 1.3 half-lives. The trough came out 19.19 mg/L against a true 32.21 —
+// 40% low, and low in exactly the renal-impairment patients where accumulation
+// is the danger. Under-estimating the trough makes the optimiser recommend MORE
+// drug for the patients least able to clear it.
+//
+// Now: how many cycles are needed is derived from the terminal rate constant
+// rather than assumed. beta is the slow disposition root, so ~10 terminal
+// half-lives leaves ~0.1% residual; the count is clamped so a fast
+// clearer stays cheap and a very slow one still converges.
+const SS_2C_MIN_CYCLES = 12;
+const SS_2C_MAX_CYCLES = 400;
+
+function ssCycles2comp(tau, k10, k12, k21) {
+  const sum = k10 + k12 + k21;
+  const disc = Math.max(0, sum*sum - 4*k21*k10);
+  const beta = (sum - Math.sqrt(disc)) / 2;      // slow (terminal) root
+  if (!(beta > 0) || !(tau > 0)) return SS_2C_MAX_CYCLES;
+  const tHalfTerminal = Math.LN2 / beta;
+  const need = Math.ceil((10 * tHalfTerminal) / tau);
+  return Math.min(SS_2C_MAX_CYCLES, Math.max(SS_2C_MIN_CYCLES, need));
+}
+
 function ssCtrough2comp(dose, tau, tinfH, CL, Vc, Vp, Q) {
   if (Q == null) Q = Q_GOTI;
   const k10=CL/Vc, k12=Q/Vc, k21=Q/Vp;
-  const n=12;
+  const n = ssCycles2comp(tau, k10, k12, k21);
   const synth = Array.from({length:n}, (_,i) => ({mg:dose, tinfH, timeH: i*tau}));
   return predictConc2comp(synth, n*tau, k10, k12, k21, Vc);
 }
 function ssPeak2comp(dose, tau, tinfH, CL, Vc, Vp, Q) {
   if (Q == null) Q = Q_GOTI;
   const k10=CL/Vc, k12=Q/Vc, k21=Q/Vp;
-  const n=12;
+  const n = ssCycles2comp(tau, k10, k12, k21);
   const synth = Array.from({length:n}, (_,i) => ({mg:dose, tinfH, timeH: i*tau}));
   return predictConc2comp(synth, (n-1)*tau + tinfH, k10, k12, k21, Vc);
 }
@@ -6874,8 +6970,17 @@ function computeGuidelineDose(tbw, crcl) {
 
 // ─── Main Bayesian runner ───
 function runBayesian() {
-  const { doses, levels } = parseBayesCourse();
+  const { doses, levels, errors } = parseBayesCourse();
 
+  // CODEX F-002. Refuse to fit a course that does not match what was entered.
+  // Silently dropping an incomplete administration produced a fit on a history
+  // the chart does not contain.
+  if (errors && errors.length) {
+    alert('Some rows are incomplete and would be excluded from the fit.\n\n• '
+      + errors.join('\n• ')
+      + '\n\nComplete or delete these rows, then run again.');
+    return;
+  }
   if (!doses.length) {
     alert('Add at least one dose to the course history before running Bayesian analysis.');
     return;
@@ -7018,7 +7123,9 @@ function runBayesian() {
       etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses,
       levels:filteredLevels, objFinal, goti: gotiResult
     };
-    renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
+    // CODEX F-003: bind this fit to the inputs it came from.
+  try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
+  renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
       { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, arcInfo, lowCrClInfo });
 
   } else if (isHughes) {
@@ -7091,6 +7198,7 @@ function runBayesian() {
       etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses,
       levels:filteredLevels, objFinal, goti: hughesResult
     };
+    try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
       { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, arcInfo, lowCrClInfo });
 
@@ -7132,6 +7240,7 @@ function runBayesian() {
       etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses,
       levels:filteredLevels, objFinal
     };
+    try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
       { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, arcInfo, lowCrClInfo });
   }
@@ -8471,6 +8580,29 @@ function persistProfiles(list) {
 }
 
 // Snapshot every field the Bayesian form needs to re-hydrate to its current state.
+// CODEX F-003. A profile saved after editing demographics kept the PREVIOUS
+// fit, so Continue Course could consume an old CL/V as if it belonged to the new
+// patient data. Each completed fit now carries a fingerprint of the inputs it
+// was computed from; a snapshot whose fingerprint no longer matches is marked
+// stale rather than presented as current.
+function bayesInputFingerprint() {
+  try {
+    const g = (id) => (document.getElementById(id) || {}).value || '';
+    const { doses, levels } = parseBayesCourse();
+    return JSON.stringify({
+      age: g('b-age'), tbw: g('b-tbw'), ht: g('b-height'), scr: g('b-scr'),
+      cysc: g('cysc'), sex: bState.sex, model: bState.model, dial: !!bState.dial,
+      doses: doses.map(d => [d.mg, d.tinfH, +d.timeH.toFixed(4)]),
+      levels: levels.map(l => [l.conc, +l.timeH.toFixed(4)]),
+    });
+  } catch (e) { return null; }
+}
+function bayesFitIsStale() {
+  if (!bState.result) return false;
+  const now = bayesInputFingerprint();
+  return !!(now && bState.resultFingerprint && now !== bState.resultFingerprint);
+}
+
 function snapshotBayesForm() {
   const val = id => document.getElementById(id)?.value || '';
   const doses = [];
@@ -8526,6 +8658,15 @@ function snapshotBayesForm() {
 }
 
 function saveCurrentProfile() {
+  // CODEX F-003. A profile saved after editing demographics used to keep the
+  // PREVIOUS fit, so Continue Course would consume an old CL/V as though it
+  // belonged to the new patient data. Refuse to pair the two silently.
+  if (typeof bayesFitIsStale === 'function' && bayesFitIsStale()) {
+    if (!confirm('The inputs have changed since the last calculation, so the stored '
+      + 'individual PK does not belong to these values.\n\nSave the profile WITHOUT '
+      + 'the fitted PK? (Recalculate first to store a matching fit.)')) return;
+    bState.result = null; bState.resultFingerprint = null;
+  }
   const labelEl = document.getElementById('profile-label-input');
   const label   = (labelEl?.value || '').trim();
   if (!label) { alert('Enter a label before saving.'); return; }
@@ -8711,6 +8852,14 @@ function loadContinueProfile(id) {
 
   const entry = loadProfiles().find(p => p.id === id);
   if (!entry || !entry.snapshot?.fit) { alert('Profile has no saved PK fit.'); return; }
+
+  // CODEX F-004. The clear above only ran for the "no profile" case, so a
+  // valid-to-valid switch updated the PK card while leaving the PREVIOUS
+  // profile's dose predictions on screen — two patients' numbers visible at
+  // once. Any change of selection invalidates the displayed results.
+  if (!continueState || continueState.profileId !== id) {
+    if (resultsDiv) { resultsDiv.style.display = 'none'; resultsDiv.innerHTML = ''; }
+  }
 
   const fit = entry.snapshot.fit;
   const is2comp = (fit.model === 'goti' || fit.model === 'hughes') && fit.goti;
@@ -8907,8 +9056,16 @@ function _buildPrintGraph(r) {
     root.setAttribute('data-theme', 'light');       // tokens read light for the render
     const prevDpr = window.devicePixelRatio;
     try { Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true }); } catch (e) {}
+    // CODEX F-009. This passed r.gotiInd / r.gotiPop, but a Bayesian result
+    // stores its two-compartment parameters on r.goti — so every printed Goti
+    // and Hughes report silently fell back to a one-compartment curve while the
+    // rest of the report used the 2-comp fit. Use the same accessor the on-screen
+    // renderer uses.
+    const is2c = (r.model === 'goti' || r.model === 'hughes') && r.goti;
+    const gInd = is2c ? (r.gotiInd || r.goti.ind || r.goti) : null;
+    const gPop = is2c ? (r.gotiPop || r.goti.pop || null) : null;
     drawProfileGraph(off, r.doses, r.levels || [], r.CL_ind, r.V_ind, r.CL_pop, r.V_pop,
-                     r.gotiInd || null, r.gotiPop || null, r.nProj || 0);
+                     gInd, gPop, r.nProj || 0);
     try { Object.defineProperty(window, 'devicePixelRatio', { value: prevDpr, configurable: true }); } catch (e) {}
     const url = off.toDataURL('image/png');
     return `<div class="pr-section pr-section-wide"><div class="pr-section-title">Concentration–Time Profile</div>
@@ -8994,7 +9151,14 @@ function _prLevelRows(r, fmtAbsH, t0) {
 }
 
 function _buildPrintReport() {
-  const r = bState.result;
+  // CODEX F-005. This used bState.result whenever it existed, even after the
+  // user switched back to the trough calculator — so the printed handoff could
+  // recommend a different regimen from the one on screen. The ACTIVE module
+  // decides which result is authoritative; a Bayesian result is only used when
+  // the Bayesian module is the one showing.
+  const bayesShell = document.getElementById('app-shell-bayesian');
+  const bayesVisible = !!bayesShell && bayesShell.style.display !== 'none';
+  const r = bayesVisible ? bState.result : null;
   if (!r) {
     const rc = document.getElementById('results-content');
     const cc = document.getElementById('continue-results');
