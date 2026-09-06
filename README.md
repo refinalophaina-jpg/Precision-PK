@@ -4,10 +4,24 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live — pending audit.** Deployed at
-[refinalophaina-jpg.github.io/Precision-PK](https://refinalophaina-jpg.github.io/Precision-PK/)
-and linked from [pharmacy.ainadara.com](https://pharmacy.ainadara.com). A code and math
-review is in progress; see [Validation](#validation) for what is and is not verified.
+**Status: Live · v2.0.** The canonical home is now
+**[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
+in-depth guide to the tool and its mathematics at
+[/vancomycin/how-to](https://pharmacy.ainadara.com/vancomycin/how-to).
+
+This repository remains the **source of truth for the engine and its tests**. The hub serves
+`index.html` verbatim as a static asset under a hash-pinned CSP, so the file here and the file
+there are byte-identical by construction. The original
+[Precision-PK Pages URL](https://refinalophaina-jpg.github.io/Precision-PK/) still resolves.
+
+Audited against primary sources and externally reviewed in September 2026 — see
+[`docs/audit-2026-09.md`](docs/audit-2026-09.md),
+[`docs/dose-acceptance-bounds.md`](docs/dose-acceptance-bounds.md) and
+[`docs/validation-threshold-decisions.md`](docs/validation-threshold-decisions.md).
+
+**Updating the deployed copy:** copy `index.html` into `pharmacy-ainadara/public/vancomycin/`,
+recompute the CSP script hash (the command is in that repo's `public/_headers`), rebuild, and
+re-run `npm run vanco-screenshots` if the UI changed.
 
 > Advisory only — not a prescription. Every recommendation requires clinician review.
 
@@ -30,7 +44,7 @@ git hash-object index.html   # must equal the deployed blob sha
 
 | Path | What it is |
 |---|---|
-| `index.html` | The application. ~7,700 lines: CSS to ~1,527, markup to ~2,506, one inline `<script>` after that |
+| `index.html` | The application. ~9,000 lines: CSS to ~1,527, markup to ~2,506, one inline `<script>` after that |
 | `phase2d_validation.cjs` | Primary validation suite — 10 suites, traces, shrinkage, Monte Carlo |
 | `phase3_simulation.cjs` | ~12,000 fits: per-model self-consistency, cross-model disagreement, stratified attainment |
 | `phase2d_comprehensive_validation.cjs` | 10,475 synthetic patients across 6 scenarios |
@@ -78,25 +92,30 @@ node phase2d_validation.cjs
 Each script extracts the math out of `index.html` in a Node `vm` sandbox, so it tests the
 shipped file rather than a copy.
 
-| Suite | Result (2026-09-04) |
+| Suite | Result (2026-09-05) |
 |---|---|
-| `phase2d_validation.cjs` | **66 / 66 pass** |
+| `phase2d_validation.cjs` | **76 / 76 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
+| `phase4_regimen_validation.cjs` | **40 / 40 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | **6 thresholds fail** — its own verdict is "Share with caveats" |
 
-The comprehensive suite fails on scenario 1 and 2 improvement, scenario 3 and 4 MAE,
-scenario 4 coverage, and scenario 6 dose attainment (74.7% against a ≥75% target). **Nothing
-in this repo records whether those failures were reviewed and accepted.** Treat them as
-open until the audit resolves them.
+The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
+limitation of two-compartment fitting from troughs alone (three parameters, one or two
+troughs: under-determined). Scenarios 1, 2, 5 and 6 pass. Each accept/reject decision, and
+the reasoning behind it, is recorded in
+[`docs/validation-threshold-decisions.md`](docs/validation-threshold-decisions.md) — including
+the finding that three of the original six "failures" were defects in the *measurement*, not
+the engine.
 
-Two caveats on the harness itself:
+Notes on the harness:
 
-- `validation_report.md` concludes "Ready to Share", but it is **Phase 1 only, dated 7 April
-  2026** — written before the Bayesian engine existed. It is not a verdict on the current app.
-  It also cites a `validation_comprehensive.js` that is not in the repo.
-- `const`/`let` cannot be read out of a `vm` context, so each script **re-declares the model
-  constants by hand** at the top (`Q_GOTI`, `OMEGA2_*`). That copy can drift from `index.html`
-  without any test failing.
+- `validation_report.md` is **Phase 1 only, April 2026** — it predates the Bayesian engine and
+  carries a scope banner saying so. Its minimum-trough claim has been retracted in place: the
+  2020 guideline contains no such recommendation, and that line was the probable origin of an
+  unsourced constant that shipped.
+- Model constants are **parsed out of `index.html`** by `harness_constants.cjs`, which throws
+  if one goes missing. They are never hand-copied — a copied constant let the suite pass
+  against a value the app no longer used.
 
 ## The archived React branch
 
@@ -111,6 +130,12 @@ dead relative to the shipped app, but that design must not be revived as-is.
 
 ## History
 
-Built March–April 2026; work stopped 12 April. Reactivated September 2026 to be audited and
-folded into the pharmacy hub. `v1-april-2026` tags the state as it was left, before any
-consolidation.
+Built March–April 2026; work stopped 12 April. Reactivated September 2026: consolidated under
+version control, audited against primary sources, externally reviewed, and folded into the
+pharmacy hub as v2.0. `v1-april-2026` tags the state as it was left, before any consolidation.
+
+The audit and review found and fixed, among others: a Bayesian prior that was not the model it
+was labelled as; a steady-state equation missing its residual term; a two-compartment steady
+state that stopped at 12 cycles and read troughs 40% low in renal impairment; regimen
+detection that reported a deliberate order change as an error; and a dose filter whose four
+bounds had no citation and which silently returned regimens it had just rejected.
