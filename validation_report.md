@@ -164,7 +164,17 @@ Four modes tested, 300 patients each. Patients drawn from realistic distribution
 
 3. **Two-level timing validation:** The two-level mode accepts any t1/t2. Adding a check that t1 > tinf (level must be post-infusion) and that t2 − t1 ≥ 2h (enough separation to reliably estimate kel) would prevent clinically implausible inputs.
 
-4. **Minimum trough safety rail:** The optimizer currently targets AUC 400–600 without a hard trough floor. ASHP/IDSA 2020 still recommends a minimum trough of 10 mg/L for efficacy against organisms with MIC ≤ 1. Consider flagging when the optimized regimen yields trough < 10 even if AUC is in range.
+4. ~~**Minimum trough safety rail:** ... ASHP/IDSA 2020 still recommends a minimum trough of 10 mg/L for efficacy ...~~
+   **RETRACTED 2026-09-05 — this attribution is false.** The 2020 ASHP/IDSA/PIDS/SIDP
+   guideline contains **no minimum trough concentration**, for efficacy or for resistance
+   prevention. The "keep the trough above 10" rule is from the **2009** consensus guideline
+   and did not survive into 2020, which withdrew trough-only monitoring outright
+   (Rec 3, A-II) on the ground that "a wide range of concentration-time profiles can result
+   in an identical trough value". A targeted full-text search of the 2020 guideline for a
+   minimum-trough statement returns nothing.
+   This line is the probable origin of the unsourced `Ctrough >= 7` floor that shipped in
+   `bayesDoseOptimizer` until 2026-09-05. Both are now removed. See
+   `docs/dose-acceptance-bounds.md`.
 
 ---
 

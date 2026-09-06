@@ -6275,7 +6275,46 @@ function setBModel(el, m) {
 // ─── Dose optimizer: find best dose/interval targeting AUC ───
 // Standard clinical intervals only: Q8H, Q12H, Q24H, Q48H
 // Q6H, Q18H, Q36H available in Dose Tinkerer but not auto-recommended
-function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp) {
+// ══════════════════════════════════════════════════════════════════════════
+//  DOSE ACCEPTANCE BOUNDS — one named set, each with its source
+// ══════════════════════════════════════════════════════════════════════════
+// These replace an unsourced filter that read
+//     Ctrough >= 7 && Ctrough <= 28 && auc24 >= 350 && auc24 <= 750
+// under a comment claiming "trough 7-25, AUC 350-700" — the comment and the code
+// disagreed on two of four numbers and none of the four had a citation. The app
+// also shipped FOUR mutually inconsistent trough bands (filter 7-28, comment
+// 7-25, results card "target 10-20", colour rule 10-20) and two AUC bands
+// (input 400-600, filter 350-750). This is now the single source.
+//
+// WHY TROUGH IS NO LONGER A FILTER. The 2020 guideline withdrew trough as a
+// monitoring target (Rec 3, A-II) precisely because "a wide range of
+// concentration-time profiles can result in an identical trough value". Every
+// candidate here already sits near the target AUC by construction — dose is
+// solved FROM the target — so a trough window was not guarding exposure, it was
+// acting as a covert interval selector, deciding q8h vs q48h on 250 mg rounding
+// luck. As a classifier for AKI it is weak (sensitivity ~43% at 20 mg/L, Bellos
+// 2020). And F-007 showed the trough estimate itself could read 86% low while
+// the AUC stayed exact. No surveyed tool filters candidates on trough: Neely
+// 2018 dosed to AUC "regardless of trough"; Stanford/InsightRX and PrecisePK
+// raise a trough ALERT and leave the regimen selectable. So trough now flags.
+const AUC24_TARGET_MIN   = 400;   // Rybak 2020 Rec 1 (A-II), at MIC 1 mg/L
+const AUC24_TARGET_MAX   = 600;   // Rybak 2020 Rec 1 (A-II)
+const AUC24_ABSOLUTE_MAX = 700;   // hard reject; AKI risk rises above ~650-1300
+                                  // (Rybak 2020, Toxicodynamics), Zasowski 2018
+const DOSE_MAX_PER_DOSE_MG = 2000; // conventional adult per-dose ceiling
+const DOSE_MAX_TDD_MG      = 4500; // adult empiric maintenance ceiling
+const TROUGH_WARN_MGL      = 15;   // AKI inflection stated as 15-20 (Rybak 2020)
+const TROUGH_HIGH_MGL      = 20;   // upper end of that inflection band
+// NOT an efficacy floor — the 2020 guideline contains no minimum trough and the
+// old `>= 7` had no source. But a trough BELOW THE ORGANISM'S MIC means a stretch
+// of each interval with sub-inhibitory drug, which is worth naming when the
+// interval is long. Compared against the entered MIC, defaulting to the 1 mg/L
+// the guideline's AUC/MIC target itself assumes (Rybak 2020 Rec 1). Flagging
+// every trough under 10 would fire on most q24/q48 regimens — normal practice in
+// AUC-guided dosing — and would contradict the point above.
+
+function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
+  const mic = (Number.isFinite(micMgL) && micMgL > 0) ? micMgL : 1;   // guideline assumption
   const kel  = CLind / Vind;
   const intervals = [8, 12, 24, 48];   // standard intervals for recommendation
   const results   = [];
@@ -6285,22 +6324,19 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp) {
     // Solve for dose: dose = targetAUC * CL / (24/tau)
     const rawDose = targetAUC * CLind / (24/tau);
     const dose    = Math.round(rawDose / 250) * 250;
-    if (dose < 250 || dose > 4500) continue;
+    if (dose < 250) continue;
 
     const tinfH = autoTinf(dose);
-
-    // AUC24 (exact at SS — model-independent)
-    const auc24 = dose * (24/tau) / CLind;
+    const auc24 = dose * (24/tau) / CLind;   // exact at SS, model-independent
+    const tdd   = dose * (24/tau);
 
     let Ctrough, Cpeak_ss;
     if (goti2comp) {
-      // 2-comp: use 12-cycle simulation for accurate SS trough/peak
-      // Q defaults to Q_GOTI for backward compat; Hughes passes its own (6.36)
+      // 2-comp: cycles derived from the terminal half-life (see ssCycles2comp)
       const { Vc, Vp, Q } = goti2comp;
       Ctrough  = ssCtrough2comp(dose, tau, tinfH, CLind, Vc, Vp, Q);
       Cpeak_ss = ssPeak2comp(dose, tau, tinfH, CLind, Vc, Vp, Q);
     } else {
-      // 1-comp closed-form SS
       const R0      = dose / tinfH;
       const denom   = 1 - Math.exp(-kel * tau);
       if (denom < 1e-10) continue;
@@ -6309,16 +6345,82 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp) {
       Cpeak_ss = Cpeak_inf / denom;
     }
 
-    results.push({ tau, dose, tinfH, auc24, Cpeak: Cpeak_ss, Ctrough });
+    // ── Tier 1: hard rejects. Dose-domain only; no clinical judgement needed,
+    // so these cannot be wrong for a clinical reason.
+    const hardFail = [];
+    if (dose > DOSE_MAX_PER_DOSE_MG) hardFail.push(`single dose ${dose} mg exceeds ${DOSE_MAX_PER_DOSE_MG} mg`);
+    if (tdd  > DOSE_MAX_TDD_MG)      hardFail.push(`total daily dose ${tdd.toFixed(0)} mg exceeds ${DOSE_MAX_TDD_MG} mg`);
+    if (auc24 > AUC24_ABSOLUTE_MAX)  hardFail.push(`AUC24 ${auc24.toFixed(0)} exceeds the absolute ceiling ${AUC24_ABSOLUTE_MAX}`);
+
+    // ── Tier 3: flags. Attached to the regimen, never used to exclude it.
+    const flags = [];
+    if (Number.isFinite(Ctrough)) {
+      if (Ctrough >= TROUGH_HIGH_MGL) flags.push({ level:'danger',
+        text:`Predicted trough ${Ctrough.toFixed(1)} mg/L is at or above ${TROUGH_HIGH_MGL} — the upper end of the band where AKI risk rises (Rybak 2020). Consider extending the interval.` });
+      else if (Ctrough >= TROUGH_WARN_MGL) flags.push({ level:'warning',
+        text:`Predicted trough ${Ctrough.toFixed(1)} mg/L is at or above ${TROUGH_WARN_MGL}, where AKI risk begins to rise (Rybak 2020).` });
+      if (Ctrough < mic) flags.push({ level:'info',
+        text:`Predicted trough ${Ctrough.toFixed(1)} mg/L falls below the MIC (${mic} mg/L), so drug is sub-inhibitory for part of each ${tau} h interval. The guideline sets no minimum trough — AUC governs — but confirm this interval suits the infection.` });
+    }
+    // Doses are rounded to 250 mg, so an AUC can land a few mg.h/L outside the
+    // band purely as a rounding artefact — most obviously when the clinician
+    // targets exactly 400 or 600. Flagging those is noise, and noise trains
+    // people to ignore flags. The grace is DERIVED, not chosen: half of what one
+    // 250 mg step moves AUC24 at this interval and clearance.
+    const aucPerStep = 250 * (24/tau) / CLind;
+    const grace = aucPerStep / 2;
+    if (auc24 > AUC24_TARGET_MAX + grace) flags.push({ level:'warning',
+      text:`AUC24 ${auc24.toFixed(0)} is above the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} target band (Rybak 2020 Rec 1, at MIC 1 mg/L).` });
+    if (auc24 < AUC24_TARGET_MIN - grace) flags.push({ level:'warning',
+      text:`AUC24 ${auc24.toFixed(0)} is below the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} target band (Rybak 2020 Rec 1, at MIC 1 mg/L).` });
+
+    results.push({ tau, dose, tinfH, auc24, tdd, Cpeak: Cpeak_ss, Ctrough, flags, hardFail });
   }
 
-  if (!results.length) return null;
+  if (!results.length) {
+    return { regimen: null, noSolution: true, candidates: [],
+             reason: 'No candidate dose could be formed for this clearance and target.' };
+  }
 
-  // Prefer regimens with trough 7–25, AUC 350–700; among those, pick closest to target
-  const viable = results.filter(r => r.Ctrough >= 7 && r.Ctrough <= 28 && r.auc24 >= 350 && r.auc24 <= 750);
-  const pool   = viable.length ? viable : results;
-  return pool.reduce((best, r) =>
-    Math.abs(r.auc24 - targetAUC) < Math.abs(best.auc24 - targetAUC) ? r : best, pool[0]);
+  // ── Tier 2: acceptance band. Rank WITHIN it; never silently outside it.
+  const admissible = results.filter(r => !r.hardFail.length);
+  const inBand = admissible.filter(r => {
+    const g = (250 * (24/r.tau) / CLind) / 2;      // same derived rounding grace
+    return r.auc24 >= AUC24_TARGET_MIN - g && r.auc24 <= AUC24_TARGET_MAX + g;
+  });
+  const pool = inBand.length ? inBand : admissible;
+
+  // THE FALLBACK IS GONE. It used to be `viable.length ? viable : results`, which
+  // ranked the REJECTED candidates by |auc24 - target| — an objective with no
+  // knowledge of why they failed — and handed one back with no signal. Measured,
+  // it did not return the least-bad candidate but frequently the worst: 3750 mg
+  // Q48H at a predicted steady-state trough of 0.0 mg/L, while the on-screen AUC
+  // read 408 and looked on target. It fired in 1.1% of population-typical calls
+  // and 4.6% over a wider CL/V grid, always silently. A guard that disables
+  // itself exactly when nothing is acceptable is not a guard.
+  if (!pool.length) {
+    const why = results
+      .map(r => `${r.dose} mg Q${r.tau}H — ${r.hardFail.join('; ')}`)
+      .join(' | ');
+    return {
+      regimen: null, noSolution: true, candidates: results,
+      reason: `Every candidate regimen breached a hard safety limit, so no recommendation is offered. ${why}. `
+            + `Reconsider the target, the interval set, or whether vancomycin is the right agent.`,
+    };
+  }
+
+  const best = pool.reduce((b, r) =>
+    Math.abs(r.auc24 - targetAUC) < Math.abs(b.auc24 - targetAUC) ? r : b, pool[0]);
+
+  // Outside the target band but admissible: still returned, but say so plainly.
+  if (!inBand.length) {
+    best.flags = (best.flags || []).concat([{ level:'warning',
+      text:`No candidate reached the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L band. This is the closest admissible regimen; review before use.` }]);
+    best.outsideTargetBand = true;
+  }
+  best.regimen = best;   // callers read rec.dose directly; keep that contract
+  best.noSolution = false;
+  return best;
 }
 
 // ─── AUC uncertainty disclosure ───
@@ -6441,7 +6543,10 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
 
   ctx.clearRect(0, 0, cW, cHpx);
 
-  // ── Target trough band 10–20 ──
+  // ── Trough reference band ──
+  // Shaded for orientation only. The 2020 guideline withdrew trough as a target
+  // (Rec 3, A-II); AUC governs. Retained because a trough is still the value a
+  // level actually measures.
   const yBand20 = ty(20), yBand10 = ty(10);
   ctx.fillStyle = themeColor('--moss','#4a5c28')+'14';
   ctx.fillRect(pad.left, yBand20, gW, yBand10-yBand20);
@@ -6689,7 +6794,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.font        = "600 8px 'Outfit',sans-serif";
   ctx.textAlign   = 'right';
   ctx.textBaseline= 'middle';
-  ctx.fillText('Trough target', pad.left+gW-4, (yBand20+yBand10)/2);
+  ctx.fillText('Trough reference', pad.left+gW-4, (yBand20+yBand10)/2);
   ctx.globalAlpha = 1;
 
   // Keep everything a crosshair needs to invert a pixel back into a time and a
@@ -7102,7 +7207,10 @@ function runBayesian() {
       ? burtonObj3D(etaCL_opt,etaVc_opt,etaVp_opt, pk.TVCL,pk.TVVc,pk.TVVp, doses,filteredLevels)
       : null;
 
-    const rec = bayesDoseOptimizer(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_GOTI });
+    const rec = bayesDoseOptimizer(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_GOTI }, mic);
+
+    // A refusal is a first-class result: show it, do not silently proceed.
+    if (rec && rec.noSolution) { bState.doseRefusal = rec.reason; } else { bState.doseRefusal = null; }
 
     const clRatio = CL_ind / CL_pop;
     let divergeMsg = null;
@@ -7173,7 +7281,7 @@ function runBayesian() {
       ? burtonObj3D_hughes(etaCL_opt,etaVc_opt,etaVp_opt, pk.TVCL,pk.TVVc,pk.TVVp, pk.TVQ, doses,filteredLevels)
       : null;
 
-    const rec = bayesDoseOptimizer(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_h });
+    const rec = bayesDoseOptimizer(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_h }, mic);
 
     const clRatio = CL_ind / CL_pop;
     let divergeMsg = null;
@@ -7234,7 +7342,7 @@ function runBayesian() {
       divergeMsg = `Individual CL is ${pct.toFixed(0)}% ${dir} than population average. ${why}.`;
     }
 
-    const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC);
+    const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC, null, mic);
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
       etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses,
@@ -7802,6 +7910,27 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     <div style="font-size:0.65rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:-4px">${curLabel}</div>`;
 
   // Irregular dosing interval warning — expanded dual-AUC display
+  // ── Dose refusal / safety flags ─────────────────────────────────────────
+  // The optimiser no longer hands back a regimen it rejected. When nothing is
+  // admissible it refuses, and the refusal is shown here rather than swallowed.
+  if (r.rec && r.rec.noSolution) {
+    html += `<div class="diverge-warning" style="background:rgba(184,59,59,0.07);border-color:var(--danger);color:var(--danger)">
+      <div style="font-weight:700;margin-bottom:8px">⛔ No regimen recommended</div>
+      <div style="font-size:0.8rem;line-height:1.6;color:var(--text-secondary)">${escHtml(r.rec.reason || '')}</div>
+    </div>`;
+  } else if (r.rec && r.rec.flags && r.rec.flags.length) {
+    const rank = { danger: 0, warning: 1, info: 2 };
+    const sorted = r.rec.flags.slice().sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3));
+    const worst = sorted[0].level;
+    const colour = worst === 'danger' ? 'var(--danger)' : worst === 'warning' ? 'var(--warning)' : 'var(--accent-blue)';
+    html += `<div class="diverge-warning" style="background:rgba(0,0,0,0.02);border-color:${colour};color:${colour}">
+      <div style="font-weight:700;margin-bottom:8px">Recommendation notes</div>
+      ${sorted.map(fl => `<div style="font-size:0.78rem;line-height:1.55;color:var(--text-secondary);margin-bottom:5px">
+        <strong style="color:${fl.level==='danger'?'var(--danger)':fl.level==='warning'?'var(--warning)':'var(--accent-blue)'}">
+        ${fl.level === 'danger' ? '⚠' : fl.level === 'warning' ? '⚠' : 'ℹ'}</strong> ${escHtml(fl.text)}</div>`).join('')}
+    </div>`;
+  }
+
   // ── Regimen banner ──────────────────────────────────────────────────────
   // Three concepts kept visibly separate, so a change of order is never
   // reported as a dosing error again:
@@ -7883,7 +8012,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <div class="stat-card ${curTrColor}">
         <div class="stat-label">Trough SS</div>
         <div class="stat-value">${cur && cur.Ctrough != null ? cur.Ctrough.toFixed(1) : '—'}</div>
-        <div class="stat-unit">mg/L · target 10–20</div>
+        <div class="stat-unit">mg/L · safety check, not a target</div>
       </div>
       <div class="stat-card info">
         <div class="stat-label">AUC₂₄ / MIC</div>
@@ -7898,8 +8027,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   </div>`;
 
   // ── Dosing Profile graph ──
-  const projDefaultDose = rec ? rec.dose : 1000;
-  const projDefaultTau  = rec ? rec.tau  : 12;
+  const projDefaultDose = (rec && !rec.noSolution) ? rec.dose : 1000;
+  const projDefaultTau  = (rec && !rec.noSolution) ? rec.tau  : 12;
   html += `
     <div class="profile-canvas-wrap">
       <div class="profile-canvas-header">
@@ -8025,7 +8154,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px">
             <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Predicted Trough SS</div>
             <div style="font-family:'DM Mono',monospace;font-size:1.1rem;color:${recTrColor};font-weight:500">${rec.Ctrough.toFixed(1)}</div>
-            <div style="font-size:0.62rem;color:var(--text-muted)">mg/L · target 10–20</div>
+            <div style="font-size:0.62rem;color:var(--text-muted)">mg/L · safety check, not a target</div>
           </div>
           <div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px">
             <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">AUC/MIC</div>
@@ -9016,7 +9145,11 @@ function runContinueOptimizer() {
   const { CL_ind, V_ind, goti } = continueState;
   const rec = bayesDoseOptimizer(CL_ind, V_ind, target,
     goti ? { Vc: goti.Vc_ind, Vp: goti.Vp_ind, Q: goti.Q } : null);
-  if (!rec) { alert('Optimizer could not find a viable regimen.'); return; }
+  if (!rec || rec.noSolution) {
+    alert(rec && rec.reason ? rec.reason
+      : 'No regimen could be recommended for this clearance and target.');
+    return;
+  }
   document.getElementById('c-dose').value = rec.dose;
   document.getElementById('c-tau').value  = rec.tau;
   document.getElementById('c-tinf').value = rec.tinfH;
