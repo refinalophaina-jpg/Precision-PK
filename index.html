@@ -3551,6 +3551,15 @@ function troughTarget() {
   } catch (e) {}
   return { min: TROUGH_TARGET_DEFAULT.min, max: TROUGH_TARGET_DEFAULT.max };
 }
+// A DETECTED interval is the mean of real administration times, so it arrives
+// as 11.97500000000582. Recommended intervals are already clean integers; this
+// is safe on both.
+function fmtTau(t) {
+  const n = Number(t);
+  if (!isFinite(n)) return t;
+  if (Math.abs(n - Math.round(n)) < 0.15) return String(Math.round(n));
+  return n.toFixed(1);
+}
 function themeRGBA(name, alpha, fallback) {
   const v = String(themeColor(name, '')).trim();
   let m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(v);
@@ -7033,16 +7042,18 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     const tw   = ctx.measureText(label).width + 8;
     if (xCurr - xPrev < tw + 6) continue;
     const yLbl = pad.top + 14;
-    ctx.fillStyle = isP ? themeRGBA('--purple', 0.2, 'rgba(74,61,122,0.2)') : themeRGBA('--paper-deep', 0.3, 'rgba(242,236,223,0.3)');
+    ctx.fillStyle   = themeColor('--paper', '#faf5ed');
+    ctx.strokeStyle = isP ? themeRGBA('--purple', 0.45, 'rgba(74,61,122,0.45)')
+                          : themeRGBA('--ink-faint', 0.35, 'rgba(138,142,128,0.35)');
+    ctx.lineWidth   = 1;
     ctx.beginPath();
     if (ctx.roundRect) {
       ctx.roundRect(xMid - tw/2, yLbl-9, tw, 13, 4);
     } else {
       ctx.rect(xMid - tw/2, yLbl-9, tw, 13);
     }
-    ctx.fill();
-    ctx.fillStyle = isP ? themeRGBA('--purple', 0.8, 'rgba(74,61,122,0.8)')
-                       : themeRGBA('--ink-soft', 0.85, 'rgba(90,97,81,0.85)');
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = isP ? themeColor('--purple', '#4a3d7a') : themeColor('--ink-soft', '#5a6151');
     ctx.fillText(label, xMid, yLbl);
   }
 
@@ -7119,14 +7130,14 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     ctx.stroke();
     ctx.font        = "600 9px 'DM Mono',monospace";
     const lbl = `${lev.conc.toFixed(1)}`;
-    const flip = x + 8 + ctx.measureText(lbl).width > pad.left + gW;
+    const flip = x + 12 + ctx.measureText(lbl).width > pad.left + gW;
     ctx.textAlign   = flip ? 'right' : 'left';
     ctx.textBaseline= 'middle';
     ctx.lineWidth   = 3;
     ctx.strokeStyle = themeColor('--paper', '#faf5ed');
-    ctx.strokeText(lbl, x + (flip ? -8 : 8), y);
+    ctx.strokeText(lbl, x + (flip ? -12 : 12), y);
     ctx.fillStyle   = themeColor('--accent-rose','#a8546a');
-    ctx.fillText(lbl, x + (flip ? -8 : 8), y);
+    ctx.fillText(lbl, x + (flip ? -12 : 12), y);
   }
 
   // ── Y-axis labels ──
@@ -7460,9 +7471,15 @@ function renderModelBanner(rec, currentModel) {
       ✓ <strong>Model matches patient profile:</strong> ${rec.reason}.
     </span>`);
   }
-  if (rec.isObese && currentModel !== 'hughes') {
+  if (rec.isClass3 && currentModel !== 'hughes') {
     lines.push(`<div class="model-rec-banner model-rec-obese" style="margin-top:4px">
-      ⚠ <strong>Obese patient (BMI ${rec.bmi ? rec.bmi.toFixed(1) : '≥ 30'}):</strong> Buelga and Goti were not developed in obese populations. Consider switching to <strong>Hughes 2024 (obese)</strong> — derived in N=83 BMI ≥40 patients, externally validated in 576 patients across 74 organizations.
+      ⚠ <strong>Class 3 obesity (BMI ${rec.bmi ? rec.bmi.toFixed(1) : '≥ 40'}):</strong> Buelga and Goti were not developed in obese populations. Consider switching to <strong>Hughes 2024</strong> — derived in N=83 patients with BMI ≥ 40, externally validated in 576 patients across 74 organizations.
+    </div>`);
+  } else if (rec.advisory && currentModel !== 'hughes') {
+    // BMI 30-39.9. No model is validated here; say so, and do NOT point at
+    // Hughes, whose own enrolment floor is 40.
+    lines.push(`<div class="model-rec-banner model-rec-obese" style="margin-top:4px">
+      ⚠ <strong>Obesity class ${rec.bmi && rec.bmi >= 35 ? 'II' : 'I'} (BMI ${rec.bmi ? rec.bmi.toFixed(1) : '30–40'}):</strong> ${rec.advisory}
     </div>`);
   } else if (rec.isObese && currentModel === 'hughes' && !rec.isClass3) {
     lines.push(`<div class="model-rec-banner model-rec-obese" style="margin-top:4px">
@@ -8317,7 +8334,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Current regimen metrics ──
   const curLabel = cur && cur.tau
-    ? `Current Regimen · ${cur.dose} mg Q${cur.tau}H (SS, Individual PK)`
+    ? `Current Regimen · ${cur.dose} mg Q${fmtTau(cur.tau)}H (SS, Individual PK)`
     : `Current Regimen · Individual PK`;
   html += `
     <div style="font-size:0.65rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:-4px">${curLabel}</div>`;
@@ -8933,7 +8950,7 @@ function addToComparison() {
   const exists = bState.tinkCompare.some(x => x.dose === dose && x.tau === tau);
   if (exists) return;
 
-  const label  = `${dose} mg Q${tau}H (AUC ${auc24.toFixed(0)})`;
+  const label  = `${dose} mg Q${fmtTau(tau)}H (AUC ${auc24.toFixed(0)})`;
   bState.tinkCompare.push({ dose, tau, tinfH, auc24, pts, label });
   renderComparisonSection();
 }

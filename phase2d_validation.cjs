@@ -1416,6 +1416,82 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 15 — the obesity advisory must not contradict itself
+//
+// Reported from real use at BMI 30.1: the blue line correctly suggested Goti,
+// while an older amber banner directly beneath it said "Consider switching to
+// Hughes 2024" — and cited "N=83 BMI >=40" in the same sentence. The correct
+// text was computed into rec.advisory and never rendered.
+// ════════════════════════════════════════════════════════════════════
+{
+  const { getModelRecommendation, renderModelBanner } = sandbox;
+  // getModelRecommendation(nLevels, isICU, tbw, htCm) — it derives BMI itself,
+  // so drive it the way the app does: pick a weight that yields the target BMI
+  // at a fixed height.
+  const HT_CM = 175, HT_M = HT_CM / 100;
+  const rec = (bmi, opts = {}) => getModelRecommendation(
+    opts.nLevels ?? 1, opts.isICU ?? false, bmi * HT_M * HT_M, HT_CM);
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 15 — obesity advisory consistency');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('BMI 30-39.9 never points the clinician at Hughes', ()=>{
+    [30.1, 32, 35, 37.5, 39.9].forEach(bmi => {
+      const r = rec(bmi);
+      assert(r.recommended === 'goti', `BMI ${bmi}: recommended '${r.recommended}', expected goti`);
+      const html = renderModelBanner(r, 'buelga');
+      assert(!/switching to <strong>Hughes/.test(html),
+        `BMI ${bmi}: the banner still tells the clinician to switch to Hughes`);
+      assert(/not recommended here|NOT recommended/i.test(html),
+        `BMI ${bmi}: the banner must say Hughes is not recommended below 40`);
+    });
+  });
+
+  test('The banner never says two different things at once', ()=>{
+    [30.1, 35, 39.9, 42, 55].forEach(bmi => {
+      const r = rec(bmi);
+      ['buelga','goti','hughes'].forEach(using => {
+        const html = renderModelBanner(r, using);
+        const pushesHughes = /switching to <strong>Hughes/.test(html);
+        const warnsOffHughes = /not recommended here|NOT recommended/i.test(html);
+        assert(!(pushesHughes && warnsOffHughes),
+          `BMI ${bmi} on '${using}': banner both recommends and warns against Hughes`);
+      });
+    });
+  });
+
+  test('BMI >= 40 still recommends Hughes', ()=>{
+    [40, 46.3, 70].forEach(bmi => {
+      const r = rec(bmi);
+      assert(r.recommended === 'hughes', `BMI ${bmi}: expected hughes, got '${r.recommended}'`);
+      assert(/switching to <strong>Hughes/.test(renderModelBanner(r, 'buelga')),
+        `BMI ${bmi}: class 3 should be offered Hughes`);
+    });
+  });
+
+  test('Using Hughes below its floor is still flagged', ()=>{
+    const html = renderModelBanner(rec(32), 'hughes');
+    assert(/outside its development population/i.test(html),
+      'choosing Hughes at BMI 32 must warn it is outside the development population');
+  });
+
+  test('A detected interval never prints as a floating-point artefact', ()=>{
+    // The reported "Q11.97500000000582H" — a mean of real administration times.
+    const { fmtTau } = sandbox;
+    assert(typeof fmtTau === 'function', 'fmtTau helper is missing');
+    assert(fmtTau(11.97500000000582) === '12', `got '${fmtTau(11.97500000000582)}'`);
+    assert(fmtTau(12) === '12', 'clean integers must stay clean');
+    assert(fmtTau(8.000000001) === '8', '');
+    assert(fmtTau(11.5) === '11.5', 'a genuinely non-integer interval keeps one decimal');
+    assert(fmtTau(7.4) === '7.4', '');
+    [11.97500000000582, 8.000000001, 23.999999].forEach(t => {
+      assert(!/\d{5,}/.test(fmtTau(t)), `fmtTau(${t}) leaked a float artefact: ${fmtTau(t)}`);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUITE 14 — CSP compatibility
 //
 // The app ships under a hash-pinned CSP with no 'unsafe-inline' and no
