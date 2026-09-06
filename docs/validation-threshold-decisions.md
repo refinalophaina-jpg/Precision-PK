@@ -111,3 +111,59 @@ clinical units** (mg·h/L of AUC error, % of patients within a band). Ratios aga
 baseline may be *reported*, but must not gate.
 
 _Advisory decision-support only — not a prescription; clinician judgement governs._
+
+---
+
+## Addendum, 2026-09-05 — re-run after the F-007 steady-state fix
+
+The Codex review found that the two-compartment steady-state helpers stopped at
+a fixed 12 cycles (finding F-007). Since scenarios 3 and 4 are the Goti 2-comp
+cases, the obvious question was whether fixing it moved them.
+
+**It did not. Every number is unchanged:**
+
+| | before | after |
+|---|---|---|
+| S3 MAE / improvement / coverage | 344.2 / 14.2 / 39.0 | 344.2 / 14.2 / 39.0 |
+| S4 MAE / improvement / coverage | 351.3 / 14.6 / 38.0 | 351.3 / 14.6 / 38.0 |
+
+**Why — and this is the finding.** The comprehensive suite generates its "true"
+concentrations with `predictConc2comp` over an explicit dose list and fits with
+the MAP objective. It never asks for a *steady-state* value, so it never calls
+`ssCtrough2comp`, `ssPeak2comp` or `calcCssAtTime` at all. **Both shipped
+steady-state defects had zero test coverage in any suite.** The suite was
+structurally blind to them.
+
+Their real consumers are `bayesDoseOptimizer` (the recommendation), the regimen
+projection, and the tinkerer — the numbers a clinician reads.
+
+### What F-007 did change
+
+Swept 600 Goti/Hughes regimen decisions (CrCl × weight × target AUC × dialysis):
+
+| | |
+|---|---|
+| Regimens whose dose or interval changed | **4 / 600 (0.7%)** |
+| Reported trough understated by the old form | median 2.5%, p90 **33.2%**, max **86.4%** |
+| Worst case | CrCl 5, 120 kg, target 550 → 500 mg Q48H: trough read **14.8**, actually **27.5** |
+
+Dose selection is AUC-driven (`dose ≈ AUC × CL`) and AUC does not use the
+steady-state helper, so the *pick* almost never moved. What was wrong is the
+**trough the clinician reads**, and the accumulation guard meant to veto it —
+the worst case sat just under the `Ctrough <= 28` filter, which therefore never
+fired.
+
+### Consequence for the accepted limitation
+
+**Scenarios 3 and 4 remain accepted, unchanged, for the reason originally
+recorded**: three parameters (η_CL, η_Vc, η_Vp) estimated from one or two trough
+concentrations is under-determined. F-007 was a separate defect in a separate
+code path and does not bear on it.
+
+### Coverage gap closed
+
+`phase2d_validation.cjs` **SUITE 10** now pins both helpers: the closed-form
+match across the interval, the value at t=0, continuity at end-of-infusion,
+periodicity, convergence within 1% for a slow clearer, an explicit assertion
+that a fixed 12 cycles would *fail* that bound, and that the cycle count scales
+with the terminal half-life. Suite total 68 → 76.

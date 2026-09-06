@@ -81,6 +81,7 @@ const {
   gotiPopPK, burtonObj3D, nelderMead3D,
   predictConc1comp, predictConc2comp,
   autoTinf, aucUncertaintyText,
+  calcCssAtTime, ssCtrough2comp, ssPeak2comp, ssCycles2comp,
   // Phase 3 — Hughes 2024 obese model
   computeFFM, hughesPopPK, burtonObj3D_hughes,
   // Phase 3 Step 5 — ARC detection
@@ -831,6 +832,101 @@ test('ARC and very-low are mutually exclusive across the full CrCl range', () =>
     assert(!(isArc && isLow), `c=${c}: ARC and very-low should not both fire`);
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════
+// SUITE 10 — Steady-state helpers  (added 2026-09-05, Codex F-006 / F-007)
+//
+// WHY THIS EXISTS. Two real steady-state defects shipped and the whole
+// comprehensive suite was blind to them: it generates concentrations with
+// predictConc1comp/predictConc2comp over an explicit dose list and never asks
+// for a steady-state value, so calcCssAtTime, ssCtrough2comp and ssPeak2comp
+// had NO coverage at all. The consumers that do use them are the dose
+// optimiser, the regimen projection and the tinkerer — i.e. the numbers a
+// clinician reads. Untested code that feeds the recommendation is the gap this
+// closes.
+// ════════════════════════════════════════════════════════════════════════
+section('SUITE 10 · Steady-state helpers (F-006 / F-007 regression)');
+
+{
+  // F-006: during infusion the residual from the previous interval must be
+  // carried forward. The old form dropped it and returned 0 at t=0.
+  const dose=1000, tau=12, tinf=1, ke=0.08, V=60;
+  const cInf = (dose/tinf)/(ke*V);
+  const peak = cInf*(1-Math.exp(-ke*tinf))/(1-Math.exp(-ke*tau));
+  const ctr  = peak*Math.exp(-ke*(tau-tinf));
+  const ref  = (t) => t<=tinf ? cInf*(1-Math.exp(-ke*t)) + ctr*Math.exp(-ke*t)
+                              : peak*Math.exp(-ke*(t-tinf));
+
+  test('F-006: SS concentration matches the closed form across the interval', ()=>{
+    for (const t of [0, 0.1, 0.25, 0.5, 0.9, 1, 3, 6, 11.9]) {
+      assertClose(calcCssAtTime(dose,tau,tinf,ke,V,t), ref(t), 1e-9, `t=${t}`);
+    }
+  });
+  test('F-006: t=0 returns the trough, not zero', ()=>{
+    const c = calcCssAtTime(dose,tau,tinf,ke,V,0);
+    assert(c > 10 && c < 11.5, `expected ~10.77 mg/L at steady state, got ${c.toFixed(3)}`);
+  });
+  test('F-006: continuous at end of infusion', ()=>{
+    const a = calcCssAtTime(dose,tau,tinf,ke,V,tinf);
+    const b = calcCssAtTime(dose,tau,tinf,ke,V,tinf+1e-9);
+    assertClose(a, b, 1e-6, 'continuity at t=tinf');
+  });
+  test('F-006: periodic — C(tau) equals C(0)', ()=>{
+    assertClose(calcCssAtTime(dose,tau,tinf,ke,V,tau),
+                calcCssAtTime(dose,tau,tinf,ke,V,0), 1e-6, 'periodicity');
+  });
+}
+
+{
+  // F-007: the cycle count must follow the terminal half-life, not be assumed.
+  // A Goti patient at CrCl 10 has a ~110 h terminal half-life; 12 q12h cycles
+  // is 1.3 half-lives and read the trough 40% low.
+  const p = gotiPopPK(10, 70, false);
+  const CL=p.TVCL, Vc=p.TVVc, Vp=p.TVVp, Q=p.Q;
+  const k10=CL/Vc, k12=Q/Vc, k21=Q/Vp;
+
+  const converged = (tau, tinfH) => {   // independent reference by iteration
+    let prev=0, cur=0;
+    for (let n=12; n<=4000; n+=4) {
+      const synth = Array.from({length:n},(_,i)=>({mg:250,tinfH,timeH:i*tau}));
+      cur = predictConc2comp(synth, n*tau, k10,k12,k21,Vc);
+      if (Math.abs(cur-prev) < 1e-6) break;
+      prev = cur;
+    }
+    return cur;
+  };
+
+  test('F-007: slow-clearance trough is within 1% of the converged value', ()=>{
+    const got = ssCtrough2comp(250,12,1,CL,Vc,Vp,Q);
+    const ref = converged(12,1);
+    const err = Math.abs(got-ref)/ref;
+    assert(err < 0.01, `trough ${got.toFixed(3)} vs converged ${ref.toFixed(3)} — ${(err*100).toFixed(2)}% off`);
+  });
+  test('F-007: a fixed 12 cycles would NOT have passed that bound', ()=>{
+    const synth = Array.from({length:12},(_,i)=>({mg:250,tinfH:1,timeH:i*12}));
+    const twelve = predictConc2comp(synth, 12*12, k10,k12,k21,Vc);
+    const ref = converged(12,1);
+    assert(Math.abs(twelve-ref)/ref > 0.20,
+      `the retired 12-cycle form should be >20% off; it was ${(Math.abs(twelve-ref)/ref*100).toFixed(1)}%`);
+  });
+  test('F-007: cycle count scales with the terminal half-life', ()=>{
+    const slow = ssCycles2comp(12, k10, k12, k21);
+    const fastP = gotiPopPK(120, 70, false);
+    const f10=fastP.TVCL/fastP.TVVc, f12=fastP.Q/fastP.TVVc, f21=fastP.Q/fastP.TVVp;
+    const fast = ssCycles2comp(12, f10, f12, f21);
+    assert(slow > fast, `slow clearer needs more cycles than fast: ${slow} vs ${fast}`);
+    assert(slow <= 400 && fast >= 12, `cycle count must stay clamped to [12,400], got ${fast}..${slow}`);
+  });
+  test('F-007: troughs stay finite and ordered across intervals', ()=>{
+    let prev = Infinity;
+    for (const tau of [8,12,24,48]) {
+      const c = ssCtrough2comp(250,tau,1,CL,Vc,Vp,Q);
+      assert(Number.isFinite(c) && c > 0, `tau ${tau} gave ${c}`);
+      assert(c < prev, `longer interval must give a lower trough: tau ${tau} -> ${c.toFixed(2)}`);
+      prev = c;
+    }
+  });
+}
 
 // ════════════════════════════════════════════════════════════════════
 // BONUS — aucUncertaintyText() dynamic labels
