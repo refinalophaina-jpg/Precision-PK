@@ -69,7 +69,14 @@ continuous infusion.
    the prior. See `docs/validation-threshold-decisions.md`.
 6. **Never hand-copy a constant into the test harness.** `harness_constants.cjs` parses them
    out of `index.html` and throws if one goes missing.
-7. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
+7. **The theme is mirrored, not invented.** Tokens come from
+   `~/mission-control/domains/ainadara/philosophy/design-tokens.md`, which is extracted from
+   the live ainadara.com stylesheet. If they drift, re-extract there — the site wins. Two
+   documented extensions exist (a raised card level, and a danger red) because a clinical
+   tool needs states a marketing site does not. Theme code must degrade to a no-op without a
+   real DOM: the harness runs this script in a Node `vm` with a stub that has no
+   `documentElement`.
+8. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
    in the decisions doc, and record the numbers that justify the change.
 
 ## Testing
@@ -84,7 +91,7 @@ node phase2d_validation.cjs
 |---|---|
 | `phase2d_validation.cjs` | **68/68 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
-| `phase4_regimen_validation.cjs` | **32/32 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects |
+| `phase4_regimen_validation.cjs` | **40/40 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 
 Syntax check after any edit:
@@ -131,5 +138,8 @@ papers.
 
 Goti 2018 is verified parameter-by-parameter against Table 2 and Methods (15 of 16 exact; the
 16th was a defect, fixed). Buelga 2005 is verified against the published general model.
-**Hughes 2024 and the Module-1 `vancopk`/`matzke`/`bauer` models are NOT yet verified** —
-their primary papers are not in `Literature/`. Treat them as unconfirmed until they are.
+**All eight models are now verified** against primary sources in `Literature/` — see
+`docs/audit-2026-09.md`. Two carry caveats worth knowing: Matzke's Vd split on CrCl 60 uses a
+covariate the paper explicitly disclaims (A10), and the VancoPK clearance equation rests on
+site documentation rather than peer review (A11). Goti's SCr threshold is **65**, per the 2019
+erratum — the 2018 Methods text says 60 and is a known typo. Do not "correct" it.
