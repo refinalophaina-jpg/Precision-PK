@@ -1550,6 +1550,32 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(Math.abs(c - 12.2) < 0.05, `implied CL reproduces ${c.toFixed(2)}, not the measured 12.2`);
   });
 
+  test('When the fit misses, the level-anchored alternative is offered', ()=>{
+    // What the Trough-Based module would say, computed inline so a clinician
+    // does not have to re-enter the case to get the answer from the data they
+    // already have. Reproduces the separately-reported 466 / 13.4 / 26.8.
+    const withReg = Object.assign({}, CASE, { tbw: 69.4, regimen: { dose: 1000, tau: 12, tinfH: 1 } });
+    const fd = fitDiagnostics(withReg);
+    assert(fd.anchored, 'a >1 sigma miss must offer the level-anchored estimate');
+    assert(Math.abs(fd.anchored.auc24 - 466) < 3, `AUC ${fd.anchored.auc24.toFixed(0)}, expected ~466`);
+    assert(Math.abs(fd.anchored.trough - 13.4) < 0.15, `trough ${fd.anchored.trough.toFixed(1)}, expected ~13.4`);
+    assert(Math.abs(fd.anchored.peak - 26.8) < 0.2, `peak ${fd.anchored.peak.toFixed(1)}, expected ~26.8`);
+    assert(Math.abs(fd.anchored.clv - 4.29) < 0.05, `CL ${fd.anchored.clv.toFixed(2)}, expected ~4.29`);
+    // The whole point: it reproduces the measurement, unlike the MAP fit.
+    assert(Math.abs(fd.anchored.trough - fd.rows[0].pred) > 4,
+      'the anchored estimate should differ materially from the prior-dominated fit');
+  });
+
+  test('No anchored estimate when the fit is good or the regimen is unknown', ()=>{
+    const noReg = Object.assign({}, CASE, { tbw: 69.4 });
+    assert(!fitDiagnostics(noReg).anchored, 'without a detected regimen there is nothing to anchor to');
+    const good = JSON.parse(JSON.stringify(CASE));
+    good.tbw = 69.4; good.regimen = { dose: 1000, tau: 12, tinfH: 1 };
+    const pred = predictConc1comp(CASE.doses, CASE.levels[0].timeH, CASE.kel_ind, CASE.V_ind);
+    good.levels = [{ conc: +pred.toFixed(2), timeH: CASE.levels[0].timeH }];
+    assert(!fitDiagnostics(good).anchored, 'a fit that reproduces its level needs no alternative');
+  });
+
   test('A fit that DOES reproduce its level is not flagged', ()=>{
     const good = JSON.parse(JSON.stringify(CASE));
     const pred = predictConc1comp(CASE.doses, CASE.levels[0].timeH, CASE.kel_ind, CASE.V_ind);

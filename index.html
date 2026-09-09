@@ -3843,6 +3843,26 @@ function fitDiagnostics(r) {
   }).filter(x => isFinite(x.pred));
   if (!rows.length) return null;
   const worst = rows.reduce((a, b) => Math.abs(b.sigma) > Math.abs(a.sigma) ? b : a);
+  // The level-anchored alternative: solve kel so the curve passes THROUGH the
+  // measurement, with volume held at the population value. This is exactly what
+  // the Trough-Based module does; surfacing it here means a clinician does not
+  // have to re-enter the case to see it. Only meaningful for a single level on a
+  // recognisable regimen, and only worth showing when the fit actually missed.
+  let anchored = null;
+  if (rows.length === 1 && Math.abs(worst.sigma) >= 1 && r.regimen &&
+      r.regimen.dose > 0 && r.regimen.tau > 0 && r.tbw > 0) {
+    try {
+      const last = r.doses.filter(d => d.timeH <= worst.timeH)
+                          .sort((a, b) => b.timeH - a.timeH)[0];
+      const tObs = last ? worst.timeH - last.timeH : null;
+      const vPop = BUELGA_V_PER_KG * r.tbw;
+      if (tObs > 0 && vPop > 0) {
+        const k = fitKelFromLevel(worst.obs, tObs, r.regimen.dose, r.regimen.tau,
+                                  r.regimen.tinfH || autoTinf(r.regimen.dose), vPop);
+        if (k && isFinite(k.auc24) && k.clv > 0) anchored = { ...k, tObs, vPop };
+      }
+    } catch (e) { anchored = null; }
+  }
   // What clearance would reproduce the levels, expressed as the CrCl that the
   // population model would need to see? Only meaningful for the 1-comp branch,
   // where Buelga maps CL linearly onto CrCl.
@@ -3856,7 +3876,7 @@ function fitDiagnostics(r) {
     }
     impliedCrCl = { CL: CLx, crcl: CLx / BUELGA_CL_SLOPE / ML_MIN_TO_L_H };
   }
-  return { rows, worst, impliedCrCl, sigProp, sigAdd };
+  return { rows, worst, impliedCrCl, anchored, sigProp, sigAdd };
 }
 
 function fmtTau(t) {
@@ -8951,11 +8971,12 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       ${objFinal !== null ? pkRow('Obj (fit)', objFinal.toFixed(2), '—', '') : ''}
     </div>`;
 
+  // One reading of the detected regimen, shared by both diagnostic panels.
+  const cur2 = inferCurrentRegimen(doses, CL_ind, V_ind, r.goti || null);
+
   // ── Do the two priors agree on exposure? ─────────────────────────────────
   (() => {
     if (!nLev) return;                       // no levels: both would just be the prior
-    const dailyDose = rec && rec.dose && rec.tau ? null : null;
-    const cur2 = inferCurrentRegimen(doses, CL_ind, V_ind, r.goti || null);
     const dd = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau) : null;
     if (!dd) return;
     const ag = modelAgreement({ crcl: r.crcl, tbw: r.tbw, dial: r.dial }, doses, levels, dd);
@@ -8995,7 +9016,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Does the fit actually reproduce the levels? ──────────────────────────
   (() => {
-    const fd = fitDiagnostics(r);
+    const fd = fitDiagnostics(Object.assign({}, r, { regimen: cur2 }));
     if (!fd) return;
     const a = Math.abs(fd.worst.sigma);
     const tone = a >= 2 ? 'danger' : a >= 1 ? 'warn' : 'ok';
@@ -9038,6 +9059,31 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <br><strong>With one level, CL and V are not separately identifiable</strong> — a second level,
         or cystatin C, resolves this far better than re-running the fit.
       </div>`;
+      if (fd.anchored) {
+        const aucBayes = cur2 && cur2.dose && cur2.tau ? (cur2.dose * (24 / cur2.tau)) / CL_ind : null;
+        const gap = aucBayes ? Math.abs(fd.anchored.auc24 - aucBayes) / ((fd.anchored.auc24 + aucBayes) / 2) * 100 : null;
+        note += `<div class="fitdx-note" style="border-top:1px solid var(--rule);margin-top:9px;padding-top:9px">
+          <strong>Using the data you already have.</strong> Anchoring on the measurement instead of the
+          prior — solve elimination so the curve passes through your level, volume held at the population
+          value — is what the <em>Trough-Based</em> module does. On this course it gives:
+          <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px">
+            <span class="fitdx-t">Level-anchored</span>
+            <span class="fitdx-n">CL ${fd.anchored.clv.toFixed(2)} L/h</span>
+            <span class="fitdx-n">AUC₂₄ ${fd.anchored.auc24.toFixed(0)}</span>
+          </div>
+          <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr">
+            <span class="fitdx-t">Trough / peak</span>
+            <span class="fitdx-n">${fd.anchored.trough.toFixed(1)} mg/L</span>
+            <span class="fitdx-n">${fd.anchored.peak.toFixed(1)} mg/L</span>
+          </div>
+          ${gap != null ? `<div style="margin-top:6px">That is <strong>${gap.toFixed(0)}%</strong>
+            from the Bayesian AUC above. Where the two disagree, note which one reproduces your
+            measurement — the level-anchored estimate does so by construction.</div>` : ''}
+          <div style="margin-top:6px;color:var(--text-muted)">Its own assumptions: the level is treated as
+            a <strong>steady-state</strong> concentration on this regimen, and volume is fixed at the
+            population value rather than fitted. Both are reasonable here and neither is free.</div>
+        </div>`;
+      }
     }
 
     html += `

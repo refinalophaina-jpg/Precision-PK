@@ -95,7 +95,7 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-09-05) |
 |---|---|
-| `phase2d_validation.cjs` | **125 / 125 pass** |
+| `phase2d_validation.cjs` | **127 / 127 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **40 / 40 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | **6 thresholds fail** — its own verdict is "Share with caveats" |
