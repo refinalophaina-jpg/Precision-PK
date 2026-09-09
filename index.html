@@ -1681,7 +1681,6 @@
   }
 
   /* ═══ PHASE 3 — CONTINUE COURSE TAB ═══ */
-  #app-shell-continue { display:none; }
   .continue-banner {
     padding:12px 14px; border-radius:var(--radius-sm); font-size:0.78rem; line-height:1.5;
     background:rgba(61,142,95,0.08); border:1px solid rgba(61,142,95,0.25); color:var(--accent-sage);
@@ -1689,12 +1688,6 @@
   .continue-banner.empty {
     background:rgba(191,133,48,0.06); border-color:rgba(191,133,48,0.25); color:var(--accent-amber);
   }
-  .continue-profile-select {
-    width:100%; background:var(--bg-input); border:1px solid var(--border);
-    border-radius: var(--radius-sm); padding:8px 10px; font-family:'Outfit',sans-serif;
-    font-size:0.82rem; color:var(--text-primary); outline:none; cursor:pointer;
-  }
-  .continue-profile-select:focus { border-color:var(--terracotta); box-shadow: 0 0 0 3px color-mix(in srgb, var(--terracotta) 18%, transparent); }
   .continue-pk-card {
     background:var(--bg-elevated); border:1px solid var(--border);
     border-radius:var(--radius-sm); padding:12px 14px;
@@ -1704,7 +1697,6 @@
     padding:6px 0; font-size:0.80rem; border-bottom:1px solid rgba(0,0,0,0.05);
   }
   .continue-pk-row:last-child { border-bottom:none; }
-  .continue-pk-row .lbl { color:var(--text-secondary); }
   .continue-pk-row .val {
     font-family:'DM Mono',monospace; color:var(--accent-terra); font-weight:500;
   }
@@ -1725,9 +1717,6 @@
   .continue-result-card .unit {
     font-size:0.62rem; color:var(--text-muted); margin-left:3px;
   }
-  .continue-status-ok      { color:var(--accent-sage); }
-  .continue-status-warn    { color:var(--accent-amber); }
-  .continue-status-danger  { color:var(--accent-rose); }
 
   /* ── Theme toggle ─────────────────────────────────────────────────── */
   .theme-toggle {
@@ -1918,7 +1907,6 @@
   <div class="module-tabs">
     <button class="module-tab active" data-onclick="k1">Trough-Based</button>
     <button class="module-tab" data-onclick="k2">AUC Precision</button>
-    <button class="module-tab" data-onclick="k3">Continue Course</button>
   </div>
   <div class="header-tag">Vancomycin TDM v2.2</div>
   <button class="theme-toggle" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
@@ -2012,6 +2000,21 @@
 
       </div>
     </div>
+
+    <!-- Saved profiles — one store, both modules -->
+    <div class="profile-section">
+      <p class="section-label" style="margin:0">Saved Profiles</p>
+      <div class="profile-save-row">
+        <input type="text" class="profile-label-input" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
+        <button class="profile-save-btn" data-onclick="k37">Save Current</button>
+      </div>
+      <div class="profile-list"></div>
+      <div class="profile-privacy-note">
+        Profiles are stored in this browser only (localStorage). Use de-identified labels — do not enter patient names, MRNs, or other PHI.
+      </div>
+    </div>
+
+    <hr class="section-divider">
 
     <!-- Amputation — hidden until it applies, so the panel stays uncluttered -->
     <label class="amp-toggle">
@@ -2666,11 +2669,11 @@
     </div>
     <div id="b-model-rec-banner" style="display:none"></div>
 
-    <!-- ═══ PHASE 3 — SAVED PROFILES ═══ -->
+    <!-- Saved profiles — one store, both modules -->
     <div class="profile-section">
       <p class="section-label" style="margin:0">Saved Profiles</p>
       <div class="profile-save-row">
-        <input type="text" id="profile-label-input" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
+        <input type="text" class="profile-label-input" id="profile-label-input" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
         <button class="profile-save-btn" data-onclick="k37">Save Current</button>
       </div>
       <div class="profile-list" id="profile-list"></div>
@@ -2904,119 +2907,6 @@
 <!-- ═══════════════════════════════════════════════════════ -->
 <!--  PHASE 3 — CONTINUE COURSE MODULE                       -->
 <!-- ═══════════════════════════════════════════════════════ -->
-<div class="app-shell" id="app-shell-continue" style="display:none">
-
-  <!-- ─── LEFT PANEL — profile picker + PK card ─── -->
-  <div class="panel-left">
-
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <div>
-        <div class="section-label" style="color:var(--accent-sage);margin-bottom:4px">Continue Course</div>
-        <div class="bayes-model-badge">Individualized PK · no re-fit</div>
-      </div>
-    </div>
-
-    <p class="field-hint" style="margin-top:6px">
-      Resumes dosing from a previously fitted Bayesian run. Uses the stored individual PK (CL, V) directly — no re-optimization. To incorporate a new level, switch to <strong>AUC Precision</strong> and re-run.
-    </p>
-
-    <hr class="section-divider">
-
-    <!-- Profile selector -->
-    <div>
-      <p class="section-label">Select Saved Profile</p>
-      <select class="continue-profile-select" id="continue-profile-select" data-onchange="k49">
-        <option value="">— choose a profile with a saved PK fit —</option>
-      </select>
-      <p class="field-hint" style="margin-top:6px">Only profiles saved after running a Bayesian fit are listed.</p>
-    </div>
-
-    <!-- Loaded PK display -->
-    <div id="continue-pk-display" style="display:none;margin-top:14px">
-      <p class="section-label">Loaded Individual PK</p>
-      <div class="continue-pk-card" id="continue-pk-card"></div>
-    </div>
-
-    <hr class="section-divider">
-
-    <!-- Target AUC/MIC -->
-    <div>
-      <p class="section-label">Therapeutic Target</p>
-      <div class="form-grid-2">
-        <div class="field-group">
-          <label class="field-label" for="c-auc-target">AUC₂₄ Target</label>
-          <div class="input-row">
-            <input type="number" id="c-auc-target" value="450" min="400" max="600" step="25">
-            <span class="unit-badge">mg·h/L</span>
-          </div>
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="c-mic">MIC</label>
-          <div class="input-row">
-            <input type="number" id="c-mic" value="1" min="0.5" max="2" step="0.5">
-            <span class="unit-badge">mg/L</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <hr class="section-divider">
-
-    <!-- Dose tinker inputs -->
-    <div id="continue-tinker-inputs" style="display:none">
-      <p class="section-label">Dose Regimen</p>
-      <div class="form-grid-2">
-        <div class="field-group">
-          <label class="field-label" for="c-dose">Dose</label>
-          <div class="input-row">
-            <input type="number" id="c-dose" placeholder="1000" min="250" max="4000" step="50" data-oninput="k50">
-            <span class="unit-badge">mg</span>
-          </div>
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="c-tau">Interval</label>
-          <div class="input-row">
-            <input type="number" id="c-tau" placeholder="12" min="4" max="48" step="2">
-            <span class="unit-badge">h</span>
-          </div>
-        </div>
-      </div>
-      <div class="field-group" style="margin-top:10px">
-        <label class="field-label" for="c-tinf">Infusion Time</label>
-        <div class="input-row">
-          <input type="number" id="c-tinf" placeholder="auto" min="0.5" max="6" step="0.25">
-          <span class="unit-badge">h</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Action buttons -->
-    <div id="continue-actions" style="display:none;flex-direction:column;gap:8px;margin-top:14px">
-      <button class="calc-btn" data-onclick="k51">
-        Calculate Predicted AUC/Peak/Trough
-      </button>
-      <button class="calc-btn reset-style-secondary" data-onclick="k52">
-        Recommend Optimal Regimen
-      </button>
-    </div>
-  </div><!-- /panel-left continue -->
-
-
-  <!-- ─── RIGHT PANEL — results ─── -->
-  <div class="panel-right">
-    <div class="results-placeholder" id="continue-placeholder">
-      <span class="rp-eyebrow">Results</span>
-      <p>Select a saved profile that already carries a Bayesian fit, then press
-         <b>Calculate Predicted AUC/Peak/Trough</b>.</p>
-      <ul class="rp-list">
-        <li><b>That patient's own PK</b> — reused, not re-estimated</li>
-        <li><b>Predicted AUC<sub>24</sub>, peak and trough</b> for a regimen you choose</li>
-        <li><b>An optimal regimen</b> against their individual clearance</li>
-      </ul>
-    </div>
-    <div id="continue-results" style="display:none;flex-direction:column;gap:16px"></div>
-  </div>
-</div><!-- /app-shell-continue -->
 
 
 <script>
@@ -3034,7 +2924,6 @@ const __ACT = {
   k0: (el, ev, arg) => { window.print() },   /* window.print() */
   k1: (el, ev, arg) => { switchModule('trough') },   /* switchModule('trough') */
   k2: (el, ev, arg) => { switchModule('auc') },   /* switchModule('auc') */
-  k3: (el, ev, arg) => { switchModule('continue') },   /* switchModule('continue') */
   k4: (el, ev, arg) => { toggleTheme() },   /* toggleTheme() */
   k5: (el, ev, arg) => { setCalcMode('initial') },   /* setCalcMode('initial') */
   k6: (el, ev, arg) => { setCalcMode('level') },   /* setCalcMode('level') */
@@ -3080,10 +2969,7 @@ const __ACT = {
   k46: (el, ev, arg) => { addBayesLevel() },   /* addBayesLevel() */
   k47: (el, ev, arg) => { runBayesian() },   /* runBayesian() */
   k48: (el, ev, arg) => { resetBayesian() },   /* resetBayesian() */
-  k49: (el, ev, arg) => { loadContinueProfile(el.value) },   /* loadContinueProfile(this.value) */
   k50: (el, ev, arg) => { autoFillTinf(el.value,'c-tinf') },   /* autoFillTinf(this.value,'c-tinf') */
-  k51: (el, ev, arg) => { runContinueTinker() },   /* runContinueTinker() */
-  k52: (el, ev, arg) => { runContinueOptimizer() },   /* runContinueOptimizer() */
   k53: (el, ev, arg) => { showResultTab('tab-initial') },   /* showResultTab('tab-initial') */
   k54: (el, ev, arg) => { showResultTab('tab-level') },   /* showResultTab('tab-level') */
   k55: (el, ev, arg) => { showResultTab('tab-twolevels') },   /* showResultTab('tab-twolevels') */
@@ -3226,13 +3112,13 @@ let state = { sex:'M', dosingWt:'TBW', levelType:'trough', isSS:true, calcMode:'
 // ══════════════════════════════════════════
 function switchModule(m) {
   const tabs = document.querySelectorAll('.module-tab');
-  const order = ['trough','auc','continue'];
+  const order = ['trough','auc'];
   tabs.forEach((t,i) => t.classList.toggle('active', order[i] === m));
   document.querySelector('.app-shell').style.display         = m === 'trough'   ? 'grid' : 'none';
   document.getElementById('app-shell-bayesian').style.display = m === 'auc'      ? 'grid' : 'none';
-  const contShell = document.getElementById('app-shell-continue');
-  if (contShell) contShell.style.display = m === 'continue' ? 'grid' : 'none';
-  if (m === 'continue' && typeof renderContinueProfileList === 'function') renderContinueProfileList();
+
+
+
 }
 
 function setSex(el, val) {
@@ -3686,10 +3572,10 @@ document.addEventListener('keydown', function (e) {
   if (tag === 'textarea' || tag === 'button' || tag === 'a') return;
   if (tag !== 'input' && tag !== 'select') return;
   const inBayes = !!t.closest && !!t.closest('#app-shell-bayesian');
-  const inCont  = !!t.closest && !!t.closest('#app-shell-continue');
+
   try {
     if (inBayes)      { e.preventDefault(); runBayesian(); }
-    else if (inCont)  { e.preventDefault(); runContinueOptimizer(); }
+
     else              { e.preventDefault(); calculate(); }
   } catch (err) { /* a validation alert is the expected path; never trap the key */ }
 });
@@ -9703,7 +9589,7 @@ function persistProfiles(list) {
 
 // Snapshot every field the Bayesian form needs to re-hydrate to its current state.
 // CODEX F-003. A profile saved after editing demographics kept the PREVIOUS
-// fit, so Continue Course could consume an old CL/V as if it belonged to the new
+// fit, so a reloaded profile could consume an old CL/V as if it belonged to the new
 // patient data. Each completed fit now carries a fingerprint of the inputs it
 // was computed from; a snapshot whose fingerprint no longer matches is marked
 // stale rather than presented as current.
@@ -9771,7 +9657,7 @@ function snapshotBayesForm() {
   // CODEX F-003. Guard at the SOURCE, not only at the save button. This function
   // paired whatever is currently in the form with whatever fit last happened to
   // be in bState — so editing SCr from 1 to 4 produced a snapshot claiming SCr 4
-  // with the CL fitted at SCr 1, and Continue Course consumed it as that
+  // with the CL fitted at SCr 1, and a reloaded profile consumed it as that
   // patient's individual PK. A snapshot now states whether its fit belongs to
   // its own inputs; a stale fit is carried as `staleFit` and never as `fit`, so
   // no consumer can mistake it for current.
@@ -9792,21 +9678,102 @@ function snapshotBayesForm() {
   };
 }
 
+// ─── Patient core: the fields both modules mean the same thing by ──────────
+// Saved profiles used to be Bayesian-only, so the same patient had to be typed
+// twice to work in both modules. One mapping, applied in both directions.
+const PATIENT_CORE_FIELDS = [
+  { key:'age',       trough:'age',         bayes:'b-age' },
+  { key:'tbw',       trough:'tbw',         bayes:'b-tbw' },
+  { key:'height',    trough:'height',      bayes:'b-height' },
+  { key:'scr',       trough:'scr',         bayes:'b-scr' },
+  { key:'cysc',      trough:'cysc',        bayes:null },
+  { key:'mic',       trough:'mic',         bayes:'b-mic' },
+  { key:'troughMin', trough:'trough-min',  bayes:null },
+  { key:'troughMax', trough:'trough-max',  bayes:null },
+  { key:'aucTarget', trough:null,          bayes:'b-auc-target' },
+];
+
+function snapshotPatientCore() {
+  const val = id => (id && document.getElementById(id)?.value) || '';
+  const core = {};
+  for (const f of PATIENT_CORE_FIELDS) {
+    // Prefer whichever module actually has a value, so saving from either works.
+    core[f.key] = val(f.bayes) || val(f.trough) || '';
+  }
+  core.sex       = (typeof bState !== 'undefined' && bState.sex) || state.sex || 'M';
+  core.dosingWt  = state.dosingWt || 'TBW';
+  core.amputation = Object.assign({}, ampState);
+  core.crcl      = (crclOverride.on && crclOverride.value > 0)
+                     ? { on:true, value:crclOverride.value } : { on:false, value:null };
+  return core;
+}
+
+function applyPatientCore(core) {
+  if (!core) return;
+  const set = (id, v) => {
+    const el = id && document.getElementById(id);
+    if (el && v != null && v !== '') { el.value = v; }
+  };
+  for (const f of PATIENT_CORE_FIELDS) {
+    set(f.trough, core[f.key]);
+    set(f.bayes,  core[f.key]);
+  }
+  // Sex and dosing-weight basis are toggles, not inputs — drive them through
+  // the same setters the buttons use so the active styling follows.
+  try {
+    if (core.sex) {
+      const sexBtns = document.querySelectorAll('#app-shell-bayesian .toggle-opt');
+      state.sex = core.sex;
+      if (typeof bState !== 'undefined') bState.sex = core.sex;
+      document.querySelectorAll('.toggle-group').forEach(g => {
+        const opts = g.querySelectorAll('.toggle-opt');
+        if (opts.length === 2 && /male/i.test(opts[0].textContent)) {
+          opts[0].classList.toggle('active', core.sex === 'M');
+          opts[1].classList.toggle('active', core.sex === 'F');
+        }
+      });
+    }
+    if (core.amputation) {
+      Object.keys(ampState).forEach(k => { ampState[k] = core.amputation[k] || null; });
+      const cb = document.getElementById('amp-enabled');
+      const any = Object.values(ampState).some(Boolean);
+      if (cb) { cb.checked = any; ampToggleEnabled(cb); }
+    }
+    if (core.crcl) {
+      const cb = document.getElementById('crcl-override-on');
+      const inp = document.getElementById('crcl-override-val');
+      if (cb) cb.checked = !!core.crcl.on;
+      if (inp && core.crcl.value != null) inp.value = core.crcl.value;
+      if (typeof setCrclOverride === 'function') setCrclOverride();
+    }
+  } catch (e) { /* a missing control must never block a profile load */ }
+  try { if (typeof autoWeights === 'function') autoWeights(); } catch (e) {}
+  try { if (typeof updateCrCl === 'function') updateCrCl(); } catch (e) {}
+  try { if (typeof updateBayesCrCl === 'function') updateBayesCrCl(); } catch (e) {}
+}
+
 function saveCurrentProfile() {
   // CODEX F-003. A profile saved after editing demographics used to keep the
-  // PREVIOUS fit, so Continue Course would consume an old CL/V as though it
+  // PREVIOUS fit, so a reloaded profile would consume an old CL/V as though it
   // belonged to the new patient data. Refuse to pair the two silently.
-  if (typeof bayesFitIsStale === 'function' && bayesFitIsStale()) {
+  if (typeof bayesFitIsStale === 'function' && bState && bState.result && bayesFitIsStale()) {
     if (!confirm('The inputs have changed since the last calculation, so the stored '
       + 'individual PK does not belong to these values.\n\nSave the profile WITHOUT '
       + 'the fitted PK? (Recalculate first to store a matching fit.)')) return;
     bState.result = null; bState.resultFingerprint = null;
   }
-  const labelEl = document.getElementById('profile-label-input');
-  const label   = (labelEl?.value || '').trim();
+  const labelEls = [...document.querySelectorAll('.profile-label-input')];
+  const labelEl  = labelEls.find(e => (e.value || '').trim()) || labelEls[0];
+  const label    = (labelEl?.value || '').trim();
   if (!label) { alert('Enter a label before saving.'); return; }
   const snapshot = snapshotBayesForm();
-  if (!snapshot.demographics.age && !snapshot.doses.length && !snapshot.levels.length) {
+  // The core is what makes a profile usable from either module.
+  snapshot.core = snapshotPatientCore();
+  // "Is anything entered" must look at the CORE, not only the Bayesian form — a
+  // profile saved from the Trough-Based module has no dose history and its
+  // demographics live in the other set of inputs.
+  const coreEmpty = !snapshot.core || !PATIENT_CORE_FIELDS.some(f => snapshot.core[f.key]);
+  if (coreEmpty && !snapshot.doses.length && !snapshot.levels.length) {
     if (!confirm('Nothing entered yet. Save an empty profile anyway?')) return;
   }
   const profiles = loadProfiles();
@@ -9817,7 +9784,7 @@ function saveCurrentProfile() {
   };
   profiles.unshift(entry);
   if (!persistProfiles(profiles)) return;
-  if (labelEl) labelEl.value = '';
+  labelEls.forEach(e => { e.value = ''; });
   renderProfileList();
 }
 
@@ -9838,7 +9805,21 @@ function loadProfileIntoForm(id) {
 
   resetBayesian();
 
-  const set = (elId, v) => { const el = document.getElementById(elId); if (el && v != null) el.value = v; };
+  // Patient core first, so BOTH modules carry this patient. Older profiles have
+  // no core; fall back to their Bayesian demographics so they still load.
+  applyPatientCore(s.core || {
+    age: s.demographics?.age, tbw: s.demographics?.tbw, height: s.demographics?.height,
+    scr: s.demographics?.scr, sex: s.demographics?.sex,
+    aucTarget: s.target?.auc, mic: s.target?.mic,
+  });
+
+  // Skip empties: resetBayesian() has already cleared the form, and the patient
+  // core was applied above. A profile saved from the Trough-Based module carries
+  // empty Bayesian demographics, and writing those back would clobber the core.
+  const set = (elId, v) => {
+    const el = document.getElementById(elId);
+    if (el && v != null && v !== '') el.value = v;
+  };
   set('b-age',    s.demographics.age);
   set('b-tbw',    s.demographics.tbw);
   set('b-height', s.demographics.height);
@@ -9904,15 +9885,15 @@ function loadProfileIntoForm(id) {
 }
 
 function renderProfileList() {
-  const wrap = document.getElementById('profile-list');
-  if (!wrap) return;
+  const wraps = [...document.querySelectorAll('.profile-list')];
+  if (!wraps.length) return;
   const profiles = loadProfiles();
   if (!profiles.length) {
-    wrap.innerHTML = '<div class="profile-empty-msg">No saved profiles yet.</div>';
+    wraps.forEach(w => { w.innerHTML = '<div class="profile-empty-msg">No saved profiles yet.</div>'; });
     return;
   }
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  wrap.innerHTML = profiles.map(p => {
+  const html = profiles.map(p => {
     const dt = new Date(p.savedAt);
     const dtStr = dt.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
     const nDoses  = p.snapshot?.doses?.length  || 0;
@@ -9934,220 +9915,22 @@ function renderProfileList() {
         </div>
       </div>`;
   }).join('');
+  wraps.forEach(w => { w.innerHTML = html; });
 }
 
 // ══════════════════════════════════════════
 //  PHASE 3 — CONTINUE COURSE (individualized PK reuse)
 // ══════════════════════════════════════════
-let continueState = null;
 
-function renderContinueProfileList() {
-  const sel = document.getElementById('continue-profile-select');
-  if (!sel) return;
-  const profiles = loadProfiles().filter(p => p.snapshot && p.snapshot.fit);
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">— choose a profile with a saved PK fit —</option>' +
-    profiles.map(p => {
-      const dt = new Date(p.savedAt).toLocaleString(undefined,
-        { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-      const model =
-        p.snapshot.fit.model === 'goti'   ? 'Goti'   :
-        p.snapshot.fit.model === 'hughes' ? 'Hughes' :
-                                            'Buelga';
-      return `<option value="${p.id}">${escHtml(p.label)} — ${model} · ${dt}</option>`;
-    }).join('');
-  if (prev && profiles.find(p => p.id === prev)) sel.value = prev;
-  if (!profiles.length) {
-    sel.innerHTML = '<option value="">— no profiles with PK fit available —</option>';
-  }
-}
 
 function escHtml(s) {
   return String(s).replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function loadContinueProfile(id) {
-  const cardDiv    = document.getElementById('continue-pk-display');
-  const card       = document.getElementById('continue-pk-card');
-  const inputsDiv  = document.getElementById('continue-tinker-inputs');
-  const actionsDiv = document.getElementById('continue-actions');
-  const placeholder= document.getElementById('continue-placeholder');
-  const resultsDiv = document.getElementById('continue-results');
 
-  if (!id) {
-    continueState = null;
-    if (cardDiv)    cardDiv.style.display    = 'none';
-    if (inputsDiv)  inputsDiv.style.display  = 'none';
-    if (actionsDiv) actionsDiv.style.display = 'none';
-    if (placeholder)placeholder.style.display= 'flex';
-    if (resultsDiv){ resultsDiv.style.display = 'none'; resultsDiv.innerHTML = ''; }
-    return;
-  }
 
-  const entry = loadProfiles().find(p => p.id === id);
-  if (!entry || !entry.snapshot?.fit) { alert('Profile has no saved PK fit.'); return; }
 
-  // CODEX F-004. The clear above only ran for the "no profile" case, so a
-  // valid-to-valid switch updated the PK card while leaving the PREVIOUS
-  // profile's dose predictions on screen — two patients' numbers visible at
-  // once. Any change of selection invalidates the displayed results.
-  if (!continueState || continueState.profileId !== id) {
-    if (resultsDiv) { resultsDiv.style.display = 'none'; resultsDiv.innerHTML = ''; }
-  }
-
-  const fit = entry.snapshot.fit;
-  const is2comp = (fit.model === 'goti' || fit.model === 'hughes') && fit.goti;
-  const modelName =
-    fit.model === 'hughes' ? 'Hughes 2024 (obese, 2-comp)' :
-    fit.model === 'goti'   ? 'Goti 2018 (2-comp)' :
-                             'Buelga 2005 (1-comp)';
-  continueState = {
-    profileId: entry.id, label: entry.label, savedAt: entry.savedAt,
-    model: fit.model,
-    CL_ind: fit.CL_ind, V_ind: fit.V_ind,
-    CL_pop: fit.CL_pop, V_pop: fit.V_pop,
-    goti:   is2comp ? { Vc_ind: fit.goti.Vc_ind, Vp_ind: fit.goti.Vp_ind,
-                        Vc_pop: fit.goti.Vc_pop, Vp_pop: fit.goti.Vp_pop,
-                        Q: fit.goti.Q } : null
-  };
-
-  const kel = fit.CL_ind / fit.V_ind;
-  const t12 = Math.log(2) / kel;
-  const savedDt = new Date(entry.savedAt).toLocaleString();
-  let rows = `
-    <div class="continue-pk-row"><span class="lbl">Model</span><span class="val">${modelName}</span></div>
-    <div class="continue-pk-row"><span class="lbl">CL<sub>ind</sub></span><span class="val">${fit.CL_ind.toFixed(2)} L/h</span></div>
-    <div class="continue-pk-row"><span class="lbl">${is2comp ? 'Vc<sub>ind</sub>' : 'V<sub>ind</sub>'}</span><span class="val">${fit.V_ind.toFixed(1)} L</span></div>`;
-  if (is2comp) {
-    rows += `<div class="continue-pk-row"><span class="lbl">Vp<sub>ind</sub></span><span class="val">${fit.goti.Vp_ind.toFixed(1)} L</span></div>`;
-    if (fit.goti.Q != null) {
-      rows += `<div class="continue-pk-row"><span class="lbl">Q (intercmpt)</span><span class="val">${fit.goti.Q.toFixed(2)} L/h</span></div>`;
-    }
-  }
-  rows += `
-    <div class="continue-pk-row"><span class="lbl">k<sub>el</sub></span><span class="val">${kel.toFixed(3)} h⁻¹</span></div>
-    <div class="continue-pk-row"><span class="lbl">t½</span><span class="val">${t12.toFixed(1)} h</span></div>
-    <div class="continue-pk-row"><span class="lbl" style="color:var(--text-muted);font-size:0.7rem">Fitted</span><span class="val" style="color:var(--text-muted);font-size:0.7rem">${escHtml(savedDt)}</span></div>`;
-  card.innerHTML = rows;
-
-  cardDiv.style.display    = 'block';
-  inputsDiv.style.display  = 'block';
-  actionsDiv.style.display = 'flex';
-  placeholder.style.display= 'none';
-
-  const target = entry.snapshot.target || {};
-  if (target.auc) document.getElementById('c-auc-target').value = target.auc;
-  if (target.mic) document.getElementById('c-mic').value = target.mic;
-
-  // Seed dose inputs from the last recorded dose, if any
-  const lastDose = entry.snapshot.doses?.[entry.snapshot.doses.length - 1];
-  const doseEl = document.getElementById('c-dose');
-  const tauEl  = document.getElementById('c-tau');
-  const tinfEl = document.getElementById('c-tinf');
-  if (lastDose && doseEl && !doseEl.value) {
-    doseEl.value = lastDose.mg || '';
-    if (tinfEl && lastDose.tinf) tinfEl.value = lastDose.tinf;
-  }
-  if (tauEl && !tauEl.value) tauEl.value = '12';
-  if (doseEl && !doseEl.value) doseEl.value = '1000';
-  if (tinfEl && !tinfEl.value) tinfEl.value = autoTinf(parseFloat(doseEl.value) || 1000);
-}
-
-function statusClassFor(val, lo, hi) {
-  if (val < lo) return 'continue-status-warn';
-  if (val > hi) return 'continue-status-danger';
-  return 'continue-status-ok';
-}
-
-function runContinueTinker() {
-  if (!continueState) { alert('Select a profile first.'); return; }
-  const dose = parseFloat(document.getElementById('c-dose').value);
-  const tau  = parseFloat(document.getElementById('c-tau').value);
-  const tinfH= parseFloat(document.getElementById('c-tinf').value) || autoTinf(dose);
-  const mic  = parseFloat(document.getElementById('c-mic').value) || 1;
-  if (!(dose > 0 && tau > 0)) { alert('Enter dose and interval.'); return; }
-
-  const { CL_ind, V_ind, goti, model } = continueState;
-  const auc24 = dose * (24/tau) / CL_ind;
-  let Ctrough, Cpeak;
-  if (goti) {
-    Ctrough = ssCtrough2comp(dose, tau, tinfH, CL_ind, goti.Vc_ind, goti.Vp_ind, goti.Q);
-    Cpeak   = ssPeak2comp(dose, tau, tinfH, CL_ind, goti.Vc_ind, goti.Vp_ind, goti.Q);
-  } else {
-    const kel = CL_ind / V_ind;
-    const R0  = dose / tinfH;
-    const denom = 1 - Math.exp(-kel * tau);
-    const Cpeak_inf = (R0 / (kel * V_ind)) * (1 - Math.exp(-kel * tinfH));
-    Ctrough = Cpeak_inf * Math.exp(-kel * (tau - tinfH)) / denom;
-    Cpeak   = Cpeak_inf / denom;
-  }
-  const aucMic = auc24 / mic;
-
-  const aucCls   = statusClassFor(auc24, 400, 600);
-  const trCls    = statusClassFor(Ctrough, 10, 20);
-  const aucMicCls= aucMic >= 400 ? 'continue-status-ok' : 'continue-status-warn';
-
-  const out = document.getElementById('continue-results');
-  const placeholder = document.getElementById('continue-placeholder');
-  placeholder.style.display = 'none';
-  out.style.display = 'flex';
-  out.innerHTML = `
-    <div class="continue-banner">
-      Using individual PK from <strong>${escHtml(continueState.label)}</strong>
-      · model ${
-        continueState.model === 'hughes' ? 'Hughes 2024 (obese, 2-comp)' :
-        continueState.model === 'goti'   ? 'Goti 2018 (2-comp)' :
-                                           'Buelga 2005 (1-comp)'
-      }
-      · fit saved ${new Date(continueState.savedAt).toLocaleString()}
-    </div>
-    <div class="result-card">
-      <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:10px">
-        Predicted Steady State — ${dose} mg Q${tau}H (${tinfH}h infusion)
-      </div>
-      <div class="continue-result-grid">
-        <div class="continue-result-card">
-          <div class="lbl">AUC₂₄</div>
-          <div class="val ${aucCls}">${auc24.toFixed(0)}<span class="unit">mg·h/L</span></div>
-          <div style="font-size:0.6rem;color:var(--text-muted);margin-top:3px">Target 400–600</div>
-        </div>
-        <div class="continue-result-card">
-          <div class="lbl">Peak (SS)</div>
-          <div class="val">${Cpeak.toFixed(1)}<span class="unit">mg/L</span></div>
-        </div>
-        <div class="continue-result-card">
-          <div class="lbl">Trough (SS)</div>
-          <div class="val ${trCls}">${Ctrough.toFixed(1)}<span class="unit">mg/L</span></div>
-          <div style="font-size:0.6rem;color:var(--text-muted);margin-top:3px">Target 10–20</div>
-        </div>
-      </div>
-      <div class="continue-result-grid" style="grid-template-columns:1fr;margin-top:10px">
-        <div class="continue-result-card">
-          <div class="lbl">AUC/MIC (MIC ${mic})</div>
-          <div class="val ${aucMicCls}">${aucMic.toFixed(0)}</div>
-          <div style="font-size:0.6rem;color:var(--text-muted);margin-top:3px">Target ≥ 400</div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function runContinueOptimizer() {
-  if (!continueState) { alert('Select a profile first.'); return; }
-  const target = parseFloat(document.getElementById('c-auc-target').value) || 450;
-  const { CL_ind, V_ind, goti } = continueState;
-  const rec = bayesDoseOptimizer(CL_ind, V_ind, target,
-    goti ? { Vc: goti.Vc_ind, Vp: goti.Vp_ind, Q: goti.Q } : null);
-  if (!rec || rec.noSolution) {
-    alert(rec && rec.reason ? rec.reason
-      : 'No regimen could be recommended for this clearance and target.');
-    return;
-  }
-  document.getElementById('c-dose').value = rec.dose;
-  document.getElementById('c-tau').value  = rec.tau;
-  document.getElementById('c-tinf').value = rec.tinfH;
-  runContinueTinker();
-}
 
 // ══════════════════════════════════════════
 //  PHASE 3 — PRINT REPORT (FAB visibility + canvas image swap)
@@ -10155,7 +9938,7 @@ function runContinueOptimizer() {
 //  PRINT REPORT — Dedicated Report Builder
 // ══════════════════════════════════════════
 function _resultsHaveContent() {
-  const ids = ['results-content','b-results','continue-results'];
+  const ids = ['results-content','b-results'];
   return ids.some(id => {
     const el = document.getElementById(id);
     if (!el) return false;
@@ -10171,7 +9954,7 @@ function updatePrintFabVisibility() {
 
 (function watchResults() {
   if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
-  const ids = ['results-content','b-results','continue-results'];
+  const ids = ['results-content','b-results'];
   const onChange = () => updatePrintFabVisibility();
   ids.forEach(id => {
     const el = document.getElementById(id);
@@ -10300,9 +10083,7 @@ function _buildPrintReport() {
   const r = bayesVisible ? bState.result : null;
   if (!r) {
     const rc = document.getElementById('results-content');
-    const cc = document.getElementById('continue-results');
-    const visible = (rc && rc.style.display !== 'none' && rc.children.length > 0) ? rc
-                  : (cc && cc.style.display !== 'none' && cc.children.length > 0) ? cc : null;
+    const visible = (rc && rc.style.display !== 'none' && rc.children.length > 0) ? rc : null;
     if (!visible) return null;
     const now = (() => { const _d=new Date(), _p=(v)=>String(v).padStart(2,'0'); return `${_d.getFullYear()}-${_p(_d.getMonth()+1)}-${_p(_d.getDate())} ${_p(_d.getHours())}:${_p(_d.getMinutes())}`; })();
     let h = `<div class="pr-header"><div class="pr-brand">AinaDara</div>
@@ -10524,7 +10305,6 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 // Init
 updateModelInfo();
 renderProfileList();
-renderContinueProfileList();
 updatePrintFabVisibility();
 
 // 24h time input helper: auto-insert colon, validate HH:MM

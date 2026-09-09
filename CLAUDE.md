@@ -31,16 +31,26 @@ git hash-object index.html
 | 1,530–2,520 | Markup — print report, header, module tabs, the three module panels |
 | 2,520–end | One inline `<script>` — the whole engine and UI |
 
-**Three modules** (tabs, switched by `switchModule()`), not five:
+**Two modules** (tabs, switched by `switchModule()`):
 
 1. **Trough-Based** — deterministic. Four sub-modes via `setCalcMode()`: `initial`,
    `level` (steady-state trough), `twolevels` (Sawchuk–Zaske), `randomlevel`.
 2. **AUC Precision** — MAP Bayesian, `runBayesian()`. Four priors: Buelga 2005 (1-comp),
    Goti 2018 (2-comp), Goti-HD, Hughes 2024 (FFM-scaled, class-3 obesity).
-3. **Continue Course** — reload a saved profile's individual PK and re-dose.
+
+> **Continue Course was removed in v2.2.** It re-dosed against a saved profile's
+> *stored* fit without re-fitting — the one thing AUC Precision could not do, and a
+> liability rather than a feature: it used yesterday's parameters and displayed none
+> of the fit diagnostics, model agreement or level-anchored fallback. Loading a
+> profile into AUC Precision does everything it did, and re-fits. `SUITE 18` fails if
+> any of its identifiers return. Note the clinical `action:'continue'` (continue the
+> current regimen) is unrelated and must not be swept up with it.
 
 Cross-cutting: KDIGO AKI staging from serial creatinine, ARC and very-low-CrCl advisories,
-cystatin C discordance check, `localStorage` profiles, print report.
+cystatin C discordance check, print report, and **saved profiles that work in both
+modules** — a profile carries a `core` (`PATIENT_CORE_FIELDS`) mapping the fields both
+modules mean the same thing by, so saving from either and loading fills both. Older
+profiles without a `core` fall back to their Bayesian demographics.
 
 **Not implemented — do not imply otherwise in the UI:** CRRT, paediatrics, neonates,
 continuous infusion.
@@ -89,7 +99,7 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **127/127 pass** |
+| `phase2d_validation.cjs` | **134/134 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **40/40 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |

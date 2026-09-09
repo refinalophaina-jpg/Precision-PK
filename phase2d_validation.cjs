@@ -1686,6 +1686,86 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 18 — two modules, and profiles that work in both
+//
+// Continue Course did one thing AUC Precision could not: re-dose against a
+// STORED fit without re-fitting. That is a liability rather than a feature —
+// it used yesterday's parameters and showed none of the v2.2 safety signals.
+// Removed. Saved profiles now carry a patient core both modules can read.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const body   = src.slice(src.indexOf('<body>'));
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 18 — module surface + cross-module profiles');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('Continue Course is gone, with no orphans left behind', ()=>{
+    const dead = ['continueState','loadContinueProfile','runContinueTinker','runContinueOptimizer',
+                  'app-shell-continue','continue-placeholder','continue-results',
+                  'continue-profile-select','renderContinueProfileList','statusClassFor'];
+    const found = dead.filter(d => src.includes(d));
+    assert(found.length === 0, `orphaned references remain: ${found.join(', ')}`);
+  });
+
+  test('The clinical action:"continue" is NOT collateral damage', ()=>{
+    // 'continue the current regimen' is a dose recommendation, unrelated to the
+    // removed module. Deleting it would silently change what the tool advises.
+    const n = (script.match(/action:\s*'continue'/g) || []).length;
+    assert(n >= 2, `action:'continue' occurrences ${n} — the clinical action was removed by mistake`);
+  });
+
+  test('Exactly two modules are offered', ()=>{
+    const tabs = body.match(/<button class="module-tab[^"]*"/g) || [];
+    assert(tabs.length === 2, `${tabs.length} module tabs, expected 2`);
+    assert(/const order = \['trough','auc'\];/.test(script), 'the module order list still names a third');
+  });
+
+  test('The patient core maps onto BOTH modules', ()=>{
+    assert(/const PATIENT_CORE_FIELDS = \[/.test(script), 'PATIENT_CORE_FIELDS is missing');
+    const block = script.slice(script.indexOf('const PATIENT_CORE_FIELDS = ['));
+    const rows = block.slice(0, block.indexOf('];')).match(/\{ key:[^}]*\}/g) || [];
+    assert(rows.length >= 8, `only ${rows.length} core fields mapped`);
+    // Every row names at least one real input, and the shared ones name both.
+    ['age','tbw','height','scr'].forEach(k => {
+      const row = rows.find(r => r.includes(`key:'${k}'`));
+      assert(row, `core field '${k}' missing`);
+      assert(/trough:'[^']+'/.test(row) && /bayes:'[^']+'/.test(row),
+        `'${k}' must map to an input in BOTH modules: ${row}`);
+    });
+  });
+
+  test('Both save/load helpers exist and are wired to the shared class', ()=>{
+    assert(/function snapshotPatientCore\s*\(/.test(script), 'snapshotPatientCore missing');
+    assert(/function applyPatientCore\s*\(/.test(script), 'applyPatientCore missing');
+    assert(/snapshot\.core = snapshotPatientCore\(\)/.test(script), 'save does not capture the core');
+    assert(/applyPatientCore\(/.test(script), 'load does not apply the core');
+    const lists = (body.match(/class="profile-list"/g) || []).length;
+    const inputs = (body.match(/class="profile-label-input"/g) || []).length;
+    assert(lists === 2, `${lists} profile panels, expected one per module`);
+    assert(inputs === 2, `${inputs} profile label inputs, expected one per module`);
+  });
+
+  test('No duplicate element ids across the two profile panels', ()=>{
+    ['profile-list','profile-label-input'].forEach(id => {
+      const n = (body.match(new RegExp(`id="${id}"`, 'g')) || []).length;
+      assert(n <= 1, `id="${id}" appears ${n} times — duplicate ids break getElementById`);
+    });
+  });
+
+  test('Saving from either module is not blocked by Bayesian-only guards', ()=>{
+    // The "nothing entered" check read the Bayesian age field, so a profile
+    // saved from the Trough-Based module looked empty and prompted.
+    assert(/const coreEmpty = !snapshot\.core/.test(script),
+      'the empty-profile guard still ignores the patient core');
+    assert(/bState && bState\.result && bayesFitIsStale\(\)/.test(script),
+      'the staleness guard still fires when there is no Bayesian result to be stale about');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUITE 14 — CSP compatibility
 //
 // The app ships under a hash-pinned CSP with no 'unsafe-inline' and no

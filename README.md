@@ -61,7 +61,7 @@ public, and they are third-party copyrighted papers.
 
 ## Modules
 
-**Trough-Based** — deterministic, four sub-modes: initial population dose (with loading
+Two modules. **Trough-Based** — deterministic, four sub-modes: initial population dose (with loading
 dose), steady-state trough fit, two-level Sawchuk–Zaske, and single random level.
 
 **AUC Precision** — MAP Bayesian fitting against a Burton 1985 objective, with four
@@ -74,7 +74,6 @@ population priors:
 | Goti 2018 (HD) | 2-compartment | Intermittent haemodialysis |
 | Hughes 2024 | 2-compartment, FFM-scaled | Class-3 obesity |
 
-**Continue Course** — reload a saved profile's individual PK and re-dose against it.
 
 Cross-cutting: KDIGO AKI staging from serial creatinine, augmented-renal-clearance and
 very-low-CrCl advisories, `localStorage` profiles, and a print report.
@@ -95,7 +94,7 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-09-05) |
 |---|---|
-| `phase2d_validation.cjs` | **127 / 127 pass** |
+| `phase2d_validation.cjs` | **134 / 134 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **40 / 40 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | **6 thresholds fail** — its own verdict is "Share with caveats" |
