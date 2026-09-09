@@ -1508,6 +1508,69 @@
   }
   .bayes-pk-row:last-child { border-bottom:none; }
   .bayes-pk-row:hover { background:var(--paper-deep); }
+
+  /* Amputation — revealed only when it applies. */
+  .amp-toggle {
+    display:flex; align-items:center; gap:9px; cursor:pointer;
+    margin-top:14px; font-size:0.8rem; color:var(--text-secondary); min-height:44px;
+  }
+  .amp-toggle input { width:16px; height:16px; accent-color:var(--terracotta); cursor:pointer; flex-shrink:0; }
+  .amp-figure-wrap { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+  .amp-figure { width:150px; height:auto; flex-shrink:0; }
+  .amp-body      { fill:var(--paper-deep); stroke:var(--ink-faint); stroke-width:1.5; }
+  .amp-body-line { stroke:var(--ink-faint); stroke-linecap:round; fill:none; }
+  .amp-seg {
+    stroke:var(--ink-soft); stroke-width:11; stroke-linecap:round; fill:none;
+    transition:stroke .2s ease, opacity .2s ease;
+  }
+  .amp-seg.thick { stroke-width:14; }
+  .amp-seg.thin  { stroke-width:8; }
+  .amp-seg.gone  { stroke:var(--rule); opacity:0.45; stroke-dasharray:3 4; }
+  .amp-joints circle {
+    fill:var(--paper); stroke:var(--terracotta-q); stroke-width:2; cursor:pointer;
+    transition:fill .15s ease, stroke .15s ease;
+  }
+  .amp-joints circle:hover      { fill:var(--terracotta-q); }
+  .amp-joints circle.selected   { fill:var(--terracotta); stroke:var(--terracotta); }
+  .amp-readout { flex:1; min-width:180px; font-size:0.78rem; line-height:1.6; }
+  .amp-readout .amp-pct {
+    font-family:'DM Mono',monospace; font-size:1.5rem; color:var(--terracotta); line-height:1;
+  }
+  .amp-readout dl { display:grid; grid-template-columns:auto 1fr; gap:3px 10px; margin:10px 0 0; }
+  .amp-readout dt { color:var(--text-muted); }
+  .amp-readout dd { margin:0; font-family:'DM Mono',monospace; color:var(--text-primary); }
+  .amp-note {
+    margin-top:10px; padding:10px 12px; border-left:3px solid var(--accent-amber);
+    background:var(--paper-deep); border-radius:var(--radius-sm);
+    font-size:0.73rem; line-height:1.55; color:var(--text-secondary); max-width:68ch;
+  }
+
+  /* Fit diagnostics — observed vs predicted, and the residual in sigma. */
+  .fitdx {
+    margin-top:12px; padding:12px 14px; background:var(--glass-bg);
+    border:1px solid var(--glass-border); border-radius:var(--radius-sm);
+  }
+  .fitdx-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:8px; }
+  .fitdx-title {
+    font-size:0.65rem; font-weight:600; letter-spacing:0.1em;
+    text-transform:uppercase; color:var(--text-muted);
+  }
+  .fitdx-row {
+    display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px;
+    padding:4px 0; font-family:'DM Mono',monospace; font-size:0.76rem;
+    font-variant-numeric:tabular-nums;
+  }
+  .fitdx-hdr {
+    font-family:'Outfit',sans-serif; font-size:0.62rem; font-weight:600;
+    letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted);
+    border-bottom:1px solid var(--rule); padding-bottom:5px; margin-bottom:2px;
+  }
+  .fitdx-n { text-align:right; }
+  .fitdx-t { color:var(--text-muted); }
+  .fitdx-note {
+    margin-top:9px; padding-top:9px; border-top:1px solid var(--rule);
+    font-size:0.73rem; line-height:1.55; color:var(--text-secondary); max-width:68ch;
+  }
   .bayes-pk-param { font-size:0.78rem; color:var(--text-secondary); }
   .bayes-pk-unit  { font-family:'DM Mono',monospace; font-size:0.68rem; color:var(--text-muted); }
   .bayes-pk-val   { font-family:'DM Mono',monospace; font-size:0.84rem; color:var(--text-primary); font-weight:500; }
@@ -1857,7 +1920,7 @@
     <button class="module-tab" data-onclick="k2">AUC Precision</button>
     <button class="module-tab" data-onclick="k3">Continue Course</button>
   </div>
-  <div class="header-tag">Vancomycin TDM v2.1</div>
+  <div class="header-tag">Vancomycin TDM v2.2</div>
   <button class="theme-toggle" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -1950,6 +2013,58 @@
       </div>
     </div>
 
+    <!-- Amputation — hidden until it applies, so the panel stays uncluttered -->
+    <label class="amp-toggle">
+      <input type="checkbox" id="amp-enabled" data-onchange="ampToggleEnabled">
+      <span>Amputation</span>
+      <span class="field-hint" style="margin:0">affects weight-based dosing and CrCl</span>
+    </label>
+
+    <div id="amp-panel" style="display:none">
+      <p class="field-hint" style="margin-bottom:8px">
+        Click a joint to amputate everything distal to it. Click again to clear.
+      </p>
+      <div class="amp-figure-wrap">
+        <svg class="amp-figure" viewBox="0 0 200 372" role="img"
+             aria-label="Body diagram — select amputation level">
+          <!-- head + torso, never amputated -->
+          <circle cx="100" cy="28" r="16" class="amp-body"/>
+          <path d="M100 44 L100 56" class="amp-body-line" style="stroke-width:11"/>
+          <path d="M74 62 L126 62 L120 170 L80 170 Z" class="amp-body"/>
+          <!-- limb segments: id is limbKey:segment so shading is a class toggle -->
+          <line id="seg-RA:upperArm" x1="74"  y1="66"  x2="60"  y2="118" class="amp-seg thick"/>
+          <line id="seg-RA:forearm"  x1="60"  y1="118" x2="50"  y2="168" class="amp-seg"/>
+          <line id="seg-RA:hand"     x1="50"  y1="168" x2="46"  y2="190" class="amp-seg thin"/>
+          <line id="seg-LA:upperArm" x1="126" y1="66"  x2="140" y2="118" class="amp-seg thick"/>
+          <line id="seg-LA:forearm"  x1="140" y1="118" x2="150" y2="168" class="amp-seg"/>
+          <line id="seg-LA:hand"     x1="150" y1="168" x2="154" y2="190" class="amp-seg thin"/>
+          <line id="seg-RL:thigh"    x1="84"  y1="172" x2="78"  y2="248" class="amp-seg thick"/>
+          <line id="seg-RL:lowerLeg" x1="78"  y1="248" x2="74"  y2="316" class="amp-seg"/>
+          <line id="seg-RL:foot"     x1="74"  y1="316" x2="64"  y2="334" class="amp-seg thin"/>
+          <line id="seg-LL:thigh"    x1="116" y1="172" x2="122" y2="248" class="amp-seg thick"/>
+          <line id="seg-LL:lowerLeg" x1="122" y1="248" x2="126" y2="316" class="amp-seg"/>
+          <line id="seg-LL:foot"     x1="126" y1="316" x2="136" y2="334" class="amp-seg thin"/>
+          <!-- clickable joints -->
+          <g class="amp-joints">
+            <circle id="jt-RA-shoulder" cx="74"  cy="66"  r="7" data-onclick="ampPick" data-arg="RA:shoulder"><title>Right shoulder / above elbow</title></circle>
+            <circle id="jt-RA-elbow"    cx="60"  cy="118" r="7" data-onclick="ampPick" data-arg="RA:elbow"><title>Right below elbow</title></circle>
+            <circle id="jt-RA-wrist"    cx="50"  cy="168" r="7" data-onclick="ampPick" data-arg="RA:wrist"><title>Right hand</title></circle>
+            <circle id="jt-LA-shoulder" cx="126" cy="66"  r="7" data-onclick="ampPick" data-arg="LA:shoulder"><title>Left shoulder / above elbow</title></circle>
+            <circle id="jt-LA-elbow"    cx="140" cy="118" r="7" data-onclick="ampPick" data-arg="LA:elbow"><title>Left below elbow</title></circle>
+            <circle id="jt-LA-wrist"    cx="150" cy="168" r="7" data-onclick="ampPick" data-arg="LA:wrist"><title>Left hand</title></circle>
+            <circle id="jt-RL-hip"      cx="84"  cy="176" r="7" data-onclick="ampPick" data-arg="RL:hip"><title>Right hip / above knee</title></circle>
+            <circle id="jt-RL-knee"     cx="78"  cy="248" r="7" data-onclick="ampPick" data-arg="RL:knee"><title>Right below knee</title></circle>
+            <circle id="jt-RL-ankle"    cx="74"  cy="316" r="7" data-onclick="ampPick" data-arg="RL:ankle"><title>Right foot / ankle</title></circle>
+            <circle id="jt-LL-hip"      cx="116" cy="176" r="7" data-onclick="ampPick" data-arg="LL:hip"><title>Left hip / above knee</title></circle>
+            <circle id="jt-LL-knee"     cx="122" cy="248" r="7" data-onclick="ampPick" data-arg="LL:knee"><title>Left below knee</title></circle>
+            <circle id="jt-LL-ankle"    cx="126" cy="316" r="7" data-onclick="ampPick" data-arg="LL:ankle"><title>Left foot / ankle</title></circle>
+          </g>
+        </svg>
+        <div class="amp-readout" id="amp-readout"></div>
+      </div>
+      <div id="amp-note" class="amp-note" style="display:none"></div>
+    </div>
+
     <hr class="section-divider">
 
     <!-- Renal Function -->
@@ -1988,6 +2103,18 @@
         </div>
         <div id="crcl-result" style="display:none;font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent-amber)"></div>
         <div id="crcl-advisory" style="display:none;font-size:0.76rem;color:var(--warning);line-height:1.45"></div>
+
+        <label class="amp-toggle" style="margin-top:10px">
+          <input type="checkbox" id="crcl-override-on" data-onchange="crclOverride">
+          <span>Set CrCl manually</span>
+          <span class="field-hint" style="margin:0">override the estimate, or run a what-if</span>
+        </label>
+        <div class="input-row" style="margin-top:2px">
+          <input type="number" id="crcl-override-val" placeholder="—" min="1" max="250" step="1"
+                 disabled data-oninput="crclOverride">
+          <span class="unit-badge">mL/min</span>
+        </div>
+        <div id="crcl-override-note" class="amp-note" style="display:none;border-left-color:var(--accent-blue)"></div>
 
         <!-- Baseline SCr / AKI -->
         <div class="field-group" style="margin-top:4px">
@@ -2901,6 +3028,9 @@
 // registry and dispatched by delegation — no eval, so the CSP stays strict.
 // Delegation also means content rendered later via innerHTML is bound for free.
 const __ACT = {
+  ampToggleEnabled: (el, ev, arg) => { ampToggleEnabled(el); },
+  crclOverride:     (el, ev, arg) => { setCrclOverride(); },
+  ampPick:          (el, ev, arg) => { ampPick(arg); },
   k0: (el, ev, arg) => { window.print() },   /* window.print() */
   k1: (el, ev, arg) => { switchModule('trough') },   /* switchModule('trough') */
   k2: (el, ev, arg) => { switchModule('auc') },   /* switchModule('auc') */
@@ -2973,6 +3103,102 @@ const __ACT = {
   k69: (el, ev, arg) => { loadProfileIntoForm(String(arg)) },   /* loadProfileIntoForm('${p.id}') */
   k70: (el, ev, arg) => { deleteProfile(String(arg)) },   /* deleteProfile('${p.id}') */
 };
+function setCrclOverride() {
+  const cb = document.getElementById('crcl-override-on');
+  const inp = document.getElementById('crcl-override-val');
+  crclOverride.on    = !!(cb && cb.checked);
+  crclOverride.value = inp ? parseFloat(inp.value) : NaN;
+  if (inp) inp.disabled = !crclOverride.on;
+  const note = document.getElementById('crcl-override-note');
+  if (note) {
+    const active = crclOverride.on && crclOverride.value > 0;
+    note.style.display = active ? 'block' : 'none';
+    if (active) {
+      note.innerHTML = `Every module is now using <strong>${crclOverride.value.toFixed(0)} mL/min</strong>
+        instead of the Cockcroft-Gault estimate. Hughes' FFM-scaled clearance covariate is left alone —
+        it is a model input on a different scale, not this patient's renal function.`;
+    }
+  }
+  if (typeof updateCrCl === 'function') updateCrCl();
+}
+
+function ampToggleEnabled(el) {
+  const on = !!(el && el.checked);
+  const panel = document.getElementById('amp-panel');
+  if (panel) panel.style.display = on ? '' : 'none';
+  if (!on) AMP_LIMBS.forEach(l => { ampState[l.key] = null; });
+  renderAmputation();
+}
+
+function ampPick(arg) {
+  const [limbKey, level] = String(arg || '').split(':');
+  if (!ampState.hasOwnProperty(limbKey)) return;
+  // Clicking the selected joint clears it; otherwise this joint replaces
+  // whatever was set — one amputation level per limb, the proximal one wins.
+  ampState[limbKey] = (ampState[limbKey] === level) ? null : level;
+  renderAmputation();
+}
+
+function renderAmputation() {
+  const pct  = amputationPct();
+  const gone = ampRemovedSegments();
+  AMP_LIMBS.forEach(l => AMPUTATION_LEVELS.filter(x => x.limb === l.limb).forEach(x => {
+    const j = document.getElementById(`jt-${l.key}-${x.key}`);
+    if (j) j.classList.toggle('selected', ampState[l.key] === x.key);
+  }));
+  Object.keys(AMP_SEGMENT_PCT).forEach(seg => AMP_LIMBS.forEach(l => {
+    const e = document.getElementById(`seg-${l.key}:${seg}`);
+    if (e) e.classList.toggle('gone', !!gone[l.key + ':' + seg]);
+  }));
+
+  const out = document.getElementById('amp-readout');
+  const note = document.getElementById('amp-note');
+  if (!out) return;
+  if (!(pct > 0)) {
+    out.innerHTML = `<span class="field-hint">No amputation selected.</span>`;
+    if (note) note.style.display = 'none';
+    if (typeof autoWeights === 'function') autoWeights();
+    if (typeof updateCrCl === 'function') updateCrCl();
+    return;
+  }
+  const obs = v('tbw');
+  const est = reconstructWeight(obs, pct);
+  const chosen = AMP_LIMBS
+    .filter(l => ampState[l.key])
+    .map(l => {
+      const lvl = AMPUTATION_LEVELS.find(x => x.key === ampState[l.key] && x.limb === l.limb);
+      return `${l.label}: ${lvl.label} (${lvl.pct}%)`;
+    });
+  out.innerHTML = `
+    <div class="amp-pct">${(pct*100).toFixed(1)}%</div>
+    <div class="field-hint" style="margin-top:2px">of pre-amputation body weight</div>
+    <dl>
+      ${chosen.map(c => `<dt>·</dt><dd style="font-family:'Outfit',sans-serif">${escHtml(c)}</dd>`).join('')}
+      ${obs > 0 ? `<dt>Measured</dt><dd>${obs.toFixed(1)} kg</dd>` : ''}
+      ${obs > 0 && isFinite(est) ? `<dt>Reconstructed</dt><dd>${est.toFixed(1)} kg</dd>` : ''}
+    </dl>`;
+
+  if (note) {
+    note.style.display = 'block';
+    note.innerHTML = `
+      <strong>Weight reconstruction is Osterkamp 1995</strong> (J Am Diet Assoc 95:215-8) —
+      established for body-size assessment. <strong>It is not validated for estimating renal
+      function.</strong> Amputation lowers muscle mass, so serum creatinine falls too;
+      Cockcroft-Gault on the measured weight already partly self-corrects, and feeding it a
+      reconstructed weight will <em>overestimate</em> clearance. Amputation is a recognised
+      setting where creatinine <strong>overestimates</strong> GFR.
+      <br><br>This panel therefore reports the reconstruction and leaves the dosing weight
+      alone. If renal function matters here, <strong>cystatin C</strong> is the evidence-based
+      resolution — it is largely independent of muscle mass — or set the clearance yourself
+      with the CrCl override below.
+      ${!isFinite(est) ? `<br><br><strong>Over ${(AMPUTATION_MAX_PCT*100).toFixed(0)}% of body
+      weight selected</strong> — the reconstruction 1/(1−p) is not meaningful this far out and
+      is not shown.` : ''}`;
+  }
+  if (typeof autoWeights === 'function') autoWeights();
+  if (typeof updateCrCl === 'function') updateCrCl();
+}
+
 function __bindActions() {
   ['click','input','change','keydown'].forEach(type => {
     document.addEventListener(type, (ev) => {
@@ -3554,6 +3780,85 @@ function troughTarget() {
 // A DETECTED interval is the mean of real administration times, so it arrives
 // as 11.97500000000582. Recommended intervals are already clean integers; this
 // is safe on both.
+// ─── Fit diagnostics: does the fitted model actually reproduce the levels? ───
+// A MAP estimate balances the population prior against the data. When the prior
+// and the level disagree strongly, the fit honours NEITHER — and nothing on the
+// screen said so. A real case: measured 12.2 mg/L, fitted model predicted 7.66,
+// and the reported AUC (334) was reachable only by treating the level as ~1.3 sigma
+// of error. No (CL,V) pair that reproduces 12.2 gives an AUC below ~480.
+// Residual sign convention: observed - predicted. Positive = the patient is
+// running HIGHER than the model believes.
+// Fit the OTHER prior on the same data and compare exposure. Agreement is
+// reassurance that the answer is driven by the levels rather than by the choice
+// of prior; disagreement says the opposite, which is exactly when a clinician
+// should want to know. Bands are stated in the units the decision is made in.
+const MODEL_AGREEMENT_BANDS = [
+  { max:10, label:'High',     tone:'ok'     },
+  { max:20, label:'Moderate', tone:'warn'   },
+  { max:Infinity, label:'Low', tone:'danger' },
+];
+function modelAgreement(pt, doses, levels, dailyDose) {
+  try {
+    if (!doses || !doses.length || !(dailyDose > 0)) return null;
+    // Buelga, 1-comp
+    const bp  = buelgaPopPK(pt.crcl, pt.tbw);
+    const bf  = nelderMead2D((a,b) => burtonObjective(a,b,bp.CL_pop,bp.V_pop,doses,levels), 0, 0, 400);
+    const CLb = bp.CL_pop * Math.exp(bf[0]);
+    // Goti, 2-comp
+    const gp  = gotiPopPK(pt.crclGoti != null ? pt.crclGoti : pt.crcl, pt.tbw, pt.dial);
+    const gf  = nelderMead3D((a,b,c) =>
+                  burtonObj3D(a,b,c,gp.TVCL,gp.TVVc,gp.TVVp,doses,levels), 0, 0, 0, 400);
+    const CLg = gp.TVCL * Math.exp(gf[0]);
+    if (!(CLb > 0) || !(CLg > 0)) return null;
+    const aucB = dailyDose / CLb, aucG = dailyDose / CLg;
+    const mean = (aucB + aucG) / 2;
+    const diffPct = mean > 0 ? Math.abs(aucB - aucG) / mean * 100 : NaN;
+    const band = MODEL_AGREEMENT_BANDS.find(x => diffPct < x.max) || MODEL_AGREEMENT_BANDS[2];
+    return { aucBuelga: aucB, aucGoti: aucG, CLb, CLg, diffPct, band };
+  } catch (e) { return null; }
+}
+
+function fitDiagnostics(r) {
+  if (!r || !r.levels || !r.levels.length || !r.doses || !r.doses.length) return null;
+  const isHughes = r.model === 'hughes';
+  const is2c     = (r.model === 'goti') || isHughes;
+  const sigProp = isHughes ? SIGMA_PROP_HUGHES : is2c ? SIGMA_PROP_GOTI : SIGMA_PROP_BUELGA;
+  const sigAdd  = isHughes ? SIGMA_ADD_HUGHES  : is2c ? SIGMA_ADD_GOTI  : SIGMA_ADD_BUELGA;
+  const predict = (t) => {
+    try {
+      if (is2c && r.goti) {
+        return predictConc2comp(r.doses, t, r.goti.k10_ind, r.goti.k12_ind,
+                                r.goti.k21_ind, r.goti.Vc_ind);
+      }
+      return predictConc1comp(r.doses, t, r.kel_ind, r.V_ind);
+    } catch (e) { return NaN; }
+  };
+  const tStart = r.doses[0].timeH;
+  const rows = r.levels.map(lev => {
+    const pred = predict(lev.timeH);
+    const sd   = Math.sqrt(Math.pow(sigProp * Math.max(pred, 0.5), 2) + sigAdd * sigAdd);
+    const resid = lev.conc - pred;
+    return { timeH: lev.timeH, tRel: lev.timeH - tStart, obs: lev.conc, pred,
+             resid, sigma: sd > 0 ? resid / sd : NaN, sd };
+  }).filter(x => isFinite(x.pred));
+  if (!rows.length) return null;
+  const worst = rows.reduce((a, b) => Math.abs(b.sigma) > Math.abs(a.sigma) ? b : a);
+  // What clearance would reproduce the levels, expressed as the CrCl that the
+  // population model would need to see? Only meaningful for the 1-comp branch,
+  // where Buelga maps CL linearly onto CrCl.
+  let impliedCrCl = null;
+  if (!is2c && r.CL_ind > 0 && rows.length === 1 && Math.abs(worst.sigma) >= 1) {
+    let lo = 0.2, hi = 40, CLx = r.CL_ind;
+    for (let i = 0; i < 80; i++) {
+      CLx = (lo + hi) / 2;
+      const c = predictConc1comp(r.doses, worst.timeH, CLx / r.V_ind, r.V_ind);
+      if (c > worst.obs) lo = CLx; else hi = CLx;
+    }
+    impliedCrCl = { CL: CLx, crcl: CLx / BUELGA_CL_SLOPE / ML_MIN_TO_L_H };
+  }
+  return { rows, worst, impliedCrCl, sigProp, sigAdd };
+}
+
 function fmtTau(t) {
   const n = Number(t);
   if (!isFinite(n)) return t;
@@ -3747,6 +4052,72 @@ function calcAdjBW(tbw, ibw) {
   return ibw + 0.4 * (tbw - ibw);
 }
 
+// ─── Amputation: body-segment weight reconstruction ────────────────────────
+// Osterkamp LK. "Current perspective on assessment of human body proportions of
+// relevance to amputees." J Am Diet Assoc 1995;95(2):215-8. Percentages are of
+// TOTAL pre-amputation body weight, one side.
+//
+// The published table is internally consistent, which is the check that catches
+// the "entire arm 6.1%" figure circulating online:
+//     upper arm 2.7 + forearm 1.6 + hand 0.7 = 5.0  = entire arm
+//     thigh    10.1 + lower leg 4.4 + foot 1.5 = 16.0 = entire leg
+//
+// Expressed by JOINT, because that is how an amputation is described and how the
+// figure is clicked: selecting a joint removes everything distal to it. Note a
+// transfemoral (above-knee) amputation removes the WHOLE limb, 16.0% — not the
+// 10.1% thigh segment alone. Getting that wrong halves the correction.
+const AMP_SEGMENT_PCT = { upperArm:2.7, forearm:1.6, hand:0.7, thigh:10.1, lowerLeg:4.4, foot:1.5 };
+const AMPUTATION_LEVELS = [
+  { key:'shoulder', limb:'arm', label:'Shoulder / above elbow', pct:5.0,  removes:['upperArm','forearm','hand'] },
+  { key:'elbow',    limb:'arm', label:'Below elbow',            pct:2.3,  removes:['forearm','hand'] },
+  { key:'wrist',    limb:'arm', label:'Hand',                   pct:0.7,  removes:['hand'] },
+  { key:'hip',      limb:'leg', label:'Hip / above knee',       pct:16.0, removes:['thigh','lowerLeg','foot'] },
+  { key:'knee',     limb:'leg', label:'Below knee',             pct:5.9,  removes:['lowerLeg','foot'] },
+  { key:'ankle',    limb:'leg', label:'Foot / ankle',           pct:1.5,  removes:['foot'] },
+];
+const AMP_LIMBS = [
+  { key:'RA', label:'Right arm', limb:'arm' }, { key:'LA', label:'Left arm',  limb:'arm' },
+  { key:'RL', label:'Right leg', limb:'leg' }, { key:'LL', label:'Left leg',  limb:'leg' },
+];
+// Refuse to reconstruct past this: 1/(1-p) grows without bound, and Osterkamp's
+// proportions were never intended for near-total limb loss.
+const AMPUTATION_MAX_PCT = 0.45;
+
+const ampState = { RA:null, LA:null, RL:null, LL:null };
+
+function amputationPct(st) {
+  st = st || ampState;
+  let total = 0;
+  for (const l of AMP_LIMBS) {
+    const lvl = AMPUTATION_LEVELS.find(x => x.key === st[l.key] && x.limb === l.limb);
+    if (lvl) total += lvl.pct;
+  }
+  return total / 100;
+}
+
+// Osterkamp: W_pre = W_observed / (1 - fraction amputated). This reconstructs the
+// weight the patient WOULD have had, which is what a height-based IBW or BMI
+// comparison needs. It is NOT validated for renal estimation — see the note the
+// UI renders alongside it.
+function reconstructWeight(observedKg, pct) {
+  if (!(observedKg > 0)) return NaN;
+  if (!(pct > 0)) return observedKg;
+  if (pct >= AMPUTATION_MAX_PCT) return NaN;
+  return observedKg / (1 - pct);
+}
+
+// Which drawn segments are gone, for shading the figure.
+function ampRemovedSegments(st) {
+  st = st || ampState;
+  const out = {};
+  for (const l of AMP_LIMBS) {
+    const lvl = AMPUTATION_LEVELS.find(x => x.key === st[l.key] && x.limb === l.limb);
+    if (lvl) lvl.removes.forEach(seg => { out[l.key + ':' + seg] = true; });
+  }
+  return out;
+}
+
+
 // ── Serum-creatinine policy (audit A1 / A7) ────────────────────────────────
 // ONE policy for the whole suite. Default is the MEASURED value.
 //
@@ -3792,10 +4163,22 @@ function applyScrPolicy(scr, age, policy) {
 }
 
 // Cockcroft-Gault. wtKg is chosen by the caller (see pickCrClWeight).
-function calcCrCl(age, sex, scr, wtKg, policy) {
+// Manual clearance override. One gate, consulted where CrCl is produced, so a
+// simulated or clinician-supplied clearance cannot reach some modules and miss
+// others. Deliberately NOT applied to Hughes' FFM-scaled covariate, which is a
+// model input on a different scale, not this patient's renal function — that
+// call site uses calcCrClRaw.
+const crclOverride = { on:false, value:null };
+
+function calcCrClRaw(age, sex, scr, wtKg, policy) {
   const scrUsed = applyScrPolicy(scr, age, policy || SCR_POLICY.ACTUAL);
   const cg = ((140 - age) * wtKg) / (72 * scrUsed);
   return sex === 'F' ? cg * 0.85 : cg;
+}
+
+function calcCrCl(age, sex, scr, wtKg, policy) {
+  if (crclOverride.on && crclOverride.value > 0) return crclOverride.value;
+  return calcCrClRaw(age, sex, scr, wtKg, policy);
 }
 
 // The single weight-selection rule, shared by every module (audit A7/A8).
@@ -6520,7 +6903,10 @@ function getHughesCrCl(scrOverride) {
   if (!p) return null;
   const ffm = computeFFM(p.tbw, p.ht, p.sex);
   if (!ffm) return null;
-  return Math.max(CRCL_MODEL_FLOOR, calcCrCl(p.age, p.sex, p.scr, ffm, SCR_POLICY.ACTUAL));
+  // calcCrClRaw, not calcCrCl: Hughes fitted clearance against a CG computed on
+  // FFM. It is a covariate on its own scale, so a user CrCl override must not
+  // replace it — that would silently change what the model was fitted to.
+  return Math.max(CRCL_MODEL_FLOOR, calcCrClRaw(p.age, p.sex, p.scr, ffm, SCR_POLICY.ACTUAL));
 }
 
 // Hughes population PK (FFM scales the VOLUMES only — see A9 below)
@@ -6572,8 +6958,16 @@ function setBModel(el, m) {
   const effectiveModel = isGotiHD ? 'goti' : m;
   bState.model = effectiveModel;
   bState.dial  = isGotiHD;
-  if (el && el.parentElement) {
-    el.parentElement.querySelectorAll('.toggle-opt').forEach(b => b.classList.remove('active'));
+  // The model picker became a .model-grid of .model-opt cells in the UI pass,
+  // but this deselect loop still asked for .toggle-opt — so it matched NOTHING
+  // and every model clicked stayed highlighted at once. Clear the whole picker,
+  // whichever markup it uses, not just the clicked element's siblings.
+  if (el) {
+    const group = el.closest('.model-grid, .toggle-group') || el.parentElement;
+    if (group) {
+      group.querySelectorAll('.model-opt, .toggle-opt')
+           .forEach(b => b.classList.remove('active'));
+    }
     el.classList.add('active');
   }
   const badge = document.getElementById('b-model-badge');
@@ -7444,12 +7838,21 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
     reason = 'ICU / critically ill — Goti 2018 (2-comp) preferred for complex PK';
   } else if (nLevels >= 2) {
     recommended = 'goti';
-    reason = `${nLevels} levels available — Goti 2018 (2-comp) performs best with ≥ 2 measured levels`;
+    reason = `${nLevels} concentrations available — individual parameter precision improves with ≥ 2, `
+           + `which a 2-compartment model needs; Goti 2018 is the best-evaluated of them`;
   }
 
   // Advisory for 1-level Goti (Cunio 2021)
+  // Identifiability, not a quirk of one model: a 2-compartment fit estimates
+  // three individual parameters, and one concentration cannot separate them —
+  // the prior picks the point on the ridge. Cunio 2021 shows the consequence
+  // for Goti specifically.
   const oneLevelGotiNote = (nLevels === 1)
-    ? 'Goti 2-comp performs better with ≥ 2 levels (Cunio 2021). With 1 level, Buelga 1-comp may be more reliable, or obtain a second level before switching to Goti.'
+    ? 'With a single concentration, individual parameter precision is limited — a 2-compartment '
+    + 'fit estimates three individual parameters and one level cannot separate them, so the '
+    + 'population prior largely determines the answer (Cunio 2021). Buelga 1-comp is often the '
+    + 'more reliable choice at one level; a second concentration resolves this far better than '
+    + 'changing model.'
     : null;
 
   return { recommended, reason, advisory, isObese, isClass3, bmi, oneLevelGotiNote };
@@ -7658,7 +8061,7 @@ function runBayesian() {
     bState.result = {
       model:'goti', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial,
       levels:filteredLevels, objFinal, goti: gotiResult
     };
     // CODEX F-003: bind this fit to the inputs it came from.
@@ -7733,7 +8136,7 @@ function runBayesian() {
     bState.result = {
       model:'hughes', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial,
       levels:filteredLevels, objFinal, goti: hughesResult
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -7775,7 +8178,7 @@ function runBayesian() {
     const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC, null, mic);
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses,
+      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial,
       levels:filteredLevels, objFinal
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -8547,6 +8950,110 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         })()}
       ${objFinal !== null ? pkRow('Obj (fit)', objFinal.toFixed(2), '—', '') : ''}
     </div>`;
+
+  // ── Do the two priors agree on exposure? ─────────────────────────────────
+  (() => {
+    if (!nLev) return;                       // no levels: both would just be the prior
+    const dailyDose = rec && rec.dose && rec.tau ? null : null;
+    const cur2 = inferCurrentRegimen(doses, CL_ind, V_ind, r.goti || null);
+    const dd = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau) : null;
+    if (!dd) return;
+    const ag = modelAgreement({ crcl: r.crcl, tbw: r.tbw, dial: r.dial }, doses, levels, dd);
+    if (!ag || !isFinite(ag.diffPct)) return;
+    const col = ag.band.tone === 'ok' ? 'var(--success)'
+              : ag.band.tone === 'warn' ? 'var(--accent-amber)' : 'var(--danger)';
+    html += `
+      <div class="fitdx" style="border-left:3px solid ${col}">
+        <div class="fitdx-head">
+          <span class="fitdx-title">Model agreement</span>
+          <span style="color:${col};font-weight:600;font-size:0.72rem">
+            ${ag.band.label} (${ag.diffPct.toFixed(0)}% apart)
+          </span>
+        </div>
+        <div class="fitdx-row fitdx-hdr" style="grid-template-columns:1fr 1fr 1fr">
+          <span class="fitdx-t">Prior</span><span class="fitdx-n">CL (L/h)</span><span class="fitdx-n">AUC₂₄</span>
+        </div>
+        <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr">
+          <span class="fitdx-t">Buelga 1-comp</span>
+          <span class="fitdx-n">${ag.CLb.toFixed(2)}</span><span class="fitdx-n">${ag.aucBuelga.toFixed(0)}</span>
+        </div>
+        <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr">
+          <span class="fitdx-t">Goti 2-comp</span>
+          <span class="fitdx-n">${ag.CLg.toFixed(2)}</span><span class="fitdx-n">${ag.aucGoti.toFixed(0)}</span>
+        </div>
+        <div class="fitdx-note">
+          Both priors fitted to the same levels and the same course, on the detected
+          ${cur2.dose} mg Q${fmtTau(cur2.tau)}H.
+          ${ag.band.tone === 'ok'
+            ? 'Close agreement means the answer is being driven by the measured levels rather than by the choice of prior.'
+            : ag.band.tone === 'warn'
+              ? 'Moderate disagreement — the prior is still doing noticeable work. Weigh a second level before a large dose change.'
+              : '<strong>The two priors disagree more than they agree.</strong> With this much spread the exposure estimate is prior-driven, not data-driven; a second concentration is worth more than choosing between them.'}
+        </div>
+      </div>`;
+  })();
+
+  // ── Does the fit actually reproduce the levels? ──────────────────────────
+  (() => {
+    const fd = fitDiagnostics(r);
+    if (!fd) return;
+    const a = Math.abs(fd.worst.sigma);
+    const tone = a >= 2 ? 'danger' : a >= 1 ? 'warn' : 'ok';
+    const col  = tone === 'danger' ? 'var(--danger)' : tone === 'warn' ? 'var(--accent-amber)' : 'var(--success)';
+    const verdict = tone === 'danger'
+      ? 'The fit does not reproduce this level'
+      : tone === 'warn' ? 'The fit sits noticeably off this level'
+      : 'The fit reproduces the levels';
+    const rows = fd.rows.map(x => `
+      <div class="fitdx-row">
+        <span class="fitdx-t">${x.tRel.toFixed(1)} h</span>
+        <span class="fitdx-n">${x.obs.toFixed(1)}</span>
+        <span class="fitdx-n">${x.pred.toFixed(1)}</span>
+        <span class="fitdx-n" style="color:${Math.abs(x.sigma) >= 1 ? col : 'var(--text-secondary)'}">
+          ${x.resid >= 0 ? '+' : ''}${x.resid.toFixed(1)}
+        </span>
+        <span class="fitdx-n" style="color:${Math.abs(x.sigma) >= 1 ? col : 'var(--text-secondary)'};font-weight:600">
+          ${x.sigma >= 0 ? '+' : ''}${x.sigma.toFixed(2)} σ
+        </span>
+      </div>`).join('');
+
+    let note = '';
+    if (a >= 1) {
+      const dir = fd.worst.resid > 0 ? 'HIGHER' : 'LOWER';
+      const consequence = fd.worst.resid > 0
+        ? 'so true exposure is probably <strong>higher</strong> than the AUC above'
+        : 'so true exposure is probably <strong>lower</strong> than the AUC above';
+      note = `<div class="fitdx-note">
+        The measured level is <strong>${Math.abs(fd.worst.resid).toFixed(1)} mg/L ${dir}</strong> than the
+        fitted model predicts (${Math.abs(fd.worst.sigma).toFixed(1)} σ of this model's residual error,
+        σ = ${fd.sigAdd}${fd.sigProp ? ` + ${(fd.sigProp*100).toFixed(0)}%` : ''} mg/L).
+        A MAP estimate balances the population prior against the level; when they disagree this
+        strongly it honours <em>neither</em>, ${consequence}.
+        ${fd.impliedCrCl ? `To reproduce this level exactly, clearance would have to be
+          <strong>${fd.impliedCrCl.CL.toFixed(1)} L/h</strong> — what the population model expects at
+          <strong>CrCl ≈ ${fd.impliedCrCl.crcl.toFixed(0)} mL/min</strong>, against the
+          ${r.crcl != null ? r.crcl.toFixed(0) : '—'} mL/min entered.
+          If Cockcroft-Gault is overestimating (low muscle mass, low SCr), the prior is centred in the
+          wrong place and the level is the better evidence.` : ''}
+        <br><strong>With one level, CL and V are not separately identifiable</strong> — a second level,
+        or cystatin C, resolves this far better than re-running the fit.
+      </div>`;
+    }
+
+    html += `
+      <div class="fitdx" style="border-left:3px solid ${col}">
+        <div class="fitdx-head">
+          <span class="fitdx-title">Fit vs measured</span>
+          <span style="color:${col};font-weight:600;font-size:0.72rem">${verdict}</span>
+        </div>
+        <div class="fitdx-row fitdx-hdr">
+          <span class="fitdx-t">Time</span><span class="fitdx-n">Measured</span>
+          <span class="fitdx-n">Model</span><span class="fitdx-n">Residual</span><span class="fitdx-n">In σ</span>
+        </div>
+        ${rows}
+        ${note}
+      </div>`;
+  })();
 
   // ── Dose recommendation ──
   if (rec) {

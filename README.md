@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v2.1.** The canonical home is now
+**Status: Live · v2.2.** The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
 [/vancomycin/how-to](https://pharmacy.ainadara.com/vancomycin/how-to).
@@ -95,7 +95,7 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-09-05) |
 |---|---|
-| `phase2d_validation.cjs` | **101 / 101 pass** |
+| `phase2d_validation.cjs` | **125 / 125 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **40 / 40 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | **6 thresholds fail** — its own verdict is "Share with caveats" |

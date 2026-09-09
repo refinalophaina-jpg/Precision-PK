@@ -1492,6 +1492,174 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 16 — fit diagnostics: does the model reproduce the levels?
+//
+// From a real case. Measured 12.2 mg/L; the MAP fit predicted 7.66 and reported
+// AUC 334 while recommending an INCREASE. No (CL,V) pair that reproduces 12.2
+// gives an AUC below ~480, so the reported exposure was reachable only by
+// treating the level as ~1.3 sigma of error — and nothing on screen said so.
+// ════════════════════════════════════════════════════════════════════
+{
+  const { fitDiagnostics, predictConc1comp } = sandbox;
+  const H = (d,hh,mm) => ((d-7)*24)+hh+mm/60, t0 = H(7,21,50);
+  const CASE = {
+    model:'buelga', CL_ind:5.992, V_ind:80.20, kel_ind:5.992/80.20, crcl:127,
+    doses:[{mg:1250,timeH:0,tinfH:1.5},
+           {mg:1000,timeH:H(8,10,28)-t0,tinfH:1},
+           {mg:1000,timeH:H(8,22,13)-t0,tinfH:1}],
+    levels:[{conc:12.2,timeH:H(9,11,43)-t0}],
+  };
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 16 — fit diagnostics');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('Reproduces the reported case: +4.5 mg/L, +1.29 sigma', ()=>{
+    const fd = fitDiagnostics(CASE);
+    assert(fd && fd.rows.length === 1, 'no diagnostics produced');
+    const x = fd.rows[0];
+    assert(Math.abs(x.pred - 7.66) < 0.05, `model prediction ${x.pred.toFixed(2)}, expected ~7.66`);
+    assert(Math.abs(x.resid - 4.54) < 0.05, `residual ${x.resid.toFixed(2)}, expected ~+4.54`);
+    assert(Math.abs(x.sigma - 1.29) < 0.02, `sigma ${x.sigma.toFixed(2)}, expected ~+1.29`);
+    assert(Math.abs(x.sd - 3.52) < 1e-9, `Buelga residual SD should be the additive 3.52, got ${x.sd}`);
+    // Level times are absolute epoch-hours; the column must read elapsed hours
+    // from the first dose, not 496936.7.
+    assert(Math.abs(x.tRel - 37.883) < 0.01,
+      `elapsed time ${x.tRel.toFixed(2)} h, expected 37.88 from the first dose`);
+  });
+
+  test('Residual sign is observed minus predicted', ()=>{
+    const fd = fitDiagnostics(CASE);
+    assert(fd.rows[0].resid > 0,
+      'the patient measured HIGHER than the model — the residual must be positive');
+    const low = JSON.parse(JSON.stringify(CASE));
+    low.levels = [{ conc: 3.0, timeH: CASE.levels[0].timeH }];
+    assert(fitDiagnostics(low).rows[0].resid < 0, 'a level below prediction must give a negative residual');
+  });
+
+  test('The implied clearance is surfaced when the fit misses by >= 1 sigma', ()=>{
+    const fd = fitDiagnostics(CASE);
+    assert(fd.impliedCrCl, 'a >1 sigma miss must report the clearance that would fit');
+    assert(Math.abs(fd.impliedCrCl.CL - 4.12) < 0.05,
+      `implied CL ${fd.impliedCrCl.CL.toFixed(2)}, expected ~4.12`);
+    assert(Math.abs(fd.impliedCrCl.crcl - 64) < 2,
+      `implied CrCl ${fd.impliedCrCl.crcl.toFixed(0)}, expected ~64 against the 127 entered`);
+    // The point of the number: it must actually reproduce the level.
+    const c = predictConc1comp(CASE.doses, CASE.levels[0].timeH,
+                               fd.impliedCrCl.CL / CASE.V_ind, CASE.V_ind);
+    assert(Math.abs(c - 12.2) < 0.05, `implied CL reproduces ${c.toFixed(2)}, not the measured 12.2`);
+  });
+
+  test('A fit that DOES reproduce its level is not flagged', ()=>{
+    const good = JSON.parse(JSON.stringify(CASE));
+    const pred = predictConc1comp(CASE.doses, CASE.levels[0].timeH, CASE.kel_ind, CASE.V_ind);
+    good.levels = [{ conc: +pred.toFixed(2), timeH: CASE.levels[0].timeH }];
+    const fd = fitDiagnostics(good);
+    assert(Math.abs(fd.worst.sigma) < 0.05, `a perfect fit reported ${fd.worst.sigma.toFixed(3)} sigma`);
+    assert(!fd.impliedCrCl, 'no implied-clearance note should appear when the fit is good');
+  });
+
+  test('Degrades safely with no levels or no doses', ()=>{
+    assert(fitDiagnostics(null) === null, 'null input');
+    assert(fitDiagnostics({ ...CASE, levels: [] }) === null, 'no levels');
+    assert(fitDiagnostics({ ...CASE, doses: [] }) === null, 'no doses');
+  });
+
+  test('Uses the residual model of the ACTIVE prior, not always Buelga', ()=>{
+    const fd1 = fitDiagnostics(CASE);
+    const g = JSON.parse(JSON.stringify(CASE));
+    g.model = 'goti';
+    g.goti = { k10_ind: 0.075, k12_ind: 0.5, k21_ind: 0.6, Vc_ind: 58.4 };
+    const fd2 = fitDiagnostics(g);
+    assert(fd2, 'no diagnostics for the 2-comp branch');
+    assert(Math.abs(fd1.rows[0].sd - fd2.rows[0].sd) > 0.1,
+      'Goti (proportional + additive) must not reuse the Buelga additive-only SD');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 17 — v2.2: amputation reconstruction and cross-model agreement
+// ════════════════════════════════════════════════════════════════════
+{
+  const { amputationPct, reconstructWeight, ampRemovedSegments, modelAgreement } = sandbox;
+  // const in a vm is not a sandbox property — parse them, never copy them (rule 6).
+  const { AMPUTATION_LEVELS, AMP_SEGMENT_PCT, MODEL_AGREEMENT_BANDS } = __extractConsts();
+  const st = (o) => Object.assign({ RA:null, LA:null, RL:null, LL:null }, o);
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 17 — amputation + model agreement');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('Osterkamp table is internally consistent', ()=>{
+    // The check that catches the "entire arm 6.1%" figure circulating online.
+    const seg = AMP_SEGMENT_PCT;
+    assert(Math.abs((seg.upperArm + seg.forearm + seg.hand) - 5.0) < 1e-9,
+      `arm segments sum to ${seg.upperArm + seg.forearm + seg.hand}, not the published entire-arm 5.0`);
+    assert(Math.abs((seg.thigh + seg.lowerLeg + seg.foot) - 16.0) < 1e-9,
+      `leg segments sum to ${seg.thigh + seg.lowerLeg + seg.foot}, not the published entire-leg 16.0`);
+    const lvl = (k) => AMPUTATION_LEVELS.find(x => x.key === k).pct;
+    assert(lvl('shoulder') === 5.0 && lvl('hip') === 16.0, 'proximal levels must be the whole limb');
+    assert(Math.abs(lvl('elbow') - (seg.forearm + seg.hand)) < 1e-9, 'below-elbow = forearm + hand');
+    assert(Math.abs(lvl('knee')  - (seg.lowerLeg + seg.foot)) < 1e-9, 'below-knee = lower leg + foot');
+  });
+
+  test('Above-knee removes the WHOLE limb, not the thigh segment', ()=>{
+    // Getting this wrong halves the correction: 10.1 (thigh) vs 16.0 (limb).
+    assert(Math.abs(amputationPct(st({ RL:'hip' })) * 100 - 16.0) < 1e-9,
+      'transfemoral must be 16.0%, the whole limb');
+    assert(Math.abs(amputationPct(st({ RL:'hip' })) * 100 - AMP_SEGMENT_PCT.thigh) > 5,
+      'transfemoral must NOT be the 10.1% thigh segment alone');
+  });
+
+  test('Percentages add across limbs', ()=>{
+    assert(Math.abs(amputationPct(st({ RL:'knee', LL:'knee' })) * 100 - 11.8) < 1e-9, 'bilateral BKA');
+    assert(Math.abs(amputationPct(st({ RL:'hip', LL:'hip' })) * 100 - 32.0) < 1e-9, 'bilateral AKA');
+    assert(amputationPct(st({})) === 0, 'no selection is zero');
+  });
+
+  test('Reconstruction is Osterkamp W/(1-p), and refuses to run away', ()=>{
+    assert(Math.abs(reconstructWeight(70, 0.059) - 74.39) < 0.01, 'W/(1-p)');
+    assert(reconstructWeight(70, 0) === 70, 'no amputation returns the observed weight');
+    assert(!isFinite(reconstructWeight(70, 0.50)),
+      '1/(1-p) is not meaningful past the cap and must not be reported');
+    assert(!isFinite(reconstructWeight(0, 0.059)), 'no weight entered');
+  });
+
+  test('Only segments distal to the selected joint are removed', ()=>{
+    const g = ampRemovedSegments(st({ RL:'knee' }));
+    assert(g['RL:lowerLeg'] && g['RL:foot'], 'below-knee must remove lower leg and foot');
+    assert(!g['RL:thigh'], 'below-knee must NOT remove the thigh');
+    assert(!g['LL:lowerLeg'], 'the other leg is untouched');
+    const h = ampRemovedSegments(st({ RA:'elbow' }));
+    assert(h['RA:forearm'] && h['RA:hand'] && !h['RA:upperArm'], 'below-elbow keeps the upper arm');
+  });
+
+  test('Model agreement flags the real case as Low', ()=>{
+    const H = (d,hh,mm) => ((d-7)*24)+hh+mm/60, t0 = H(7,21,50);
+    const doses = [{mg:1250,timeH:0,tinfH:1.5},
+                   {mg:1000,timeH:H(8,10,28)-t0,tinfH:1},
+                   {mg:1000,timeH:H(8,22,13)-t0,tinfH:1}];
+    const levels = [{conc:12.2,timeH:H(9,11,43)-t0}];
+    const ag = modelAgreement({ crcl:127, tbw:69.4, dial:false }, doses, levels, 2000);
+    assert(ag, 'no agreement computed');
+    assert(Math.abs(ag.aucBuelga - 334) < 6, `Buelga AUC ${ag.aucBuelga.toFixed(0)}, expected ~334`);
+    assert(ag.diffPct > 20, `${ag.diffPct.toFixed(1)}% apart should band as Low`);
+    assert(ag.band.label === 'Low', `banded as ${ag.band.label}`);
+    // Goti's weaker CrCl dependence lands near the clearance the level implies.
+    assert(Math.abs(ag.CLg - 4.12) < 0.4,
+      `Goti CL ${ag.CLg.toFixed(2)} should sit near the level-implied 4.12`);
+  });
+
+  test('Agreement bands are High <10, Moderate 10-20, Low >20', ()=>{
+    const B = MODEL_AGREEMENT_BANDS;
+    const band = (d) => (B.find(x => d < x.max) || B[2]).label;
+    assert(band(5) === 'High' && band(9.9) === 'High', 'under 10 is High');
+    assert(band(10) === 'Moderate' && band(19.9) === 'Moderate', '10-20 is Moderate');
+    assert(band(20) === 'Low' && band(80) === 'Low', 'over 20 is Low');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUITE 14 — CSP compatibility
 //
 // The app ships under a hash-pinned CSP with no 'unsafe-inline' and no

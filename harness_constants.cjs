@@ -95,7 +95,41 @@ function extract() {
     get IBW_TARGET_BMI_F() {
       return this.IBW_DEVINE_BASE_F / Math.pow(this.IBW_DEVINE_MIN_CM / 100, 2);
     },
+
+    // v2.2 — structural constants. Same rule: parsed, never copied.
+    AMP_SEGMENT_PCT:        objLiteral(src, 'AMP_SEGMENT_PCT'),
+    AMPUTATION_LEVELS:      arrayLiteral(src, 'AMPUTATION_LEVELS'),
+    MODEL_AGREEMENT_BANDS:  arrayLiteral(src, 'MODEL_AGREEMENT_BANDS'),
+    AMPUTATION_MAX_PCT:     num(src, 'AMPUTATION_MAX_PCT'),
   };
 }
+
+// Parse `const NAME = { ... };` / `const NAME = [ ... ];` by balancing brackets,
+// then evaluate the literal in isolation. Only ever applied to literals in our
+// own source, and it throws rather than guessing if the shape changes.
+function balancedLiteral(src, name, open, close) {
+  const start = src.search(new RegExp('const\\s+' + name + '\\s*=\\s*\\' + open));
+  if (start < 0) {
+    throw new Error(
+      `harness_constants: could not find \`const ${name} = ${open}...${close}\` in index.html.\n` +
+      `  The constant was renamed, removed, or changed shape.\n` +
+      `  Fix the harness to match the app — do NOT hardcode the old value back.`
+    );
+  }
+  const from = src.indexOf(open, start);
+  let depth = 0, end = -1;
+  for (let i = from; i < src.length; i++) {
+    if (src[i] === open) depth++;
+    else if (src[i] === close) { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end < 0) throw new Error(`harness_constants: unbalanced ${open}${close} for ${name}`);
+  const body = src.slice(from, end + 1)
+                  .replace(/\/\/[^\n]*/g, '')            // strip line comments
+                  .replace(/Infinity/g, '1e999');        // survives the Function round-trip
+  // eslint-disable-next-line no-new-func
+  return Function('"use strict"; return (' + body + ');')();
+}
+function objLiteral(src, name)   { return balancedLiteral(src, name, '{', '}'); }
+function arrayLiteral(src, name) { return balancedLiteral(src, name, '[', ']'); }
 
 module.exports = { extract, readAppSource, APP_PATH };
