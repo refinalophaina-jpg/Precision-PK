@@ -7239,8 +7239,37 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
     };
   }
 
-  const best = pool.reduce((b, r) =>
-    Math.abs(r.auc24 - targetAUC) < Math.abs(b.auc24 - targetAUC) ? r : b, pool[0]);
+  // ── Ties, and why they are not an implementation detail ────────────────
+  // AUC24 = TDD/CL, so candidates with equal daily dose score IDENTICALLY on
+  // |auc24 - target|. That is not rare: at this patient's clearance, 45% of
+  // targets across 400-600 end in an exact tie. `reduce` with a strict `<`
+  // keeps pool[0], i.e. the earliest entry of [8,12,24,48] — the SHORTEST
+  // interval — and for a fixed daily dose the shortest interval always has the
+  // HIGHEST trough. So the arbitrary tie-break was systematically picking the
+  // most trough-exposed member of an exposure-identical set. Measured on the
+  // reported case at target 485, where all three are AUC24 486.0:
+  //      Q12H  500 mg  trough 16.1   <- returned, and it trips the warning below
+  //      Q24H 1000 mg  trough 13.4   <- discarded silently
+  //      Q48H 2000 mg  trough  9.1   <- discarded silently
+  // The function attached its own TROUGH_WARN_MGL flag to the regimen it had
+  // just chosen, while the two alternatives it threw away carried none. Of the
+  // 182 tied targets sampled, it picked the highest-trough option 182 times.
+  //
+  // The tie is broken on the thresholds this file already sources rather than
+  // on array order: prefer a candidate that raises no trough flag at all —
+  // below TROUGH_WARN_MGL (Rybak 2020) and not under the organism's MIC. No new
+  // constant, and where nothing is tied the behaviour is unchanged.
+  const errOf = r => Math.abs(r.auc24 - targetAUC);
+  const bestErr = pool.reduce((m, r) => Math.min(m, errOf(r)), Infinity);
+  const tied = pool.filter(r => errOf(r) - bestErr < 1e-9);
+  const unflagged = tied.filter(r => Number.isFinite(r.Ctrough)
+    && r.Ctrough < TROUGH_WARN_MGL && r.Ctrough >= mic);
+  const best = (unflagged.length ? unflagged : tied)[0];
+  // Say so when the choice was not forced by exposure. The matrix shows the
+  // rest; this stops the single card reading as a ranking it did not earn.
+  if (tied.length > 1) {
+    best.tiedWith = tied.filter(r => r !== best).map(r => ({ dose:r.dose, tau:r.tau, Ctrough:r.Ctrough }));
+  }
 
   // Outside the target band but admissible: still returned, but say so plainly.
   if (!inBand.length) {
@@ -9435,6 +9464,22 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       </div>`;
     }
 
+    // Exposure did not pick this interval — say so rather than letting one card
+    // read as a ranking. AUC24 is total daily dose over clearance, so these
+    // alternatives are exposure-identical; only the peak and trough differ.
+    let tiedLine = '';
+    if (rec.tiedWith && rec.tiedWith.length) {
+      const alts = rec.tiedWith
+        .map(o => `${o.dose} mg Q${o.tau}H${Number.isFinite(o.Ctrough) ? ` (trough ${o.Ctrough.toFixed(1)})` : ''}`)
+        .join(' · ');
+      tiedLine = `<div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--rule);font-size:0.71rem;line-height:1.5;color:var(--text-muted)">
+        <strong style="color:var(--text-secondary)">Same exposure, different shape.</strong>
+        ${alts} reach an identical AUC₂₄ — at steady state that is total daily dose ÷ clearance, which
+        carries no interval term. This one was chosen because its predicted trough raises no flag, not
+        because the exposure ranked it first. The matrix below shows the rest.
+      </div>`;
+    }
+
     html += `
       <div class="rec-box" style="border-color:color-mix(in srgb, var(--purple) 25%, transparent)">
         <div class="rec-title" style="color:var(--accent-blue)">Bayesian Dose Recommendation</div>
@@ -9459,7 +9504,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             <div style="font-size:0.62rem;color:var(--text-muted)">ratio · target ≥ 400</div>
           </div>
         </div>
-        ${deltaLine}
+        ${deltaLine}${tiedLine}
       </div>`;
   }
 

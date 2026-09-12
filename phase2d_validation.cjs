@@ -2108,6 +2108,66 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
   });
 
+  // ── the tie-break ──
+  // AUC24 = TDD/CL, so equal daily doses score identically. `reduce` with a
+  // strict `<` kept pool[0] — the shortest interval — which for a fixed daily
+  // dose always has the HIGHEST trough. The optimizer was therefore choosing
+  // the most trough-exposed member of an exposure-identical set, and then
+  // flagging it. 45% of targets at this patient's clearance end in a tie.
+  test('an AUC tie is not broken toward the highest trough', ()=>{
+    const { bayesDoseOptimizer, ssCtrough2comp, autoTinf } = sandbox;
+    let ties = 0, highest = 0, flagged = 0;
+    for (let t = 400; t <= 600; t += 0.5) {
+      const cands = [8,12,24,48].map(tau => {
+        const dose = Math.round(t * CL * tau / 24 / 250) * 250;
+        const tinf = autoTinf(dose);
+        return { tau, dose, auc: dose*(24/tau)/CL, tdd: dose*(24/tau),
+                 tr: ssCtrough2comp(dose, tau, tinf, CL, VC, VP, Q) };
+      }).filter(c => c.dose >= 250 && c.dose <= K.DOSE_MAX_PER_DOSE_MG
+                  && c.tdd <= K.DOSE_MAX_TDD_MG && c.auc <= K.AUC24_ABSOLUTE_MAX);
+      if (!cands.length) continue;
+      const bestErr = Math.min(...cands.map(c => Math.abs(c.auc - t)));
+      const tied = cands.filter(c => Math.abs(c.auc - t) - bestErr < 1e-9);
+      if (tied.length < 2) continue;
+      const r = bayesDoseOptimizer(CL, VC, t, bag, 1);
+      if (!r.regimen) continue;
+      ties++;
+      const maxTr = Math.max(...tied.map(c => c.tr));
+      if (Math.abs(r.Ctrough - maxTr) < 1e-6) highest++;
+      if ((r.flags || []).some(f => f.level !== 'info')) flagged++;
+    }
+    assert(ties > 50, `expected many tied targets to test, got ${ties}`);
+    assert(highest === 0,
+      `picked the highest-trough option on ${highest}/${ties} tied targets`);
+    assert(flagged === 0,
+      `picked a flagged regimen on ${flagged}/${ties} tied targets, while ` +
+      `exposure-identical unflagged alternatives existed`);
+  });
+
+  test('the tie is disclosed rather than silently resolved', ()=>{
+    const { bayesDoseOptimizer } = sandbox;
+    const r = bayesDoseOptimizer(CL, VC, 485, bag, 1);
+    assert(r.regimen, 'should solve');
+    assert(Array.isArray(r.tiedWith) && r.tiedWith.length >= 1,
+      'a regimen chosen out of a tie must record what it was tied with');
+    r.tiedWith.forEach(o => assert(o.dose && o.tau, 'each alternative needs a dose and interval'));
+  });
+
+  test('common orders are reachable again', ()=>{
+    // 1000 mg Q24H — an ordinary vancomycin order — was returned 0 times in
+    // 6759 calls before the tie-break was fixed, because Q48H's finer lattice
+    // tied or beat it and the tie went to the shortest interval.
+    const { bayesDoseOptimizer } = sandbox;
+    let hits = 0, calls = 0;
+    for (let cl = 0.5; cl <= 8; cl += 0.02) {
+      for (const t of [400,425,450,475,500,525,550,575,600]) {
+        const r = bayesDoseOptimizer(cl, cl * 30, t, null, 1); calls++;
+        if (r.regimen && r.dose === 1000 && r.tau === 24) hits++;
+      }
+    }
+    assert(hits > 0, `1000 mg Q24H was never recommended in ${calls} calls`);
+  });
+
   // ── graph vocabulary ──
   test('the graph names posterior, prior and measurement', ()=>{
     for (const t of ['Posterior prediction', 'Population prior', 'Measured concentration']) {

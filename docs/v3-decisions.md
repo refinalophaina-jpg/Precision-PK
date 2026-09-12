@@ -100,6 +100,49 @@ Buelga recommendation at 5 of 9 selectable targets (400, 425, 500, 525, 600) and
 unchanged at the other 4 — including **450, the shipped default**, where 1250 mg Q24H wins
 on its own. The cap is a real confound, not the whole story.
 
+### The tie-break was clinically inverted — found by adversarial review
+
+Three independent verifiers confirmed D1 and one of them found something sharper that the
+original diagnosis missed.
+
+The TDD lattices are **nested**: Q48H steps of 125 mg contain Q24H's 250, which contain
+Q12H's 500 and Q8H's 750. Measured over 87,309 (target, CL) cells, a longer interval scored
+strictly *worse* than Q24H in **zero** cases. So a long interval can never lose on this
+metric — only tie. And ties are common: **45%** of targets across 400–600 at this patient's
+clearance end in an exact tie.
+
+`pool.reduce` with a strict `<` kept `pool[0]` — the earliest entry of `[8,12,24,48]`, the
+**shortest** interval. For a fixed daily dose the shortest interval always has the
+**highest** trough. So the arbitrary tie-break was systematically returning the most
+trough-exposed member of an exposure-identical set. At target 485, where all three are
+AUC₂₄ 486.0:
+
+| | trough | |
+|---|---|---|
+| Q12H 500 mg | **16.1** | returned — and it trips the function's own `TROUGH_WARN_MGL` (15) |
+| Q24H 1000 mg | 13.4 | discarded silently |
+| Q48H 2000 mg | 9.1 | discarded silently |
+
+**The optimizer attached its own AKI warning to the regimen it had just chosen, while the
+two alternatives it threw away carried none.** Of 182 tied targets sampled, it picked the
+highest-trough option **182 times**.
+
+A consequence: **1000 mg Q24H was returned 0 times in 6,759 calls** across CL 0.5–8.0 and
+nine standard targets. One of the commonest vancomycin maintenance orders was structurally
+unreachable.
+
+**Fix.** The tie is broken on thresholds this file already sources rather than on array
+order: among candidates tied to within 1e-9, prefer one raising no trough flag — below
+`TROUGH_WARN_MGL` (Rybak 2020) and not under the organism's MIC. **No new constant**, and
+where nothing is tied the behaviour is unchanged. The card now also names what it was tied
+with, so a single recommendation cannot read as a ranking it did not earn.
+
+| | before | after |
+|---|---|---|
+| tied targets picking the highest trough | 182/182 | **0/182** |
+| tied targets picking a flagged regimen | 182/182 | **0/182** |
+| 1000 mg Q24H across 6,759 calls | 0 | **158** |
+
 ### Ladder bug found while testing
 
 The first matrix centred its dose ladder on the dose that hits target at Q24H. That looks
