@@ -1425,6 +1425,100 @@
   }
 
   /* ─── Profile graph ─── */
+  /* The permanent explainer above the dosing profile. A clinician reading the
+     posterior curve missing a measured point naturally concludes the tool is
+     ignoring their level; it is shrinkage. Depth is a background step and a
+     hairline, never a shadow. */
+  /* Fit verdict in clinical language, above the numeric table. */
+  .fitdx-plain {
+    font-size: 0.76rem;
+    line-height: 1.5;
+    font-weight: 600;
+    margin: 2px 0 0;
+  }
+  .fitdx-plain-muted {
+    font-weight: 400;
+    color: var(--text-secondary);
+    margin: 3px 0 8px;
+  }
+  /* ── Exposure matrix ─────────────────────────────────────────────────
+     Dose x interval, every cell a steady-state AUC24. Depth is a hairline and
+     a background step; the site has no shadows and neither does this. Bands
+     are the sourced AUC target band, not a preference. */
+  .mx-wrap { border:1px solid var(--border); border-radius:var(--radius-sm);
+             background:var(--paper); margin:14px 0; overflow:hidden; }
+  .mx-head { display:flex; align-items:baseline; justify-content:space-between;
+             gap:10px; flex-wrap:wrap; padding:11px 14px 9px;
+             border-bottom:1px solid var(--rule); }
+  .mx-title { font-size:0.8rem; font-weight:600; color:var(--text-primary); }
+  .mx-sub   { font-size:0.68rem; color:var(--text-muted); }
+  .mx-scroll{ overflow-x:auto; }
+  .mx-grid  { width:100%; border-collapse:collapse; font-family:'DM Mono',monospace;
+              font-variant-numeric:tabular-nums; }
+  .mx-grid th, .mx-grid td { padding:0; text-align:center; }
+  .mx-grid thead th { font-family:'Outfit',sans-serif; font-size:0.66rem;
+              letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted);
+              font-weight:600; padding:7px 6px; border-bottom:1px solid var(--rule); }
+  .mx-grid tbody th { font-family:'DM Mono',monospace; font-size:0.74rem;
+              color:var(--text-secondary); white-space:nowrap; padding:0 10px 0 14px;
+              text-align:right; font-weight:400; }
+  .mx-cell { display:block; width:100%; border:1px solid transparent; background:none;
+             font:inherit; color:var(--text-primary); padding:7px 6px; cursor:pointer;
+             border-radius:var(--radius-sm); line-height:1.2; }
+  .mx-auc  { font-size:0.82rem; font-weight:600; display:block; }
+  .mx-tr   { font-size:0.62rem; color:var(--text-muted); display:block; margin-top:1px; }
+  .mx-cell:hover:not(:disabled) { border-color:var(--terracotta-q); }
+  .mx-cell:focus-visible { outline:2px solid var(--terracotta); outline-offset:-2px; }
+  .mx-in    { background:color-mix(in srgb, var(--success) 13%, transparent); }
+  .mx-sub-b { background:color-mix(in srgb, var(--ink-faint) 12%, transparent); color:var(--text-secondary); }
+  .mx-supra { background:color-mix(in srgb, var(--warning) 17%, transparent); }
+  .mx-blocked { background:none; color:var(--text-muted); cursor:not-allowed;
+                text-decoration:line-through; opacity:0.55; }
+  .mx-cell.is-rec    { border-color:var(--terracotta); border-width:2px; }
+  .mx-cell.is-picked { border-color:var(--accent-blue); border-width:2px; }
+  .mx-key   { display:flex; gap:14px; flex-wrap:wrap; padding:9px 14px;
+              border-top:1px solid var(--rule); font-size:0.66rem; color:var(--text-muted); }
+  .mx-key i { display:inline-block; width:11px; height:11px; border-radius:2px;
+              margin-right:5px; vertical-align:-1px; border:1px solid var(--border); }
+  /* A 13% tint reads in a 60px cell and vanishes in an 11px swatch, so the key
+     gets its own stronger mix of the SAME tokens. Never a different hue. */
+  .mx-key i.mx-in    { background:color-mix(in srgb, var(--success) 45%, transparent); }
+  .mx-key i.mx-sub-b { background:color-mix(in srgb, var(--ink-faint) 40%, transparent); }
+  .mx-key i.mx-supra { background:color-mix(in srgb, var(--warning) 55%, transparent); }
+  .mx-note  { padding:10px 14px 12px; border-top:1px solid var(--rule);
+              font-size:0.72rem; line-height:1.55; color:var(--text-secondary);
+              background:var(--paper-deep); }
+  .mx-note strong { color:var(--text-primary); }
+  @media (max-width:600px) {
+    .mx-grid tbody th { padding-left:8px; font-size:0.68rem; }
+    .mx-auc { font-size:0.74rem; }
+    .mx-tr  { font-size:0.56rem; }
+  }
+
+  /* "Would another level change anything?" — two reasons to draw one, and the
+     clinician acts differently on each. */
+  .voi { background:var(--paper-deep); border:1px solid var(--border);
+         border-radius:var(--radius-sm); padding:10px 13px; margin:12px 0; }
+  .voi-head { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+  .voi-tag { font-size:0.62rem; font-weight:700; letter-spacing:0.1em;
+             text-transform:uppercase; white-space:nowrap; }
+  .voi-title { font-size:0.78rem; font-weight:600; color:var(--text-primary); }
+  .voi-body { font-size:0.73rem; line-height:1.55; color:var(--text-secondary);
+              margin:5px 0 0; }
+
+  .posterior-note {
+    font-size: 0.74rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    background: var(--paper-deep);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--terracotta);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 0 0 10px;
+  }
+  .posterior-note strong { color: var(--text-primary); font-weight: 600; }
+
   .profile-canvas-wrap {
     background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:var(--radius-md);
     overflow:hidden; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
@@ -1786,6 +1880,23 @@
     border-radius: var(--radius-sm);
     caret-color: var(--terracotta);
   }
+  /* The one datetime field. Every instant the clinician enters uses this, so
+     the temporal model has a single visual form as well as a single code path.
+     color-scheme follows the page rather than being pinned to dark — the five
+     datetime inputs this replaced each hard-coded `color-scheme:dark` inline,
+     which painted a dark native picker on the light theme. */
+  .dt-input {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.85rem;
+    padding: 9px 12px;
+    width: 100%;
+    outline: none;
+    font-variant-numeric: tabular-nums;
+  }
   input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
     border-color: var(--terracotta-q);
   }
@@ -1908,7 +2019,7 @@
     <button class="module-tab active" data-onclick="k1">Trough-Based</button>
     <button class="module-tab" data-onclick="k2">AUC Precision</button>
   </div>
-  <div class="header-tag">Vancomycin TDM v2.2</div>
+  <div class="header-tag">Vancomycin TDM v3.0</div>
   <button class="theme-toggle" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -2290,23 +2401,14 @@
           <div class="form-grid-2">
             <div class="field-group">
               <label class="field-label" for="time-dose-given">Last dose given</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-dose-given" data-oninput="k23" data-onchange="k23" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
-              <p class="field-hint">Start of infusion</p>
+              <input type="datetime-local" id="time-dose-given" data-oninput="k23" data-onchange="k23" class="dt-input">
+              <p class="field-hint">Date &amp; start of infusion</p>
             </div>
             <div class="field-group">
               <label class="field-label" for="time-level-drawn">Level drawn at</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="time-level-drawn" data-oninput="k23" data-onchange="k23" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;transition:border-color 0.2s;color-scheme:dark">
-              <p class="field-hint">Time of blood draw</p>
+              <input type="datetime-local" id="time-level-drawn" data-oninput="k23" data-onchange="k23" class="dt-input">
+              <p class="field-hint">Date &amp; time of blood draw</p>
             </div>
-          </div>
-
-          <!-- Next-day toggle for overnight doses -->
-          <div style="display:flex;align-items:center;gap:8px">
-            <label class="toggle-switch" style="width:32px;height:18px">
-              <input type="checkbox" id="next-day" data-onchange="k23">
-              <span class="slider"></span>
-            </label>
-            <span style="font-size:0.72rem;color:var(--text-muted)">Level drawn next calendar day (e.g. dose 21:00, level 09:00)</span>
           </div>
 
           <!-- Auto-calculated delta display -->
@@ -2363,7 +2465,7 @@
           </div>
           <div class="field-group">
             <label class="field-label" for="tl-dose-time">Dose start time</label>
-            <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-dose-time" data-oninput="k26" data-onchange="k26" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+            <input type="datetime-local" id="tl-dose-time" data-oninput="k26" data-onchange="k26" class="dt-input">
           </div>
         </div>
       </div>
@@ -2383,7 +2485,7 @@
             </div>
             <div class="field-group">
               <label class="field-label" for="tl-t1-time">Drawn at</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t1-time" data-oninput="k26" data-onchange="k26" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+              <input type="datetime-local" id="tl-t1-time" data-oninput="k26" data-onchange="k26" class="dt-input">
             </div>
           </div>
           <div id="tl-t1-display" style="display:none;font-size:0.78rem;font-family:'DM Mono',monospace;color:var(--accent-amber)"></div>
@@ -2405,7 +2507,7 @@
             </div>
             <div class="field-group">
               <label class="field-label" for="tl-t2-time">Drawn at</label>
-              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="tl-t2-time" data-oninput="k26" data-onchange="k26" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.88rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+              <input type="datetime-local" id="tl-t2-time" data-oninput="k26" data-onchange="k26" class="dt-input">
             </div>
           </div>
           <div id="tl-t2-display" style="display:none;font-size:0.78rem;font-family:'DM Mono',monospace;color:var(--accent-amber)"></div>
@@ -2481,7 +2583,7 @@
           </div>
           <div class="field-group">
             <label class="field-label" for="rl-dose-time">Dose start date &amp; time</label>
-            <input type="datetime-local" id="rl-dose-time" data-oninput="k29" data-onchange="k29" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+            <input type="datetime-local" id="rl-dose-time" data-oninput="k29" data-onchange="k29" class="dt-input">
             <p class="field-hint">Enter date + time to support cross-day intervals</p>
           </div>
         </div>
@@ -2502,7 +2604,7 @@
             </div>
             <div class="field-group">
               <label class="field-label" for="rl-draw-time">Level drawn (date &amp; time)</label>
-              <input type="datetime-local" id="rl-draw-time" data-oninput="k29" data-onchange="k29" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:0.85rem;padding:9px 12px;width:100%;outline:none;color-scheme:dark">
+              <input type="datetime-local" id="rl-draw-time" data-oninput="k29" data-onchange="k29" class="dt-input">
             </div>
           </div>
           <div id="rl-t-display" style="display:none;font-size:0.78rem;font-family:'DM Mono',monospace;color:var(--accent-amber)"></div>
@@ -2988,6 +3090,7 @@ const __ACT = {
   k68: (el, ev, arg) => { addToComparison() },   /* addToComparison() */
   k69: (el, ev, arg) => { loadProfileIntoForm(String(arg)) },   /* loadProfileIntoForm('${p.id}') */
   k70: (el, ev, arg) => { deleteProfile(String(arg)) },   /* deleteProfile('${p.id}') */
+  k71: (el, ev, arg) => { pickMatrixCell(String(arg)) },   /* pickMatrixCell('dose|tau') */
 };
 function setCrclOverride() {
   const cb = document.getElementById('crcl-override-on');
@@ -3157,34 +3260,29 @@ function timeToMinutes(t) {
 function calcTimeDelta() {
   const doseTime  = document.getElementById('time-dose-given').value;
   const levelTime = document.getElementById('time-level-drawn').value;
-  const nextDay   = document.getElementById('next-day').checked;
   const deltaDisp = document.getElementById('time-delta-display');
   const deltaVal  = document.getElementById('time-delta-val');
   const deltaLbl  = document.getElementById('time-delta-label');
   const hiddenDelta = document.getElementById('time-dose-to-level');
 
-  if(!doseTime || !levelTime) {
+  const r = elapsedHours(doseTime, levelTime);
+  if (!r.ok) {
     deltaDisp.style.display = 'none';
     hiddenDelta.value = '';
     updateLevelInterpretation();
     return;
   }
 
-  let doseMin  = timeToMinutes(doseTime);
-  let levelMin = timeToMinutes(levelTime);
-  if(nextDay) levelMin += 24 * 60;
-
-  let deltaMin = levelMin - doseMin;
-  // If level is before dose on same day, assume next day automatically
-  if(deltaMin < 0 && !nextDay) deltaMin += 24 * 60;
-
-  const deltaHr = deltaMin / 60;
-  hiddenDelta.value = deltaHr.toFixed(2);
-
-  const hrs = Math.floor(deltaHr);
-  const mins = Math.round((deltaHr - hrs) * 60);
-  deltaVal.textContent = `${hrs}h ${mins > 0 ? mins + 'm' : ''}`.trim();
-  deltaLbl.textContent = `from dose start to level draw`;
+  // The "next calendar day" switch that used to live here could only ever add
+  // ONE day, so a trough drawn before the next dose of a Q48H regimen — 47.5 h
+  // after the last one — still read as 23.5 h. Both fields now carry their own
+  // date and the switch is gone.
+  hiddenDelta.value = r.reversed ? '' : r.hours.toFixed(2);
+  deltaVal.textContent = formatElapsed(r.hours);
+  deltaLbl.textContent = r.reversed
+    ? 'level is dated before the dose — check the dates'
+    : 'from dose start to level draw';
+  deltaVal.style.color = r.reversed ? 'var(--danger)' : 'var(--accent-amber)';
   deltaDisp.style.display = 'block';
 
   updateLevelInterpretation();
@@ -3371,29 +3469,21 @@ function calcTLDeltas() {
   const t1T   = document.getElementById('tl-t1-time').value;
   const t2T   = document.getElementById('tl-t2-time').value;
 
-  function toMin(t) { const [h,m]=t.split(':').map(Number); return h*60+m; }
-  function diffHr(from, to) {
-    let d = toMin(to) - toMin(from);
-    if (d < 0) d += 24*60;
-    return d / 60;
-  }
-  function showDelta(elId, hrId, doseT, drawT, label) {
-    const el = document.getElementById(elId);
-    const hid = document.getElementById(hrId);
-    if (!doseT || !drawT) { el.style.display='none'; hid.value=''; return; }
-    const hr = diffHr(doseT, drawT);
-    hid.value = hr.toFixed(2);
-    el.textContent = `${hr.toFixed(1)}h from dose start · ${label}`;
-    el.style.display = 'block';
-  }
-  if (doseT && t1T) showDelta('tl-t1-display','tl-t1-hours', doseT, t1T, 'Level 1');
-  if (doseT && t2T) showDelta('tl-t2-display','tl-t2-hours', doseT, t2T, 'Level 2');
+  // Full datetime on every field: elapsedHours never wraps and never infers a day.
+  bindElapsed('tl-dose-time', 'tl-t1-time', 'tl-t1-display', 'tl-t1-hours', 'Level 1');
+  bindElapsed('tl-dose-time', 'tl-t2-time', 'tl-t2-display', 'tl-t2-hours', 'Level 2');
 
+  const r1 = elapsedHours(doseT, t1T);
+  const r2 = elapsedHours(doseT, t2T);
   const t1h  = parseFloat(document.getElementById('tl-t1-hours').value) || 0;
   const t2h  = parseFloat(document.getElementById('tl-t2-hours').value) || 0;
   const tinf = parseFloat(document.getElementById('tl-tinf').value) || 1;
   const warn = document.getElementById('tl-warning');
   const issues = [];
+
+  // A reversed interval is now a stated error rather than a silent +24 h.
+  if (r1.ok && r1.reversed) issues.push(`Level 1 is dated ${formatElapsed(r1.hours)} relative to the dose — before the dose was given. Check the date on each field.`);
+  if (r2.ok && r2.reversed) issues.push(`Level 2 is dated ${formatElapsed(r2.hours)} relative to the dose — before the dose was given. Check the date on each field.`);
 
   if (t1h && t1h <= tinf) {
     issues.push(`Level 1 drawn at ${t1h.toFixed(1)}h — during or before end of infusion (${tinf}h). Both levels must be post-infusion for accurate Kel estimation.`);
@@ -3430,6 +3520,83 @@ function setRLMode(mode) {
   document.getElementById('rl-mode-hint').textContent = hints[mode];
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  ONE TEMPORAL MODEL
+// ══════════════════════════════════════════════════════════════════════════
+// Every instant the clinician enters is a full DATE AND TIME. No part of this
+// file is allowed to infer a calendar day from a clock reading.
+//
+// This replaces three different ways of turning two clock times into an
+// elapsed interval, two of which were wrong:
+//
+//   calcTLDeltas (Two Levels)      let d = to - from; if (d < 0) d += 24*60;
+//   calcTimeDelta (steady state)   the same, plus a "next day" checkbox
+//   calcRLDelta (Random Level)     real Date arithmetic — the correct one
+//
+// The first two wrapped every interval into [0,24). Real two-level sampling
+// routinely spans midnight, so this was not an edge case. Two failure modes
+// were measured against the shipped engine (docs/audit/probe-v3-case-34m.cjs):
+//
+//   Level 2 wraps BELOW level 1  -> solveTwoLevelsPK returns null. Visible:
+//     the clinician gets warnings about a level drawn "during the infusion"
+//     and no answer. This is the one that was reported.
+//
+//   BOTH levels land on a later day -> they wrap by the same 24 h, so the
+//     log-linear slope is unchanged and kel is still right. But the peak
+//     back-extrapolation in solveTwoLevelsPK uses the ABSOLUTE t1, which is now
+//     a day early, so VOLUME is wrong and nothing complains. The wrapped times
+//     have to clear the post-infusion and ordering guards for this to be
+//     silent, which they do whenever the wrapped t1 exceeds the infusion time:
+//         dose 08:00, levels 12:00 and 18:00 next day (true 28 h, 34 h)
+//           wrapped to 4 h and 10 h -> every guard passes, no warning shown
+//           Vd 13.2 L -> 75.3 L  (5.7x),  CL 0.96 -> 5.47 L/h
+//         dose 22:00, levels 06:00 and 12:00 two days later (true 56 h, 62 h)
+//           wrapped to 8 h and 14 h -> silent,  Vd 1.7 L -> 56.4 L  (32.5x)
+//     A level drawn EARLY the next morning is the benign case: it wraps below
+//     the infusion time and calculate() refuses out loud. The dangerous case is
+//     the ordinary daytime draw, which wraps to a plausible-looking hour.
+//
+// SUITE 19 fails the build if a clock-only time input returns anywhere, or if
+// any elapsed-time helper other than these reappears.
+
+// Elapsed hours between two datetime-local values. Never wraps, never guesses
+// a day, and reports a reversed interval rather than silently absorbing it.
+function elapsedHours(fromVal, toVal) {
+  if (!fromVal || !toVal) return { ok:false, reason:'incomplete' };
+  const ms = new Date(toVal) - new Date(fromVal);
+  if (!isFinite(ms)) return { ok:false, reason:'unparseable' };
+  return { ok:true, hours: ms / 3600000, reversed: ms < 0 };
+}
+
+// "2d 1.3h (total 49.3h)" for long spans, "16.9h" for short ones. The clinician
+// asked to be able to see, at a glance, that the tool read the timestamps the
+// way they meant them.
+function formatElapsed(hr) {
+  const neg  = hr < 0, a = Math.abs(hr);
+  const days = Math.floor(a / 24), rem = a - days * 24;
+  const sign = neg ? '−' : '';
+  return days > 0
+    ? `${sign}${days}d ${rem.toFixed(1)}h (total ${sign}${a.toFixed(1)}h)`
+    : `${sign}${a.toFixed(1)}h`;
+}
+
+// Bind a dose-start/draw pair to a readout and a hidden hours field. Returns
+// the elapsed hours, or null when the pair is incomplete or reversed.
+function bindElapsed(fromId, toId, dispId, hiddenId, label) {
+  const disp = document.getElementById(dispId);
+  const hid  = document.getElementById(hiddenId);
+  const from = document.getElementById(fromId).value;
+  const to   = document.getElementById(toId).value;
+  const r    = elapsedHours(from, to);
+  if (!r.ok) { if (disp) disp.style.display = 'none'; if (hid) hid.value = ''; return null; }
+  if (hid) hid.value = r.reversed ? '' : r.hours.toFixed(2);
+  if (disp) {
+    disp.textContent = `${formatElapsed(r.hours)} after dose start${label ? ' · ' + label : ''}`;
+    disp.style.display = 'block';
+  }
+  return r.reversed ? null : r.hours;
+}
+
 // ── Compute delta hours from dose start to level draw (supports cross-day datetime-local inputs) ──
 function calcRLDelta() {
   const doseVal = document.getElementById('rl-dose-time').value;
@@ -3437,14 +3604,10 @@ function calcRLDelta() {
   const disp  = document.getElementById('rl-t-display');
   const hid   = document.getElementById('rl-t-hours');
   const warn  = document.getElementById('rl-warning');
-  if (!doseVal || !drawVal) { disp.style.display='none'; hid.value=''; return; }
+  const r = elapsedHours(doseVal, drawVal);
+  if (!r.ok) { disp.style.display='none'; hid.value=''; return; }
 
-  const doseDate = new Date(doseVal);
-  const drawDate = new Date(drawVal);
-  const diffMs = drawDate - doseDate;
-
-  if (isNaN(diffMs)) { disp.style.display='none'; hid.value=''; return; }
-  if (diffMs < 0) {
+  if (r.reversed) {
     warn.textContent = '⚠ Level draw time is before dose start — check dates.';
     warn.style.display = 'block';
     hid.value = '';
@@ -3452,13 +3615,9 @@ function calcRLDelta() {
     return;
   }
 
-  const hr = diffMs / (1000 * 60 * 60);
+  const hr = r.hours;
   hid.value = hr.toFixed(2);
-
-  const days = Math.floor(hr / 24);
-  const remHr = hr - days * 24;
-  const daysStr = days > 0 ? `${days}d ` : '';
-  disp.textContent = `${daysStr}${remHr.toFixed(1)}h from dose start (total ${hr.toFixed(1)}h)`;
+  disp.textContent = `${formatElapsed(hr)} from dose start`;
   disp.style.display = 'block';
 
   const tinf = parseFloat(document.getElementById('rl-tinf').value) || 1;
@@ -3702,6 +3861,49 @@ function modelAgreement(pt, doses, levels, dailyDose) {
     const band = MODEL_AGREEMENT_BANDS.find(x => diffPct < x.max) || MODEL_AGREEMENT_BANDS[2];
     return { aucBuelga: aucB, aucGoti: aucG, CLb, CLg, diffPct, band };
   } catch (e) { return null; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  FIT AGREEMENT BANDS — a residual in sigma, said in clinical language
+// ══════════════════════════════════════════════════════════════════════════
+// "The level is 4.5 mg/L higher than predicted" does not tell a clinician
+// whether that matters. These bands translate |residual| / sigma into what to
+// DO about it, in the vocabulary DoseMeRx uses at the bedside ("good fit" /
+// "not ideal, needs review") but with the actual number kept on screen.
+//
+// PROVENANCE, STATED PLAINLY. The 1 and 2 boundaries are NOT literature
+// constants and there is no vancomycin paper that sets them. They are the
+// conventional reading of a standardised residual: inside 1 SD is ordinary
+// scatter, beyond 2 SD is roughly the outer 5% of what the model's own error
+// term says it should produce. Sigma itself IS sourced — it is each model's
+// published residual error (SIGMA_ADD_* / SIGMA_PROP_*), so the comparison a
+// band makes is against that model's declared precision, not an invented one.
+// They order the advice; they never change a dose.
+const FIT_BANDS = [
+  { max: 1,        key: 'close',    label: 'Close agreement',
+    verdict: 'The fit reproduces the levels',
+    clinical: 'Measured concentrations closely match model expectations.',
+    action:   '',
+    tone: 'ok' },
+  { max: 2,        key: 'modest',   label: 'Modest disagreement',
+    verdict: 'The fit sits noticeably off this level',
+    clinical: 'Measured concentrations differ modestly from model expectations.',
+    action:   'A further concentration would improve the exposure estimate.',
+    tone: 'warn' },
+  { max: Infinity, key: 'substantial', label: 'Substantial disagreement',
+    verdict: 'The fit does not reproduce this level',
+    clinical: 'Measured concentrations differ substantially from model expectations. '
+            + 'The population assumptions may not represent this patient.',
+    action:   'A further concentration is recommended before relying on this exposure estimate. '
+            + 'Check the demographics, dose times and draw times first — a mistyped timestamp '
+            + 'looks exactly like a patient whose pharmacokinetics have shifted.',
+    tone: 'danger' },
+];
+
+function fitBandFor(sigmaAbs) {
+  const a = Math.abs(Number(sigmaAbs));
+  if (!isFinite(a)) return FIT_BANDS[0];
+  return FIT_BANDS.find(b => a < b.max) || FIT_BANDS[FIT_BANDS.length - 1];
 }
 
 function fitDiagnostics(r) {
@@ -7051,6 +7253,107 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   return best;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  EXPOSURE MATRIX — every dose x interval at once, instead of one winner
+// ══════════════════════════════════════════════════════════════════════════
+// WHY THIS EXISTS. bayesDoseOptimizer solves a dose per interval and then ranks
+// the candidates on |auc24 - target|. At steady state
+//       auc24 = dose * (24/tau) / CL = total daily dose / CL
+// so AUC24 is a pure function of the DAILY dose. State it carefully, because
+// the loose version is wrong: auc24 does vary with tau here, since `dose` is
+// solved per tau. But it is independent of tau GIVEN the daily dose — and the
+// per-tau dose is chosen to hit the same target at every interval. So without
+// the 250 mg rounding every candidate would score EXACTLY targetAUC and the
+// metric would be a perfect four-way tie. Every scrap of discriminating power
+// it has comes from rounding error, and the error is not even-handed: the
+// achievable-AUC lattice is
+//       step(tau) = 250 * (24/tau) / CL
+// six times finer at Q48H than at Q8H, so the long interval can land closer for
+// no pharmacological reason. Measured on the reported case (Goti posterior
+// CL 2.058 L/h): target 450 recommends 1750 mg Q48H, target 475 recommends
+// 500 mg Q12H — a fourfold change in dosing frequency from a 5% change in an
+// arbitrary input. And 1000 mg Q24H, whose AUC24 is IDENTICAL to 500 mg Q12H,
+// can never be recommended at all, because exact ties keep the earliest entry
+// of the [8,12,24,48] array. See docs/audit/probe-v3-case-34m.cjs.
+//
+// The honest response is not a better-tuned score. AUC24 genuinely does not
+// contain the answer, so a tool that returns one regimen is asserting a
+// preference it cannot derive. DoseMeRx shows a dose x interval matrix of
+// predicted AUC24, bands it, marks the default target and lets the clinician
+// click a cell. That needs NO preference weights, which is why it is the
+// design adopted here: exposure is computed, the interval is chosen by the
+// person who knows the patient.
+//
+// Cells are banded against AUC24_TARGET_MIN/MAX (Rybak 2020 Rec 1, A-II) —
+// sourced numbers — not against an invented preference.
+const MATRIX_INTERVALS = [8, 12, 24, 48];   // same set bayesDoseOptimizer ranks
+const MATRIX_ROWS      = 6;                 // dose steps shown, centred on target
+const MATRIX_DOSE_STEP = 250;               // the dispensing granularity
+const MATRIX_DOSE_MIN  = 250;
+const MATRIX_DOSE_MAX  = 2000;              // = DOSE_MAX_PER_DOSE_MG
+
+function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
+  if (!(CLind > 0) || !(targetAUC > 0)) return null;
+
+  // The ladder must span the dose that reaches the target AT EVERY INTERVAL,
+  // not just at Q24H. Centring on Q24H looks reasonable and is not: the target
+  // dose scales with tau, so a Q24H-centred ladder runs out before the long
+  // intervals and past the short ones. On the reported case it stopped at
+  // 1750 mg and therefore hid 2000 mg Q48H — AUC24 485, squarely in band, and
+  // the one cell a clinician weighing Q48H most needs to see. A matrix that
+  // silently omits admissible regimens is worse than no matrix.
+  const targetDoses = MATRIX_INTERVALS.map(tau => targetAUC * CLind * tau / 24);
+  let lo = Math.floor(Math.min.apply(null, targetDoses) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
+  let hi = Math.ceil (Math.max.apply(null, targetDoses) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
+  lo = Math.max(MATRIX_DOSE_MIN, lo);
+  hi = Math.min(MATRIX_DOSE_MAX, Math.max(hi, lo + MATRIX_DOSE_STEP));
+  // Pad a thin ladder outwards so there is room to move around the target.
+  while (((hi - lo) / MATRIX_DOSE_STEP) + 1 < MATRIX_ROWS) {
+    const grewLo = lo > MATRIX_DOSE_MIN, grewHi = hi < MATRIX_DOSE_MAX;
+    if (!grewLo && !grewHi) break;
+    if (grewLo) lo -= MATRIX_DOSE_STEP;
+    if (grewHi && ((hi - lo) / MATRIX_DOSE_STEP) + 1 < MATRIX_ROWS) hi += MATRIX_DOSE_STEP;
+  }
+  const doses = [];
+  for (let d = lo; d <= hi; d += MATRIX_DOSE_STEP) doses.push(d);
+  if (!doses.length) return null;
+
+  const rows = doses.map(dose => {
+    const tinfH = autoTinf(dose);
+    const cells = MATRIX_INTERVALS.map(tau => {
+      const auc24 = dose * (24 / tau) / CLind;
+      const tdd   = dose * (24 / tau);
+      let Ctrough, Cpeak;
+      if (goti2comp) {
+        Ctrough = ssCtrough2comp(dose, tau, tinfH, CLind, goti2comp.Vc, goti2comp.Vp, goti2comp.Q);
+        Cpeak   = ssPeak2comp   (dose, tau, tinfH, CLind, goti2comp.Vc, goti2comp.Vp, goti2comp.Q);
+      } else {
+        const kel = CLind / Vind;
+        const denom = 1 - Math.exp(-kel * tau);
+        if (denom > 1e-10) {
+          const Cinf = ((dose / tinfH) / (kel * Vind)) * (1 - Math.exp(-kel * tinfH));
+          Ctrough = Cinf * Math.exp(-kel * (tau - tinfH)) / denom;
+          Cpeak   = Cinf / denom;
+        }
+      }
+      // Hard safety tier first — these are not offerable at all.
+      const blocked = tdd > DOSE_MAX_TDD_MG || auc24 > AUC24_ABSOLUTE_MAX;
+      const band = blocked                        ? 'blocked'
+                 : auc24 <  AUC24_TARGET_MIN      ? 'sub'
+                 : auc24 >  AUC24_TARGET_MAX      ? 'supra'
+                 :                                  'in';
+      return { tau, dose, tinfH, auc24, tdd, Ctrough, Cpeak, band, blocked };
+    });
+    return { dose, tinfH, cells };
+  });
+
+  return {
+    rows, intervals: MATRIX_INTERVALS, targetAUC,
+    bandMin: AUC24_TARGET_MIN, bandMax: AUC24_TARGET_MAX,
+    mic: (Number.isFinite(micMgL) && micMgL > 0) ? micMgL : 1,
+  };
+}
+
 // ─── AUC uncertainty disclosure ───
 // AUC uncertainty disclosure — MEASURED, not asserted.
 //
@@ -7068,14 +7371,132 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
 //     3       8.1%   17.1%   23.2%      76%
 // Quoted below as the ~80th percentile, with the percentile stated explicitly.
 // The 2-compartment figures are NOT re-measured and are marked as estimates.
+// ══════════════════════════════════════════════════════════════════════════
+//  AUC UNCERTAINTY — one table, read by both the caption and the arithmetic
+// ══════════════════════════════════════════════════════════════════════════
+// These widths came from the Monte Carlo in phase2d (see docs/audit-2026-09.md)
+// and were previously reachable only as a formatted STRING. The next-level
+// advisor needs the same numbers as numbers, and rule 2 of this project says
+// one implementation per concept — so the table is the source and the caption
+// is derived from it, rather than the two drifting apart.
+const AUC_UNCERTAINTY = [
+  { n:0, frac:0.35, note:'population prior — no levels; ~80% of patients' },
+  { n:1, frac:0.21, note:'1 level; ~80% of patients, median ±10%' },
+  { n:1, frac:0.25, is2comp:true, note:'1 level, 2-comp — estimated, not simulated' },
+  { n:2, frac:0.18, note:'2 levels; ~80% of patients, median ±9%' },
+  { n:3, frac:0.17, note:'≥3 levels; ~80% of patients, median ±8%' },
+];
+
+function aucUncertaintyFrac(nLevels, model) {
+  const is2comp = model === 'goti' || model === 'hughes';
+  const n = Math.max(0, Math.min(3, Number(nLevels) || 0));
+  const exact = AUC_UNCERTAINTY.find(r => r.n === n && !!r.is2comp === is2comp);
+  return (exact || AUC_UNCERTAINTY.find(r => r.n === n) || AUC_UNCERTAINTY[0]).frac;
+}
+
 function aucUncertaintyText(nLevels, model) {
   const is2comp = model === 'goti' || model === 'hughes';
-  if (nLevels === 0)  return '±35% (population prior — no levels; ~80% of patients)';
-  if (nLevels === 1)  return is2comp
-    ? '~±25% (1 level, 2-comp — estimated, not simulated)'
-    : '~±21% (1 level; ~80% of patients, median ±10%)';
-  if (nLevels === 2)  return '~±18% (2 levels; ~80% of patients, median ±9%)';
-  return '~±17% (≥3 levels; ~80% of patients, median ±8%)';
+  const n = Math.max(0, Math.min(3, Number(nLevels) || 0));
+  const row = AUC_UNCERTAINTY.find(r => r.n === n && !!r.is2comp === is2comp)
+           || AUC_UNCERTAINTY.find(r => r.n === n) || AUC_UNCERTAINTY[0];
+  const pct = Math.round(row.frac * 100);
+  return `${n === 0 ? '' : '~'}±${pct}% (${row.note})`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  WOULD ANOTHER LEVEL CHANGE ANYTHING?
+// ══════════════════════════════════════════════════════════════════════════
+// "Consider obtaining another level" is advice with no information in it. There
+// are two quite different reasons to draw one, and a clinician decides
+// differently between them:
+//
+//   MANAGEMENT — the current interval on AUC24 straddles a target boundary, so
+//     the patient may be under- or over-exposed and we cannot yet tell. Another
+//     level can move the regimen.
+//   PRECISION — the interval already sits inside the target band. Another level
+//     narrows it but the regimen lands in the same place either way.
+//
+// The test is therefore whether the uncertainty interval CROSSES a band edge,
+// not how wide it is. Both the width and the edges are sourced: the width comes
+// from AUC_UNCERTAINTY (simulated), the edges from AUC24_TARGET_MIN/MAX
+// (Rybak 2020 Rec 1, A-II). Nothing here is a tuned preference.
+// A level is worth drawing when it can MOVE something. Two things have to be
+// true for that, and they are independent, so both are tested:
+//
+//   1. The extra level must actually narrow the estimate. Going 0->1 level cuts
+//      the interval from +/-35% to +/-21%; going 2->3 cuts +/-18% to +/-17%.
+//      The third level is nearly worthless and the tool should say so rather
+//      than repeat "consider another level" at every visit.
+//   2. The estimate must be close enough to a decision boundary that a narrower
+//      interval could land on the other side of it. "Close enough" is DERIVED,
+//      not chosen: it is the AUC moved by one 250 mg dose step at this interval
+//      and clearance, i.e. the smallest change that can actually be prescribed.
+//      Inside that, extra precision cannot change what you would write.
+//
+// NEXT_LEVEL_MIN_GAIN is the one judgement call and is labelled as such: a
+// relative narrowing below 15% is treated as not worth a venepuncture on its
+// own. It orders advice; it never changes a dose. Everything else here is
+// sourced — the widths from AUC_UNCERTAINTY, the band from AUC24_TARGET_MIN/MAX
+// (Rybak 2020 Rec 1, A-II), the step from the 250 mg dispensing increment.
+const NEXT_LEVEL_MIN_GAIN = 0.15;   // PREFERENCE, not a literature constant
+
+function nextLevelValue(auc24, nLevels, model, tau, CLind) {
+  if (!(auc24 > 0)) return null;
+  const n     = Number(nLevels) || 0;
+  const uNow  = aucUncertaintyFrac(n, model);
+  const uNext = aucUncertaintyFrac(n + 1, model);
+  const gain  = uNow > 0 ? (uNow - uNext) / uNow : 0;
+
+  const loNow  = auc24 * (1 - uNow),  hiNow  = auc24 * (1 + uNow);
+  const loNext = auc24 * (1 - uNext), hiNext = auc24 * (1 + uNext);
+
+  // smallest prescribable change in exposure at this interval
+  const stepAUC = (tau > 0 && CLind > 0) ? 250 * (24 / tau) / CLind : NaN;
+  const margin  = Math.min(auc24 - AUC24_TARGET_MIN, AUC24_TARGET_MAX - auc24);
+  const nearEdge = isFinite(stepAUC) ? margin < stepAUC : margin < 50;
+  const outright = auc24 < AUC24_TARGET_MIN || auc24 > AUC24_TARGET_MAX;
+
+  const pct = x => Math.round(x * 100);
+  let kind, headline, detail;
+
+  if (outright) {
+    kind = 'management';
+    headline = 'A further level may substantially change the regimen';
+    detail = `The estimate already sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, so a dose change `
+           + `is indicated on the data you have. A further level tells you how large it needs to be.`;
+  } else if (n === 0) {
+    kind = 'management';
+    headline = 'A first level may substantially change the regimen';
+    detail = `This is a population estimate (±${pct(uNow)}%). One measured concentration narrows it to about `
+           + `±${pct(uNext)}% and is the single largest improvement available.`;
+  } else if (gain < NEXT_LEVEL_MIN_GAIN) {
+    kind = 'precision';
+    headline = 'A further level would add little';
+    detail = `With ${n} level${n===1?'':'s'} the interval is ±${pct(uNow)}%; another would take it to about `
+           + `±${pct(uNext)}% — a ${pct(gain)}% narrowing. The maintenance regimen lands in the same place either way. `
+           + (nearEdge
+              ? `The estimate does sit within one 250 mg step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, `
+                + `but a further level is not the lever that resolves that — cystatin C, a fresh creatinine, or comparing `
+                + `models will do more. `
+              : `It sits comfortably inside the band. `)
+           + `Draw one because the clinical picture changed, not to settle this number.`;
+  } else if (nearEdge) {
+    kind = 'management';
+    headline = 'A further level may change the regimen';
+    detail = `The estimate is within one 250 mg dose step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, and a `
+           + `further level narrows ±${pct(uNow)}% to about ±${pct(uNext)}% `
+           + `(${loNow.toFixed(0)}–${hiNow.toFixed(0)} → ${loNext.toFixed(0)}–${hiNext.toFixed(0)} mg·h/L). `
+           + `That is enough to change which dose you would write.`;
+  } else {
+    kind = 'precision';
+    headline = 'A further level would improve precision, not the regimen';
+    detail = `The estimate sits more than one 250 mg dose step inside the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band, `
+           + `so tightening ±${pct(uNow)}% to ±${pct(uNext)}% would not change the dose you would write. `
+           + `Useful for confidence; not decision-changing on its own.`;
+  }
+
+  return { kind, headline, detail, uNow, uNext, gain, loNow, hiNow, loNext, hiNext,
+           stepAUC, margin, nearEdge, outright, nLevels: n };
 }
 
 // ─── Format absolute timestamp ───
@@ -8769,21 +9190,28 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const projDefaultDose = (rec && !rec.noSolution) ? rec.dose : 1000;
   const projDefaultTau  = (rec && !rec.noSolution) ? rec.tau  : 12;
   html += `
+    <p class="posterior-note">
+      The <strong>posterior prediction</strong> combines the measured concentrations with
+      population information, so it may not pass directly through a measured point. That is
+      Bayesian shrinkage working as intended, not the model ignoring the level — how far it
+      shrinks depends on how much the level disagrees with the prior and how many levels
+      there are. The fit check below states the disagreement in standard deviations.
+    </p>
     <div class="profile-canvas-wrap">
       <div class="profile-canvas-header">
         <div class="profile-canvas-title">Dosing Profile</div>
         <div class="profile-legend">
           <div class="legend-item">
             <div class="legend-line" style="background:var(--terracotta)"></div>
-            Individual (Bayesian)
+            Posterior prediction
           </div>
           <div class="legend-item">
             <div class="legend-line legend-line-dashed" style="border-top-color:var(--ink-faint)"></div>
-            Population avg
+            Population prior
           </div>
           <div class="legend-item">
             <div class="legend-dot" style="background:var(--accent-rose)"></div>
-            Observed level
+            Measured concentration
           </div>
           <div class="legend-item" id="b-proj-legend" style="display:none">
             <div class="legend-line" style="background:color-mix(in srgb, var(--purple) 85%, transparent)"></div>
@@ -8824,8 +9252,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     <div class="bayes-pk-wrap">
       <div class="bayes-pk-header">
         <div class="bayes-pk-col-head">Parameter</div>
-        <div class="bayes-pk-col-head ind">Individual</div>
-        <div class="bayes-pk-col-head pop">Population</div>
+        <div class="bayes-pk-col-head ind">Posterior</div>
+        <div class="bayes-pk-col-head pop">Population prior</div>
       </div>
       ${pkRow('CL',  CL_ind.toFixed(2), CL_pop.toFixed(2), 'L/h')}
       ${isGotiRes ? (() => {
@@ -8905,12 +9333,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const fd = fitDiagnostics(Object.assign({}, r, { regimen: cur2 }));
     if (!fd) return;
     const a = Math.abs(fd.worst.sigma);
-    const tone = a >= 2 ? 'danger' : a >= 1 ? 'warn' : 'ok';
+    const fb = fitBandFor(a);
+    const tone = fb.tone;
     const col  = tone === 'danger' ? 'var(--danger)' : tone === 'warn' ? 'var(--accent-amber)' : 'var(--success)';
-    const verdict = tone === 'danger'
-      ? 'The fit does not reproduce this level'
-      : tone === 'warn' ? 'The fit sits noticeably off this level'
-      : 'The fit reproduces the levels';
+    const verdict = fb.verdict;
     const rows = fd.rows.map(x => `
       <div class="fitdx-row">
         <span class="fitdx-t">${x.tRel.toFixed(1)} h</span>
@@ -8976,8 +9402,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <div class="fitdx" style="border-left:3px solid ${col}">
         <div class="fitdx-head">
           <span class="fitdx-title">Fit vs measured</span>
-          <span style="color:${col};font-weight:600;font-size:0.72rem">${verdict}</span>
+          <span style="color:${col};font-weight:600;font-size:0.72rem">${fb.label} · ${a.toFixed(1)} σ</span>
         </div>
+        <div class="fitdx-plain" style="color:${col}">${verdict}.</div>
+        <div class="fitdx-plain fitdx-plain-muted">${fb.clinical}${fb.action ? ' ' + fb.action : ''}</div>
         <div class="fitdx-row fitdx-hdr">
           <span class="fitdx-t">Time</span><span class="fitdx-n">Measured</span>
           <span class="fitdx-n">Model</span><span class="fitdx-n">Residual</span><span class="fitdx-n">In σ</span>
@@ -9075,6 +9503,99 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         </div>
       </div>`;
   }
+
+  // ── Is another level worth drawing? ─────────────────────────────────────
+  // Replaces an unconditional "consider obtaining another level", which is
+  // advice with no information in it. See nextLevelValue().
+  (() => {
+    const aucForVOI = (rec && !rec.noSolution) ? rec.auc24
+                    : (cur2 && cur2.auc24 != null) ? cur2.auc24 : null;
+    const tauForVOI = (rec && !rec.noSolution) ? rec.tau : (cur2 ? cur2.tau : null);
+    if (!(aucForVOI > 0)) return;
+    const nlv = nextLevelValue(aucForVOI, nLev, r.model, tauForVOI, CL_ind);
+    if (!nlv) return;
+    const mgmt = nlv.kind === 'management';
+    const col  = mgmt ? 'var(--accent-amber)' : 'var(--success)';
+    html += `
+      <div class="voi" style="border-left:3px solid ${col}">
+        <div class="voi-head">
+          <span class="voi-tag" style="color:${col}">${mgmt ? 'Clinical impact' : 'Precision only'}</span>
+          <span class="voi-title">${nlv.headline}</span>
+        </div>
+        <p class="voi-body">${nlv.detail}</p>
+      </div>`;
+  })();
+
+  // ── Exposure matrix: every dose x interval, banded ──────────────────────
+  // The recommendation above names ONE regimen. This says what the whole
+  // admissible space looks like, so the interval is a choice the clinician
+  // makes with the numbers in front of them rather than one the ranking makes
+  // on their behalf out of 250 mg rounding. See exposureMatrix() for why.
+  (() => {
+    const mx = exposureMatrix(CL_ind, V_ind,
+      (isGotiRes && r.goti) ? { Vc: r.goti.Vc_ind, Vp: r.goti.Vp_ind, Q: r.goti.Q } : null,
+      targetAUC, mic);
+    if (!mx) return;
+
+    const recDose = rec && !rec.noSolution ? rec.dose : null;
+    const recTau  = rec && !rec.noSolution ? rec.tau  : null;
+
+    const head = mx.intervals.map(t => `<th scope="col">Q${t}H</th>`).join('');
+    const body = mx.rows.map(row => {
+      const cells = row.cells.map(c => {
+        const cls = c.band === 'blocked' ? 'mx-blocked'
+                  : c.band === 'in'      ? 'mx-in'
+                  : c.band === 'supra'   ? 'mx-supra' : 'mx-sub-b';
+        const isRec = (c.dose === recDose && c.tau === recTau);
+        const trough = Number.isFinite(c.Ctrough) ? `${c.Ctrough.toFixed(1)}` : '—';
+        const label = `${c.dose} mg every ${c.tau} hours, steady-state AUC24 ${c.auc24.toFixed(0)}`
+                    + `, trough ${trough} mg/L`
+                    + (c.blocked ? ' — exceeds a hard safety limit' : '');
+        if (c.blocked) {
+          return `<td><span class="mx-cell ${cls}" aria-label="${escHtml(label)}">
+            <span class="mx-auc">${c.auc24.toFixed(0)}</span>
+            <span class="mx-tr">—</span></span></td>`;
+        }
+        return `<td><button type="button"
+            class="mx-cell ${cls}${isRec ? ' is-rec' : ''}"
+            data-onclick="k71" data-arg="${c.dose}|${c.tau}"
+            aria-label="${escHtml(label)}">
+            <span class="mx-auc">${c.auc24.toFixed(0)}</span>
+            <span class="mx-tr">tr ${trough}</span>
+          </button></td>`;
+      }).join('');
+      return `<tr><th scope="row">${row.dose} mg<br><span style="font-size:0.6rem;color:var(--text-muted)">${row.tinfH}h inf</span></th>${cells}</tr>`;
+    }).join('');
+
+    html += `
+      <div class="mx-wrap">
+        <div class="mx-head">
+          <div class="mx-title">Exposure matrix — steady-state AUC₂₄</div>
+          <div class="mx-sub">Target ${targetAUC.toFixed(0)} · band ${mx.bandMin}–${mx.bandMax} mg·h/L · small figure is predicted trough</div>
+        </div>
+        <div class="mx-scroll">
+          <table class="mx-grid">
+            <thead><tr><th scope="col" style="text-align:right">Dose</th>${head}</tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+        <div class="mx-key">
+          <span><i class="mx-in"></i>In band</span>
+          <span><i class="mx-sub-b"></i>Below band</span>
+          <span><i class="mx-supra"></i>Above band</span>
+          <span><i style="border-color:var(--terracotta);border-width:2px"></i>Recommended</span>
+          <span style="opacity:0.6">struck through = exceeds a hard safety limit</span>
+        </div>
+        <div class="mx-note">
+          <strong>Reading this.</strong> At steady state AUC₂₄ is total daily dose divided by
+          clearance, so it carries <strong>no interval term</strong> — 500 mg Q12H and 1000 mg Q24H
+          are the same exposure, and the values repeat down the diagonals. Exposure therefore cannot
+          choose the interval; only the peak and trough differ, and those are yours to weigh against
+          renal trajectory, practicality and how long you expect this regimen to stand.
+          Click any cell to load it into the Dose Tinkerer below.
+        </div>
+      </div>`;
+  })();
 
   // ── Dose Tinkerer (individual PK) ──
   html += `
@@ -9430,6 +9951,27 @@ function renderComparisonSection() {
 }
 
 // ─── Bayesian Dose Tinkerer ───
+// A matrix cell is a regimen. Clicking one loads it into the Dose Tinkerer and
+// previews it — the same move DoseMeRx offers ("click a cell to use that dosing
+// regimen in a custom dose simulation"). The matrix states exposure; the
+// tinkerer shows the profile that produces it.
+function pickMatrixCell(arg) {
+  const [doseS, tauS] = String(arg).split('|');
+  const dose = Number(doseS), tau = Number(tauS);
+  if (!(dose > 0) || !(tau > 0)) return;
+  const dEl = document.getElementById('b-tink-dose');
+  const tEl = document.getElementById('b-tink-int');
+  if (!dEl || !tEl) return;
+  dEl.value = String(dose);
+  tEl.value = String(tau);
+  document.querySelectorAll('.mx-cell.is-picked').forEach(c => c.classList.remove('is-picked'));
+  const cell = document.querySelector(`.mx-cell[data-arg="${dose}|${tau}"]`);
+  if (cell) cell.classList.add('is-picked');
+  runBayesTinkerer();
+  const box = document.getElementById('b-tink-result');
+  if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 function runBayesTinkerer() {
   if (!bState.result) return;
   const { CL_ind, V_ind } = bState.result;

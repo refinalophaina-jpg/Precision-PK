@@ -1835,6 +1835,291 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 19 — one temporal model
+//
+// Two-Level and steady-state-trough mode both used clock-only HH:MM inputs
+// and turned them into an elapsed interval with
+//     let d = to - from; if (d < 0) d += 24*60;
+// which wraps everything into [0,24). Real two-level sampling routinely
+// spans midnight, so this was not an edge case.
+//
+// Two failure modes, both reproduced in docs/audit/probe-v3-case-34m.cjs:
+//   - level 2 wraps BELOW level 1  -> solveTwoLevelsPK refuses. Visible.
+//   - BOTH levels land on the next day -> they wrap by the same 24 h, kel
+//     survives, and the peak back-extrapolation silently uses a t1 that is
+//     24 h early. Vd, CL and AUC come out ~7x wrong with NO warning.
+//
+// Every instant is now a full datetime and there is exactly one helper.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const body   = src.slice(src.indexOf('<body>'));
+  const { elapsedHours, formatElapsed, solveTwoLevelsPK } = sandbox;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 19 — one temporal model');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('elapsedHours does not wrap a cross-midnight interval', ()=>{
+    // the reported case: dose 9/11 10:22, level 2 drawn 9/12 10:38
+    const r = elapsedHours('2026-09-11T10:22', '2026-09-12T10:38');
+    assert(r.ok, 'should parse');
+    assert(Math.abs(r.hours - 24.2667) < 0.01,
+      `expected 24.27 h, got ${r.hours} — the [0,24) wrap is back`);
+  });
+
+  test('elapsedHours spans more than one day', ()=>{
+    const r = elapsedHours('2026-09-11T10:22', '2026-09-13T12:00');
+    assert(Math.abs(r.hours - 49.633) < 0.01, `expected 49.63 h, got ${r.hours}`);
+  });
+
+  test('elapsedHours reports a reversed interval instead of absorbing it', ()=>{
+    const r = elapsedHours('2026-09-12T10:00', '2026-09-11T08:00');
+    assert(r.ok && r.reversed === true, 'a level dated before the dose must be flagged');
+    assert(r.hours < 0, 'a reversed interval must stay negative, never +24 h');
+  });
+
+  test('elapsedHours refuses incomplete or unparseable input', ()=>{
+    assert(elapsedHours('', '2026-09-11T10:00').ok === false, 'empty from');
+    assert(elapsedHours('2026-09-11T10:00', '').ok === false, 'empty to');
+    assert(elapsedHours('not-a-date', '2026-09-11T10:00').ok === false, 'garbage');
+  });
+
+  test('formatElapsed names the days for a multi-day span', ()=>{
+    assert(/2d/.test(formatElapsed(49.63)), `expected days in "${formatElapsed(49.63)}"`);
+    assert(!/\dd /.test(formatElapsed(16.9)), `no day part for a short span: "${formatElapsed(16.9)}"`);
+  });
+
+  test('the silent-corruption case now computes the right volume', ()=>{
+    // dose 08:00 day 1; levels 12:00 and 18:00 day 2 => 28 h and 34 h.
+    // The old code wrapped both to 4 h and 10 h. Both wrapped times are past a
+    // 2 h infusion and correctly ordered, so EVERY guard passed and nothing
+    // was shown: same kel, Vd 5.7x wrong. (A level drawn early the next
+    // morning instead wraps below the infusion time and calculate() refuses
+    // out loud — that is the benign case, and not the one to test.)
+    const tinf = 2;
+    const t1 = elapsedHours('2026-09-11T08:00', '2026-09-12T12:00').hours;
+    const t2 = elapsedHours('2026-09-11T08:00', '2026-09-12T18:00').hours;
+    assert(Math.abs(t1 - 28) < 0.01 && Math.abs(t2 - 34) < 0.01,
+      `expected 28 h and 34 h, got ${t1} and ${t2}`);
+    const w1 = t1 - 24, w2 = t2 - 24;                 // what the wrap produced
+    assert(w1 > tinf && w2 > w1,
+      'the wrapped times must clear the post-infusion and ordering guards — that is what made it silent');
+    const good = solveTwoLevelsPK(1750, tinf, 18.7, t1, 12.1, t2, 24, 'firstdose');
+    const bad  = solveTwoLevelsPK(1750, tinf, 18.7, w1, 12.1, w2, 24, 'firstdose');
+    assert(good && bad, 'both should solve — neither refuses');
+    assert(Math.abs(good.kel - bad.kel) < 1e-9, 'kel is unaffected by the wrap — that is why it was silent');
+    assert(bad.vd / good.vd > 5, `the wrapped volume should differ several fold, got ${(bad.vd/good.vd).toFixed(2)}x`);
+    assert(good.vd < 20, `correct Vd should be ~13.2 L, got ${good.vd}`);
+  });
+
+  test('no clock-only time input survives outside a date-paired field', ()=>{
+    // b-dose-time-*, b-lvl-time-* and .b-scr-time each sit beside their own
+    // <input type="date">, so they are unambiguous. Nothing else may be.
+    const clockOnly = [...body.matchAll(/<input[^>]*placeholder="HH:MM"[^>]*>/g)].map(m => m[0]);
+    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"/;
+    const orphans = clockOnly.filter(t => !paired.test(t));
+    assert(orphans.length === 0,
+      `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
+  });
+
+  test('every Trough-Based timing field is a datetime-local on the shared class', ()=>{
+    for (const id of ['tl-dose-time','tl-t1-time','tl-t2-time','time-dose-given',
+                      'time-level-drawn','rl-dose-time','rl-draw-time']) {
+      const m = body.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`));
+      assert(m, `${id} is missing`);
+      assert(/type="datetime-local"/.test(m[0]), `${id} is not a datetime-local: ${m[0].slice(0,120)}`);
+      assert(/class="dt-input"/.test(m[0]),      `${id} does not use the shared .dt-input class`);
+    }
+  });
+
+  test('the 24-hour wrap idiom is gone from the script', ()=>{
+    // Comment-only lines are stripped first: the fix documents the idiom it
+    // replaced, and the documentation must not trip the guard on itself.
+    const code = script.split('\n')
+      .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n');
+    assert(!/\+=\s*24\s*\*\s*60/.test(code),
+      'a `+= 24*60` wrap has reappeared — elapsed time must come from elapsedHours');
+    assert(!/function\s+diffHr\b/.test(code), 'diffHr is back');
+  });
+
+  test('the next-day checkbox is gone, with nothing still reading it', ()=>{
+    assert(!src.includes('next-day'), 'the next-day checkbox only ever reached +1 day');
+    assert(!/\bnextDay\b/.test(script), 'nextDay is still referenced');
+  });
+
+  test('elapsedHours is the only elapsed-time helper', ()=>{
+    // calcRLDelta / calcTLDeltas / calcTimeDelta must all route through it
+    for (const fn of ['calcRLDelta','calcTLDeltas','calcTimeDelta']) {
+      const start = script.indexOf(`function ${fn}(`);
+      assert(start > -1, `${fn} is missing`);
+      const chunk = script.slice(start, start + 2600);
+      assert(/elapsedHours\(|bindElapsed\(/.test(chunk),
+        `${fn} computes elapsed time without the shared helper`);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 20 — v3: exposure matrix and plain-language fit bands
+//
+// bayesDoseOptimizer ranks on |auc24 - target|, but auc24 = TDD/CL carries no
+// interval term, so the metric cannot choose an interval even in principle.
+// The interval it returns is settled by 250 mg rounding: the achievable-AUC
+// lattice is 250*(24/tau)/CL, six times finer at Q48H than at Q8H. Measured on
+// the reported case (Goti posterior CL 2.058): target 450 -> 1750 mg Q48H,
+// target 475 -> 500 mg Q12H. The matrix is the answer — show the admissible
+// space, band it against the SOURCED AUC target, and let the clinician choose.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const { exposureMatrix, fitBandFor } = sandbox;
+  const K = __extractConsts();
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 20 — exposure matrix + fit bands');
+  console.log(`${'─'.repeat(60)}`);
+
+  // the reported case: Goti posterior on 34 M, 65 kg, SCr 1.5
+  const CL = 2.058, VC = 39.08, VP = 28.48, Q = K.Q_GOTI;
+  const bag = { Vc: VC, Vp: VP, Q };
+  const mx  = exposureMatrix(CL, VC, bag, 450, 1);
+
+  test('the matrix builds for the reported case', ()=>{
+    assert(mx && mx.rows.length, 'no matrix');
+    assert(mx.intervals.join(',') === K.MATRIX_INTERVALS.join(','),
+      `columns ${mx.intervals} != MATRIX_INTERVALS ${K.MATRIX_INTERVALS}`);
+  });
+
+  test('AUC24 is identical at equal total daily dose — the defect, made visible', ()=>{
+    const at = (dose, tau) => {
+      const row = mx.rows.find(r => r.dose === dose);
+      return row && row.cells.find(c => c.tau === tau);
+    };
+    const a = at(500, 12), b = at(1000, 24), c = at(2000, 48);
+    assert(a && b && c, 'the equal-TDD trio must all be on the ladder');
+    assert(Math.abs(a.auc24 - b.auc24) < 1e-9 && Math.abs(b.auc24 - c.auc24) < 1e-9,
+      `equal TDD must give equal AUC24: ${a.auc24}, ${b.auc24}, ${c.auc24}`);
+    // ...and yet the profiles differ, which is what the interval actually buys
+    assert(Math.abs(a.Ctrough - b.Ctrough) > 1,
+      'troughs should differ even though exposure does not');
+  });
+
+  test('the ladder spans the target dose at EVERY interval', ()=>{
+    // A Q24H-centred ladder hid 2000 mg Q48H (AUC24 486, in band) on this case.
+    const lo = mx.rows[0].dose, hi = mx.rows[mx.rows.length-1].dose;
+    for (const tau of mx.intervals) {
+      const want = 450 * CL * tau / 24;
+      const clamped = Math.min(K.MATRIX_DOSE_MAX, Math.max(K.MATRIX_DOSE_MIN, want));
+      assert(clamped >= lo - K.MATRIX_DOSE_STEP && clamped <= hi + K.MATRIX_DOSE_STEP,
+        `Q${tau}H needs ~${want.toFixed(0)} mg but the ladder is ${lo}-${hi}`);
+    }
+  });
+
+  test('every in-band regimen on the ladder is actually reachable', ()=>{
+    const inBand = [];
+    mx.rows.forEach(r => r.cells.forEach(c => { if (c.band === 'in') inBand.push(`${c.dose}/Q${c.tau}H`); }));
+    // 500 Q12H, 1000 Q24H, 1750 Q48H and 2000 Q48H all reach 400-600 here
+    assert(inBand.length >= 4, `expected at least 4 in-band cells, got ${inBand.length}: ${inBand}`);
+    assert(inBand.includes('1000/Q24H'),
+      `1000 mg Q24H reaches AUC24 486 and must be offered; got ${inBand}`);
+    assert(inBand.includes('2000/Q48H'),
+      `2000 mg Q48H reaches AUC24 486 and must be offered; got ${inBand}`);
+  });
+
+  test('bands come from the sourced AUC constants, not an invented one', ()=>{
+    assert(mx.bandMin === K.AUC24_TARGET_MIN && mx.bandMax === K.AUC24_TARGET_MAX,
+      'matrix band must be AUC24_TARGET_MIN/MAX (Rybak 2020 Rec 1)');
+    mx.rows.forEach(r => r.cells.forEach(c => {
+      if (c.blocked) return;
+      const want = c.auc24 < K.AUC24_TARGET_MIN ? 'sub'
+                 : c.auc24 > K.AUC24_TARGET_MAX ? 'supra' : 'in';
+      assert(c.band === want, `${c.dose}/Q${c.tau}H AUC ${c.auc24.toFixed(0)} banded ${c.band}, expected ${want}`);
+    }));
+  });
+
+  test('the hard safety tier blocks, and blocking wins over banding', ()=>{
+    mx.rows.forEach(r => r.cells.forEach(c => {
+      const shouldBlock = c.tdd > K.DOSE_MAX_TDD_MG || c.auc24 > K.AUC24_ABSOLUTE_MAX;
+      assert(c.blocked === shouldBlock,
+        `${c.dose}/Q${c.tau}H TDD ${c.tdd} AUC ${c.auc24.toFixed(0)} blocked=${c.blocked}`);
+      if (c.blocked) assert(c.band === 'blocked', 'a blocked cell must not also carry an AUC band');
+    }));
+  });
+
+  test('no cell exceeds the per-dose ceiling', ()=>{
+    mx.rows.forEach(r => assert(r.dose <= K.DOSE_MAX_PER_DOSE_MG,
+      `${r.dose} mg is above DOSE_MAX_PER_DOSE_MG`));
+  });
+
+  test('the matrix degrades rather than throwing on bad input', ()=>{
+    assert(exposureMatrix(0, VC, bag, 450, 1) === null,   'CL 0');
+    assert(exposureMatrix(CL, VC, bag, 0, 1)  === null,   'target 0');
+    assert(exposureMatrix(NaN, VC, bag, 450, 1) === null, 'CL NaN');
+  });
+
+  test('a 1-compartment fit produces a matrix too', ()=>{
+    const m1 = exposureMatrix(2.686, 55.84, null, 450, 1);
+    assert(m1 && m1.rows.length, 'Buelga path returned nothing');
+    const c = m1.rows[0].cells[0];
+    assert(isFinite(c.Ctrough) && isFinite(c.Cpeak), '1-comp trough/peak must be finite');
+  });
+
+  test('matrix cells are delegated buttons carrying their regimen', ()=>{
+    assert(/data-onclick="k71"/.test(script), 'no matrix cell handler in the markup template');
+    assert(/k71:\s*\(el, ev, arg\)\s*=>\s*\{\s*pickMatrixCell/.test(script),
+      'k71 must be registered to pickMatrixCell');
+    assert(/data-arg="\$\{c\.dose\}\|\$\{c\.tau\}"/.test(script),
+      'a cell must carry its own dose and interval');
+    assert(/function pickMatrixCell/.test(script), 'pickMatrixCell is missing');
+  });
+
+  test('the matrix says steady-state, because DoseMeRx-style tables are not', ()=>{
+    // Their "over 2 days" matrix is a finite-horizon simulation: 1500 mg q12h
+    // reads 859, not 2 x 456.69 = 913. Ours is TDD/CL. Do not blur the two.
+    assert(/steady-state AUC/i.test(script), 'the matrix heading must state steady state');
+  });
+
+  // ── fit bands ──
+  test('fit bands split at 1 and 2 sigma, in both directions', ()=>{
+    assert(fitBandFor(0.4).key  === 'close',       '0.4 sigma');
+    assert(fitBandFor(-0.4).key === 'close',       'sign must not matter');
+    assert(fitBandFor(1.0).key  === 'modest',      '1.0 sigma is the boundary');
+    assert(fitBandFor(1.9).key  === 'modest',      '1.9 sigma');
+    assert(fitBandFor(-2.5).key === 'substantial', '-2.5 sigma');
+    assert(fitBandFor(9).key    === 'substantial', 'far out');
+  });
+
+  test('every fit band carries clinical wording, and the worst two carry an action', ()=>{
+    for (const b of K.FIT_BANDS) {
+      assert(b.clinical && b.clinical.length > 20, `${b.key} has no clinical sentence`);
+      assert(b.verdict && b.label, `${b.key} is missing verdict or label`);
+      if (b.key !== 'close') assert(b.action && b.action.length > 20,
+        `${b.key} must say what to do about it`);
+    }
+  });
+
+  test('fitBandFor never returns undefined', ()=>{
+    for (const v of [NaN, Infinity, -Infinity, 0, 1e9, null, undefined]) {
+      assert(fitBandFor(v), `fitBandFor(${v}) returned nothing`);
+    }
+  });
+
+  // ── graph vocabulary ──
+  test('the graph names posterior, prior and measurement', ()=>{
+    for (const t of ['Posterior prediction', 'Population prior', 'Measured concentration']) {
+      assert(script.includes(t), `legend is missing "${t}"`);
+    }
+    assert(!/Individual \(Bayesian\)/.test(script), '"Individual (Bayesian)" is back');
+    assert(/class="posterior-note"/.test(script), 'the shrinkage explainer is missing');
+    assert(/shrinkage/i.test(script), 'the explainer must name shrinkage');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

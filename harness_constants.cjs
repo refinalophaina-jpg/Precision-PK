@@ -100,6 +100,19 @@ function extract() {
     AMP_SEGMENT_PCT:        objLiteral(src, 'AMP_SEGMENT_PCT'),
     AMPUTATION_LEVELS:      arrayLiteral(src, 'AMPUTATION_LEVELS'),
     MODEL_AGREEMENT_BANDS:  arrayLiteral(src, 'MODEL_AGREEMENT_BANDS'),
+
+    // v3 — exposure matrix and fit bands
+    FIT_BANDS:              arrayLiteral(src, 'FIT_BANDS'),
+    MATRIX_INTERVALS:       arrayLiteral(src, 'MATRIX_INTERVALS'),
+    MATRIX_ROWS:            num(src, 'MATRIX_ROWS'),
+    MATRIX_DOSE_STEP:       num(src, 'MATRIX_DOSE_STEP'),
+    MATRIX_DOSE_MIN:        num(src, 'MATRIX_DOSE_MIN'),
+    MATRIX_DOSE_MAX:        num(src, 'MATRIX_DOSE_MAX'),
+    AUC24_TARGET_MIN:       num(src, 'AUC24_TARGET_MIN'),
+    AUC24_TARGET_MAX:       num(src, 'AUC24_TARGET_MAX'),
+    AUC24_ABSOLUTE_MAX:     num(src, 'AUC24_ABSOLUTE_MAX'),
+    DOSE_MAX_PER_DOSE_MG:   num(src, 'DOSE_MAX_PER_DOSE_MG'),
+    DOSE_MAX_TDD_MG:        num(src, 'DOSE_MAX_TDD_MG'),
     AMPUTATION_MAX_PCT:     num(src, 'AMPUTATION_MAX_PCT'),
   };
 }

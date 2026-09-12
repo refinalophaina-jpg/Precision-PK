@@ -46,6 +46,28 @@ git hash-object index.html
 > any of its identifiers return. Note the clinical `action:'continue'` (continue the
 > current regimen) is unrelated and must not be swept up with it.
 
+**One temporal model (v3).** Every instant a clinician enters is a full
+`datetime-local`, and exactly one helper — `elapsedHours()` — turns two of them into an
+interval. Two-Level and steady-state-trough mode used to take clock-only `HH:MM` and wrap
+with `if (d < 0) d += 24*60`, which folds every interval into `[0,24)`. Real two-level
+sampling routinely spans midnight. Two failure modes, both reproduced in
+`docs/audit/probe-v3-case-34m.cjs`: a level that wraps *below* the first one makes
+`solveTwoLevelsPK` refuse (loud, and what was reported), while **two levels that both land
+on a later day wrap by the same 24 h — kel survives, the peak back-extrapolation does not,
+and Vd comes out 5-30x wrong with no warning at all**. `SUITE 19` fails the build if a
+clock-only input, a `+= 24*60`, or a second elapsed-time helper reappears.
+
+**The recommendation cannot choose an interval, and no longer pretends to (v3).**
+`bayesDoseOptimizer` ranks on `|auc24 - target|`. At steady state `auc24 = TDD / CL`, so it
+is a pure function of the daily dose; the per-tau dose is solved to hit the same target at
+every interval, and without the 250 mg rounding every candidate would score *exactly* the
+target — a four-way tie. All of the metric's discriminating power is rounding error, and it
+is lopsided: the achievable-AUC lattice is `250*(24/tau)/CL`, six times finer at Q48H than
+at Q8H. On the reported case target 450 gives 1750 mg Q48H and target 475 gives 500 mg
+Q12H. `exposureMatrix()` replaces the pretence with the whole admissible space — dose x
+interval, banded against `AUC24_TARGET_MIN/MAX`, every cell clickable into the Tinkerer.
+It needs **no preference weights**, which is why it was chosen over a composite score.
+
 Cross-cutting: KDIGO AKI staging from serial creatinine, ARC and very-low-CrCl advisories,
 cystatin C discordance check, print report, and **saved profiles that work in both
 modules** — a profile carries a `core` (`PATIENT_CORE_FIELDS`) mapping the fields both
@@ -86,7 +108,15 @@ continuous infusion.
    tool needs states a marketing site does not. Theme code must degrade to a no-op without a
    real DOM: the harness runs this script in a Node `vm` with a stub that has no
    `documentElement`.
-8. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
+8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
+   shipping a clinical number without provenance. v3 added exactly two numbers that have no
+   paper behind them — `NEXT_LEVEL_MIN_GAIN` (0.15) and the 1/2 sigma splits in
+   `FIT_BANDS` — and both carry a comment saying they are preference, what they order, and
+   that they never change a dose. Everything else they sit beside is sourced: sigma is each
+   model's published residual error, the AUC band is Rybak 2020 Rec 1, the 250 mg step is
+   the dispensing increment. Prefer a rule that needs no weight at all: the exposure matrix
+   replaced a composite ranking score precisely because it needs none.
+9. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
    in the decisions doc, and record the numbers that justify the change.
 
 ## Testing
@@ -99,7 +129,7 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **134/134 pass** |
+| `phase2d_validation.cjs` | **160/160 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **40/40 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
@@ -198,6 +228,9 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |
 | `docs/validation-threshold-decisions.md` | The accept/reject record for failing thresholds |
 | `docs/audit/` | Probe scripts that reproduce each finding numerically |
+| `docs/audit/probe-v3-case-34m.cjs` | Reproduces the v3 case end to end: both posteriors, the Q48H recommendation, the lattice bias, and the cross-midnight wrap |
+| `docs/v3-decisions.md` | What v3 changed, what was rejected, and the numbers behind each |
+| `docs/dosemerx-comparison.html` | Capture sheet for pairing this tool against DoseMeRx at the workstation. Also served at `/vancomycin/compare/` |
 | `harness_constants.cjs` | Extracts model constants from `index.html` for the suites |
 | `Phase2_Plan.md` | Bayesian architecture reference |
 | `Vancomycin_TDM_Software_Instructions.md` | Clinical source-of-truth |

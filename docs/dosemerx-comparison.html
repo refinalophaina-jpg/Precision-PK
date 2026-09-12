@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DoseMeRx comparison sheet — Vancomycin TDM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#faf5ed; --paper-deep:#f2ecdf; --paper-edge:#e8e0d0;
+  --ink:#2d3428; --ink-soft:#5a6151; --ink-faint:#8a8e80;
+  --terracotta:#cc785c; --terracotta-q:#e0a98c; --purple:#4a3d7a; --moss:#4a5c28;
+  --rule:rgba(45,52,40,.1); --card:#fffdf8; --input:#f7f2e8;
+  --amber:#96631f; --red:#b3402f;
+  --radius:4px; --pill:999px;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:'Outfit',system-ui,sans-serif;font-size:15px;line-height:1.6}
+.wrap{max-width:1120px;margin:0 auto;padding:34px 22px 90px}
+h1{font-family:'DM Serif Display',Georgia,serif;font-weight:400;font-size:2rem;
+  margin:0 0 6px;letter-spacing:-.01em}
+h2{font-family:'DM Serif Display',Georgia,serif;font-weight:400;font-size:1.25rem;
+  margin:34px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--rule)}
+h3{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--terracotta);
+  font-weight:600;margin:20px 0 8px}
+p{margin:0 0 11px;color:var(--ink-soft)}
+.lede{font-size:1.02rem;color:var(--ink-soft);max-width:70ch}
+code,.mono{font-family:'DM Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.rule{border:0;border-top:1px solid var(--rule);margin:26px 0}
+.badge{display:inline-block;font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;
+  font-weight:600;padding:3px 11px;border-radius:var(--pill);border:1px solid var(--paper-edge);
+  background:var(--paper-deep);color:var(--ink-soft)}
+
+/* Callouts */
+.note{background:var(--paper-deep);border:1px solid var(--paper-edge);
+  border-left:2px solid var(--terracotta);border-radius:var(--radius);
+  padding:13px 16px;margin:14px 0;font-size:.88rem;line-height:1.6}
+.note.warn{border-left-color:var(--amber)}
+.note.stop{border-left-color:var(--red)}
+.note strong{color:var(--ink)}
+.note ul{margin:8px 0 0;padding-left:19px}
+.note li{margin:4px 0}
+
+/* Control table */
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:.87rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+thead th{font-size:.64rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);
+  font-weight:600;border-bottom:1px solid var(--paper-edge)}
+tbody tr:last-child td{border-bottom:0}
+
+/* Case card */
+.case{background:var(--card);border:1px solid var(--paper-edge);border-radius:var(--radius);
+  margin:16px 0;overflow:hidden}
+.case-head{display:flex;align-items:center;gap:11px;flex-wrap:wrap;
+  padding:11px 15px;border-bottom:1px solid var(--rule);background:var(--paper-deep)}
+.case-head .n{font-family:'DM Mono',monospace;font-size:.78rem;color:var(--ink-faint)}
+.case-body{padding:14px 15px}
+.grid{display:grid;gap:11px 14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:760px){.g3,.g4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:460px){.g2,.g3,.g4{grid-template-columns:1fr}}
+label{display:block;font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-faint);font-weight:600;margin-bottom:3px}
+input,select,textarea{width:100%;background:var(--input);border:1px solid var(--paper-edge);
+  border-radius:var(--radius);color:var(--ink);font-family:'DM Mono',monospace;
+  font-size:.85rem;padding:7px 9px;outline:none;font-variant-numeric:tabular-nums}
+input:focus,select,textarea:focus{border-color:var(--terracotta)}
+select{font-family:'Outfit',sans-serif}
+textarea{min-height:58px;font-family:'Outfit',sans-serif;resize:vertical}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--rule)}
+@media(max-width:760px){.cols{grid-template-columns:1fr}}
+.col{padding:13px 15px}
+.col+.col{border-left:1px solid var(--rule)}
+@media(max-width:760px){.col+.col{border-left:0;border-top:1px solid var(--rule)}}
+.col-h{font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;margin-bottom:9px}
+.col-dm .col-h{color:var(--purple)}
+.col-me .col-h{color:var(--terracotta)}
+
+/* Verdict strip */
+.verdict{border-top:1px solid var(--rule);background:var(--paper-deep);padding:11px 15px;
+  font-size:.8rem;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.v-item{font-family:'DM Mono',monospace}
+.v-item b{font-family:'Outfit',sans-serif;font-weight:600;color:var(--ink-faint);
+  font-size:.64rem;letter-spacing:.07em;text-transform:uppercase;margin-right:5px}
+.ok{color:var(--moss)} .mid{color:var(--amber)} .bad{color:var(--red)}
+
+/* Buttons */
+.bar{display:flex;gap:9px;flex-wrap:wrap;margin:18px 0}
+button{font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:500;
+  padding:8px 16px;border-radius:var(--pill);border:1px solid var(--paper-edge);
+  background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--terracotta-q)}
+button.primary{background:var(--terracotta);border-color:var(--terracotta);color:#fff}
+button.ghost{background:none}
+.del{border:0;background:none;color:var(--ink-faint);font-size:.75rem;padding:4px 8px;
+  margin-left:auto;cursor:pointer}
+.del:hover{color:var(--red)}
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--rule);
+  font-size:.75rem;color:var(--ink-faint)}
+.saved{font-size:.73rem;color:var(--ink-faint);align-self:center}
+
+@media print{
+  body{background:#fff}
+  .bar,.del,.saved{display:none!important}
+  .case{break-inside:avoid;border-color:#ccc}
+  .note{break-inside:avoid}
+  a[href]:after{content:""}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<span class="badge">Vancomycin TDM · external comparison</span>
+<h1>DoseMeRx comparison sheet</h1>
+<p class="lede">For capturing paired outputs at the workstation, so divergence between the two
+tools can be traced to a layer rather than argued about. De-identified inputs only.</p>
+
+<div class="note stop">
+  <strong>No PHI.</strong> Use synthetic or fully de-identified demographics. Nothing here
+  should identify a patient — no MRN, name, date of birth, admission date, or real
+  dose timestamps tied to a person. Shift the clock to an arbitrary day-1 and keep only the
+  <em>intervals</em>, which is all the pharmacokinetics needs. Everything you type stays in this
+  browser's local storage; nothing is transmitted.
+</div>
+
+<h2>Before you start: four things to pin down</h2>
+<p>A comparison that does not control these will show differences that are artifacts, and you
+will not be able to tell which layer disagrees.</p>
+
+<table>
+<thead><tr><th style="width:16%">Control</th><th style="width:42%">Why it matters</th><th>What to do</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>Model pairing</strong></td>
+  <td>The two tools must be running the <em>same published model</em>, or you are comparing
+      papers, not implementations.</td>
+  <td>
+    DoseMeRx <em>Standard Adult (1-comp)</em> = Buelga 2005 → select <strong>Buelga 2005</strong>.<br>
+    DoseMeRx <em>Complex / Critically Ill (2-comp)</em> = Goti 2018 → select <strong>Goti 2018</strong>.<br>
+    DoseMeRx <em>Enhanced Obese</em> = Sabourenkov 2019, <strong>unpublished and proprietary</strong>.
+    There is no equivalent here — Hughes 2024 is a different model. Expect divergence; it is not a defect.
+  </td>
+</tr>
+<tr>
+  <td><strong>Creatinine clearance</strong></td>
+  <td>Cockcroft-Gault weight basis and any SCr floor may differ. If CrCl differs, everything
+      downstream differs, and you learn nothing about the Bayesian fit.</td>
+  <td>Record <em>DoseMeRx's displayed CrCl</em>, then force the same number into this calculator
+      with the <strong>manual CrCl override</strong>. That isolates the fitting layer from the
+      covariate layer. Run it both ways if you want to measure the covariate difference too.</td>
+</tr>
+<tr>
+  <td><strong>Horizon</strong></td>
+  <td>DoseMeRx simulates a finite window — its alternative-regimen matrix is stated "over N days"
+      and its own numbers confirm it (1500&nbsp;mg q12h reads 859, not 2&nbsp;×&nbsp;456.69 = 913,
+      because accumulation has not settled). This calculator reports <strong>steady state</strong>.</td>
+  <td>Record the <em>Regimen days</em> field. A 5–10% AUC gap on a short horizon is expected and is
+      not a disagreement.</td>
+</tr>
+<tr>
+  <td><strong>Target</strong></td>
+  <td>Both default to AUC<sub>24</sub> 450, but a site protocol can change theirs.</td>
+  <td>Read the target off their screen and enter the same one here.</td>
+</tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <strong>Also worth recording, because it is a claim we can test.</strong> DoseMeRx's own model
+  guidance says the 2-compartment model "does not generally work as well with single levels or
+  when levels are troughs", and recommends two levels at different points initially. If you can,
+  capture at least one case with a single trough on the 2-comp model — that is where the two tools
+  are most likely to part company, and where knowing who is right matters most.
+</div>
+
+<h2>Cases</h2>
+<p>Fill the left column from DoseMeRx and the right from this calculator. Differences compute as
+you type. A case is only interpretable if the controls above match.</p>
+
+<div class="bar">
+  <button class="primary" id="add">+ Add case</button>
+  <button class="ghost" id="copy">Copy all as JSON</button>
+  <button class="ghost" id="copycsv">Copy as CSV</button>
+  <button class="ghost" id="exp">Download JSON</button>
+  <button class="ghost" id="csv">Download CSV</button>
+  <button class="ghost" id="prt">Print / PDF</button>
+  <span class="saved" id="saved"></span>
+</div>
+
+<div class="note">
+  <strong>Getting the data out of a locked-down workstation.</strong> Download may be blocked
+  there. <em>Copy all as JSON</em> puts everything on the clipboard — paste it into an email to
+  yourself and nothing is lost. If the clipboard is blocked too, the text appears in the box
+  below ready to select. Your entries also survive a page reload in this browser, but not a
+  different browser or a cleared profile, so copy before you walk away.
+  <div style="margin-top:9px">
+    <button class="ghost" id="dump">Show copyable text</button>
+  </div>
+  <textarea id="dumpbox" style="display:none;margin-top:9px;min-height:130px;
+    font-family:'DM Mono',monospace;font-size:.76rem" readonly></textarea>
+</div>
+
+<div id="cases"></div>
+
+<div class="bar">
+  <button class="primary" id="add2">+ Add case</button>
+</div>
+
+<h2>Reading the differences</h2>
+<table>
+<thead><tr><th style="width:20%">Quantity</th><th style="width:24%">Agreement</th><th>What a gap points at</th></tr></thead>
+<tbody>
+<tr><td><strong>CrCl</strong></td><td>should be exact once overridden</td>
+    <td>If it differs without an override, the covariate layer differs — weight basis, SCr floor, or rounding. Fix this before reading anything else.</td></tr>
+<tr><td><strong>Posterior CL</strong></td><td>&lt;5% close · 5–15% worth a look · &gt;15% investigate</td>
+    <td>Same model + same CrCl + same data should give nearly the same CL. A gap means the objective, the prior variances, or the optimiser differ.</td></tr>
+<tr><td><strong>Volume</strong></td><td>looser — V is weakly identified</td>
+    <td>With one level CL and V are not separately identifiable, so V can differ a lot while AUC agrees. Do not over-read it.</td></tr>
+<tr><td><strong>AUC<sub>24</sub></strong></td><td>&lt;10% good · 10–20% check horizon · &gt;20% investigate</td>
+    <td>The number that drives dosing. Check the horizon control first — a steady-state vs 2-day gap lands right in the 5–10% range.</td></tr>
+<tr><td><strong>Trough</strong></td><td>looser still</td>
+    <td>Very sensitive to volume and to 1-comp vs 2-comp. A trough gap with matching AUC is expected between compartment models, not a defect.</td></tr>
+<tr><td><strong>Recommended regimen</strong></td><td>may legitimately differ</td>
+    <td>At steady state AUC<sub>24</sub> is daily dose ÷ clearance and carries no interval term, so several intervals reach the same exposure. Two tools can pick differently and both be right. Compare the <em>daily dose</em> first; only then the interval.</td></tr>
+</tbody>
+</table>
+
+<footer>
+  Advisory tooling — not a prescription. Kept out of version-controlled patient data by design;
+  everything typed here lives only in this browser. Pair with
+  <code>docs/audit/probe-v3-case-34m.cjs</code> to reproduce any case against the shipped engine.
+</footer>
+</div>
+
+<script>
+const KEY = 'vanco-dosemerx-compare-v1';
+const MODELS = ['Buelga 2005 (1-comp)','Goti 2018 (2-comp)','Goti 2018 HD','Hughes 2024 / Enhanced Obese','other'];
+const FIT = ['—','Good fit','Not ideal, needs review'];
+
+const blank = () => ({
+  id: 'c' + Math.random().toString(36).slice(2, 8),
+  label:'', model:MODELS[0], target:'450', days:'',
+  age:'', sex:'M', ht:'', wt:'', scr:'',
+  hist:'', crclOverride:'',
+  dm:{crcl:'',cl:'',v:'',vp:'',dose:'',tau:'',auc:'',peak:'',trough:'',fit:FIT[0]},
+  me:{crcl:'',cl:'',v:'',vp:'',dose:'',tau:'',auc:'',peak:'',trough:'',fit:FIT[0]},
+  notes:'',
+});
+
+let cases = [];
+try { cases = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { cases = []; }
+if (!cases.length) cases = [blank()];
+
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(cases));
+    const s = document.getElementById('saved');
+    s.textContent = 'saved ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('saved').textContent = 'could not save locally';
+  }
+}
+
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+function pctDiff(a, b) {
+  a = num(a); b = num(b);
+  if (a === null || b === null || (a + b) === 0) return null;
+  return Math.abs(a - b) / ((Math.abs(a) + Math.abs(b)) / 2) * 100;
+}
+function tone(p, good, mid) {
+  if (p === null) return '';
+  return p < good ? 'ok' : p < mid ? 'mid' : 'bad';
+}
+function fmtPct(p) { return p === null ? '—' : p.toFixed(1) + '%'; }
+
+function field(cid, path, label, opts) {
+  opts = opts || {};
+  const v = path.split('.').reduce((o, k) => (o || {})[k], cases.find(c => c.id === cid)) ?? '';
+  if (opts.options) {
+    return `<div><label>${label}</label><select data-c="${cid}" data-p="${path}">` +
+      opts.options.map(o => `<option${o === v ? ' selected' : ''}>${o}</option>`).join('') +
+      `</select></div>`;
+  }
+  if (opts.area) {
+    return `<div style="grid-column:1/-1"><label>${label}</label>` +
+      `<textarea data-c="${cid}" data-p="${path}" placeholder="${opts.ph || ''}">${String(v)}</textarea></div>`;
+  }
+  return `<div><label>${label}</label><input data-c="${cid}" data-p="${path}" ` +
+    `value="${String(v).replace(/"/g,'&quot;')}" placeholder="${opts.ph || ''}"></div>`;
+}
+
+function sideHTML(c, side, title, cls) {
+  const p = side;
+  return `<div class="col ${cls}">
+    <div class="col-h">${title}</div>
+    <div class="grid g3">
+      ${field(c.id, p + '.crcl',   'CrCl mL/min')}
+      ${field(c.id, p + '.cl',     'CL L/h')}
+      ${field(c.id, p + '.v',      (c.model.indexOf('2-comp') > -1 || c.model.indexOf('Obese') > -1) ? 'Vc L' : 'V L')}
+      ${field(c.id, p + '.vp',     'Vp L (2-comp)')}
+      ${field(c.id, p + '.dose',   'Rec dose mg')}
+      ${field(c.id, p + '.tau',    'Interval h')}
+      ${field(c.id, p + '.auc',    'AUC24')}
+      ${field(c.id, p + '.peak',   'Peak mg/L')}
+      ${field(c.id, p + '.trough', 'Trough mg/L')}
+      ${field(c.id, p + '.fit',    'Model fit', { options: FIT })}
+    </div>
+  </div>`;
+}
+
+function verdictHTML(c) {
+  const rows = [
+    ['CrCl',   pctDiff(c.dm.crcl,   c.me.crcl),   2,  8],
+    ['CL',     pctDiff(c.dm.cl,     c.me.cl),     5,  15],
+    ['AUC24',  pctDiff(c.dm.auc,    c.me.auc),    10, 20],
+    ['Trough', pctDiff(c.dm.trough, c.me.trough), 15, 30],
+  ];
+  const tddA = num(c.dm.dose) && num(c.dm.tau) ? num(c.dm.dose) * 24 / num(c.dm.tau) : null;
+  const tddB = num(c.me.dose) && num(c.me.tau) ? num(c.me.dose) * 24 / num(c.me.tau) : null;
+  const tddP = (tddA && tddB) ? Math.abs(tddA - tddB) / ((tddA + tddB) / 2) * 100 : null;
+  const sameRegimen = (num(c.dm.dose) && num(c.dm.dose) === num(c.me.dose)
+                    && num(c.dm.tau)  && num(c.dm.tau)  === num(c.me.tau));
+  return `<div class="verdict">
+    ${rows.map(([k, p, g, m]) => `<span class="v-item"><b>${k}</b><span class="${tone(p,g,m)}">${fmtPct(p)}</span></span>`).join('')}
+    <span class="v-item"><b>Daily dose</b><span class="${tone(tddP,5,15)}">${fmtPct(tddP)}</span></span>
+    <span class="v-item"><b>Regimen</b>${
+      (num(c.dm.dose) && num(c.me.dose))
+        ? (sameRegimen ? '<span class="ok">identical</span>'
+                       : '<span class="mid">differs — compare daily dose first</span>')
+        : '—'}</span>
+  </div>`;
+}
+
+function render() {
+  document.getElementById('cases').innerHTML = cases.map((c, i) => `
+    <div class="case">
+      <div class="case-head">
+        <span class="n">Case ${i + 1}</span>
+        <div style="flex:1;min-width:180px">
+          <input data-c="${c.id}" data-p="label" value="${String(c.label).replace(/"/g,'&quot;')}"
+                 placeholder="short label — no identifiers, e.g. 'stable CrCl 60, 2 levels'"
+                 style="font-family:'Outfit',sans-serif">
+        </div>
+        <button class="del" data-del="${c.id}">remove</button>
+      </div>
+
+      <div class="case-body">
+        <h3 style="margin-top:0">Controls — these must match on both tools</h3>
+        <div class="grid g4">
+          ${field(c.id, 'model',        'Model (paired)', { options: MODELS })}
+          ${field(c.id, 'target',       'Target AUC24')}
+          ${field(c.id, 'days',         'DoseMeRx regimen days', { ph: 'e.g. 2' })}
+          ${field(c.id, 'crclOverride', 'CrCl override used?',   { ph: 'value, or "no"' })}
+        </div>
+
+        <h3>Patient — de-identified</h3>
+        <div class="grid g4">
+          ${field(c.id, 'age', 'Age')}
+          ${field(c.id, 'sex', 'Sex', { options: ['M','F'] })}
+          ${field(c.id, 'ht',  'Height cm')}
+          ${field(c.id, 'wt',  'Weight kg')}
+        </div>
+        <div class="grid g2" style="margin-top:11px">
+          ${field(c.id, 'scr', 'SCr mg/dL')}
+          <div></div>
+          ${field(c.id, 'hist', 'Doses and levels — use relative times from an arbitrary day 1', {
+            area: true,
+            ph: 'D1 10:22  1750 mg over 2 h\nL  D2 03:13  18.7 mg/L\nL  D2 10:38  12.1 mg/L' })}
+        </div>
+      </div>
+
+      <div class="cols">
+        ${sideHTML(c, 'dm', 'DoseMeRx', 'col-dm')}
+        ${sideHTML(c, 'me', 'This calculator', 'col-me')}
+      </div>
+
+      ${verdictHTML(c)}
+
+      <div class="case-body" style="border-top:1px solid var(--rule)">
+        <div class="grid g2">
+          ${field(c.id, 'notes', 'Notes — what differed, and anything the screen said', {
+            area: true, ph: 'e.g. their fit read "not ideal, needs review"; ours 1.8 sigma' })}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (!t.dataset || !t.dataset.c) return;
+  const c = cases.find(x => x.id === t.dataset.c);
+  if (!c) return;
+  const keys = t.dataset.p.split('.');
+  let o = c;
+  while (keys.length > 1) o = o[keys.shift()];
+  o[keys[0]] = t.value;
+  save();
+  // only the verdict strip depends on other fields; avoid re-rendering under the cursor
+  const card = t.closest('.case');
+  const v = card && card.querySelector('.verdict');
+  if (v) v.outerHTML = verdictHTML(c);
+});
+document.addEventListener('change', e => {
+  if (e.target.tagName === 'SELECT' && e.target.dataset.c) { save(); render(); }
+});
+document.addEventListener('click', e => {
+  const d = e.target.dataset && e.target.dataset.del;
+  if (d) {
+    if (cases.length === 1) cases = [blank()];
+    else cases = cases.filter(x => x.id !== d);
+    save(); render();
+  }
+});
+['add','add2'].forEach(id => document.getElementById(id).addEventListener('click', () => {
+  cases.push(blank()); save(); render();
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}));
+document.getElementById('prt').addEventListener('click', () => window.print());
+
+function download(name, text, type) {
+  const b = new Blob([text], { type });
+  const u = URL.createObjectURL(b);
+  const a = document.createElement('a');
+  a.href = u; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(u);
+}
+function toCSV() {
+  const cols = ['label','model','target','days','crclOverride','age','sex','ht','wt','scr'];
+  const sub  = ['crcl','cl','v','vp','dose','tau','auc','peak','trough','fit'];
+  const head = cols.concat(sub.map(s => 'dm_' + s), sub.map(s => 'me_' + s), ['notes']);
+  const esc  = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\n/g, ' ') + '"';
+  const rows = cases.map(c =>
+    cols.map(k => esc(c[k]))
+      .concat(sub.map(s => esc(c.dm[s])), sub.map(s => esc(c.me[s])), [esc(c.notes)]).join(','));
+  return [head.join(','), ...rows].join('\n');
+}
+// Clipboard first: a download can be blocked by a locked-down browser or by the
+// site's Content-Security-Policy, and losing a shift's data to that would be
+// unforgivable. The textarea is the third fallback and cannot fail.
+function copyOut(text, label) {
+  const done = ok => {
+    document.getElementById('saved').textContent =
+      ok ? label + ' copied to clipboard' : 'clipboard blocked — use "Show copyable text"';
+    if (!ok) showDump(text);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+  } else { done(false); }
+}
+function showDump(text) {
+  const b = document.getElementById('dumpbox');
+  b.value = text; b.style.display = 'block'; b.focus(); b.select();
+}
+document.getElementById('copy').addEventListener('click', () =>
+  copyOut(JSON.stringify(cases, null, 2), 'JSON'));
+document.getElementById('copycsv').addEventListener('click', () =>
+  copyOut(toCSV(), 'CSV'));
+document.getElementById('dump').addEventListener('click', () =>
+  showDump(JSON.stringify(cases, null, 2)));
+
+document.getElementById('exp').addEventListener('click', () =>
+  download('dosemerx-comparison.json', JSON.stringify(cases, null, 2), 'application/json'));
+document.getElementById('csv').addEventListener('click', () =>
+  download('dosemerx-comparison.csv', toCSV(), 'text/csv'));
+
+render(); save();
+</script>
+</body>
+</html>
