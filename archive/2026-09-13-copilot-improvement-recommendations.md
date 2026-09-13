@@ -30,6 +30,16 @@
 > badge the header has carried for months. The "7,900 lines" figure is stale by
 > about 2,700 lines.
 >
+> **It cites a source file that does not exist.** Section 2 opens *"The
+> `.copilot-instructions.md` explicitly states:"* and the References list it again.
+> There is no such file — not in this repo on any branch, not in the hub, not in any
+> `.github/` directory; the only tracked dotfiles here are `.claude/launch.json` and
+> `.gitignore`. The sentence attributed to it is **verbatim from `CLAUDE.md:58`**.
+> So it read `CLAUDE.md`, misattributed it to a filename it invented, and then cited
+> the invented file as authority. That is also the origin of the section 2 error: it
+> took `CLAUDE.md`'s *description* of `SUITE 19` for a specification of something yet
+> to be written, and concluded no tests existed while `SUITE 19` was passing.
+>
 > **Section 1 would break a load-bearing invariant.** The suites extract the
 > `<script>` block from `index.html` and run it in a Node `vm`, so they test the
 > shipped artifact. Splitting the file forks the code from the suite that
