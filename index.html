@@ -1441,6 +1441,14 @@
     color: var(--text-secondary);
     margin: 3px 0 8px;
   }
+  /* Visible to a screen reader, not on screen. The matrix caption explains the
+     arrow-key navigation, which is otherwise undiscoverable to someone who
+     cannot see the focus ring move. */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
   /* ── Exposure matrix ─────────────────────────────────────────────────
      Dose x interval, every cell a steady-state AUC24. Depth is a hairline and
      a background step; the site has no shadows and neither does this. Bands
@@ -3091,6 +3099,7 @@ const __ACT = {
   k69: (el, ev, arg) => { loadProfileIntoForm(String(arg)) },   /* loadProfileIntoForm('${p.id}') */
   k70: (el, ev, arg) => { deleteProfile(String(arg)) },   /* deleteProfile('${p.id}') */
   k71: (el, ev, arg) => { pickMatrixCell(String(arg)) },   /* pickMatrixCell('dose|tau') */
+  k72: (el, ev, arg) => { matrixKeyNav(el, ev) },   /* arrow-key grid navigation */
 };
 function setCrclOverride() {
   const cb = document.getElementById('crcl-override-on');
@@ -4101,6 +4110,26 @@ function validateFields(specs) {
     if (r.ok) values[id] = r.value; else errors.push(r.message);
   }
   return { ok: errors.length === 0, values, errors };
+}
+
+// Some fields are legitimately blank — serial SCr can stand in for the baseline
+// SCr, and IBW degrades gracefully without a height — but a value that IS typed
+// must still be in range. checkField() treats blank as an error, so optional
+// fields need this rather than a second limits table.
+function checkOptionalField(id, key, labelOverride) {
+  const el = document.getElementById(id);
+  const raw = el ? String(el.value).trim() : '';
+  if (raw === '') return { ok:true, value:NaN, message:null };
+  return checkValue(raw, key, labelOverride);
+}
+
+function validateOptionalFields(specs) {
+  const errors = [];
+  for (const [id, key, label] of specs) {
+    const r = checkOptionalField(id, key, label);
+    if (!r.ok) errors.push(r.message);
+  }
+  return { ok: errors.length === 0, values: {}, errors };
 }
 
 function reportValidation(res) {
@@ -8297,10 +8326,25 @@ function runBayesian() {
   const scrEl = parseFloat(document.getElementById('b-scr').value);
   const serialScr = readSerialScr();
 
-  if (!age || !tbw) {
-    alert('Age and Weight are required for Bayesian population PK calculation.');
-    return;
-  }
+  // AUDIT A3/A4, extended to this module. runBayesian used to test PRESENCE
+  // only — `!age || !tbw` — so an out-of-range value reached the population
+  // model untouched: 5000 kg with SCr 0.0001 gives a Cockcroft-Gault CrCl of
+  // 73,611,111 mL/min, and the HTML min/max on these fields are advisory,
+  // enforced by the browser on a form submit that never happens here.
+  // Deliberately the SAME checkField()/INPUT_LIMITS the trough module uses —
+  // a second limits table is how the same patient gets two answers.
+  const bReq = validateFields([
+    ['b-age', 'age',    'Age'],
+    ['b-tbw', 'weight', 'Weight'],
+  ]);
+  const bOpt = validateOptionalFields([
+    ['b-height',     'height', 'Height'],
+    ['b-scr',        'scr',    'Serum creatinine'],
+    ['b-auc-target', 'auc',    'Target AUC24'],
+  ]);
+  if (!reportValidation({ ok: bReq.ok && bOpt.ok,
+                          errors: bReq.errors.concat(bOpt.errors) })) return;
+
   if (!scrEl && serialScr.length === 0) {
     alert('SCr is required — enter a baseline SCr or add serial SCr readings.');
     return;
@@ -9597,8 +9641,13 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const recTau  = rec && !rec.noSolution ? rec.tau  : null;
 
     const head = mx.intervals.map(t => `<th scope="col">Q${t}H</th>`).join('');
-    const body = mx.rows.map(row => {
-      const cells = row.cells.map(c => {
+    // The first cell that is actually operable owns the single tab stop.
+    let firstNav = { r: -1, c: -1 };
+    mx.rows.forEach((row, ri) => row.cells.forEach((c, ci) => {
+      if (firstNav.r < 0 && !c.blocked) firstNav = { r: ri, c: ci };
+    }));
+    const body = mx.rows.map((row, rowIdx) => {
+      const cells = row.cells.map((c, cIdx) => {
         const cls = c.band === 'blocked' ? 'mx-blocked'
                   : c.band === 'in'      ? 'mx-in'
                   : c.band === 'supra'   ? 'mx-supra' : 'mx-sub-b';
@@ -9612,9 +9661,16 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             <span class="mx-auc">${c.auc24.toFixed(0)}</span>
             <span class="mx-tr">—</span></span></td>`;
         }
+        // Roving tabindex: the grid is ONE tab stop, then arrow keys move
+        // within it. 32 separate stops would bury the rest of the results page
+        // behind the matrix for anyone navigating by keyboard.
+        const first = (rowIdx === firstNav.r && cIdx === firstNav.c);
         return `<td><button type="button"
             class="mx-cell ${cls}${isRec ? ' is-rec' : ''}"
             data-onclick="k71" data-arg="${c.dose}|${c.tau}"
+            data-onkeydown="k72"
+            data-r="${rowIdx}" data-c="${cIdx}"
+            tabindex="${first ? '0' : '-1'}"
             aria-label="${escHtml(label)}">
             <span class="mx-auc">${c.auc24.toFixed(0)}</span>
             <span class="mx-tr">tr ${trough}</span>
@@ -9631,6 +9687,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         </div>
         <div class="mx-scroll">
           <table class="mx-grid">
+            <caption class="sr-only">Steady-state AUC24 for each dose and dosing interval.
+              Use the arrow keys to move between regimens and Enter to load one into the Dose Tinkerer.</caption>
             <thead><tr><th scope="col" style="text-align:right">Dose</th>${head}</tr></thead>
             <tbody>${body}</tbody>
           </table>
@@ -10011,6 +10069,64 @@ function renderComparisonSection() {
 // previews it — the same move DoseMeRx offers ("click a cell to use that dosing
 // regimen in a custom dose simulation"). The matrix states exposure; the
 // tinkerer shows the profile that produces it.
+// Arrow-key navigation across the exposure matrix (WAI-ARIA grid pattern).
+//
+// The alternative the Copilot review proposed was `tabindex="1"`, `tabindex="2"`
+// and so on. A POSITIVE tabindex is an accessibility anti-pattern: it yanks
+// those elements to the front of the whole document's tab order, ahead of
+// everything with the natural 0, so the page is then navigated in an order that
+// matches neither the DOM nor the visual layout. The fix for "too many tab
+// stops" is fewer stops, not renumbered ones — the grid is one stop and the
+// arrows move inside it.
+//
+// Blocked cells are skipped: they are not regimens, and stopping on one to
+// discover it cannot be chosen wastes the keyboard user's time.
+function matrixKeyNav(el, ev) {
+  const KEYS = { ArrowRight:[0,1], ArrowLeft:[0,-1], ArrowDown:[1,0], ArrowUp:[-1,0] };
+  const key = ev.key;
+  const grid = el.closest('.mx-grid');
+  if (!grid) return;
+
+  const cells = [...grid.querySelectorAll('.mx-cell[data-r]')];
+  const at = (r, c) => cells.find(x => +x.dataset.r === r && +x.dataset.c === c);
+  const r = +el.dataset.r, c = +el.dataset.c;
+  const maxR = Math.max(...cells.map(x => +x.dataset.r));
+  const maxC = Math.max(...cells.map(x => +x.dataset.c));
+
+  let target = null;
+  if (KEYS[key]) {
+    const [dr, dc] = KEYS[key];
+    let nr = r, nc = c;
+    // step past blocked cells rather than landing on something unusable
+    for (let i = 0; i <= Math.max(maxR, maxC) + 1; i++) {
+      nr += dr; nc += dc;
+      if (nr < 0 || nc < 0 || nr > maxR || nc > maxC) { target = null; break; }
+      const cand = at(nr, nc);
+      if (cand && !cand.disabled && cand.tagName === 'BUTTON') { target = cand; break; }
+    }
+  } else if (key === 'Home') {
+    target = cells.find(x => +x.dataset.r === r && x.tagName === 'BUTTON');
+  } else if (key === 'End') {
+    target = [...cells].reverse().find(x => +x.dataset.r === r && x.tagName === 'BUTTON');
+  } else if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+    // Activate explicitly rather than leaning on the browser turning Enter into
+    // a click on a focused <button>. Two reasons: Space would otherwise scroll
+    // the page before activating, and the ARIA grid pattern expects the grid to
+    // own its own activation. preventDefault stops any implicit click, so the
+    // regimen is loaded exactly once.
+    ev.preventDefault();
+    pickMatrixCell(el.getAttribute('data-arg'));
+    return;
+  } else {
+    return;
+  }
+  if (!target) return;
+  ev.preventDefault();
+  cells.forEach(x => x.setAttribute('tabindex', '-1'));
+  target.setAttribute('tabindex', '0');
+  target.focus();
+}
+
 function pickMatrixCell(arg) {
   const [doseS, tauS] = String(arg).split('|');
   const dose = Number(doseS), tau = Number(tauS);
@@ -10022,7 +10138,16 @@ function pickMatrixCell(arg) {
   tEl.value = String(tau);
   document.querySelectorAll('.mx-cell.is-picked').forEach(c => c.classList.remove('is-picked'));
   const cell = document.querySelector(`.mx-cell[data-arg="${dose}|${tau}"]`);
-  if (cell) cell.classList.add('is-picked');
+  if (cell) {
+    cell.classList.add('is-picked');
+    // Move the grid's single tab stop to what was just chosen, so returning to
+    // the matrix lands where the user left it rather than back at cell one.
+    const grid = cell.closest('.mx-grid');
+    if (grid) {
+      grid.querySelectorAll('.mx-cell[data-r]').forEach(x => x.setAttribute('tabindex', '-1'));
+      cell.setAttribute('tabindex', '0');
+    }
+  }
   runBayesTinkerer();
   const box = document.getElementById('b-tink-result');
   if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

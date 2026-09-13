@@ -265,6 +265,59 @@ Neither changes a dose. Everything they sit beside is sourced: σ from each mode
 residual error, the AUC band from Rybak 2020 Rec 1 (A-II), the 250 mg step from the
 dispensing increment, the uncertainty widths from the phase2d Monte Carlo.
 
+## D6 — Input bounds, extended to the module that lacked them
+
+From section 4 of the archived Copilot review
+(`archive/2026-09-13-copilot-improvement-recommendations.md`). Its premise was right and its
+framing was wrong: it claimed there was no validation, and proposed a fresh table of invented
+limits. `INPUT_LIMITS` + `checkValue` + `validateFields` have existed since audit A3/A4.
+
+What was genuinely missing is that `validateFields` was called from **one** place —
+`calculate()` — for four fields. **`runBayesian()` tested presence only** (`!age || !tbw`), so
+an out-of-range value reached the population model untouched in the module that does the
+Bayesian work. Measured against the shipped engine:
+
+| input | result |
+|---|---|
+| weight 5000 kg, SCr 0.0001 | Cockcroft-Gault CrCl **73,611,111 mL/min** |
+| SCr blank or 0 | CrCl **Infinity** |
+| age `"abc"`, `""`, `"0"` | all collapse to `v() === 0`, indistinguishable |
+
+The `min`/`max` attributes on those fields are **advisory** — the browser enforces them on a
+form submit, and there is no form here.
+
+Fixed by routing the Bayesian module through the **same** `checkField`/`INPUT_LIMITS`, not a
+second table — four CrCl functions with three SCr floors is how this project learned that
+lesson. One addition was needed: `checkOptionalField`, because SCr may legitimately be blank
+when serial readings supply it and IBW degrades gracefully without a height — but a value that
+*is* typed must still be in range. Verified live: 5000 kg now gives *"Weight must be between
+20 and 400 kg. Got 5000."* and nothing renders.
+
+## D7 — The exposure matrix is one tab stop, not thirty-two
+
+From section 6 of the same review, whose proposed implementation was an anti-pattern:
+`tabindex="1"`, `tabindex="2"` and so on. A **positive** tabindex hoists those elements ahead
+of everything carrying the natural `0`, so the document is then traversed in an order matching
+neither the DOM nor the layout. The cure for too many tab stops is fewer stops, not renumbered
+ones.
+
+The matrix has 32 cells. It is now a roving-tabindex grid (WAI-ARIA pattern): one tab stop,
+arrow keys to move, `Home`/`End` for row ends, `Enter`/`Space` to load a regimen into the Dose
+Tinkerer. Blocked cells are skipped rather than stopped on — they are not regimens, and landing
+on one to discover it cannot be chosen wastes the keyboard user's time. A `sr-only` caption
+announces the navigation, which is otherwise undiscoverable to someone who cannot watch the
+focus ring move.
+
+Activation is handled explicitly rather than relying on the browser turning `Enter` into a
+click on a focused `<button>`. Two reasons: `Space` would scroll the page before activating,
+and a live check showed the implicit activation did not fire for the focused cell.
+`preventDefault` keeps it to exactly one activation if an implicit click does also arrive.
+
+Verified live under the production CSP with real keystrokes: `250|8` →**→** `250|12` →**↓**
+`500|12` →**End** `500|48`; `Enter` on `1000|24` loads the Tinkerer with AUC₂₄ 479, trough
+13.1, peak 35.8. One tab stop throughout. `SUITE 20` fails the build if a positive `tabindex`
+appears anywhere in the body.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

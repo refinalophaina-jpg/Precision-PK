@@ -2001,6 +2001,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 {
   const src    = fs.readFileSync(htmlPath, 'utf8');
   const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const body   = src.slice(src.indexOf('<body>'));
   const { exposureMatrix, fitBandFor } = sandbox;
   const K = __extractConsts();
 
@@ -2191,6 +2192,85 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       }
     }
     assert(hits > 0, `1000 mg Q24H was never recommended in ${calls} calls`);
+  });
+
+  // ── salvaged from the archived Copilot review (sections 4 and 6) ──
+  // Both were already partly built; what was actually missing is tested here.
+  test('the Bayesian module range-checks demographics, not just presence', ()=>{
+    // runBayesian tested `!age || !tbw` only, so 5000 kg reached the population
+    // model: Cockcroft-Gault then returns 73,611,111 mL/min at SCr 0.0001.
+    const fn = script.slice(script.indexOf('function runBayesian()'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    assert(/validateFields\s*\(/.test(body),
+      'runBayesian does not range-check its demographics');
+    assert(/validateOptionalFields\s*\(/.test(body),
+      'optional-but-bounded fields (height, SCr, target AUC) are unchecked');
+    assert(!/if\s*\(\s*!age\s*\|\|\s*!tbw\s*\)/.test(body),
+      'the presence-only guard is still there');
+  });
+
+  test('there is still exactly one limits table', ()=>{
+    // The archived review proposed a second, fabricated one. Four CrCl
+    // functions with three SCr floors is how this project learned that lesson.
+    const tables = (script.match(/const\s+INPUT_LIMITS\s*=/g) || []).length;
+    assert(tables === 1, `expected 1 INPUT_LIMITS, found ${tables}`);
+    assert(!/CLINICAL_CONSTANTS/.test(script),
+      'the archived review\'s fabricated constants registry has been implemented');
+  });
+
+  test('optional fields may be blank but not out of range', ()=>{
+    const { checkOptionalField, checkValue } = sandbox;
+    assert(typeof checkOptionalField === 'function', 'checkOptionalField missing');
+    // blank is fine
+    sandbox.document.getElementById = () => ({ value: '' });
+    assert(checkOptionalField('x', 'scr', 'SCr').ok, 'blank optional field should pass');
+    // a typed value is still bounded
+    sandbox.document.getElementById = () => ({ value: '999' });
+    assert(!checkOptionalField('x', 'scr', 'SCr').ok, 'SCr 999 should be rejected');
+    sandbox.document.getElementById = () => ({ value: '1.2' });
+    assert(checkOptionalField('x', 'scr', 'SCr').ok, 'SCr 1.2 should pass');
+    // and checkValue still treats blank as an error for REQUIRED fields
+    assert(!checkValue('', 'scr', 'SCr').ok, 'blank required field must still fail');
+  });
+
+  test('the matrix is one tab stop, navigated by arrow keys', ()=>{
+    // A positive tabindex (the review\'s suggestion) hoists elements ahead of
+    // everything with the natural 0 and breaks document order. 32 cells would
+    // also bury the rest of the page behind the grid.
+    assert(/tabindex="\$\{first \? '0' : '-1'\}"/.test(script),
+      'matrix cells do not use a roving tabindex');
+    assert(/function matrixKeyNav/.test(script), 'matrixKeyNav is missing');
+    assert(/k72:\s*\(el, ev, arg\)\s*=>\s*\{\s*matrixKeyNav/.test(script),
+      'k72 is not wired to matrixKeyNav');
+    assert(/data-onkeydown="k72"/.test(script), 'cells do not listen for keydown');
+    // No positive tabindex anywhere in the file. Comment-only lines are stripped
+    // first: the fix documents the anti-pattern it rejected, and that must not
+    // trip the guard on itself — same false positive the 24*60 sweep had.
+    const codeOnly = t => t.split('\n')
+      .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    const positive = (codeOnly(body).match(/tabindex="[1-9]\d*"/g) || []);
+    assert(positive.length === 0,
+      `positive tabindex is an anti-pattern; found ${positive.join(', ')}`);
+  });
+
+  test('arrow navigation skips cells that cannot be chosen', ()=>{
+    const src = sandbox.matrixKeyNav.toString();
+    assert(/blocked|tagName === 'BUTTON'|disabled/.test(src),
+      'matrixKeyNav does not skip unusable cells');
+    assert(/ArrowRight|ArrowLeft|ArrowUp|ArrowDown/.test(src), 'no arrow keys handled');
+    assert(/'Home'|"Home"/.test(src) && /'End'|"End"/.test(src), 'Home/End not handled');
+    assert(/preventDefault/.test(src), 'arrow keys must not also scroll the page');
+  });
+
+  test('the grid activates on Enter and Space itself', ()=>{
+    // Not left to the browser turning Enter into a click: Space would scroll
+    // the page first, and a verified-in-browser check showed the implicit
+    // activation did not fire for a focused grid cell. preventDefault keeps it
+    // to exactly one activation if the implicit click does also arrive.
+    const src = sandbox.matrixKeyNav.toString();
+    assert(/key === 'Enter'/.test(src), 'Enter is not handled');
+    assert(/' '|'Spacebar'/.test(src), 'Space is not handled');
+    assert(/pickMatrixCell\s*\(/.test(src), 'activation does not load the regimen');
   });
 
   // ── graph vocabulary ──
