@@ -1268,7 +1268,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       fillText(t,x,y){ ops.texts.push({t:String(t),x,y}); },
       measureText(t){ return { width: String(t).length * 5.1 }; },
       createLinearGradient(){ return { addColorStop(){} }; },
-      getImageData(){ return {}; },
+      // The real API throws IndexSizeError on a non-positive source rect. The
+      // stub used to return {} unconditionally, which is why SUITE 13 could not
+      // see that drawProfileGraph aborted on a hidden (zero-width) canvas.
+      getImageData(x, y, w, h){
+        if (!(w > 0) || !(h > 0)) {
+          const e = new Error("Failed to execute 'getImageData' on 'CanvasRenderingContext2D': The source width is 0.");
+          e.name = 'IndexSizeError';
+          throw e;
+        }
+        return {};
+      },
     };
     const canvas = { width:0, height:0, style:{}, clientWidth:W, offsetWidth:W,
                      getContext:()=>ctx, getBoundingClientRect:()=>({width:W,height:H}),
@@ -1291,6 +1301,21 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log(`\n${'═'.repeat(60)}`);
   console.log('  SUITE 13 — drawProfileGraph rendering invariants');
   console.log(`${'─'.repeat(60)}`);
+
+  test('A hidden canvas is skipped, not drawn into at zero width', ()=>{
+    // offsetWidth is 0 inside a display:none panel. Drawing there is
+    // meaningless, and getImageData on a zero-width bitmap throws
+    // IndexSizeError — which aborted drawProfileGraph BEFORE
+    // attachPlotCrosshair, so the crosshair silently never bound. Production
+    // logged that error every time the module was switched away from with a
+    // result on screen. Driven through the SAME recording context as the rest
+    // of this suite, so nothing else can throw first and mask it.
+    let threw = null, res = null;
+    try { res = runProfile(q8h, lev, 4.5, 60, 0, 284); }
+    catch (e) { threw = e; }
+    assert(!threw, `drawProfileGraph threw on a zero-width canvas: ${threw && threw.name}: ${threw && threw.message}`);
+    assert(res && !res.plot, 'it should bail out before recording plot geometry');
+  });
 
   test('Drawn polyline tracks the model through every infusion corner', ()=>{
     const { ops, plot } = runProfile(q8h, lev, 4.5, 60);

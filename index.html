@@ -7595,6 +7595,17 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const dpr  = window.devicePixelRatio || 1;
   const cW   = canvas.offsetWidth;
   const cHpx = 284;
+
+  // A canvas inside a display:none panel reports offsetWidth 0. Drawing into a
+  // zero-width bitmap is meaningless, and the getImageData() below — which
+  // snapshots the plot so the crosshair can repaint over it — throws
+  // IndexSizeError on a zero source width. That aborted the whole function
+  // BEFORE attachPlotCrosshair, so the crosshair silently failed to bind and a
+  // console error surfaced in production every time the module was switched
+  // away from while a result was on screen. Bail out instead; redrawing when
+  // the panel is visible again produces the same picture.
+  if (!(cW > 0)) return;
+
   canvas.width  = cW * dpr;
   canvas.height = cHpx * dpr;
   canvas.style.height = `${cHpx}px`;
