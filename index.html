@@ -2250,6 +2250,21 @@
   #b-results .bayes-pk-wrap { border: 0; border-radius: 0; background: none; }
   .guideline-line .ev-note { color: var(--ink-soft); }
   @media (prefers-reduced-motion: reduce) { details.ev > summary::before { transition: none; } }
+
+  /* ── design track A: forms & accessibility — insert this track's CSS below this line ── */
+
+
+  /* ── design track B: validation & errors — insert this track's CSS below this line ── */
+
+
+  /* ── design track C: mobile & data entry — insert this track's CSS below this line ── */
+
+
+  /* ── design track D: Trough-module results — insert this track's CSS below this line ── */
+
+
+  /* ── design track E: polish & minor fixes — insert this track's CSS below this line ── */
+
 </style>
 </head>
 <body>
@@ -3327,6 +3342,17 @@ const __ACT = {
   k0: (el, ev, arg) => { window.print() },   /* window.print() */
   k80: (el, ev, arg) => { if (ev && ev.preventDefault) ev.preventDefault(); openEvidence(String(arg)); },   /* open an evidence section */
   k81: (el, ev, arg) => { copyResultSummary(el); },   /* copy the one-sentence summary */
+
+  /* design track A keys (kA1, kA2, …) below */
+
+  /* design track B keys (kB1, kB2, …) below */
+
+  /* design track C keys (kC1, kC2, …) below */
+
+  /* design track D keys (kD1, kD2, …) below */
+
+  /* design track E keys (kE1, kE2, …) below */
+
   k1: (el, ev, arg) => { switchModule('trough') },   /* switchModule('trough') */
   k2: (el, ev, arg) => { switchModule('auc') },   /* switchModule('auc') */
   k4: (el, ev, arg) => { toggleTheme() },   /* toggleTheme() */
@@ -12472,6 +12498,21 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     if (el.value !== v) el.value = v;
   });
 }
+
+// ── design track A: forms & accessibility — insert this track's helpers below this line ──
+
+
+// ── design track B: validation & errors — insert this track's helpers below this line ──
+
+
+// ── design track C: mobile & data entry — insert this track's helpers below this line ──
+
+
+// ── design track D: Trough-module results — insert this track's helpers below this line ──
+
+
+// ── design track E: polish & minor fixes — insert this track's helpers below this line ──
+
 </script>
 
 <div class="print-footer">
