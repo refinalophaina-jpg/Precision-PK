@@ -1691,14 +1691,54 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
                    {mg:1000,timeH:H(8,10,28)-t0,tinfH:1},
                    {mg:1000,timeH:H(8,22,13)-t0,tinfH:1}];
     const levels = [{conc:12.2,timeH:H(9,11,43)-t0}];
-    const ag = modelAgreement({ crcl:127, tbw:69.4, dial:false }, doses, levels, 2000);
+    const ag = modelAgreement(
+      { activeModel:'buelga', crcl:127, tbw:69.4, htCm:165.1, dial:false }, doses, levels, 2000);
     assert(ag, 'no agreement computed');
-    assert(Math.abs(ag.aucBuelga - 334) < 6, `Buelga AUC ${ag.aucBuelga.toFixed(0)}, expected ~334`);
+    const row = k => ag.rows.find(m => m.key === k);
+    const B = row('buelga'), G = row('goti');
+    assert(B && G, `expected Buelga and Goti rows, got ${ag.rows.map(m=>m.key).join(',')}`);
+    assert(Math.abs(B.auc24 - 334) < 6, `Buelga AUC ${B.auc24.toFixed(0)}, expected ~334`);
     assert(ag.diffPct > 20, `${ag.diffPct.toFixed(1)}% apart should band as Low`);
     assert(ag.band.label === 'Low', `banded as ${ag.band.label}`);
     // Goti's weaker CrCl dependence lands near the clearance the level implies.
-    assert(Math.abs(ag.CLg - 4.12) < 0.4,
-      `Goti CL ${ag.CLg.toFixed(2)} should sit near the level-implied 4.12`);
+    assert(Math.abs(G.CL - 4.12) < 0.4,
+      `Goti CL ${G.CL.toFixed(2)} should sit near the level-implied 4.12`);
+    // the active model is identified, and a lean patient gets no Hughes comparator
+    assert(B.active === true && G.active === false, 'the active model must be marked');
+    assert(!row('hughes'), 'Hughes must not be fitted for a BMI-25 patient');
+  });
+
+  test('Model agreement compares the model actually in use', ()=>{
+    // It used to fit Buelga + Goti unconditionally. On Hughes that compared two
+    // priors NEITHER of which was the clinician's, and reported their spread as
+    // if it described their fit. Reported from the bedside.
+    const H = (d,hh,mm) => ((d-7)*24)+hh+mm/60, t0 = H(7,21,50);
+    const doses = [{mg:1250,timeH:0,tinfH:1.5},
+                   {mg:1000,timeH:H(8,10,28)-t0,tinfH:1},
+                   {mg:1000,timeH:H(8,22,13)-t0,tinfH:1}];
+    const levels = [{conc:12.2,timeH:H(9,11,43)-t0}];
+    // class-3 obesity, so Hughes is applicable on its own terms
+    const ctx = { activeModel:'hughes', crcl:127, tbw:130, htCm:170, dial:false,
+                  crclGoti:127, crclHughes:110, ffm:62 };
+    const ag = modelAgreement(ctx, doses, levels, 2000);
+    assert(ag, 'no agreement computed on the Hughes path');
+    const h = ag.rows.find(m => m.key === 'hughes');
+    assert(h, `Hughes is the active model and must appear; got ${ag.rows.map(m=>m.key).join(',')}`);
+    assert(h.active === true, 'the active model must be marked as in use');
+    assert(ag.rows.filter(m => m.active).length === 1, 'exactly one row is in use');
+    assert(ag.n === ag.rows.length && ag.n >= 2, 'spread needs at least two priors');
+    assert(ag.hi >= ag.lo, 'spread bounds must bracket');
+  });
+
+  test('A dialysis patient is compared against Goti-HD, not plain Goti', ()=>{
+    const doses = [{mg:1000,timeH:0,tinfH:1}];
+    const levels = [{conc:15,timeH:20}];
+    const ag = modelAgreement(
+      { activeModel:'buelga', crcl:10, tbw:70, htCm:170, dial:true }, doses, levels, 1000);
+    assert(ag, 'no agreement computed');
+    const keys = ag.rows.map(m => m.key);
+    assert(keys.includes('goti-hd'), `expected goti-hd for a dialysis patient, got ${keys.join(',')}`);
+    assert(!keys.includes('goti'), 'the non-dialysis parameterisation must not also appear');
   });
 
   test('Agreement bands are High <10, Moderate 10-20, Low >20', ()=>{

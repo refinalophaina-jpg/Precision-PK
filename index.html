@@ -3851,24 +3851,90 @@ const MODEL_AGREEMENT_BANDS = [
   { max:20, label:'Moderate', tone:'warn'   },
   { max:Infinity, label:'Low', tone:'danger' },
 ];
-function modelAgreement(pt, doses, levels, dailyDose) {
+// ══════════════════════════════════════════════════════════════════════════
+//  MODEL AGREEMENT — fit every applicable prior to the SAME data
+// ══════════════════════════════════════════════════════════════════════════
+// This used to fit Buelga and Goti unconditionally, whatever model was
+// selected. On Hughes it therefore compared two priors NEITHER of which was
+// the one in use, and reported their disagreement as if it said something
+// about the clinician's fit. It did not. Reported from the bedside: "I'm using
+// Hughes though, so why Buelga 1-comp and Goti 2-comp agreement stuff."
+//
+// The question this panel exists to answer is "is my exposure estimate driven
+// by the DATA or by my choice of prior?" — so the honest form is every prior
+// that applies to this patient, fitted to the same course and the same levels,
+// with the active one marked. Spread across that set is the answer; a pair
+// that excludes the active model cannot be.
+//
+// WHICH PRIORS APPLY. The active model always appears. Buelga (1-comp) and the
+// dialysis-matched Goti (2-comp) are the general adult models and always
+// appear. Hughes appears only when it is active or when the patient meets its
+// validation (class 3 obesity, BMI >= 40) — fitting an FFM-scaled model to a
+// lean patient and presenting it as a peer would manufacture disagreement.
+const AGREEMENT_BMI_HUGHES = 40;   // Hughes 2024 validation floor, BMI kg/m^2
+
+function modelAgreement(ctx, doses, levels, dailyDose) {
   try {
     if (!doses || !doses.length || !(dailyDose > 0)) return null;
-    // Buelga, 1-comp
-    const bp  = buelgaPopPK(pt.crcl, pt.tbw);
-    const bf  = nelderMead2D((a,b) => burtonObjective(a,b,bp.CL_pop,bp.V_pop,doses,levels), 0, 0, 400);
-    const CLb = bp.CL_pop * Math.exp(bf[0]);
-    // Goti, 2-comp
-    const gp  = gotiPopPK(pt.crclGoti != null ? pt.crclGoti : pt.crcl, pt.tbw, pt.dial);
-    const gf  = nelderMead3D((a,b,c) =>
-                  burtonObj3D(a,b,c,gp.TVCL,gp.TVVc,gp.TVVp,doses,levels), 0, 0, 0, 400);
-    const CLg = gp.TVCL * Math.exp(gf[0]);
-    if (!(CLb > 0) || !(CLg > 0)) return null;
-    const aucB = dailyDose / CLb, aucG = dailyDose / CLg;
-    const mean = (aucB + aucG) / 2;
-    const diffPct = mean > 0 ? Math.abs(aucB - aucG) / mean * 100 : NaN;
+    if (!ctx) return null;
+    const active = ctx.activeModel || 'buelga';
+    const rows = [];
+
+    const push = (key, label, struct, CL, note) => {
+      if (!(CL > 0) || !isFinite(CL)) return;
+      rows.push({ key, label, struct, CL, auc24: dailyDose / CL,
+                  active: key === active, note: note || null });
+    };
+
+    // ── Buelga, 1-compartment ──
+    if (ctx.crcl > 0 && ctx.tbw > 0) {
+      const bp = buelgaPopPK(ctx.crcl, ctx.tbw);
+      const bf = nelderMead2D((a,b) => burtonObjective(a,b,bp.CL_pop,bp.V_pop,doses,levels), 0, 0, 400);
+      push('buelga', 'Buelga 1-comp', '1-compartment', bp.CL_pop * Math.exp(bf[0]));
+    }
+
+    // ── Goti, 2-compartment. Dialysis-matched: a patient on HD is compared
+    //    against Goti-HD, not against the non-dialysis parameterisation. ──
+    const crclG = ctx.crclGoti != null ? ctx.crclGoti : ctx.crcl;
+    if (crclG > 0 && ctx.tbw > 0) {
+      const onHD = !!ctx.dial;
+      const gp = gotiPopPK(crclG, ctx.tbw, onHD);
+      const gf = nelderMead3D((a,b,c) =>
+                   burtonObj3D(a,b,c,gp.TVCL,gp.TVVc,gp.TVVp,doses,levels), 0, 0, 0, 400);
+      push(onHD ? 'goti-hd' : 'goti',
+           onHD ? 'Goti 2-comp · HD' : 'Goti 2-comp', '2-compartment',
+           gp.TVCL * Math.exp(gf[0]));
+    }
+
+    // ── Hughes, 2-compartment, FFM-scaled ──
+    const bmi = (ctx.tbw > 0 && ctx.htCm > 0) ? ctx.tbw / Math.pow(ctx.htCm/100, 2) : NaN;
+    const hughesApplies = active === 'hughes' || (isFinite(bmi) && bmi >= AGREEMENT_BMI_HUGHES);
+    if (hughesApplies && ctx.crclHughes > 0 && ctx.ffm > 0) {
+      const hp = hughesPopPK(ctx.crclHughes, ctx.ffm);
+      const hf = nelderMead3D((a,b,c) =>
+                   burtonObj3D_hughes(a,b,c,hp.TVCL,hp.TVVc,hp.TVVp,hp.TVQ,doses,levels), 0, 0, 0, 400);
+      push('hughes', 'Hughes 2-comp · FFM', '2-compartment',
+           hp.TVCL * Math.exp(hf[0]),
+           (isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
+             ? `validated at BMI >= ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}`
+             : null);
+    }
+
+    if (rows.length < 2) return null;
+
+    // Spread across the whole set, not a pairwise difference.
+    const aucs = rows.map(r => r.auc24);
+    const lo = Math.min.apply(null, aucs), hi = Math.max.apply(null, aucs);
+    const mean = aucs.reduce((a,b) => a+b, 0) / aucs.length;
+    const diffPct = mean > 0 ? (hi - lo) / mean * 100 : NaN;
     const band = MODEL_AGREEMENT_BANDS.find(x => diffPct < x.max) || MODEL_AGREEMENT_BANDS[2];
-    return { aucBuelga: aucB, aucGoti: aucG, CLb, CLg, diffPct, band };
+    const activeRow = rows.find(r => r.active) || null;
+
+    return { rows, lo, hi, mean, diffPct, band, activeRow,
+             n: rows.length,
+             // kept so older render paths that read these still work
+             aucBuelga: (rows.find(r => r.key === 'buelga') || {}).auc24,
+             aucGoti:   (rows.find(r => r.key === 'goti' || r.key === 'goti-hd') || {}).auc24 };
   } catch (e) { return null; }
 }
 
@@ -8359,6 +8425,20 @@ function runBayesian() {
   const crcl = getBayesCrCl(effScr);
   if (!crcl) { alert('Could not calculate CrCl — check patient demographics.'); return; }
 
+  // Covariates for EVERY prior, computed once here where each model's own CrCl
+  // helper is already in scope. modelAgreement needs Goti's truncated CrCl and
+  // Hughes's FFM-based CrCl even when neither is the active model — and it must
+  // not re-derive them, because this file has exactly one implementation of
+  // each covariate rule (CLAUDE.md rule 2).
+  const agCtx = {
+    activeModel: bState.model,
+    crcl, tbw, htCm,
+    dial: !!bState.dial,
+    crclGoti:   (function(){ try { return getGotiCrCl(effScr); }   catch (e) { return null; } })(),
+    crclHughes: (function(){ try { return getHughesCrCl(effScr); } catch (e) { return null; } })(),
+    ffm:        (function(){ try { return computeFFM(tbw, htCm, bState.sex); } catch (e) { return null; } })(),
+  };
+
   const targetAUC = parseFloat(document.getElementById('b-auc-target').value) || 450;
   const mic       = parseFloat(document.getElementById('b-mic').value) || 1;
   const isGoti    = bState.model === 'goti';
@@ -8472,7 +8552,7 @@ function runBayesian() {
     bState.result = {
       model:'goti', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx,
       levels:filteredLevels, objFinal, goti: gotiResult
     };
     // CODEX F-003: bind this fit to the inputs it came from.
@@ -8547,7 +8627,7 @@ function runBayesian() {
     bState.result = {
       model:'hughes', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx,
       levels:filteredLevels, objFinal, goti: hughesResult
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -8589,7 +8669,7 @@ function runBayesian() {
     const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC, null, mic);
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial,
+      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx,
       levels:filteredLevels, objFinal
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -9372,42 +9452,53 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // One reading of the detected regimen, shared by both diagnostic panels.
   const cur2 = inferCurrentRegimen(doses, CL_ind, V_ind, r.goti || null);
 
-  // ── Do the two priors agree on exposure? ─────────────────────────────────
+  // ── Do the applicable priors agree on exposure? ──────────────────────────
+  // Every prior that applies to this patient, fitted to the same course and the
+  // same levels, with the ACTIVE one marked. This used to be a hard-coded
+  // Buelga-vs-Goti pair shown even on Hughes, which compared two models the
+  // clinician was not using and called the result their disagreement.
   (() => {
-    if (!nLev) return;                       // no levels: both would just be the prior
+    if (!nLev) return;                       // no levels: every prior is just the prior
     const dd = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau) : null;
     if (!dd) return;
-    const ag = modelAgreement({ crcl: r.crcl, tbw: r.tbw, dial: r.dial }, doses, levels, dd);
+    const ag = modelAgreement(
+      r.agCtx || { activeModel: r.model, crcl: r.crcl, tbw: r.tbw, dial: r.dial },
+      doses, levels, dd);
     if (!ag || !isFinite(ag.diffPct)) return;
     const col = ag.band.tone === 'ok' ? 'var(--success)'
               : ag.band.tone === 'warn' ? 'var(--accent-amber)' : 'var(--danger)';
+    const rows = ag.rows.map(m => `
+        <div class="fitdx-row" style="grid-template-columns:1.5fr 1fr 1fr">
+          <span class="fitdx-t">${escHtml(m.label)}${m.active
+            ? ' <span style="color:var(--terracotta);font-weight:600">· in use</span>' : ''}</span>
+          <span class="fitdx-n"${m.active ? ' style="font-weight:600"' : ''}>${m.CL.toFixed(2)}</span>
+          <span class="fitdx-n"${m.active ? ' style="font-weight:600"' : ''}>${m.auc24.toFixed(0)}</span>
+        </div>`).join('');
+    const caveats = ag.rows.filter(m => m.note)
+      .map(m => `<div style="margin-top:5px;color:var(--text-muted)">${escHtml(m.label)}: ${escHtml(m.note)}.</div>`)
+      .join('');
     html += `
       <div class="fitdx" style="border-left:3px solid ${col}">
         <div class="fitdx-head">
           <span class="fitdx-title">Model agreement</span>
           <span style="color:${col};font-weight:600;font-size:0.72rem">
-            ${ag.band.label} (${ag.diffPct.toFixed(0)}% apart)
+            ${ag.band.label} (${ag.diffPct.toFixed(0)}% spread across ${ag.n})
           </span>
         </div>
-        <div class="fitdx-row fitdx-hdr" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="fitdx-row fitdx-hdr" style="grid-template-columns:1.5fr 1fr 1fr">
           <span class="fitdx-t">Prior</span><span class="fitdx-n">CL (L/h)</span><span class="fitdx-n">AUC₂₄</span>
         </div>
-        <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr">
-          <span class="fitdx-t">Buelga 1-comp</span>
-          <span class="fitdx-n">${ag.CLb.toFixed(2)}</span><span class="fitdx-n">${ag.aucBuelga.toFixed(0)}</span>
-        </div>
-        <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr">
-          <span class="fitdx-t">Goti 2-comp</span>
-          <span class="fitdx-n">${ag.CLg.toFixed(2)}</span><span class="fitdx-n">${ag.aucGoti.toFixed(0)}</span>
-        </div>
+        ${rows}
         <div class="fitdx-note">
-          Both priors fitted to the same levels and the same course, on the detected
-          ${cur2.dose} mg Q${fmtTau(cur2.tau)}H.
+          ${ag.n} applicable prior${ag.n === 1 ? '' : 's'} fitted to the same levels and the same
+          course, on the detected ${cur2.dose} mg Q${fmtTau(cur2.tau)}H — AUC₂₄
+          ${ag.lo.toFixed(0)}–${ag.hi.toFixed(0)} mg·h/L.
           ${ag.band.tone === 'ok'
             ? 'Close agreement means the answer is being driven by the measured levels rather than by the choice of prior.'
             : ag.band.tone === 'warn'
               ? 'Moderate disagreement — the prior is still doing noticeable work. Weigh a second level before a large dose change.'
-              : '<strong>The two priors disagree more than they agree.</strong> With this much spread the exposure estimate is prior-driven, not data-driven; a second concentration is worth more than choosing between them.'}
+              : '<strong>The priors disagree more than they agree.</strong> With this much spread the exposure estimate is prior-driven, not data-driven; a further concentration is worth more than choosing between them.'}
+          ${caveats}
         </div>
       </div>`;
   })();
