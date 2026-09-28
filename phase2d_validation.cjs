@@ -3137,6 +3137,34 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 28 — redraw survives a resize / theme toggle (design audit 2026-09-28)
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf = (name) => { const c = code.slice(code.indexOf('function ' + name + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 28 — redraw after resize or theme toggle');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('every value the redraw passes is stored by the render it repeats', ()=>{
+    const redraw = bodyOf('redrawAllCanvases');
+    const render = bodyOf('renderBayesianResults');
+    for (const k of ['divergeMsg', 'levelWarnings', 'mic', 'p2c']) {
+      assert(new RegExp('bState\\.' + k).test(redraw), `redraw no longer reads ${k}?`);
+      assert(new RegExp('bState\\.' + k + '\\s*=').test(render), `renderBayesianResults must store bState.${k}`);
+    }
+    assert(/levelWarnings = Array\.isArray\(levelWarnings\) \? levelWarnings : \[\]/.test(render), 'a missing list must not throw');
+  });
+  test('the Tinkerer steady-state canvas paints a background colour, not default black', ()=>{
+    const b = bodyOf('drawSSTinkCanvas');
+    const i = b.indexOf('ctx.fillRect(0, 0, W, H)');
+    assert(i > 0 && /ctx\.fillStyle\s*=\s*themeColor\('--paper'/.test(b.slice(0, i)), 'fillStyle must be set before the background fill');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

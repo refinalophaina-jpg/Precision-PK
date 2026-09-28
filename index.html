@@ -9988,6 +9988,14 @@ function inferCurrentRegimen(doses, CL_ind, V_ind, goti) {
 // ─── Render Bayesian results ───
 function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   p2c = p2c || {};
+  levelWarnings = Array.isArray(levelWarnings) ? levelWarnings : [];
+  // Keep what this render was given, so a redraw (resize, rotate, theme toggle)
+  // re-renders the SAME result. redrawAllCanvases read these four from bState,
+  // where nothing ever stored them, so every redraw threw "levelWarnings is not
+  // iterable" and — since the renderer clears the panel first — wiped the
+  // dosing answer mid-verification (design audit 2026-09-28).
+  bState.divergeMsg = divergeMsg; bState.levelWarnings = levelWarnings;
+  bState.mic = mic; bState.p2c = p2c;
   const { CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
           rec, doses, levels, targetAUC, objFinal } = r;
   const nLev = levels.length;
@@ -11036,8 +11044,10 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   const tx    = t => PAD.l + (t / tau) * cW;
   const ty    = c => PAD.t + cH - (c / maxC) * cH;
 
-  // Background
-  // (was a fully transparent fillRect — a no-op)
+  // Background. fillRect with no fillStyle paints the default BLACK — the
+  // Tinkerer's steady-state chart rendered as a black slab (design audit
+  // 2026-09-28). Paint the page surface explicitly.
+  ctx.fillStyle = themeColor('--paper', '#faf5ed');
   ctx.fillRect(0, 0, W, H);
 
   // Grid lines
