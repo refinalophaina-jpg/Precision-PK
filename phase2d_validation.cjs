@@ -3173,6 +3173,163 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 29 — design track E: print report, print action, theme, carry-over
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const css    = src.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf = (name) => { const c = code.slice(code.indexOf('function ' + name + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  // Comments blanked to spaces (offsets kept), so a brace or a colour in a
+  // comment can neither open a block nor count as a literal.
+  const cssNC  = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
+  // The at-rule / selector preludes enclosing a CSS offset, outermost first.
+  const enclosing = (at) => {
+    const stack = []; let start = 0;
+    for (let i = 0; i < at; i++) {
+      const ch = cssNC[i];
+      if (ch === '{') { stack.push(cssNC.slice(start, i).trim()); start = i + 1; }
+      else if (ch === '}') { stack.pop(); start = i + 1; }
+      else if (ch === ';') start = i + 1;
+    }
+    return stack;
+  };
+  const offsets = (re) => { const out = []; const g = new RegExp(re.source, 'g'); let m; while ((m = g.exec(cssNC))) out.push(m.index); return out; };
+  const rules = []; { const re = /([^{};]+)\{([^{}]*)\}/g; let m; while ((m = re.exec(cssNC))) rules.push({ sel: m[1].trim(), body: m[2], at: m.index + m[0].indexOf(m[1].trim()) }); }
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 29 — design track E: print, print action, theme, carry-over');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('print report: ISMP regimen, summary, provisional, month-name 24-hour times', ()=>{
+    const { _prRecommendation, fmtRegimen, fmtClock } = sandbox;
+    const rec = { dose: 1250, tau: 12, tinfH: 1.5, auc24: 480, Ctrough: 12.3, Cpeak: 31.2 };
+    const h = _prRecommendation({ rec, targetAUC: 500 }, { summary: 'One sentence <b>', provisional: true });
+    assert(fmtRegimen(1250, 12) === '1.25 g IV q12h' && h.includes(fmtRegimen(1250, 12)), h);
+    assert(!/1250 mg|Q12H/.test(h), 'the old "1250 mg Q12H" form is back');
+    assert(/provisional/.test(h), 'a de-rated dose must print as provisional');
+    assert(h.includes('One sentence &lt;b&gt;'), 'the one-sentence summary must print, escaped');
+    assert(/Predicted AUC₂₄/.test(h) && /Infusion/.test(h) && /1\.5 h/.test(h), 'the recommendation numbers must print');
+    const b = bodyOf('_buildPrintReport');
+    assert(/_prLevelRows\(r, fmtClock, t0\)/.test(b) && /fmtClock\(d\.timeH\)/.test(b), 'dose and level times must use fmtClock');
+    assert(/fmtDose\(d\.mg\)/.test(b) && /fmtHrs\(d\.tinfH\)/.test(b), 'dose history must use the ISMP helpers');
+    assert(!/getMonth\(\)\s*\+\s*1/.test(b), 'no M/D date formatting left in the report');
+    assert(/bState\.summaryText/.test(bodyOf('_prScreenState')), 'the summary comes from the rendered result');
+    assert(/_prRecommendation\(r, screen\)/.test(b) && /_prNotesSection\(screen\)/.test(b), 'summary and tiered notes are printed');
+    assert(/^\d{1,2} [A-Z][a-z]{2} \d{2}:\d{2}$/.test(fmtClock(1790000)), 'fmtClock form');
+    assert(/^\d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}$/.test(sandbox._prStamp(new Date(2026, 8, 28, 14, 5))), 'generated stamp');
+  });
+  test('print report: a refusal still prints "No regimen offered", with its reason', ()=>{
+    const h = sandbox._prRecommendation({ rec: { noSolution: true, reason: 'All above ceiling.' }, targetAUC: 500 }, {});
+    assert(/No regimen offered\./.test(h) && /All above ceiling\./.test(h) && !/undefined/.test(h), h);
+    const hold = sandbox._prRecommendation({ rec: { dose: 1000, tau: 12 }, lowCrClHold: true }, {});
+    assert(/No empiric maintenance regimen/.test(hold) && !/1 g IV/.test(hold), hold);
+    const stale = sandbox._prRecommendation({ rec: { noSolution: true }, targetAUC: 500 }, { stale: true });
+    assert(/note-alarm/.test(stale) && /Recalculate/.test(stale), 'a stale result must say so on paper');
+  });
+  test('print report: advisories print as tiered notes (signal word + drawn icon)', ()=>{
+    const n = sandbox._prAdvisoryNote('danger', 'Very low CrCl <10');
+    assert(/note-alarm/.test(n) && /Warning/.test(n) && /Very low CrCl &lt;10/.test(n) && /<svg/.test(n), n);
+    assert(/note-caution/.test(sandbox._prAdvisoryNote('warning', 'x')) && /note-info/.test(sandbox._prAdvisoryNote('info', 'x')), 'tiers');
+    assert(!/pr-alert/.test(src), 'the tinted alert boxes are gone');
+  });
+  test('print report: only the module on screen prints', ()=>{
+    const b = bodyOf('_buildPrintReport');
+    assert(/if \(bayesVisible\) return null;/.test(b), 'AUC Precision with no fit must not print the Trough panel');
+    assert(/_prTroughBody\(visible\)/.test(b), 'Trough-Based prints its own panel');
+    assert(/_prLightCanvasImages/.test(bodyOf('_prTroughBody')), 'Trough graphs print as images, not blank canvases');
+  });
+  test('no ".pdf-save-btn:hover{background:#fff}" (a white slab on dark paper)', ()=>{
+    assert(!/\.pdf-save-btn:hover\s*\{[^}]*background:\s*#fff/i.test(css), 'still there');
+  });
+  test('the dark wash is scoped: the no-choice selector sits inside prefers-color-scheme: dark', ()=>{
+    const at = offsets(/:root:not\(\[data-theme="light"\]\)\s+body\b/);
+    assert(at.length >= 1, 'selector missing');
+    for (const i of at) assert(enclosing(i).some(p => /@media[^{]*prefers-color-scheme:\s*dark/.test(p)),
+      'the dark wash reaches light-system users who never chose a theme');
+  });
+  test('the dark palette is screen-only, so paper is always light', ()=>{
+    const d1 = offsets(/:root\[data-theme="dark"\]\s*\{/)[0];
+    assert(enclosing(d1).some(p => /^@media\s+screen\b/.test(p)), 'explicit dark palette must be screen-only');
+    const d2 = offsets(/:root:not\(\[data-theme="light"\]\)\s*\{/)[0];
+    assert(enclosing(d2).some(p => /^@media\s+screen\s+and\s+\(prefers-color-scheme:\s*dark\)/.test(p)), 'system dark palette must be screen-only');
+  });
+  test('print CSS and this track\'s rules: tokens only, no side stripes', ()=>{
+    const inPrint = rules.filter(r => enclosing(r.at).some(p => /^@media\s+print/.test(p)));
+    assert(inPrint.some(r => /\.pr-regimen/.test(r.sel)), 'print rules not found');
+    const mine = rules.filter(r => /\.pr-|#print-report|\.print-fab|\.compare-clear-btn|\.bayes-pk-row|\.profile-item-btn|\.profile-privacy-note|\.profile-pk-tag|\.diverge-warning|\.arc-|\.lowcrcl-|\.continue-|\.guideline-rec-badge|crcl-over|crcl-ovr/.test(r.sel)
+      || (/(^|,\s*)(:root[^,]*\s)?body$/.test(r.sel)));
+    const bad = inPrint.concat(mine).filter(r => /rgba?\(|#[0-9a-f]{3,8}\b/i.test(r.body));
+    assert(bad.length === 0, 'literal colours in: ' + bad.map(r => r.sel).join(' | '));
+    const stripes = inPrint.concat(mine).filter(r => /border-left:\s*[2-9]px/.test(r.body));
+    assert(stripes.length === 0, 'side stripes in: ' + stripes.map(r => r.sel).join(' | '));
+  });
+  test('print action: one per page, labelled, quiet, and only for the module on screen', ()=>{
+    assert((src.match(/class="print-fab"/g) || []).length === 1 && (src.match(/data-onclick="k0"/g) || []).length === 1, 'exactly one print action');
+    assert(/class="print-fab"[^>]*>[\s\S]{0,700}Print or save as PDF/.test(src), 'label');
+    const fab = rules.find(r => r.sel === '.print-fab');
+    assert(fab && !/terracotta/.test(fab.body), 'terracotta belongs to the recommendation, not the print button');
+    assert(rules.some(r => /max-width:\s*768px/.test(enclosing(r.at).join(' ')) && /body\.has-results \.print-fab/.test(r.sel) && /position:\s*static/.test(r.body)),
+      'on a phone the print action must sit in the flow, not over the results');
+    const prevGet = sandbox.document.getElementById;
+    const els = { 'app-shell-bayesian': { style: { display: 'none' } },
+                  'results-content':    { style: { display: 'none' }, children: [] },
+                  'b-results':          { style: { display: 'block' }, children: [1] } };
+    sandbox.document.getElementById = (id) => els[id] || prevGet(id);
+    try {
+      assert(sandbox._resultsHaveContent() === false, 'a Bayesian result must not show the print action in Trough-Based');
+      els['app-shell-bayesian'].style.display = 'grid';
+      assert(sandbox._resultsHaveContent() === true, 'AUC Precision with a result shows it');
+      els['b-results'].children = [];
+      assert(sandbox._resultsHaveContent() === false, 'no result, no print action');
+    } finally { sandbox.document.getElementById = prevGet; }
+    assert(/updatePrintFabVisibility\(\)/.test(bodyOf('switchModule')), 'a module switch must re-check the print action');
+  });
+  test('module switch carries demographics into empty fields, never over typed ones', ()=>{
+    const prevGet = sandbox.document.getElementById;
+    const el = (id, value) => ({ id, value });
+    const els = {
+      'age': el('age', '70'),     'tbw': el('tbw', '80'),     'height': el('height', ''),     'scr': el('scr', '1.1'),
+      'b-age': el('b-age', ''),   'b-tbw': el('b-tbw', '95'), 'b-height': el('b-height', '175'), 'b-scr': el('b-scr', ''),
+      'mic': el('mic', '2'),      'b-mic': el('b-mic', ''),
+    };
+    sandbox.document.getElementById = (id) => els[id] || prevGet(id);
+    try {
+      const toAuc = sandbox.carryPatientDemographics('auc');
+      assert(els['b-age'].value === '70' && els['b-scr'].value === '1.1', 'empty AUC fields must be filled');
+      assert(els['b-tbw'].value === '95', 'a typed AUC weight must never be overwritten');
+      assert(els['height'].value === '', 'nothing flows back into the module being left');
+      assert(els['b-mic'].value === '', 'MIC is not a demographic');
+      assert(JSON.stringify(toAuc) === '["b-age","b-scr"]', JSON.stringify(toAuc));
+      const toTrough = sandbox.carryPatientDemographics('trough');
+      assert(els['height'].value === '175' && els['tbw'].value === '80', 'Trough-Based: only the empty height fills');
+      assert(JSON.stringify(toTrough) === '["height"]', JSON.stringify(toTrough));
+      assert(JSON.stringify(sandbox.carryPatientDemographics('trough')) === '[]', 'a second switch changes nothing');
+    } finally { sandbox.document.getElementById = prevGet; }
+    assert(/carryPatientDemographics\(m\)/.test(bodyOf('switchModule')), 'switchModule must carry the demographics');
+    assert(/PATIENT_CORE_FIELDS/.test(bodyOf('carryPatientDemographics')), 'one field mapping (rule 2)');
+  });
+  test('manual CrCl: off looks off, and the label says which', ()=>{
+    const dis = rules.find(r => r.sel === '#crcl-override-val:disabled');
+    assert(dis && /cursor:\s*not-allowed/.test(dis.body) && /var\(--paper-deep\)/.test(dis.body) && /var\(--ink-faint\)/.test(dis.body), 'disabled style');
+    const tag = { textContent: '', cls: new Set(), classList: { toggle(c, on) { on ? tag.cls.add(c) : tag.cls.delete(c); } }, setAttribute() {} };
+    let attached = null;
+    const label = { querySelector: () => attached, appendChild: (t) => { attached = t; } };
+    const cb = { checked: false, closest: () => label, nextElementSibling: null };
+    const inp = { disabled: true, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+    const prevGet = sandbox.document.getElementById, prevCreate = sandbox.document.createElement;
+    sandbox.document.getElementById = (id) => id === 'crcl-override-on' ? cb : id === 'crcl-override-val' ? inp : prevGet(id);
+    sandbox.document.createElement = () => tag;
+    try {
+      sandbox.syncCrclOverrideState();
+      assert(attached === tag && tag.textContent === 'Off' && /\(off\)/.test(inp.attrs['aria-label']), 'off state');
+      cb.checked = true; inp.disabled = false; sandbox.syncCrclOverrideState();
+      assert(tag.textContent === 'On' && tag.cls.has('is-on') && !/off/.test(inp.attrs['aria-label']), 'on state');
+    } finally { sandbox.document.getElementById = prevGet; sandbox.document.createElement = prevCreate; }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
