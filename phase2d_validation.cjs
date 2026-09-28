@@ -2205,9 +2205,47 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(ties > 50, `expected many tied targets to test, got ${ties}`);
     assert(highest === 0,
       `picked the highest-trough option on ${highest}/${ties} tied targets`);
-    assert(flagged === 0,
-      `picked a flagged regimen on ${flagged}/${ties} tied targets, while ` +
-      `exposure-identical unflagged alternatives existed`);
+    // RETIRED (v3.1): this test used to also assert the pick is never
+    // trough-FLAGGED. That encoded the v3 rule, which treated TROUGH_WARN_MGL
+    // (15) as an exclusion — contrary to this file's own tier design, where a
+    // 15-20 trough is a Tier 3 flag "never used to exclude". It is what pushed
+    // 1000 mg Q24H (trough 15.7) out in favour of 2000 mg Q48H on a real case.
+    // The replacement invariants are the next three tests. `flagged` is still
+    // counted so a regression toward flag-avoidance is visible in a debugger.
+    void flagged;
+  });
+
+  test('an exact tie prefers Q24H — the reported 52 M case', ()=>{
+    // 8 levels, excellent fit, CL 2.17. Three regimens at AUC24 461. v3
+    // returned 2000 mg Q48H because 1000 mg Q24H's trough (15.7) crossed 15.
+    const { bayesDoseOptimizer } = sandbox;
+    const r = bayesDoseOptimizer(2.17, 103.8, 460, { Vc:103.8, Vp:43.1, Q }, 1);
+    assert(r.regimen, 'should solve');
+    assert(r.dose === 1000 && r.tau === 24,
+      `expected 1000 mg Q24H, got ${r.dose} mg Q${r.tau}H`);
+    assert(r.tiedWith && r.tiedWith.some(x => x.tau === 48),
+      'the Q48H alternative must still be disclosed');
+  });
+
+  test('a DANGER trough yields the preference to a safe exposure-identical tie', ()=>{
+    // The preference is practicality; it must never beat the sourced safety
+    // floor. At CL 0.8, V 38, target 550 the tie is Q48H tr 15.2 / Q12H tr 23.0
+    // / Q24H tr 20.1 — Q24H is in the danger band, so it must not be chosen.
+    const { bayesDoseOptimizer } = sandbox;
+    const r = bayesDoseOptimizer(0.8, 38, 550, null, 1);
+    assert(r.regimen, 'should solve');
+    assert(r.Ctrough < 20,
+      `chose a danger trough ${r.Ctrough.toFixed(1)} over a safe tie`);
+    assert(r.tau !== 24, 'Q24H is in the danger band here and must yield');
+  });
+
+  test('INTERVAL_PREFERENCE is labelled as preference, not pharmacokinetics', ()=>{
+    const i = script.indexOf('const INTERVAL_PREFERENCE');
+    assert(i > 0, 'INTERVAL_PREFERENCE is missing');
+    const above = script.slice(Math.max(0, i - 1200), i);
+    assert(/PREFERENCE, not a literature constant/.test(above),
+      'rule 8: a preference weight must say so where it is defined');
+    assert(/never changes? a dose/.test(above), 'must state that it never changes a dose');
   });
 
   test('the tie is disclosed rather than silently resolved', ()=>{

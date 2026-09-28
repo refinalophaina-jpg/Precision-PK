@@ -7230,6 +7230,16 @@ const DOSE_MAX_PER_DOSE_MG = 2000; // conventional adult per-dose ceiling
 const DOSE_MAX_TDD_MG      = 4500; // adult empiric maintenance ceiling
 const TROUGH_WARN_MGL      = 15;   // AKI inflection stated as 15-20 (Rybak 2020)
 const TROUGH_HIGH_MGL      = 20;   // upper end of that inflection band
+// PREFERENCE, not a literature constant (CLAUDE.md rule 8). The order in which
+// an EXACT AUC24 tie between intervals is broken. At steady state AUC24 is total
+// daily dose / CL, so pharmacokinetics cannot choose between exposure-identical
+// regimens; this is a practicality ranking stated by the pharmacist who uses the
+// tool: Q24H first (simplest to give, monitor and interpret; forgiving of a
+// missed dose), then Q12H (familiar), then Q48H (unfamiliar, fragile if a dose
+// is missed), then Q8H (most burdensome). It only ever orders candidates that
+// are already exposure-identical and past every safety tier; it never changes
+// which regimens are admissible and never changes a dose.
+const INTERVAL_PREFERENCE  = [24, 12, 48, 8];
 // NOT an efficacy floor — the 2020 guideline contains no minimum trough and the
 // old `>= 7` had no source. But a trough BELOW THE ORGANISM'S MIC means a stretch
 // of each interval with sub-inhibitory drug, which is worth naming when the
@@ -7350,16 +7360,30 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   // just chosen, while the two alternatives it threw away carried none. Of the
   // 182 tied targets sampled, it picked the highest-trough option 182 times.
   //
-  // The tie is broken on the thresholds this file already sources rather than
-  // on array order: prefer a candidate that raises no trough flag at all —
-  // below TROUGH_WARN_MGL (Rybak 2020) and not under the organism's MIC. No new
-  // constant, and where nothing is tied the behaviour is unchanged.
+  // SECOND CORRECTION (v3.1). The first fix broke ties toward the lowest
+  // unflagged trough. That over-corrected into the opposite bias: for a fixed
+  // daily dose the LONGEST interval has the lowest trough, so it began picking
+  // Q48H. Reported from the bedside on a 52 M with 8 levels and an excellent
+  // fit, CL 2.17 L/h, three candidates at AUC24 461:
+  //      Q12H  500 mg  trough 17.2
+  //      Q24H 1000 mg  trough 15.7   <- what the pharmacist would order
+  //      Q48H 2000 mg  trough 13.1   <- what it returned
+  // and the same pattern on the 34 M case. The deeper error was treating
+  // TROUGH_WARN_MGL as an exclusion. This function's own tier design says a
+  // trough of 15-20 is a Tier 3 FLAG, "attached to the regimen, never used to
+  // exclude it"; the first fix quietly turned it into a filter.
+  //
+  // Now: a DANGER trough (>= TROUGH_HIGH_MGL, 20) is set aside when an
+  // exposure-identical alternative below it exists — that is a safety floor on
+  // a sourced number. Everything else is broken on INTERVAL_PREFERENCE, which
+  // is a stated practicality ranking, not pharmacokinetics.
   const errOf = r => Math.abs(r.auc24 - targetAUC);
   const bestErr = pool.reduce((m, r) => Math.min(m, errOf(r)), Infinity);
   const tied = pool.filter(r => errOf(r) - bestErr < 1e-9);
-  const unflagged = tied.filter(r => Number.isFinite(r.Ctrough)
-    && r.Ctrough < TROUGH_WARN_MGL && r.Ctrough >= mic);
-  const best = (unflagged.length ? unflagged : tied)[0];
+  const nonDanger = tied.filter(r => !(Number.isFinite(r.Ctrough) && r.Ctrough >= TROUGH_HIGH_MGL));
+  const rankOf = t => { const i = INTERVAL_PREFERENCE.indexOf(t); return i < 0 ? INTERVAL_PREFERENCE.length : i; };
+  const best = (nonDanger.length ? nonDanger : tied)
+    .slice().sort((a, b) => rankOf(a.tau) - rankOf(b.tau))[0];
   // Say so when the choice was not forced by exposure. The matrix shows the
   // rest; this stops the single card reading as a ranking it did not earn.
   if (tied.length > 1) {
