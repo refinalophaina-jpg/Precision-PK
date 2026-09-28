@@ -2439,6 +2439,16 @@
             <button class="toggle-opt active" data-onclick="k21">Yes (≥3 doses)</button>
             <button class="toggle-opt" data-onclick="k22">No (1st/2nd dose)</button>
           </div>
+          <div id="ss-dose-n-row" style="display:none;margin-top:8px">
+            <label class="field-label" for="ss-dose-n">Level drawn after which dose?</label>
+            <select id="ss-dose-n">
+              <option value="">— choose —</option>
+              <option value="1">After the 1st dose</option>
+              <option value="2">After the 2nd dose</option>
+            </select>
+            <p class="field-hint">Fitted on the doses actually given, then projected to steady state.
+              For anything irregular, use AUC Precision, which fits the real dose history.</p>
+          </div>
           <input type="hidden" id="is-ss" value="true">
         </div>
 
@@ -3384,6 +3394,8 @@ function updateLevelInterpretation() {
 function setSS(el, val) {
   state.isSS = val;
   document.getElementById('is-ss').value = val;
+  const nRow = document.getElementById('ss-dose-n-row');
+  if (nRow) nRow.style.display = val ? 'none' : '';
   el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
 }
@@ -4805,6 +4817,57 @@ function fitKelFromLevel(cObs, t_obs, dose, tau, tinf, vd) {
   return { kel, clv, peak: pt.peak, trough: pt.trough, trueTrough: pt.trough, auc24 };
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  A LEVEL DRAWN BEFORE STEADY STATE
+// ══════════════════════════════════════════════════════════════════════════
+// The Trough-Based level mode has always offered "Steady State? No (1st/2nd
+// dose)". Until v3.1 the answer was stored and NEVER READ: every level went
+// through fitKelFromLevel, which fits against calcCssAtTime — the closed-form
+// steady-state curve — and so credits the level with accumulated drug that is
+// not yet there. kel reads high, CL high, AUC low. Found independently by two
+// auditors, 2026-09-28:
+//   60 M, true AUC24 472, level 7.79 mg/L 11.5 h after dose 1 (the exact
+//   first-dose value): fitted CL 5.86 (true 4.24, +38%), AUC24 341, action
+//   "increase" to a regimen whose true AUC24 is 708 — nephrotoxic range.
+//   70 M, level 15 mg/L 11.5 h after dose 2: shown AUC24 489 "continue",
+//   actual steady state ~730.
+// The clinician did the right thing and the tool silently discarded it.
+//
+// This fits on the doses actually given: `doseNumber` identical doses at 0,
+// tau, 2*tau..., the level drawn tSinceDose after the last of them, volume held
+// at the value the steady-state path also holds (so the two paths differ ONLY
+// in the accumulation assumption). Returns the same shape as fitKelFromLevel,
+// with peak / trough / AUC24 projected to STEADY STATE on this regimen.
+function fitKelFromEarlyLevel(cObs, tSinceDose, doseNumber, dose, tau, tinf, vd) {
+  const n = Math.round(Number(doseNumber));
+  if (!(n >= 1) || !(cObs > 0) || !(tSinceDose > 0) || !(dose > 0) || !(tau > 0) || !(vd > 0)) return null;
+  const hist = [];
+  for (let i = 0; i < n; i++) hist.push({ mg: dose, tinfH: tinf, timeH: i * tau });
+  const tLevel = (n - 1) * tau + tSinceDose;
+  let lo = 0.001, hi = 0.8;
+  const c = k => predictConc1comp(hist, tLevel, k, vd);
+  // concentration falls monotonically as kel rises; refuse what cannot bracket
+  if (!(c(lo) >= cObs) || !(c(hi) <= cObs)) return null;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (c(mid) > cObs) lo = mid; else hi = mid;
+    if (hi - lo < 0.00001) break;
+  }
+  const kel = (lo + hi) / 2;
+  const pt  = calcPeakTrough(dose, tau, tinf, kel, vd);
+  return { kel, clv: kel * vd, peak: pt.peak, trough: pt.trough, trueTrough: pt.trough,
+           auc24: calcAUC_trap_kel(dose, tau, tinf, kel, vd), doseNumber: n };
+}
+
+// Fraction of steady state reached after n doses at this kel and interval.
+// Used to warn when "Yes, >= 3 doses" is not actually steady state — three
+// doses is not steady state once the half-life approaches the interval
+// (t1/2 18 h on q12h reaches ~75%).
+function fractionOfSteadyState(kel, tau, n) {
+  if (!(kel > 0) || !(tau > 0) || !(n >= 1)) return NaN;
+  return 1 - Math.exp(-kel * tau * n);
+}
+
 function calcAUC(dose, tau, clv) {
   return (dose * (24 / tau)) / clv;
 }
@@ -5267,8 +5330,25 @@ function calculate() {
   popPeak = popPT.peak; popTrough = popPT.trough;
 
   if(hasLevel && levelVal && tDoseToLvl) {
-    // Fit Kel from observed concentration at known timepoint
-    const fitted = fitKelFromLevel(levelVal, tDoseToLvl, dose, tau, tinf, vd);
+    // Fit Kel from observed concentration at known timepoint. The steady-state
+    // toggle is now READ: before v3.1 it was stored and ignored, and every level
+    // was fitted as if at steady state. See fitKelFromEarlyLevel.
+    let fitted;
+    const earlyLevel = state.isSS === false;
+    if (earlyLevel) {
+      const nSel = parseInt((document.getElementById('ss-dose-n') || {}).value, 10);
+      if (!(nSel === 1 || nSel === 2)) {
+        alert('This level is marked as drawn before steady state.\n\nChoose whether it followed the 1st or the 2nd dose, so it can be fitted on the doses actually given.');
+        return;
+      }
+      fitted = fitKelFromEarlyLevel(levelVal, tDoseToLvl, nSel, dose, tau, tinf, vd);
+      if (!fitted) {
+        alert('This level cannot be reproduced by the doses entered at any plausible clearance.\n\nCheck the dose, infusion time and draw time — or use AUC Precision, which fits the real dose history.');
+        return;
+      }
+    } else {
+      fitted = fitKelFromLevel(levelVal, tDoseToLvl, dose, tau, tinf, vd);
+    }
     adjKel = fitted.kel;
     adjClv = fitted.clv;
     levelFitted = true;
@@ -5276,7 +5356,14 @@ function calculate() {
     // Extrapolate observed level to true trough (end of interval)
     // If drawn at true trough time (within 0.5h), no extrapolation needed
     const timeRemaining = tau - tDoseToLvl;
-    if(tDoseToLvl <= tinf) {
+    if (earlyLevel) {
+      // Extrapolating an early level to the end of ITS interval gives the
+      // trough after dose 1 or 2 — lower than the steady-state trough the
+      // regimen will accumulate to. Report the steady-state projection.
+      trueTrough = fitted.trough;
+      extrapolated = false;
+      extrapDelta = 0;
+    } else if(tDoseToLvl <= tinf) {
       // Level drawn during infusion — cannot reliably fit, use population
       trueTrough = fitted.trough;
       extrapolated = false;
@@ -5296,7 +5383,16 @@ function calculate() {
     peak  = fitted.peak;
     trough = trueTrough;
     auc24  = fitted.auc24;
-    aucMethod = `Ke ${adjKel.toFixed(4)} hr⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)}h${extrapolated ? ` · trough extrapolated ${extrapDelta>0?'forward':'back'} ${Math.abs(extrapDelta).toFixed(1)}h` : ' (true trough)'}`;
+    aucMethod = earlyLevel
+      ? `Ke ${adjKel.toFixed(4)} hr⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)}h after dose ${fitted.doseNumber} (not at steady state) · peak, trough and AUC₂₄ projected to steady state`
+      : `Ke ${adjKel.toFixed(4)} hr⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)}h${extrapolated ? ` · trough extrapolated ${extrapDelta>0?'forward':'back'} ${Math.abs(extrapDelta).toFixed(1)}h` : ' (true trough)'}`;
+    // "Yes, >= 3 doses" is not steady state once t1/2 approaches tau.
+    if (!earlyLevel) {
+      const f3 = fractionOfSteadyState(adjKel, tau, 3);
+      if (isFinite(f3) && f3 < 0.9) {
+        aucMethod += ` · caution: at this Ke three doses reach only ${Math.round(f3 * 100)}% of steady state, so a level after dose 3 still understates accumulation`;
+      }
+    }
   } else {
     // Pure population — predict from regimen
     peak   = popPeak;

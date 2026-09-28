@@ -2532,6 +2532,73 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 22 — findings from the 2026-09-28 engine audit
+//
+// A seven-dimension audit run against a frozen snapshot, every finding
+// adversarially re-verified with an independent probe before being accepted.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const { fitKelFromLevel, fitKelFromEarlyLevel, fractionOfSteadyState } = sandbox;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 22 — engine audit findings');
+  console.log(`${'─'.repeat(60)}`);
+
+  // CRITICAL — "Steady State? No" was stored and never read.
+  test('the steady-state toggle is actually read by calculate()', ()=>{
+    const c = script.slice(script.indexOf('function calculate()'));
+    const body = c.slice(0, c.indexOf('\nfunction '));
+    assert(/state\.isSS/.test(body), 'calculate() never reads state.isSS — the toggle is decorative again');
+    assert(/fitKelFromEarlyLevel\(/.test(body), 'an early level must be fitted on the doses given');
+  });
+
+  test('a level after dose 1 recovers the true clearance (auditor scenario A)', ()=>{
+    // truth kel 0.0774, CL 4.24, AUC24 472; the steady-state fit gave 341 and
+    // recommended escalation to a regimen whose true AUC24 is 708.
+    const old = fitKelFromLevel(7.79, 11.5, 1000, 12, 1, 54.8);
+    const now = fitKelFromEarlyLevel(7.79, 11.5, 1, 1000, 12, 1, 54.8);
+    assert(Math.abs(now.kel - 0.0774) < 0.001, `kel ${now.kel.toFixed(4)}, expected 0.0774`);
+    assert(Math.abs(now.auc24 - 472) < 5, `AUC24 ${now.auc24.toFixed(0)}, expected ~472`);
+    assert(old.auc24 < 360, 'the steady-state fit should still read this as ~341 — that is the bug');
+  });
+
+  test('a level after dose 2 recovers the true clearance (auditor scenario B)', ()=>{
+    // shown AUC24 489 "continue"; actual steady state ~730
+    const now = fitKelFromEarlyLevel(15, 11.5, 2, 1000, 12, 1, 71.2);
+    assert(Math.abs(now.clv - 2.74) < 0.03, `CL ${now.clv.toFixed(2)}, expected 2.74`);
+    assert(Math.abs(now.auc24 - 730) < 10, `AUC24 ${now.auc24.toFixed(0)}, expected ~730`);
+  });
+
+  test('an early level reproduces the measured concentration on the doses given', ()=>{
+    const f = fitKelFromEarlyLevel(15, 11.5, 2, 1000, 12, 1, 71.2);
+    const hist = [{mg:1000,tinfH:1,timeH:0},{mg:1000,tinfH:1,timeH:12}];
+    const c = sandbox.predictConc1comp(hist, 12 + 11.5, f.kel, 71.2);
+    assert(Math.abs(c - 15) < 0.01, `fitted kel should reproduce 15 mg/L, gives ${c.toFixed(3)}`);
+  });
+
+  test('the early-level solver refuses impossible or missing input', ()=>{
+    assert(fitKelFromEarlyLevel(500, 11.5, 1, 1000, 12, 1, 54.8) === null, 'an impossible level must be refused');
+    assert(fitKelFromEarlyLevel(7.79, 11.5, 0, 1000, 12, 1, 54.8) === null, 'dose number 0 must be refused');
+    assert(fitKelFromEarlyLevel(7.79, 0, 1, 1000, 12, 1, 54.8) === null, 'zero elapsed time must be refused');
+  });
+
+  test('the dose-number choice is required, not defaulted', ()=>{
+    assert(/<option value="">— choose —<\/option>/.test(src), 'the dose number must default to unchosen');
+    assert(/Choose whether it followed the 1st or the 2nd dose/.test(script), 'an unchosen dose number must block');
+  });
+
+  test('"Yes, >= 3 doses" warns when three doses are not steady state', ()=>{
+    // t1/2 18 h on q12h reaches ~75% after three doses
+    const f = fractionOfSteadyState(0.693 / 18, 12, 3);
+    assert(Math.abs(f - 0.75) < 0.02, `expected ~0.75, got ${f.toFixed(3)}`);
+    assert(fractionOfSteadyState(0.693 / 6, 12, 3) > 0.95, 'a short half-life reaches steady state');
+    assert(/three doses reach only/.test(script), 'the warning must be shown');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
