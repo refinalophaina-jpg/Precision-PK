@@ -2363,6 +2363,163 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 21 — v3.1: confidence, clearance estimates, AUC verdict, renal advisories
+//
+// Two bedside cases. A 76 M (SCr 0.5, CrCl 148, one level 19.9 vs predicted
+// 5.7, 4.0 SD) was shown a precise dose and an "ARC suspected, escalate"
+// advisory while the level showed accumulation. A 52 M (8 levels, fit within
+// 1 SD) at AUC24 345 was told "below target" in a way that read as "escalate
+// now", and was never told the fit was a strong one.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const { buelgaPopPK, burtonObjective, nelderMead2D, fitDiagnostics,
+          levelImpliedCL, clearanceEstimates, aucVerdict, confidenceAssessment,
+          renalAdvisoryKind, computeFFM } = sandbox;
+  const K = __extractConsts();
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 21 — confidence, clearance, verdicts, renal advisories');
+  console.log(`${'─'.repeat(60)}`);
+
+  // the 76 M case, fitted with the shipped engine
+  const Hh = s => new Date(s).getTime() / 3600000;
+  const doses = [{mg:2250,tinfH:2.5,timeH:Hh('2026-09-25T05:41')},
+                 {mg:750, tinfH:1,  timeH:Hh('2026-09-26T05:08')},
+                 {mg:750, tinfH:1,  timeH:Hh('2026-09-27T05:03')}];
+  const levels = [{conc:19.9,timeH:Hh('2026-09-27T05:03')}];
+  const { CL_pop, V_pop } = buelgaPopPK(148, 83);
+  const [ea, eb] = nelderMead2D((a,b) => burtonObjective(a,b,CL_pop,V_pop,doses,levels), 0, 0, 400);
+  const CLi = CL_pop * Math.exp(ea), Vi = V_pop * Math.exp(eb);
+  const r1 = { model:'buelga', CL_ind:CLi, V_ind:Vi, kel_ind:CLi/Vi, CL_pop, V_pop, doses, levels, tbw:83,
+               agCtx:{ activeModel:'buelga', crcl:148, tbw:83, htCm:182.9, age:76, sex:'M', scr:0.5,
+                       dial:false, crclGoti:148, crclHughes:106, ffm:computeFFM(83,182.9,'M') } };
+  const fd1 = fitDiagnostics(r1);
+
+  test('the 76 M case reproduces: 4 SD conflict, posterior CL ~4.6', ()=>{
+    assert(fd1 && fd1.worst, 'no fit diagnostics');
+    assert(Math.abs(fd1.worst.sigma - 4.05) < 0.1, `residual ${fd1.worst.sigma.toFixed(2)} SD, expected ~4.05`);
+    assert(Math.abs(CLi - 4.61) < 0.1, `posterior CL ${CLi.toFixed(2)}, expected ~4.61`);
+  });
+
+  test('level-implied CL solves on the actual dose history, and names its volume', ()=>{
+    const post = levelImpliedCL(r1, levels[0], 'posterior');
+    const pop  = levelImpliedCL(r1, levels[0], 'population');
+    assert(Math.abs(post - 0.72) < 0.05, `posterior-V implied CL ${post}, expected ~0.72`);
+    assert(Math.abs(pop  - 1.27) < 0.05, `population-V implied CL ${pop}, expected ~1.27`);
+    // and it genuinely reproduces the level
+    const c = sandbox.predictConc1comp(doses, levels[0].timeH, post / Vi, Vi);
+    assert(Math.abs(c - 19.9) < 0.05, `implied CL should reproduce 19.9, gives ${c.toFixed(2)}`);
+  });
+
+  test('level-implied CL refuses what it cannot bracket', ()=>{
+    // a level no clearance could produce from these doses
+    assert(levelImpliedCL(r1, { conc: 5000, timeH: levels[0].timeH }, 'posterior') === null,
+      'an impossible level must return null, not a clamped number');
+  });
+
+  test('clearance estimates show prior, posterior and both level-implied values', ()=>{
+    const ce = clearanceEstimates(r1, fd1);
+    const keys = ce.est.map(e => e.key);
+    for (const k of ['prior','posterior','implied-post','implied-pop'])
+      assert(keys.includes(k), `missing ${k}; got ${keys.join(',')}`);
+    // the recommended 1000 mg q12h spans a clinically dangerous range
+    const aucs = ce.est.map(e => 2000 / e.CL);
+    assert(Math.max(...aucs) / Math.min(...aucs) > 5,
+      'the exposure spread behind this recommendation is > 5-fold and must be visible');
+  });
+
+  test('confidence is Very low on the 76 M case, with its reasons printed', ()=>{
+    const c = confidenceAssessment(r1, fd1, null);
+    assert(c.level === 'Very low', `got ${c.level}`);
+    assert(c.reasons.some(x => /4\.0 SD/.test(x.text)), 'the 4 SD conflict must be named');
+    assert(c.reasons.some(x => /not separately identifiable/.test(x.text)), 'one-level identifiability must be named');
+  });
+
+  test('confidence is High for a rich, well-fitting course', ()=>{
+    const r = { levels: new Array(8).fill({}), model:'goti', agCtx:{ tbw:78.8, htCm:170.2 } };
+    const c = confidenceAssessment(r, { worst:{ sigma:1.0 } }, { band:{ tone:'ok' }, diffPct:9 });
+    assert(c.level === 'High', `8 levels within 1 SD should be High, got ${c.level}`);
+    assert(c.reasons.every(x => x.good), 'a High rating should rest only on positive reasons');
+  });
+
+  test('confidence names Hughes outside its validation and drops to Low', ()=>{
+    const r = { levels: [{},{},{}], model:'hughes', agCtx:{ tbw:83, htCm:182.9 } };
+    const c = confidenceAssessment(r, { worst:{ sigma:0.5 } }, { band:{ tone:'ok' }, diffPct:5 });
+    assert(c.rank >= 2, `Hughes at BMI 24.8 should be at most Low, got ${c.level}`);
+    assert(c.reasons.some(x => /BMI/.test(x.text)), 'the BMI mismatch must be stated');
+  });
+
+  test('no levels is a population estimate, not a confidence rating', ()=>{
+    const c = confidenceAssessment({ levels: [] }, null, null);
+    assert(c.level === 'Population estimate' && c.rank < 0, `got ${c.level}`);
+  });
+
+  test('confidence sigma steps are labelled as preference', ()=>{
+    const i = script.indexOf('const CONFIDENCE_SIGMA');
+    assert(i > 0, 'CONFIDENCE_SIGMA missing');
+    assert(/PREFERENCE/.test(script.slice(i - 1200, i + 120)), 'rule 8: must be labelled as preference');
+  });
+
+  test('AUC verdict grades the shortfall, and 345 is "modestly below"', ()=>{
+    assert(aucVerdict(345).key === 'modest-below', `345 -> ${aucVerdict(345).key}`);
+    assert(aucVerdict(324).key === 'well-below', '324 is below the modest band');
+    assert(aucVerdict(400).key === 'in' && aucVerdict(600).key === 'in', 'band edges are inclusive');
+    assert(aucVerdict(650).key === 'above', '650 is above');
+    assert(aucVerdict(K.AUC24_ABSOLUTE_MAX + 1).key === 'well-above', 'above the hard ceiling');
+    assert(/not automatically required/.test(aucVerdict(345).text),
+      'a modest shortfall must not read as "escalate now"');
+  });
+
+  test('ARC is contradicted when the levels show low clearance — the 76 M case', ()=>{
+    const k = renalAdvisoryKind({ arcDetected:true, levelsN:1, clRatio: CLi / CL_pop, age:76, scr:0.5 });
+    assert(k === 'contradicted', `got ${k}: escalation advice would contradict the measured level`);
+  });
+
+  test('ARC in an older patient with low SCr is framed as possible overestimation', ()=>{
+    assert(renalAdvisoryKind({ arcDetected:true, levelsN:0, clRatio:NaN, age:76, scr:0.5 }) === 'elderly-arc');
+    assert(renalAdvisoryKind({ arcDetected:true, levelsN:0, clRatio:NaN, age:30, scr:0.6 }) === 'arc',
+      'a young patient keeps the ordinary ARC advisory');
+    assert(renalAdvisoryKind({ arcDetected:false, levelsN:0, clRatio:NaN, age:80, scr:0.6 }) === 'elderly');
+    assert(renalAdvisoryKind({ arcDetected:false, levelsN:0, clRatio:NaN, age:40, scr:1.0 }) === null);
+  });
+
+  test('the advisory thresholds reuse the Goti erratum constants, not new ones', ()=>{
+    const f = sandbox.renalAdvisoryKind.toString();
+    assert(/GOTI_SCR_FLOOR_AGE/.test(f) && /GOTI_SCR_FLOOR\b/.test(f), 'must reuse the sourced erratum pair');
+    assert(/CL_DIVERGE_LOW/.test(f), 'must reuse the named divergence threshold');
+  });
+
+  test('the divergence threshold is one named constant, not three literals', ()=>{
+    assert(!/clRatio < 0\.6/.test(script), 'an inline 0.6 divergence literal has returned');
+    assert((script.match(/clRatio < CL_DIVERGE_LOW/g) || []).length >= 3, 'fit branches must read the constant');
+  });
+
+  test('no Bayesian-module colour hard-codes a 10-20 trough or "under 350"', ()=>{
+    // Found in three places: the current-regimen tile, the dose card, and the
+    // Dose Tinkerer, plus the guideline-dose tile. The whole script is checked,
+    // so a fourth copy cannot hide outside a search window.
+    assert(!/Ctrough\s*>=\s*10\s*&&\s*\S*Ctrough\s*<=\s*20/.test(script),
+      'CLAUDE.md: the target band is the clinician\'s own, never a hard-coded 10-20');
+    assert(!/(auc24|AUC24)\s*<\s*350/i.test(script), 'the unsourced "under 350" rule has returned');
+  });
+
+  test('a low-confidence recommendation is visibly de-rated, not hidden', ()=>{
+    assert(/rec-derated/.test(script) && /conf\.rank >= 2/.test(script),
+      'the dose card must de-rate under Low / Very low confidence');
+    assert(/rec\.dose}<span/.test(script), 'the dose itself must still be shown');
+  });
+
+  test('diagnostics are computed once and shared', ()=>{
+    const start = script.indexOf('function renderBayesianResults');
+    const body = script.slice(start, start + 120000);
+    const calls = (body.match(/modelAgreement\(/g) || []).length;
+    assert(calls === 1, `modelAgreement is called ${calls} times in the renderer; expected 1`);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

@@ -1514,6 +1514,42 @@
   .voi-body { font-size:0.73rem; line-height:1.55; color:var(--text-secondary);
               margin:5px 0 0; }
 
+  /* ── Confidence, AUC verdict, de-rated recommendation ─────────────────
+     Tokens only; depth is a hairline and a background step, never a shadow. */
+  .conf { border:1px solid var(--border); border-left:3px solid var(--border);
+          border-radius:var(--radius-sm); background:var(--paper-deep);
+          padding:11px 14px; margin:12px 0; }
+  .conf-ok     { border-left-color:var(--success); }
+  .conf-warn   { border-left-color:var(--accent-amber); }
+  .conf-danger { border-left-color:var(--danger); }
+  .conf-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .conf-title { font-size:0.62rem; font-weight:700; letter-spacing:0.1em;
+                text-transform:uppercase; color:var(--text-muted); }
+  .conf-level { font-size:0.95rem; font-weight:600; }
+  .conf-ok .conf-level     { color:var(--success); }
+  .conf-warn .conf-level   { color:var(--accent-amber); }
+  .conf-danger .conf-level { color:var(--danger); }
+  .conf-info .conf-level   { color:var(--text-secondary); }
+  .conf-reasons { margin:6px 0 0; padding-left:18px; font-size:0.74rem; line-height:1.55;
+                  color:var(--text-secondary); }
+  .conf-reasons li { margin:2px 0; }
+  .conf-reasons li.conf-good::marker { color:var(--success); }
+  .conf-reasons li.conf-bad::marker  { color:var(--danger); }
+  .conf-sub { font-size:0.66rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;
+              color:var(--text-muted); margin:12px 0 4px; padding-top:10px; border-top:1px solid var(--rule); }
+  .aucv { font-size:0.74rem; line-height:1.55; color:var(--text-secondary);
+          border-left:2px solid var(--border); padding:6px 10px; margin:0 0 8px; }
+  .aucv strong { color:var(--text-primary); }
+  .aucv-warn   { border-left-color:var(--accent-amber); }
+  .aucv-danger { border-left-color:var(--danger); }
+  .rec-lowconf { font-size:0.74rem; line-height:1.55; color:var(--text-secondary);
+                 background:color-mix(in srgb, var(--danger) 6%, transparent);
+                 border:1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+                 border-radius:var(--radius-sm); padding:8px 10px; margin:6px 0 10px; }
+  .rec-lowconf strong { color:var(--danger); }
+  .rec-box.rec-derated { border-style:dashed; }
+  .rec-box.rec-derated .rec-dose { opacity:0.72; }
+
   .posterior-note {
     font-size: 0.74rem;
     line-height: 1.55;
@@ -1763,6 +1799,19 @@
     background:rgba(191,133,48,0.18); color:var(--accent-amber); margin-left:4px;
     border:1px solid rgba(191,133,48,0.35);
   }
+
+  /* The levels contradict the CrCl: this is the more urgent reading, so it
+     takes the danger ink rather than the ARC amber. Tokens only. */
+  .arc-advisory.arc-contradicted {
+    background: color-mix(in srgb, var(--danger) 7%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+    color: var(--danger);
+  }
+  .arc-advisory.arc-contradicted strong { color: var(--danger); }
+  .arc-advisory.arc-soft {
+    background: var(--paper-deep); border-color: var(--border); color: var(--text-secondary);
+  }
+  .arc-advisory.arc-soft strong { color: var(--text-primary); }
 
   /* ═══ PHASE 3 STEP 6 — VERY-LOW CrCl ADVISORY (non-dialysis) ═══ */
   .lowcrcl-advisory {
@@ -4042,6 +4091,163 @@ function fitDiagnostics(r) {
   return { rows, worst, impliedCrCl, anchored, sigProp, sigAdd };
 }
 
+// Which renal-function advisory applies. Pure, so the safety logic is tested
+// directly rather than through the renderer. See the renderer's comment for the
+// reported case this corrects (ARC "escalate" advice against an accumulating
+// level). Order matters: measured evidence outranks the covariate.
+//   'contradicted' — CrCl reads as ARC, but levels show CL well below prior
+//   'elderly-arc'  — CrCl reads as ARC from a low SCr in an older patient
+//   'arc'          — CrCl reads as ARC, nothing argues against it
+//   'elderly'      — low SCr in an older patient, CrCl not in the ARC range
+//   null           — no advisory
+function renalAdvisoryKind(o) {
+  const age = Number(o && o.age), scr = Number(o && o.scr), ratio = Number(o && o.clRatio);
+  const n = Number(o && o.levelsN) || 0;
+  const elderlyLowScr = age > GOTI_SCR_FLOOR_AGE && scr > 0 && scr < GOTI_SCR_FLOOR;
+  if (o && o.arcDetected) {
+    if (n >= 1 && isFinite(ratio) && ratio < CL_DIVERGE_LOW) return 'contradicted';
+    if (elderlyLowScr) return 'elderly-arc';
+    return 'arc';
+  }
+  return elderlyLowScr ? 'elderly' : null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  CLEARANCE ESTIMATES — prior, posterior, and what the level itself implies
+// ══════════════════════════════════════════════════════════════════════════
+// The posterior is one point on a ridge. When it disagrees with a measured
+// level, the clinician needs the other candidates beside it, with the dose's
+// exposure under each — because that spread, not the posterior alone, is what
+// a recommendation actually rests on. Reported case (76 M, SCr 0.5, CrCl 148,
+// one level 19.9 mg/L vs predicted 5.7): the recommended 1000 mg q12h is AUC24
+// 432 on the posterior CL, 1580 on the level-implied CL with population V, and
+// 2760 with posterior V. A sixfold spread behind one printed number.
+//
+// The previous "implied CrCl" held the posterior V without saying so, was
+// 1-compartment only, and the level-anchored estimate required a detected
+// regimen and assumed steady state — so on a load-then-maintenance course it
+// showed nothing. This solves on the ACTUAL dose history, for both structures,
+// and states which volume it held.
+function levelImpliedCL(r, level, basis) {
+  if (!r || !level || !(level.conc > 0) || !r.doses || !r.doses.length) return null;
+  const is2c = (r.model === 'goti' || r.model === 'hughes') && r.goti;
+  let conc;
+  if (is2c) {
+    const g  = r.goti;
+    const Vc = basis === 'population' ? g.Vc_pop : g.Vc_ind;
+    const Vp = basis === 'population' ? g.Vp_pop : g.Vp_ind;
+    const Q  = (g.Q != null && g.Q > 0) ? g.Q : Q_GOTI;
+    if (!(Vc > 0) || !(Vp > 0)) return null;
+    conc = CL => predictConc2comp(r.doses, level.timeH, CL / Vc, Q / Vc, Q / Vp, Vc);
+  } else {
+    const V = basis === 'population' ? r.V_pop : r.V_ind;
+    if (!(V > 0)) return null;
+    conc = CL => predictConc1comp(r.doses, level.timeH, CL / V, V);
+  }
+  // Concentration falls monotonically as clearance rises; bracket then bisect.
+  let lo = 0.02, hi = 80;
+  const cLo = conc(lo), cHi = conc(hi);
+  if (!isFinite(cLo) || !isFinite(cHi) || cLo < level.conc || cHi > level.conc) return null;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (conc(mid) > level.conc) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function clearanceEstimates(r, fd) {
+  if (!r || !(r.CL_ind > 0)) return null;
+  const est = [
+    { key:'prior',     label:'Population prior',  CL: r.CL_pop },
+    { key:'posterior', label:'Posterior (fitted)', CL: r.CL_ind },
+  ];
+  const lev = fd && fd.worst ? { conc: fd.worst.obs, timeH: fd.worst.timeH } : null;
+  if (lev) {
+    const post = levelImpliedCL(r, lev, 'posterior');
+    const pop  = levelImpliedCL(r, lev, 'population');
+    if (post > 0) est.push({ key:'implied-post', label:'Level-implied · posterior volume',  CL: post });
+    if (pop  > 0) est.push({ key:'implied-pop',  label:'Level-implied · population volume', CL: pop });
+  }
+  return { est: est.filter(e => e.CL > 0 && isFinite(e.CL)), level: lev,
+           levelsCount: (r.levels && r.levels.length) || 0 };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  AUC VERDICT — one place that says what an AUC24 means
+// ══════════════════════════════════════════════════════════════════════════
+// Replaces three inline colour rules, one of which called anything under 350
+// "danger" with no source. The band edges are the sourced ones
+// (AUC24_TARGET_MIN/MAX, Rybak 2020 Rec 1; AUC24_ABSOLUTE_MAX). One edge is a
+// PREFERENCE (CLAUDE.md rule 8): AUC24_MODEST_BELOW_MIN, the point at which a
+// shortfall stops being "modest". It is the pharmacist's own stated band
+// (325-399) — reported case: 52 M, non-MRSA osteomyelitis, recovering AKI,
+// AUC24 345 with measured levels of 14-19 mg/L, where "below target" read as
+// "escalate now" and an experienced pharmacist would say "escalation optional".
+// It changes wording and colour only; it never changes a dose. Stated in
+// absolute units per rule 5.
+const AUC24_MODEST_BELOW_MIN = 325;   // PREFERENCE, mg·h/L — see above
+
+function aucVerdict(auc24) {
+  const a = Number(auc24);
+  if (!isFinite(a) || a <= 0) return { key:'unknown', tone:'info', label:'—', text:'' };
+  if (a > AUC24_ABSOLUTE_MAX) return { key:'well-above', tone:'danger', label:'Well above target',
+    text:`AUC₂₄ exceeds the ${AUC24_ABSOLUTE_MAX} mg·h/L ceiling above which nephrotoxicity risk rises steeply. Reduce the dose.` };
+  if (a > AUC24_TARGET_MAX) return { key:'above', tone:'warn', label:'Above target',
+    text:`Above the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L target band. A reduction is usually indicated.` };
+  if (a >= AUC24_TARGET_MIN) return { key:'in', tone:'ok', label:'Within target', text:'' };
+  if (a >= AUC24_MODEST_BELOW_MIN) return { key:'modest-below', tone:'warn', label:'Modestly below target',
+    text:`Below the ${AUC24_TARGET_MIN} mg·h/L guideline threshold by a modest margin. Escalation may be considered depending on infection severity, organism susceptibility and confidence in the fit — it is not automatically required.` };
+  return { key:'well-below', tone:'danger', label:'Well below target',
+    text:`Clearly below the ${AUC24_TARGET_MIN} mg·h/L guideline threshold. A dose increase is usually indicated unless the clinical context argues otherwise.` };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  CONFIDENCE — one statement of how far to trust this fit, with its reasons
+// ══════════════════════════════════════════════════════════════════════════
+// Both reported cases asked for it from opposite ends. The 76 M (one level,
+// 4.0 SD from the model) was shown a precise dose with no signal that the fit
+// underneath it had failed. The 52 M (eight levels, residuals within 1 SD,
+// priors agreeing) deserved to be told it was a strong fit and was not.
+//
+// Every reason is printed, so the rating can be checked rather than trusted.
+// The sigma steps are PREFERENCE (rule 8): 2 matches FIT_BANDS' existing
+// "substantial" edge; 3 and 4 are the pharmacist's own proposed boundaries.
+// The rating changes presentation — it never changes a dose.
+const CONFIDENCE_SIGMA = { moderate: 2, low: 3, veryLow: 4 };   // PREFERENCE
+const CONFIDENCE_ORDER = ['High', 'Moderate', 'Low', 'Very low'];
+
+function confidenceAssessment(r, fd, ag) {
+  const n = (r && r.levels && r.levels.length) || 0;
+  if (!n) return { level:'Population estimate', rank:-1, reasons:[
+    { good:false, text:'No measured levels — this is the population prior, not an individual fit.' } ] };
+  let rank = 0;
+  const reasons = [];
+  const cap = (to, text) => { if (to > rank) rank = to; reasons.push({ good:false, text }); };
+
+  const worst = fd && fd.worst ? Math.abs(fd.worst.sigma) : NaN;
+  if (isFinite(worst)) {
+    if (worst >= CONFIDENCE_SIGMA.veryLow)      cap(3, `Severe prior–data conflict: a measured level sits ${worst.toFixed(1)} SD from the model.`);
+    else if (worst >= CONFIDENCE_SIGMA.low)     cap(2, `Large prior–data conflict: ${worst.toFixed(1)} SD from the model.`);
+    else if (worst >= CONFIDENCE_SIGMA.moderate) cap(1, `The fit misses a level by ${worst.toFixed(1)} SD.`);
+    else reasons.push({ good:true, text:`Every level is reproduced within ${Math.max(worst, 0.1).toFixed(1)} SD.` });
+  }
+  if (n === 1) cap(1, 'One level: clearance and volume are not separately identifiable.');
+  else reasons.push({ good:true, text:`${n} measured levels.` });
+
+  if (ag && ag.band) {
+    if (ag.band.tone === 'danger') cap(n <= 1 ? 2 : 1, `The applicable priors disagree by ${ag.diffPct.toFixed(0)}% on exposure — the estimate is partly prior-driven.`);
+    else if (ag.band.tone === 'warn' && n <= 1) cap(1, `Priors differ by ${ag.diffPct.toFixed(0)}% on exposure.`);
+    else reasons.push({ good:true, text:`Applicable priors agree within ${ag.diffPct.toFixed(0)}%.` });
+  }
+
+  const ctx = (r && r.agCtx) || {};
+  const bmi = (ctx.tbw > 0 && ctx.htCm > 0) ? ctx.tbw / Math.pow(ctx.htCm / 100, 2) : NaN;
+  if (r.model === 'hughes' && isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
+    cap(2, `Hughes 2024 is validated at BMI ≥ ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}.`);
+
+  return { level: CONFIDENCE_ORDER[rank], rank, reasons, worstSigma: worst, levels: n };
+}
+
 function fmtTau(t) {
   const n = Number(t);
   if (!isFinite(n)) return t;
@@ -4357,6 +4563,14 @@ const SCR_POLICY = { ACTUAL: 'actual', GOTI_MODEL: 'goti' };
 // Methods alone; the erratum is the governing text.
 const GOTI_SCR_FLOOR     = 1.0;
 const GOTI_SCR_FLOOR_AGE = 65;
+
+// Posterior-to-population CL ratio beyond which the fit is said to diverge from
+// the covariate model. PRE-EXISTING and unsourced (CLAUDE.md rule 8): these were
+// inline literals copied into three fit branches; named here unchanged so the
+// three branches and the ARC advisory below read ONE value. They order advice
+// and never change a dose.
+const CL_DIVERGE_LOW  = 0.6;
+const CL_DIVERGE_HIGH = 1.4;
 
 function applyScrPolicy(scr, age, policy) {
   if (policy === SCR_POLICY.GOTI_MODEL && scr < GOTI_SCR_FLOOR && age > GOTI_SCR_FLOOR_AGE) {
@@ -8456,7 +8670,7 @@ function runBayesian() {
   // each covariate rule (CLAUDE.md rule 2).
   const agCtx = {
     activeModel: bState.model,
-    crcl, tbw, htCm,
+    crcl, tbw, htCm, age, sex: bState.sex, scr: effScr,
     dial: !!bState.dial,
     crclGoti:   (function(){ try { return getGotiCrCl(effScr); }   catch (e) { return null; } })(),
     crclHughes: (function(){ try { return getHughesCrCl(effScr); } catch (e) { return null; } })(),
@@ -8562,7 +8776,7 @@ function runBayesian() {
 
     const clRatio = CL_ind / CL_pop;
     let divergeMsg = null;
-    if (filteredLevels.length > 0 && (clRatio < 0.6 || clRatio > 1.4)) {
+    if (filteredLevels.length > 0 && (clRatio < CL_DIVERGE_LOW || clRatio > CL_DIVERGE_HIGH)) {
       const pct=Math.abs(clRatio-1)*100, dir=clRatio>1?'higher':'lower';
       const why = clRatio>1
         ? 'possible augmented renal clearance — verify level timing and dose documentation'
@@ -8633,7 +8847,7 @@ function runBayesian() {
 
     const clRatio = CL_ind / CL_pop;
     let divergeMsg = null;
-    if (filteredLevels.length > 0 && (clRatio < 0.6 || clRatio > 1.4)) {
+    if (filteredLevels.length > 0 && (clRatio < CL_DIVERGE_LOW || clRatio > CL_DIVERGE_HIGH)) {
       const pct=Math.abs(clRatio-1)*100, dir=clRatio>1?'higher':'lower';
       const why = clRatio>1
         ? 'possible augmented renal clearance — verify level timing and dose documentation'
@@ -8682,7 +8896,7 @@ function runBayesian() {
 
     const clRatio = CL_ind / CL_pop;
     let divergeMsg = null;
-    if (filteredLevels.length > 0 && (clRatio < 0.6 || clRatio > 1.4)) {
+    if (filteredLevels.length > 0 && (clRatio < CL_DIVERGE_LOW || clRatio > CL_DIVERGE_HIGH)) {
       const pct=Math.abs(clRatio-1)*100, dir=clRatio>1?'higher':'lower';
       const why = clRatio>1
         ? 'possible augmented renal clearance — verify level timing and dose documentation'
@@ -9156,10 +9370,13 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Current regimen inference ──
   const cur = inferCurrentRegimen(doses, CL_ind, V_ind, isGotiRes && r.goti ? r.goti : null);
-  const curAucColor = cur && cur.auc24 != null
-    ? (cur.auc24 >= 400 && cur.auc24 <= 600 ? 'ok' : cur.auc24 < 350 ? 'danger' : 'warn') : 'info';
+  // Through aucVerdict and the clinician's own trough target. The old rules
+  // called any AUC under 350 "danger" with no source, and hard-coded 10-20 —
+  // which CLAUDE.md forbids: the target band is the clinician's own.
+  const curAucColor = cur && cur.auc24 != null ? aucVerdict(cur.auc24).tone : 'info';
+  const _tt = troughTarget();
   const curTrColor  = cur && cur.Ctrough != null
-    ? (cur.Ctrough >= 10 && cur.Ctrough <= 20 ? 'ok' : 'warn') : 'info';
+    ? (cur.Ctrough >= _tt.min && cur.Ctrough <= _tt.max ? 'ok' : 'warn') : 'info';
 
   // ── Header banner ──
   html += `
@@ -9186,26 +9403,95 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   }
 
   // ── Phase 3 Step 5: ARC advisory (uncapped CrCl ≥130) ──
-  if (p2c.arcInfo && p2c.arcInfo.detected) {
-    const crclTrue   = p2c.arcInfo.crclUncapped;
-    const crclModel  = p2c.arcInfo.crclUsed;
-    const isHughesArc= r.model === 'hughes';
-    // Goti caps at 150 in the published model; Buelga's helper also caps at 150.
-    // Hughes uses FFM-based CrCl with no cap, so the model already sees the true value.
-    const cappingNote = isHughesArc
-      ? 'Hughes 2024 uses an FFM-based CrCl with no cap, so the model is using the actual value.'
-      : `${r.model === 'goti' ? 'Goti 2018' : 'Buelga 2005'} caps CrCl at 150 mL/min in the published model — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. Individual CL estimated by the Bayesian posterior may still capture the elevated clearance from any measured levels.`;
-    html += `<div class="arc-advisory">
-      ⚡ <strong>Augmented renal clearance suspected</strong>
-      <span class="arc-crcl-tag">CrCl ≈ ${crclTrue.toFixed(0)} mL/min</span>
-      <div style="margin-top:6px">${cappingNote}</div>
-      <ul class="arc-actions">
-        <li>Consider shorter dosing intervals (Q6H–Q8H) to maintain AUC₂₄</li>
-        <li>Consider a higher loading dose (25–30 mg/kg, max 3 g) to reach target rapidly</li>
-        <li>Obtain an early steady-state level (within 24–48 h) — ARC patients often need dose escalation</li>
-        <li>Re-check renal function frequently — ARC can resolve abruptly with clinical improvement</li>
-      </ul>
-    </div>`;
+  // ── Renal-function advisories: read the covariate AND the levels ─────────
+  // The ARC advisory used to fire on Cockcroft-Gault alone and recommend
+  // shorter intervals, a larger load and dose escalation. Reported from the
+  // bedside: a 76 M, SCr 0.5, CrCl 148 — "ARC suspected, escalate" — with a
+  // measured level of 19.9 mg/L against a prediction of 5.7. The level said the
+  // drug was ACCUMULATING; the advisory said give more. Two corrections:
+  //
+  //  1. When measured levels exist and the posterior clearance sits well BELOW
+  //     the population value (CL_DIVERGE_LOW), the data contradict augmented
+  //     clearance. Say so, and do not recommend escalation on the CrCl.
+  //  2. A high CrCl from a low SCr in an older patient is more often
+  //     Cockcroft-Gault overestimating (low creatinine generation, low muscle
+  //     mass) than true ARC. The trigger reuses GOTI_SCR_FLOOR_AGE and
+  //     GOTI_SCR_FLOOR: Goti's 2019 erratum truncated SCr in exactly this
+  //     population for exactly this reason. Nothing here changes a CrCl — rule 4
+  //     still holds — it changes what the tool TELLS the clinician about it.
+  {
+    const ag       = r.agCtx || {};
+    const ageNum   = Number(ag.age);
+    const scrNum   = Number(ag.scr);
+    const clRatioA = (r.CL_pop > 0) ? r.CL_ind / r.CL_pop : NaN;
+    const levelsN  = (r.levels && r.levels.length) || 0;
+    const arcDetected   = !!(p2c.arcInfo && p2c.arcInfo.detected);
+    const kind = renalAdvisoryKind({ arcDetected, levelsN, clRatio: clRatioA, age: ageNum, scr: scrNum });
+    const elderlyLowScr   = kind === 'elderly-arc' || kind === 'elderly'
+                         || (kind === 'contradicted' && ageNum > GOTI_SCR_FLOOR_AGE && scrNum > 0 && scrNum < GOTI_SCR_FLOOR);
+    const arcContradicted = kind === 'contradicted';
+    const crclTrue  = arcDetected ? p2c.arcInfo.crclUncapped : null;
+    const crclModel = arcDetected ? p2c.arcInfo.crclUsed : null;
+
+    if (arcContradicted) {
+      html += `<div class="arc-advisory arc-contradicted">
+        <strong>Measured levels contradict augmented clearance</strong>
+        <span class="arc-crcl-tag">CrCl ≈ ${crclTrue.toFixed(0)} mL/min</span>
+        <div style="margin-top:6px">
+          Cockcroft-Gault reads as augmented, but the fitted clearance is
+          <strong>${r.CL_ind.toFixed(2)} L/h</strong> against a population value of
+          ${r.CL_pop.toFixed(2)} L/h — <strong>${Math.round((1 - clRatioA) * 100)}% lower</strong>.
+          The measurement is the better evidence of what this patient is clearing.
+          ${elderlyLowScr ? `At age ${ageNum.toFixed(0)} with SCr ${scrNum.toFixed(2)} mg/dL, a low creatinine generation
+          is the likeliest reason the CrCl reads high.` : ''}
+        </div>
+        <ul class="arc-actions">
+          <li><strong>Do not escalate on the CrCl.</strong> The level is higher than the covariate model predicts.</li>
+          <li>Consider cystatin C, or a further timed level, to establish true clearance.</li>
+          <li>Read the prior-data conflict and clearance estimates below before changing the dose.</li>
+        </ul>
+      </div>`;
+    } else if (kind === 'elderly-arc') {
+      html += `<div class="arc-advisory">
+        <strong>High CrCl from a low creatinine — may be overestimated</strong>
+        <span class="arc-crcl-tag">CrCl ≈ ${crclTrue.toFixed(0)} mL/min</span>
+        <div style="margin-top:6px">
+          At age ${ageNum.toFixed(0)} with SCr ${scrNum.toFixed(2)} mg/dL, Cockcroft-Gault commonly overstates
+          clearance because creatinine generation is low. Goti 2018's modellers truncated SCr at
+          ${GOTI_SCR_FLOOR.toFixed(1)} mg/dL above age ${GOTI_SCR_FLOOR_AGE} for this reason. True augmented clearance is
+          less likely here than in a younger or trauma patient.
+        </div>
+        <ul class="arc-actions">
+          <li>Confirm with a measured level before escalating the dose.</li>
+          <li>Consider cystatin C as a creatinine-independent estimate.</li>
+        </ul>
+      </div>`;
+    } else if (kind === 'arc') {
+      const isHughesArc = r.model === 'hughes';
+      const cappingNote = isHughesArc
+        ? 'Hughes 2024 uses an FFM-based CrCl with no cap, so the model is using the actual value.'
+        : `${r.model === 'goti' ? 'Goti 2018' : 'Buelga 2005'} caps CrCl at 150 mL/min in the published model — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. Individual CL estimated by the Bayesian posterior may still capture the elevated clearance from any measured levels.`;
+      html += `<div class="arc-advisory">
+        ⚡ <strong>Augmented renal clearance suspected</strong>
+        <span class="arc-crcl-tag">CrCl ≈ ${crclTrue.toFixed(0)} mL/min</span>
+        <div style="margin-top:6px">${cappingNote}</div>
+        <ul class="arc-actions">
+          <li>Consider shorter dosing intervals (Q6H–Q8H) to maintain AUC₂₄</li>
+          <li>Consider a higher loading dose (25–30 mg/kg, max 3 g) to reach target rapidly</li>
+          <li>Obtain an early steady-state level (within 24–48 h) — ARC patients often need dose escalation</li>
+          <li>Re-check renal function frequently — ARC can resolve abruptly with clinical improvement</li>
+        </ul>
+      </div>`;
+    } else if (kind === 'elderly') {
+      html += `<div class="arc-advisory arc-soft">
+        <strong>Low creatinine in an older patient</strong>
+        <div style="margin-top:6px">
+          SCr ${scrNum.toFixed(2)} mg/dL at age ${ageNum.toFixed(0)}: Cockcroft-Gault may overstate clearance when
+          creatinine generation is low. Consider cystatin C, the renal trajectory, or a measured level
+          before relying on the CrCl-derived dose.
+        </div>
+      </div>`;
+    }
   }
 
   // ── Phase 3 Step 6: very-low CrCl non-dialysis advisory (CrCl <10) ──
@@ -9331,8 +9617,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         </div>` : ''}
         <div style="background:var(--paper-deep);border-radius:4px;padding:10px 12px;border:1px solid var(--rule)">
           <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Projected AUC₂₄ on this regimen</div>
-          <div style="font-family:'DM Mono',monospace;font-size:1.05rem;font-weight:600;color:${cur.auc24 > 600 ? 'var(--danger)' : cur.auc24 >= 400 ? 'var(--success)' : 'var(--accent-amber)'}">${cur.auc24 != null ? cur.auc24.toFixed(0) : '—'}</div>
-          <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · this patient's fitted CL</div>
+          <div style="font-family:'DM Mono',monospace;font-size:1.05rem;font-weight:600;color:${cur.auc24 == null ? 'var(--text-secondary)' : ({ok:'var(--success)',warn:'var(--accent-amber)',danger:'var(--danger)'}[aucVerdict(cur.auc24).tone] || 'var(--text-secondary)')}">${cur.auc24 != null ? cur.auc24.toFixed(0) : '—'}</div>
+          <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · this patient's fitted CL${cur.auc24 != null ? ' · <strong>' + aucVerdict(cur.auc24).label + '</strong>' : ''}</div>
         </div>
         ${isIrregular && cur.auc24_irregular != null ? `
         <div style="background:var(--paper-deep);border-radius:4px;padding:10px 12px;border:1px solid var(--rule)">
@@ -9341,6 +9627,28 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <div style="font-size:0.64rem;color:var(--text-muted)">mg·h/L · over the last ${cur.lastIntervalH != null ? cur.lastIntervalH.toFixed(1) : '—'} h</div>
         </div>` : ''}
       </div>
+      ${(() => {
+        // What this AUC means, in graded language. Reported case: 52 M, AUC24
+        // 345 on 750 mg Q24H with measured levels of 14-19 mg/L. "Below target"
+        // read as "escalate now" while the pharmacist saw acceptable levels.
+        // Both are true at once, and the tool should say so rather than let
+        // them appear to contradict each other.
+        if (cur.auc24 == null) return '';
+        const v = aucVerdict(cur.auc24);
+        if (v.key === 'in' || !v.text) return '';
+        let reconcile = '';
+        const recent = (levels || []).slice().sort((a, b) => b.timeH - a.timeH).slice(0, 3);
+        if (v.key === 'modest-below' && recent.length) {
+          const cs = recent.map(l => l.conc);
+          const lo = Math.min.apply(null, cs), hi = Math.max.apply(null, cs);
+          reconcile = ` Recent measured levels of ${lo.toFixed(1)}${hi - lo >= 0.1 ? '–' + hi.toFixed(1) : ''} mg/L
+            and this AUC₂₄ are not in conflict: at this patient's clearance a level in that range is simply
+            what a daily exposure of ${cur.auc24.toFixed(0)} mg·h/L looks like. Levels in historical trough
+            ranges do not by themselves establish that AUC is on target — the 2020 guideline moved monitoring
+            from trough to AUC for exactly this reason.`;
+        }
+        return `<div class="aucv aucv-${v.tone}"><strong>${v.label}.</strong> ${v.text}${reconcile}</div>`;
+      })()}
       ${isIrregular ? `<div style="font-size:0.74rem;color:var(--text-secondary);line-height:1.5;margin-bottom:8px">
         Select the intended future interval before relying on a steady-state projection.
       </div>` : ''}
@@ -9476,19 +9784,76 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // One reading of the detected regimen, shared by both diagnostic panels.
   const cur2 = inferCurrentRegimen(doses, CL_ind, V_ind, r.goti || null);
 
+  // ── Diagnostics computed ONCE and shared by every panel below ────────────
+  // modelAgreement runs a full MAP fit per applicable prior; recomputing it in
+  // each panel doubled the cost and let the panels disagree on inputs.
+  // Agreement's percentage spread does not depend on the daily dose (it cancels
+  // in (hi-lo)/mean), so when no regimen is detected — a load then maintenance
+  // doses, as in the reported 76 M case — it is computed on the RECOMMENDED
+  // daily dose instead of being skipped.
+  const curTDD = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau) : null;
+  const recTDD = rec && !rec.noSolution && rec.dose && rec.tau ? rec.dose * (24 / rec.tau) : null;
+  const agDD   = curTDD || recTDD;
+  const agOn   = curTDD ? 'detected' : 'recommended';
+  const fdAll  = fitDiagnostics(Object.assign({}, r, { regimen: cur2 }));
+  const agAll  = (nLev && agDD) ? modelAgreement(
+      r.agCtx || { activeModel: r.model, crcl: r.crcl, tbw: r.tbw, dial: r.dial },
+      doses, levels, agDD) : null;
+  const conf   = confidenceAssessment(r, fdAll, agAll);
+  const ceAll  = clearanceEstimates(r, fdAll);
+
+  // ── Confidence: how far to trust this fit, with its reasons ─────────────
+  (() => {
+    const tone = conf.rank < 0 ? 'info' : conf.rank === 0 ? 'ok' : conf.rank === 1 ? 'warn' : 'danger';
+    const reasons = conf.reasons.map(x =>
+      `<li class="${x.good ? 'conf-good' : 'conf-bad'}">${escHtml(x.text)}</li>`).join('');
+    // The clearance table earns its space only when the fit misses a level.
+    let ceTable = '';
+    if (ceAll && ceAll.est.length > 2 && fdAll && Math.abs(fdAll.worst.sigma) >= 1 && recTDD) {
+      const rows = ceAll.est.map(e => `
+        <div class="fitdx-row" style="grid-template-columns:1.8fr 1fr 1fr">
+          <span class="fitdx-t">${escHtml(e.label)}</span>
+          <span class="fitdx-n">${e.CL.toFixed(2)}</span>
+          <span class="fitdx-n">${(recTDD / e.CL).toFixed(0)}</span>
+        </div>`).join('');
+      const aucs = ceAll.est.map(e => recTDD / e.CL);
+      ceTable = `
+        <div class="conf-sub">Clearance estimates — AUC₂₄ of the recommended ${rec.dose} mg Q${fmtTau(rec.tau)}H under each</div>
+        <div class="fitdx-row fitdx-hdr" style="grid-template-columns:1.8fr 1fr 1fr">
+          <span class="fitdx-t">Source</span><span class="fitdx-n">CL (L/h)</span><span class="fitdx-n">AUC₂₄</span>
+        </div>
+        ${rows}
+        <div class="fitdx-note">
+          The level-implied rows solve clearance so the model passes <em>exactly</em> through the
+          ${ceAll.levelsCount > 1 ? 'worst-fitting' : 'measured'} level
+          (${ceAll.level.conc.toFixed(1)} mg/L) on the actual dose history, holding the volume named.
+          One level cannot separate clearance from volume, so the two differ — and the truth may lie
+          anywhere between them. Across these estimates the same regimen spans AUC₂₄
+          <strong>${Math.min.apply(null, aucs).toFixed(0)}–${Math.max.apply(null, aucs).toFixed(0)}</strong> mg·h/L.
+        </div>`;
+    }
+    html += `
+      <div class="conf conf-${tone}">
+        <div class="conf-head">
+          <span class="conf-title">Confidence</span>
+          <span class="conf-level">${escHtml(conf.level)}</span>
+        </div>
+        <ul class="conf-reasons">${reasons}</ul>
+        ${ceTable}
+      </div>`;
+  })();
+
   // ── Do the applicable priors agree on exposure? ──────────────────────────
   // Every prior that applies to this patient, fitted to the same course and the
   // same levels, with the ACTIVE one marked. This used to be a hard-coded
   // Buelga-vs-Goti pair shown even on Hughes, which compared two models the
   // clinician was not using and called the result their disagreement.
   (() => {
-    if (!nLev) return;                       // no levels: every prior is just the prior
-    const dd = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau) : null;
-    if (!dd) return;
-    const ag = modelAgreement(
-      r.agCtx || { activeModel: r.model, crcl: r.crcl, tbw: r.tbw, dial: r.dial },
-      doses, levels, dd);
+    const ag = agAll;                        // computed once above
     if (!ag || !isFinite(ag.diffPct)) return;
+    const onReg = agOn === 'detected'
+      ? `the detected ${cur2.dose} mg Q${fmtTau(cur2.tau)}H`
+      : `the recommended ${rec.dose} mg Q${fmtTau(rec.tau)}H (no consistent schedule was detected)`;
     const col = ag.band.tone === 'ok' ? 'var(--success)'
               : ag.band.tone === 'warn' ? 'var(--accent-amber)' : 'var(--danger)';
     const rows = ag.rows.map(m => `
@@ -9515,7 +9880,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ${rows}
         <div class="fitdx-note">
           ${ag.n} applicable prior${ag.n === 1 ? '' : 's'} fitted to the same levels and the same
-          course, on the detected ${cur2.dose} mg Q${fmtTau(cur2.tau)}H — AUC₂₄
+          course, on ${onReg} — AUC₂₄
           ${ag.lo.toFixed(0)}–${ag.hi.toFixed(0)} mg·h/L.
           ${ag.band.tone === 'ok'
             ? 'Close agreement means the answer is being driven by the measured levels rather than by the choice of prior.'
@@ -9529,7 +9894,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Does the fit actually reproduce the levels? ──────────────────────────
   (() => {
-    const fd = fitDiagnostics(Object.assign({}, r, { regimen: cur2 }));
+    const fd = fdAll;                        // computed once above
     if (!fd) return;
     const a = Math.abs(fd.worst.sigma);
     const fb = fitBandFor(a);
@@ -9616,8 +9981,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Dose recommendation ──
   if (rec) {
-    const recAucColor   = rec.auc24>=400&&rec.auc24<=600 ? 'var(--success)' : 'var(--warning)';
-    const recTrColor    = rec.Ctrough>=10&&rec.Ctrough<=20 ? 'var(--success)' : 'var(--warning)';
+    // Colours from the sourced bands, not inline literals. The trough is labelled
+    // on this card as "a safety check, not a target", so it is coloured by the
+    // safety tiers (TROUGH_WARN_MGL / TROUGH_HIGH_MGL) — the old 10-20 rule
+    // coloured it as if it were a target, contradicting its own caption.
+    const toneVar = t => t === 'ok' ? 'var(--success)' : t === 'danger' ? 'var(--danger)' : 'var(--warning)';
+    const recAucColor   = toneVar(aucVerdict(rec.auc24).tone);
+    const recTrColor    = rec.Ctrough >= TROUGH_HIGH_MGL ? 'var(--danger)'
+                        : rec.Ctrough >= TROUGH_WARN_MGL ? 'var(--warning)' : 'var(--success)';
     const aucMICRec     = (rec.auc24/mic).toFixed(0);
     const aucMICColor   = parseFloat(aucMICRec)>=400 ? 'var(--success)' : 'var(--warning)';
 
@@ -9645,14 +10016,34 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       tiedLine = `<div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--rule);font-size:0.71rem;line-height:1.5;color:var(--text-muted)">
         <strong style="color:var(--text-secondary)">Same exposure, different shape.</strong>
         ${alts} reach an identical AUC₂₄ — at steady state that is total daily dose ÷ clearance, which
-        carries no interval term. This one was chosen because its predicted trough raises no flag, not
-        because the exposure ranked it first. The matrix below shows the rest.
+        carries no interval term. Exposure cannot choose between them, so a trough in the danger band is
+        set aside and the rest are ordered by a stated practicality preference (Q24H, then Q12H, Q48H,
+        Q8H). It is a preference, not a ranking the model earned — the matrix below shows every option.
       </div>`;
     }
 
+    // Under Low / Very low confidence the dose is still shown — hiding it would
+    // push the clinician to a worse guess — but it is visibly de-rated and the
+    // exposure range across plausible clearances is put beside it, because that
+    // range, not the posterior point, is what the number actually rests on.
+    let lowConf = '';
+    if (conf && conf.rank >= 2) {
+      let span = '';
+      if (ceAll && ceAll.est.length > 2 && recTDD) {
+        const aucs = ceAll.est.map(e => recTDD / e.CL);
+        span = ` Across the clearance estimates below, this regimen spans AUC₂₄
+          <strong>${Math.min.apply(null, aucs).toFixed(0)}–${Math.max.apply(null, aucs).toFixed(0)}</strong> mg·h/L.`;
+      }
+      lowConf = `<div class="rec-lowconf">
+        <strong>${escHtml(conf.level)} confidence.</strong> This dose was generated from a fit the tool
+        itself does not trust — see the reasons under <em>Confidence</em>.${span}
+        Consider a further timed concentration, or cystatin C, before implementing it.
+      </div>`;
+    }
     html += `
-      <div class="rec-box" style="border-color:color-mix(in srgb, var(--purple) 25%, transparent)">
-        <div class="rec-title" style="color:var(--accent-blue)">Bayesian Dose Recommendation</div>
+      <div class="rec-box${conf && conf.rank >= 2 ? ' rec-derated' : ''}" style="border-color:color-mix(in srgb, var(--purple) 25%, transparent)">
+        <div class="rec-title" style="color:var(--accent-blue)">Bayesian Dose Recommendation${conf && conf.rank >= 2 ? ' · low confidence' : ''}</div>
+        ${lowConf}
         <div class="rec-dose" style="font-size:2rem">${rec.dose}<span style="color:var(--accent-blue)"> mg</span> Q${rec.tau}H</div>
         <div class="rec-rationale">
           Infuse over ${rec.tinfH}h · Individual CL = ${CL_ind.toFixed(2)} L/h, Vd = ${V_ind.toFixed(1)} L
@@ -9686,7 +10077,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const guSS = ssCurve(gd.dose, gd.tau, gd.tinfH, kP, vP, 120);
     const guTr = guSS.length ? guSS[guSS.length - 1].c : null;
     const guidAUC24 = gd.dose * (24 / gd.tau) / r.CL_pop;
-    const guidAucColor = guidAUC24 >= 400 && guidAUC24 <= 600 ? 'var(--success)' : guidAUC24 < 350 ? 'var(--warning)' : 'var(--accent-amber)';
+    const guidAucColor = { ok:'var(--success)', warn:'var(--accent-amber)', danger:'var(--danger)' }[aucVerdict(guidAUC24).tone] || 'var(--text-secondary)';
     const guidTrColor  = guTr && guTr >= 10 && guTr <= 20 ? 'var(--success)' : 'var(--warning)';
     html += `
       <div class="rec-box guideline-rec-box">
@@ -10298,10 +10689,14 @@ function runBayesTinkerer() {
     ssProfilePts = null;  // ssCurve() will compute below
   }
   const aucMIC    = (auc24 / mic).toFixed(0);
-  const inRange   = auc24 >= 400 && auc24 <= 600;
-
-  const colAUC = inRange ? 'var(--success)' : auc24 < 350 ? 'var(--danger)' : 'var(--warning)';
-  const colTr  = Ctrough >= 10 && Ctrough <= 20 ? 'var(--success)' : 'var(--warning)';
+  // Same verdicts as the recommendation card: this is the same patient and the
+  // same numbers, so it must not speak with a different voice. Replaces an
+  // unsourced "under 350 is danger" and a hard-coded 10-20 trough band.
+  const tinkV     = aucVerdict(auc24);
+  const inRange   = tinkV.key === 'in';
+  const colAUC = tinkV.tone === 'ok' ? 'var(--success)' : tinkV.tone === 'danger' ? 'var(--danger)' : 'var(--warning)';
+  const colTr  = Ctrough >= TROUGH_HIGH_MGL ? 'var(--danger)'
+               : Ctrough >= TROUGH_WARN_MGL ? 'var(--warning)' : 'var(--success)';
   const colAMIC= parseFloat(aucMIC) >= 400 ? 'var(--success)' : 'var(--warning)';
 
   const res = document.getElementById('b-tink-result');
