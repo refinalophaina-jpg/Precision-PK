@@ -35,6 +35,21 @@ const {
 
 // ─── 1. Extract JS from HTML and run in sandboxed VM ──────────────────
 const htmlPath = path.join(__dirname, 'index.html');
+
+// Theme palettes parsed from the stylesheet itself (rule 6: never hand-copy a
+// constant into the harness). The first :root block is light; the
+// :root[data-theme="dark"] block overrides it. var() references resolve one hop.
+function __themePalette(theme) {
+  const css = fs.readFileSync(htmlPath, 'utf8');
+  const grab = (re) => { const m = css.match(re); return m ? m[1] : ''; };
+  const parse = (block) => { const o = {}; block.replace(/(--[\w-]+)\s*:\s*([^;]+);/g, (_, k, v) => { o[k] = v.trim(); }); return o; };
+  const light = parse(grab(/:root\s*\{([\s\S]*?)\n  \}/));
+  const pal = theme === 'dark' ? Object.assign({}, light, parse(grab(/:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n  \}/))) : light;
+  for (const k of Object.keys(pal)) {
+    const m = /^var\((--[\w-]+)\)$/.exec(pal[k]); if (m && pal[m[1]]) pal[k] = pal[m[1]];
+  }
+  return pal;
+}
 const html = fs.readFileSync(htmlPath, 'utf8');
 const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
 if (!scriptMatch) { console.error('ERROR: Could not find <script> block in HTML.'); process.exit(1); }
@@ -1074,12 +1089,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   const { drawPKGraph } = sandbox;
 
   // Two palettes, so "did this colour come from a token?" is testable.
-  const LIGHT = { '--terracotta':'#cc785c','--terracotta-q':'#e0a98c','--moss':'#4a5c28',
-                  '--ink-faint':'#8a8e80','--paper':'#faf5ed','--accent-amber':'#96631f',
-                  '--accent-blue':'#4a3d7a','--accent-rose':'#a8546a' };
-  const DARK  = { '--terracotta':'#d88a6e','--terracotta-q':'#b56e54','--moss':'#9aad68',
-                  '--ink-faint':'#7d7666','--paper':'#1c1815','--accent-amber':'#d9a765',
-                  '--accent-blue':'#8e7dc8','--accent-rose':'#d08ba0' };
+  // Parsed from the stylesheet (was hand-copied; rule 6).
+  const LIGHT = __themePalette('light');
+  const DARK  = __themePalette('dark');
 
   function record(palette, W, H) {
     const ops = { arcs:[], path:[], rects:[], texts:[], colors:new Set() };
@@ -1262,10 +1274,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // ════════════════════════════════════════════════════════════════════
 {
   const { drawProfileGraph, predictConc1comp } = sandbox;
-  const PALETTE = { '--terracotta':'#cc785c','--terracotta-q':'#e0a98c','--moss':'#4a5c28',
-                    '--ink-faint':'#8a8e80','--paper':'#faf5ed','--paper-deep':'#f2ecdf',
-                    '--purple':'#4a3d7a','--accent-rose':'#a8546a','--rule':'rgba(45,52,40,.1)',
-                    '--ink-soft':'#5a6151' };
+  const PALETTE = __themePalette('light');   // parsed, not copied (rule 6)
 
   function runProfile(doses, levels, CL, V, W = 900, H = 284) {
     const ops = { path:[], texts:[], lines:[], colors:new Set() };
@@ -1368,24 +1377,20 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       `(a uniform grid cut it by up to 2.68)`);
   });
 
-  test('Dose labels are decimated; a strength change is never hidden', ()=>{
-    const { ops } = runProfile(q8h, lev, 4.5, 60, 700);
-    const mgLabels = ops.texts.filter(t => t.t === '1000' && Number.isFinite(t.x))
-                              .sort((a,b)=>a.x-b.x);
-    if (!mgLabels.length) {
-      const sample = ops.texts.slice(0,8).map(t=>`${t.t}@${t.x}`).join(' ');
-      assert(false, `no finite-x '1000' labels; sample: ${sample}`);
-    }
-    assert(mgLabels.length >= 2, 'no dose labels drawn at all');
-    for (let i=1;i<mgLabels.length;i++) {
-      assert(mgLabels[i].x - mgLabels[i-1].x >= 29,
-        `dose labels ${(mgLabels[i].x - mgLabels[i-1].x).toFixed(1)}px apart — they overlap`);
-    }
-    // A strength change must always be labelled, even inside a dense run.
+  // 2026-09-28 design pass (rule 9, reason recorded): dose amounts, times and
+  // gaps moved from the canvas axis to the course strip above it (same time
+  // axis). The invariant is unchanged: a strength change is never hidden.
+  test('Course strip labels the first dose and every strength change, never a steady run', ()=>{
+    const { drawCourseStrip } = sandbox;
+    const strip = (ds) => { const el = { clientWidth: 700, innerHTML: '', setAttribute(){} };
+      drawCourseStrip(el, ds, 0, lev, [], 4.5 / 60); return el.innerHTML; };
+    const labels = (h) => [...h.matchAll(/class="dl[^"]*">([^<]+)</g)].map(m => m[1]);
+    const steady = labels(strip(q8h));
+    assert(steady.length === 1 && steady[0] === '1 g', `steady course: ${JSON.stringify(steady)}`);
     const mixed = q8h.map((d,i) => ({ ...d, mg: i >= 12 ? 1250 : 1000 }));
-    const r2 = runProfile(mixed, lev, 4.5, 60, 700);
-    assert(r2.ops.texts.some(t => t.t === '1250'),
-      'the dose-strength change was decimated away — a regimen change must survive');
+    const m = labels(strip(mixed));
+    assert(m.includes('1.25 g'), 'the dose-strength change was hidden — a regimen change must survive');
+    assert((strip(q8h).match(/class="bar"/g) || []).length === q8h.length, 'one bar per dose');
   });
 
   test('Dose ticks are axis stubs, not a full-height picket fence', ()=>{
@@ -1431,9 +1436,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('Every colour is a token', ()=>{
-    const DARK = Object.assign({}, PALETTE, { '--terracotta':'#d88a6e','--ink-faint':'#7d7666',
-      '--moss':'#9aad68','--paper':'#1c1815','--purple':'#8e7dc8','--accent-rose':'#d08ba0',
-      '--paper-deep':'#252119','--rule':'rgba(236,228,210,.1)','--ink-soft':'#b8af9d' });
+    const DARK = __themePalette('dark');
     const light = runProfile(q8h, lev, 4.5, 60).ops;
     const prev = sandbox.getComputedStyle;
     sandbox.getComputedStyle = () => ({ getPropertyValue:(n)=> DARK[n] || '' });
@@ -2550,7 +2553,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('a low-confidence recommendation is visibly de-rated, not hidden', ()=>{
     assert(/rec-derated/.test(script) && /conf\.rank >= 2/.test(script),
       'the dose card must de-rate under Low / Very low confidence');
-    assert(/rec\.dose}<span/.test(script), 'the dose itself must still be shown');
+    // 2026-09-28 design pass (rule 9, reason recorded): the dose is now printed
+    // through fmtDose (ISMP grams from 1,000 mg), still inside the de-rated card.
+    assert(/<span class="rec-dose">\$\{fmtDose\(rec\.dose\)\}<\/span>/.test(script), 'the dose itself must still be shown');
+    assert(/vx-prov">provisional/.test(script), 'a Low-confidence dose is marked provisional (decision 2026-09-28)');
   });
 
   test('diagnostics are computed once and shared', ()=>{
@@ -3070,7 +3076,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/PREFERENCE \(rule 8\)[\s\S]{0,200}MAP_TIE_OBJ/.test(script), 'cut-points must be labelled preference');
   });
   test('two solutions: shown on screen, in print, and confidence is Low', ()=>{
-    assert(/Two solutions fit these levels<\/div>/.test(code) && /items\.push\(\['warning',\s*`Two solutions fit/.test(code), 'screen and print');
+    // 2026-09-28 design pass: on screen the warning is a tiered note whose signal
+    // word names it (rule 9: same assertion, new container).
+    assert(/word: 'Two solutions fit these levels'/.test(code) && /items\.push\(\['warning',\s*`Two solutions fit/.test(code), 'screen and print');
     const conf = confidenceAssessment({ levels: [{}, {}], CL_ind: 2, mapAlt: { CL: 3.5, dObj: 0.04 } }, null, null);
     assert(conf.rank >= 2, `confidence rank ${conf.rank}`);
     assert((script.match(/agCtx, mapAlt, lowCrClHold/g) || []).length === 3, 'all three payloads carry mapAlt');
