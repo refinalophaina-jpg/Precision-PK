@@ -142,5 +142,30 @@ console.log('\n=== CLINICIAN OVERRIDE (spec Test 10) ===');
   check('clearing the override returns to auto-detect', back.intervalHours===8 && !back.overrideActive, back.intervalHours);
 }
 
+console.log('\n=== DOSE CHANGE AT THE SAME INTERVAL (engine audit 2026-09-28) ===');
+// Doses are discrete amounts, not noisy measurements. The 250 mg similarity
+// tolerance treated a one-step titration as the same regimen and projected the
+// "current regimen" on the median of the last four doses — 1125 mg, a dose
+// nobody was given.
+{
+  const q12 = (mgs) => mgs.map((mg, i) => D(mg, i * 12));
+  const up = detectRegimen(q12([1000,1000,1000,1000,1250,1250]));
+  check('DC1 1000→1250 q12h: maintenance 1250', up.maintenanceDoseMg===1250, up.maintenanceDoseMg);
+  check('DC1 dose change reported, prior 1000', up.doseChangeDetected===true && up.priorDoseMg===1000, up.doseChangeDetected+'/'+up.priorDoseMg);
+  check('DC1 interval still q12h, established', up.intervalHours===12 && up.status==='established', up.status+'/'+up.intervalHours);
+  const dn = detectRegimen(q12([1250,1250,1250,1250,1000,1000]));
+  check('DC2 1250→1000 q12h: maintenance 1000, prior 1250', dn.maintenanceDoseMg===1000 && dn.priorDoseMg===1250, dn.maintenanceDoseMg+'/'+dn.priorDoseMg);
+  const one = detectRegimen(q12([1000,1000,1000,1000,1250]));
+  check('DC3 one dose at the new amount: projected on it, not yet established',
+        one.maintenanceDoseMg===1250 && one.status==='possible_transition' && one.doseChangeDetected===true, one.maintenanceDoseMg+'/'+one.status);
+  const alt = detectRegimen(q12([1250,1000,1250,1000,1250,1000]));
+  check('DC4 alternating 1250/1000: daily total preserved (mean 1125)', alt.maintenanceDoseMg===1125 && alt.reasonCodes.includes('ALTERNATING_DOSES'), alt.maintenanceDoseMg+'/'+alt.reasonCodes);
+  const ld = detectRegimen([D(2000,0)].concat([1000,1000,1250,1250].map((mg,i)=>D(mg,12+i*12))));
+  check('DC5 loading dose then titration: LD excluded, maintenance 1250', ld.loadingDoseDetected===true && ld.maintenanceDoseMg===1250 && ld.priorDoseMg===1000, JSON.stringify([ld.loadingDoseDetected, ld.maintenanceDoseMg, ld.priorDoseMg]));
+  const steady = detectRegimen(q12([1000,1000,1000,1000]));
+  check('DC6 no change: doseChangeDetected false', steady.doseChangeDetected===false && steady.priorDoseMg===null, steady.doseChangeDetected);
+  check('DC7 narrative states the dose change', /1000 mg to 1250 mg/.test(regimenNarrative(up)), regimenNarrative(up));
+}
+
 console.log('\n  passed '+pass+'  failed '+fail);
 process.exit(fail?1:0);

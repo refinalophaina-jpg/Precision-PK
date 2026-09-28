@@ -2772,6 +2772,26 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/crclSource: crclSourceLabel\(\)/.test(script), 'the result payload must carry the label to the print report');
   });
 
+  test('loading dose: no unsourced ×1.25 on the volume', ()=>{
+    const { calcLoadingDose } = sandbox;
+    const ld = calcLoadingDose(5, 70, 25);          // CL 5 L/h, V 70 L, target peak 25
+    assert(Math.abs(ld.vdLD - 70) < 1e-9, `the model's own Vd must be used, got ${ld.vdLD}`);
+    const code = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');   // comments record the history
+    assert(!/Vd ?× ?1\.25|popVd \* 1\.25/.test(code), 'the multiplier is back');
+  });
+  test('loading dose: infused over its OWN institutional time, rate shown against Matzke 1984', ()=>{
+    const { calcLoadingDose, autoTinf } = sandbox;
+    const ld = calcLoadingDose(5, 70, 25);
+    assert(ld.tinf === autoTinf(ld.dose), `LD ${ld.dose} mg must take autoTinf, got ${ld.tinf} h`);
+    // peak must be computed on the time actually used
+    const k = 5 / 70, peak = (ld.dose / (ld.tinf * k * 70)) * (1 - Math.exp(-k * ld.tinf));
+    assert(Math.abs(peak - ld.peak) < 1e-9, 'peak must use the LD infusion time');
+    assert(Math.abs(ld.rateMgMin - ld.dose / (ld.tinf * 60)) < 1e-9, 'rate');
+    assert(ld.rateAboveMatzke === (ld.rateMgMin > 15), 'the 15 mg/min comparison (Matzke 1984 p.436)');
+    assert(/calcLDLevelAtTime\(ld\.peak, ld\.kelLD, ld\.tinf, ldDeltaT\)/.test(script),
+      'the level at first maintenance must decay from the end of the LOADING infusion');
+  });
+
   test('uncertainty is read by the model actually fitted (Goti on HD → goti-hd)', ()=>{
     assert(uncertaintyModelKey({ model: 'goti', dial: true }) === 'goti-hd', '');
     assert(uncertaintyModelKey({ model: 'goti', dial: false }) === 'goti', '');

@@ -2396,7 +2396,7 @@
           <span class="slider"></span>
         </label>
       </div>
-      <p class="field-hint" style="margin-top:4px;margin-bottom:8px">Calculates a loading dose to hit target peak. Uses Vd×1.25 — distribution volume is larger at therapy start</p>
+      <p class="field-hint" style="margin-top:4px;margin-bottom:8px">Calculates a loading dose to hit the target peak, using the selected model's volume and an infusion time sized to the loading dose</p>
       <div class="ld-fields" id="ld-fields">
         <div class="form-grid-2">
           <div class="field-group">
@@ -3558,17 +3558,39 @@ function onIntervalChange() {
   }
 }
 
-// ── Loading dose PK (Vd × 1.25 at start of therapy) ──
-function calcLoadingDose(popClv, popVd, tinf, targetPeak) {
-  const vdLD  = popVd * 1.25;
+// ── Loading dose PK ──
+// Engine audit 2026-09-28. The volume used to be the population Vd × 1.25
+// ("distribution volume is larger at therapy start") — a multiplier no source in
+// Literature/ supports, which raised every loading dose by a quarter. The dose
+// now uses the selected model's own Vd, unscaled: the same volume the rest of
+// the page uses. And the loading infusion used the MAINTENANCE infusion time, so
+// 2000 mg was modelled (and printed) as given over the 1 h of a 1000 mg dose.
+// It now takes its own time from the institutional table (autoTinf).
+//
+// Matzke GR et al. AAC 1984;25(4):433-7, p.436: "the administration rate should
+// be no greater than 15 mg min-1" (histamine-like reaction and hypotension).
+// Shown against the rate, never used to change the table.
+const LD_MAX_RATE_MG_PER_MIN = 15;
+
+function calcLoadingDose(popClv, popVd, targetPeak) {
+  const vdLD  = popVd;
   const kelLD = popClv / vdLD;
-  // Solve for dose to achieve targetPeak at end of infusion (single dose, not SS):
-  // C_peak = (Dose / (tinf × kelLD × vdLD)) × (1 − e^(−kelLD×tinf))
-  const raw  = targetPeak * (tinf * kelLD * vdLD) / (1 - Math.exp(-kelLD * tinf));
-  const dose = Math.round(raw / 250) * 250; // round to nearest 250mg
-  // Recalculate actual peak with the rounded dose
+  // Single dose, not steady state, peak at the end of the infusion:
+  //   C_peak = (Dose / (tinf × kel × V)) × (1 − e^(−kel·tinf))
+  const doseFor = t => targetPeak * (t * kelLD * vdLD) / (1 - Math.exp(-kelLD * t));
+  // The infusion time depends on the dose and the dose (weakly) on the time;
+  // settle it, then take the time the table gives for the dose actually chosen.
+  let tinf = 1, dose = 0;
+  for (let i = 0; i < 6; i++) {
+    dose = Math.max(250, Math.round(doseFor(tinf) / 250) * 250);
+    const t = autoTinf(dose);
+    if (t === tinf) break;
+    tinf = t;
+  }
+  tinf = autoTinf(dose);
   const peak = (dose / (tinf * kelLD * vdLD)) * (1 - Math.exp(-kelLD * tinf));
-  return { dose, peak, vdLD, kelLD };
+  const rateMgMin = dose / (tinf * 60);
+  return { dose, peak, vdLD, kelLD, tinf, rateMgMin, rateAboveMatzke: rateMgMin > LD_MAX_RATE_MG_PER_MIN };
 }
 
 // Level at Δt hours after start of LD infusion
@@ -5516,8 +5538,10 @@ function calculate() {
   const aucStatus = auc24 < 400 ? 'warn' : auc24 <= 600 ? 'ok' : 'danger';
   const aucMIC    = auc24 / mic;
 
-  // AUC uncertainty estimate (CV ~20-30% for single trough, better with timing)
-  const aucUncertainty = levelFitted ? 0.22 : 0.30; // ~22% CV fitted, 30% population
+  // AUC uncertainty for the Trough module. NOT simulated: unlike AUC_UNCERTAINTY
+  // (AUC Precision) no Monte Carlo stands behind these two figures, so the page
+  // calls them approximate rather than a confidence interval (audit 2026-09-28).
+  const aucUncertainty = levelFitted ? 0.22 : 0.30;
   const aucLo = Math.round(auc24 * (1 - aucUncertainty));
   const aucHi = Math.round(auc24 * (1 + aucUncertainty));
 
@@ -5528,8 +5552,8 @@ function calculate() {
   const ldDeltaT     = ldDeltaRaw || tau; // default: same as dosing interval
   let ldData = null;
   if (hasLD) {
-    const ld = calcLoadingDose(popClv, vd, tinf, ldTargetPeak);
-    const ldLevelAtMaint = calcLDLevelAtTime(ld.peak, ld.kelLD, tinf, ldDeltaT);
+    const ld = calcLoadingDose(popClv, vd, ldTargetPeak);
+    const ldLevelAtMaint = calcLDLevelAtTime(ld.peak, ld.kelLD, ld.tinf, ldDeltaT);
     ldData = { ...ld, targetPeak: ldTargetPeak, deltaT: ldDeltaT, levelAtMaint: ldLevelAtMaint };
   }
 
@@ -5611,8 +5635,8 @@ function renderResults(d) {
   // AUC uncertainty display
   const uncertaintyPct = Math.round(d.aucUncertainty * 100);
   const aucConfText = d.levelFitted
-    ? `±${uncertaintyPct}% CI: ${d.aucLo}–${d.aucHi} mg·h/L`
-    : `±${uncertaintyPct}% population estimate`;
+    ? `approx. ±${uncertaintyPct}%: ${d.aucLo}–${d.aucHi} mg·h/L (not simulated)`
+    : `approx. ±${uncertaintyPct}% population estimate (not simulated)`;
 
   // Dose explorer — fixed set of clinically relevant regimens using fitted PK
   let explorerHTML = '';
@@ -5649,7 +5673,7 @@ function renderResults(d) {
       <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
         <div>
           <div class="ld-dose-display">${ld.dose} mg</div>
-          <div class="ld-dose-sub">over ${d.tinf}h · Vd<sub>load</sub> = ${ld.vdLD.toFixed(1)} L (pop Vd × 1.25) · Kel<sub>load</sub> = ${ld.kelLD.toFixed(4)} hr⁻¹</div>
+          <div class="ld-dose-sub">over ${ld.tinf}h (${ld.rateMgMin.toFixed(1)} mg/min) · ${(ld.dose / d.tbw).toFixed(1)} mg/kg actual body weight · Vd = ${ld.vdLD.toFixed(1)} L · Kel = ${ld.kelLD.toFixed(4)} hr⁻¹</div>
         </div>
       </div>
       <div class="ld-stat-row">
@@ -5670,7 +5694,8 @@ function renderResults(d) {
         </div>
       </div>
       <div style="font-size:0.7rem;color:var(--text-muted);line-height:1.5;border-top:1px solid var(--border);padding-top:8px">
-        The loading dose uses Vd × 1.25 because volume of distribution is larger at therapy initiation. Level at start of maintenance approximates the SS trough achieved after this loading dose. Adjust the maintenance regimen once a steady-state level is available.
+        The loading dose uses the selected model's population volume and the institutional infusion time for its own size, not the maintenance infusion time.
+        ${ld.rateAboveMatzke ? `At ${ld.rateMgMin.toFixed(1)} mg/min this runs faster than the ${LD_MAX_RATE_MG_PER_MIN} mg/min Matzke 1984 recommends to avoid infusion reactions — consider a longer infusion. ` : ''}The level at the start of maintenance is a single-dose projection, not a steady-state trough. Adjust the maintenance regimen once a level is available.
       </div>
     </div>`;
   })() : '';
@@ -9289,6 +9314,7 @@ function detectRegimen(inputDoses, partialOptions) {
     maintenanceDoseMg: null, confidence: 'low', regimenStartIndex: null,
     regimenStartTimeH: null, supportingIntervals: [], priorIntervalHours: null,
     transitionDetected: false, loadingDoseDetected: false,
+    doseChangeDetected: false, priorDoseMg: null, alternatingDosesMg: null,
     reasonCodes: ['INSUFFICIENT_MAINTENANCE_DOSES'],
   };
 
@@ -9315,7 +9341,8 @@ function detectRegimen(inputDoses, partialOptions) {
   if (maintenanceDoses.length < 3) {
     return Object.assign({}, empty, {
       loadingDoseDetected,
-      maintenanceDoseMg: medianOf(maintenanceDoses.map(d => d.mg)),
+      // the dose last given — a median of [1000, 1250] is 1125, never given
+      maintenanceDoseMg: maintenanceDoses.length ? maintenanceDoses[maintenanceDoses.length - 1].mg : null,
       reasonCodes: loadingDoseDetected
         ? ['LIKELY_LOADING_DOSE_EXCLUDED', 'INSUFFICIENT_MAINTENANCE_DOSES']
         : ['INSUFFICIENT_MAINTENANCE_DOSES'],
@@ -9331,7 +9358,29 @@ function detectRegimen(inputDoses, partialOptions) {
   }
   if (!intervals.length) return Object.assign({}, empty, { loadingDoseDetected, status: 'irregular', reasonCodes: ['INTERVALS_INCONSISTENT'] });
 
-  const maintenanceDoseMedian = medianOf(maintenanceDoses.slice(-4).map(d => d.mg));
+  // ── Current dose (engine audit 2026-09-28) ─────────────────────────────
+  // Dose amounts are discrete, not noisy measurements. The old median of the
+  // last four doses read a 1000 -> 1250 mg titration at q12h as 1125 mg — a
+  // dose nobody was given — because the 250 mg similarity tolerance treated a
+  // one-step change as the same regimen. The current dose is now the amount of
+  // the trailing run of IDENTICAL doses; a change from the earlier amount is
+  // reported, and the interval run is cut there so "established" means the new
+  // amount has actually been given across two intervals. The one exception is
+  // an alternating pattern (A,B,A,B), where the mean preserves the daily total.
+  const mgs = maintenanceDoses.map(d => d.mg);
+  const lastMg = mgs[mgs.length - 1];
+  const last4 = mgs.slice(-4);
+  const alternating = last4.length === 4 && last4[0] === last4[2] && last4[1] === last4[3]
+    && last4[0] !== last4[1];
+  let segStart = mgs.length - 1;
+  while (segStart > 0 && mgs[segStart - 1] === lastMg) segStart--;
+  const priorDoseMode = (!alternating && segStart > 0) ? modeOf(mgs.slice(0, segStart)) : null;
+  const doseChangeDetected = priorDoseMode !== null && priorDoseMode !== lastMg;
+  const priorDoseMg = doseChangeDetected ? priorDoseMode : null;
+  const alternatingDosesMg = alternating ? [last4[2], last4[3]] : null;
+  const maintenanceDoseMedian = alternating ? (last4[0] + last4[1]) / 2 : lastMg;
+  const doseFields = { doseChangeDetected, priorDoseMg, alternatingDosesMg };
+  const doseCodes = [].concat(doseChangeDetected ? ['DOSE_CHANGED'] : [], alternating ? ['ALTERNATING_DOSES'] : []);
 
   // ── D9: use every trailing interval that agrees, not a fixed window of 2 ──
   // More consecutive agreement is stronger evidence and should raise confidence,
@@ -9342,11 +9391,19 @@ function detectRegimen(inputDoses, partialOptions) {
   if (lastNominal !== null) {
     for (let i = nominals.length - 1; i >= 0 && nominals[i] === lastNominal; i--) runLength++;
   }
+  // The regimen starts where the current amount started: the interval that
+  // delivered the first dose of it counts, earlier ones belong to the old dose.
+  if (!alternating && segStart > 0) {
+    const inSeg = intervals.filter(iv => iv.toIndex >= startOffset + segStart).length;
+    runLength = Math.min(runLength, inSeg);
+  }
   const runIntervals = runLength ? intervals.slice(intervals.length - runLength) : [];
 
   // Doses inside the run must be mutually similar for it to be one regimen.
-  const runDoses = maintenanceDoses.slice(maintenanceDoses.length - (runLength + 1));
-  let runDosesSimilar = runDoses.length >= 2;
+  // The dose that OPENED the run may be the old amount — that change is
+  // reported above, not treated as noise — so the comparison starts after it.
+  const runDoses = maintenanceDoses.slice(maintenanceDoses.length - runLength);
+  let runDosesSimilar = runLength >= 1;
   for (let i = 1; i < runDoses.length && runDosesSimilar; i++) {
     if (!dosesAreSimilar(runDoses[i-1].mg, runDoses[i].mg, maintenanceDoseMedian, o)) runDosesSimilar = false;
   }
@@ -9359,6 +9416,7 @@ function detectRegimen(inputDoses, partialOptions) {
     const reasonCodes = ['TWO_CONSECUTIVE_RECENT_INTERVALS_MATCH', 'RECENT_DOSES_SIMILAR'];
     if (transitionDetected) reasonCodes.push('RECENT_PATTERN_OVERRIDES_OLDER_PATTERN');
     if (loadingDoseDetected) reasonCodes.push('LIKELY_LOADING_DOSE_EXCLUDED');
+    reasonCodes.push(...doseCodes);
 
     // D6: two matching intervals immediately after a ~doubled gap may be
     // catch-up dosing rather than a new order. Downgrade rather than assert.
@@ -9384,6 +9442,7 @@ function detectRegimen(inputDoses, partialOptions) {
       priorIntervalHours: priorInterval,
       transitionDetected,
       loadingDoseDetected,
+      ...doseFields,
       reasonCodes,
     };
   }
@@ -9403,7 +9462,8 @@ function detectRegimen(inputDoses, partialOptions) {
       priorIntervalHours: priorInterval,
       transitionDetected: false,
       loadingDoseDetected,
-      reasonCodes: ['ONE_RECENT_INTERVAL_MATCHES'].concat(loadingDoseDetected ? ['LIKELY_LOADING_DOSE_EXCLUDED'] : []),
+      ...doseFields,
+      reasonCodes: ['ONE_RECENT_INTERVAL_MATCHES'].concat(loadingDoseDetected ? ['LIKELY_LOADING_DOSE_EXCLUDED'] : [], doseCodes),
     };
   }
 
@@ -9412,7 +9472,8 @@ function detectRegimen(inputDoses, partialOptions) {
     maintenanceDoseMg: maintenanceDoseMedian,
     priorIntervalHours: priorInterval,
     loadingDoseDetected,
-    reasonCodes: ['INTERVALS_INCONSISTENT'].concat(loadingDoseDetected ? ['LIKELY_LOADING_DOSE_EXCLUDED'] : []),
+    ...doseFields,
+    reasonCodes: ['INTERVALS_INCONSISTENT'].concat(loadingDoseDetected ? ['LIKELY_LOADING_DOSE_EXCLUDED'] : [], doseCodes),
   });
 }
 
@@ -9480,6 +9541,10 @@ function regimenNarrative(reg, timing) {
   } else if (reg.status === 'established') {
     s = `Current regimen: ${dose}${reg.frequencyLabel}, consistent across the most recent `
       + `${reg.supportingIntervals.length} intervals.`;
+  } else if (reg.status === 'possible_transition' && reg.doseChangeDetected
+             && (reg.priorIntervalHours == null || reg.priorIntervalHours === reg.intervalHours)) {
+    s = `Only one dose at the new amount has been given on ${reg.frequencyLabel} — confirm the intended `
+      + `maintenance dose.`;
   } else if (reg.status === 'possible_transition') {
     s = `Recent dosing may represent a change to ${reg.frequencyLabel}. Only one recent interval `
       + `supports it — confirm the intended maintenance interval.`;
@@ -9488,6 +9553,13 @@ function regimenNarrative(reg, timing) {
       + `future interval before relying on a steady-state projection.`;
   } else {
     s = `Not enough maintenance doses to establish a regimen.`;
+  }
+  if (reg.doseChangeDetected && reg.priorDoseMg != null && reg.maintenanceDoseMg != null) {
+    s += ` Dose changed from ${reg.priorDoseMg.toFixed(0)} mg to ${reg.maintenanceDoseMg.toFixed(0)} mg; `
+      + `projections use ${reg.maintenanceDoseMg.toFixed(0)} mg.`;
+  } else if (reg.alternatingDosesMg) {
+    s += ` Doses alternate ${reg.alternatingDosesMg.join('/')} mg; projections use the mean, `
+      + `${reg.maintenanceDoseMg.toFixed(0)} mg, which keeps the daily total.`;
   }
   if (timing && timing.classification && timing.hoursFromDoseStart != null) {
     const lbl = {
