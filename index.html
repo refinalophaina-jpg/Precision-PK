@@ -7595,8 +7595,19 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   const bestErr = pool.reduce((m, r) => Math.min(m, errOf(r)), Infinity);
   const tied = pool.filter(r => errOf(r) - bestErr < 1e-9);
   const nonDanger = tied.filter(r => !(Number.isFinite(r.Ctrough) && r.Ctrough >= TROUGH_HIGH_MGL));
+  // A candidate AT the per-dose ceiling yields to an exposure-identical one
+  // below it. The Q24H preference rests on simplicity and forgiveness of a
+  // missed dose — reasons that hold for 1000 mg Q24H and partly invert at the
+  // ceiling: a maximal single dose, a higher peak, and a missed q24h dose loses
+  // a whole day. Reported 76 M case, AUC24 434 either way:
+  //      2000 mg Q24H  trough 11.3  peak 26.8   <- the preference alone picked this
+  //      1000 mg Q12H  trough 14.4  peak 22.2   <- chosen now
+  // Uses the existing sourced cap (DOSE_MAX_PER_DOSE_MG); no new number. Chosen
+  // by the pharmacist over "keep Q24H first always".
+  const safe = nonDanger.length ? nonDanger : tied;
+  const belowCeiling = safe.filter(r => r.dose < DOSE_MAX_PER_DOSE_MG);
   const rankOf = t => { const i = INTERVAL_PREFERENCE.indexOf(t); return i < 0 ? INTERVAL_PREFERENCE.length : i; };
-  const best = (nonDanger.length ? nonDanger : tied)
+  const best = (belowCeiling.length ? belowCeiling : safe)
     .slice().sort((a, b) => rankOf(a.tau) - rankOf(b.tau))[0];
   // Say so when the choice was not forced by exposure. The matrix shows the
   // rest; this stops the single card reading as a ranking it did not earn.
@@ -10017,8 +10028,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <strong style="color:var(--text-secondary)">Same exposure, different shape.</strong>
         ${alts} reach an identical AUC₂₄ — at steady state that is total daily dose ÷ clearance, which
         carries no interval term. Exposure cannot choose between them, so a trough in the danger band is
-        set aside and the rest are ordered by a stated practicality preference (Q24H, then Q12H, Q48H,
-        Q8H). It is a preference, not a ranking the model earned — the matrix below shows every option.
+        set aside, a dose at the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling yields to one below it, and the
+        rest are ordered by a stated practicality preference (Q24H, then Q12H, Q48H, Q8H). It is a
+        preference, not a ranking the model earned — the matrix below shows every option.
       </div>`;
     }
 

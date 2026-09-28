@@ -2239,6 +2239,18 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(r.tau !== 24, 'Q24H is in the danger band here and must yield');
   });
 
+  test('the preference never pushes a dose to the ceiling when a tie sits below it', ()=>{
+    // 76 M: 2000 mg Q24H and 1000 mg Q12H both give AUC24 434. The Q24H
+    // preference alone picked the 2000 mg per-dose ceiling. Option B: the
+    // ceiling yields to an exposure-identical dose below it.
+    const { bayesDoseOptimizer } = sandbox;
+    const r = bayesDoseOptimizer(4.61, 117.6, 450, null, 1);
+    assert(r.regimen, 'should solve');
+    assert(r.dose === 1000 && r.tau === 12, `expected 1000 mg Q12H, got ${r.dose} mg Q${r.tau}H`);
+    assert(r.tiedWith && r.tiedWith.some(x => x.dose === K.DOSE_MAX_PER_DOSE_MG),
+      'the ceiling dose must still be disclosed as an alternative');
+  });
+
   test('INTERVAL_PREFERENCE is labelled as preference, not pharmacokinetics', ()=>{
     const i = script.indexOf('const INTERVAL_PREFERENCE');
     assert(i > 0, 'INTERVAL_PREFERENCE is missing');
