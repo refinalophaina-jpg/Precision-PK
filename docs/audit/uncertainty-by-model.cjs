@@ -7,7 +7,7 @@ const N=+process.argv[2]||1500;
 // The app fits with mapFit (multi-start); SINGLE=1 reproduces the old single start at eta=0.
 const SINGLE=process.env.SINGLE==='1';
 function run(model,nLev,design){
-  setSeed(+process.argv[4]||7); const errT=[]; let cover=0, missHi=0, missLo=0, tot=0;
+  setSeed(+process.argv[4]||7); const errT=[], ratio=[]; let cover=0, missHi=0, missLo=0, tot=0;
   const u=aucUncertaintyFrac(nLev,model);
   for(let i=0;i<N;i++){
     let age=30+Math.floor(rnd()*50), tbw=50+rnd()*50, scr=0.7+rnd()*1.5;
@@ -40,15 +40,15 @@ function run(model,nLev,design){
     }
     if(!(CLfit>0)||!isFinite(CLfit))continue;
     const aT=24000/tau/CLt, aE=24000/tau/CLfit;
-    errT.push(Math.abs(aE-aT)/aT); tot++;
+    errT.push(Math.abs(aE-aT)/aT); ratio.push(aT/aE); tot++;
     if(aT>aE*(1+u))missHi++; else if(aT<aE*(1-u))missLo++; else cover++;
   }
-  return {model,nLev,design,u,median:pct(errT,.5),p80:pct(errT,.8),p90:pct(errT,.9),p99:pct(errT,.99),max:Math.max(...errT),cover:cover/tot,missHi:missHi/tot,missLo:missLo/tot,n:tot};
+  return {model,nLev,design,u,median:pct(errT,.5),p80:pct(errT,.8),p90:pct(errT,.9),p99:pct(errT,.99),max:Math.max(...errT),q10:pct(ratio,.10),q90:pct(ratio,.90),cover:cover/tot,missHi:missHi/tot,missLo:missLo/tot,n:tot};
 }
 const f=x=>(x*100).toFixed(1)+'%';
 const models=(process.argv[3]||'buelga,goti,hughes').split(',');
 for(const m of models) for(const n of [0,1,2,3]){const r=run(m,n,'troughs');
-  console.log(`${m.padEnd(7)} n=${n} troughs  shown ±${f(r.u)}  |  median ${f(r.median)} p80 ${f(r.p80)} p90 ${f(r.p90)} | displayed-interval coverage ${f(r.cover)}  (true ABOVE hi ${f(r.missHi)}, below lo ${f(r.missLo)}) n=${r.n}`);}
+  console.log(`${m.padEnd(7)} n=${n} troughs  shown ±${f(r.u)}  |  median ${f(r.median)} p80 ${f(r.p80)} p90 ${f(r.p90)} | displayed-interval coverage ${f(r.cover)}  (true ABOVE hi ${f(r.missHi)}, below lo ${f(r.missLo)}) n=${r.n} | 80% band true/est: -${f(1-r.q10)} / +${f(r.q90-1)}`);}
 for(const m of models) for(const d of ['peaktrough','peaktrough-early']){const r=run(m,2,d);
   console.log(`${m.padEnd(7)} n=2 ${d.toUpperCase()} | median ${f(r.median)} p80 ${f(r.p80)} p90 ${f(r.p90)} p99 ${f(r.p99)} max ${f(r.max)} | ABOVE ${f(r.missHi)} below ${f(r.missLo)}`);}
 if(models.includes('buelga')){const r=run('buelga',2,'peaktrough');

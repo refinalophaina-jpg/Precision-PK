@@ -3,7 +3,7 @@
 // each suspected defect numerically. Read-only; changes nothing.
 const fs = require('fs'), vm = require('vm'), path = require('path');
 
-const APP = '/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM/index.html';
+const APP = require('path').join(__dirname,'..','..','index.html');
 const html = fs.readFileSync(APP, 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 

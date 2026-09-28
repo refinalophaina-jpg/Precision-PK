@@ -1017,32 +1017,39 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // against each model's own prior (n=1500, seeds 7/11/23), showed the Buelga
   // rows covered only 60-67% of Goti patients (misses mostly above). The
   // widths are now keyed by model; these tests pin the simulated figures.
-  test('Buelga widths unchanged: 35 / 21 / 18 / 17', ()=>{
-    const got = [0,1,2,3].map(n => aucUncertaintyText(n,'buelga'));
-    ['±35%','±21%','±18%','±17%'].forEach((w,i) => assert(got[i].includes(w), `n=${i}: ${got[i]}`));
-  });
-  test('Goti widths are its own simulated p80: 48 / 32 / 27 / 26', ()=>{
-    const got = [0,1,2,3].map(n => aucUncertaintyText(n,'goti'));
-    ['±48%','±32%','±27%','±26%'].forEach((w,i) => assert(got[i].includes(w), `n=${i}: ${got[i]}`));
-  });
-  test('Hughes widths are its own simulated p80: 31 / 22 / 20 / 20', ()=>{
-    const got = [0,1,2,3].map(n => aucUncertaintyText(n,'hughes'));
-    ['±31%','±22%','±20%','±20%'].forEach((w,i) => assert(got[i].includes(w), `n=${i}: ${got[i]}`));
-  });
-  test('Goti-HD uses Goti widths and says it was not simulated separately', ()=>{
+  // UPDATED 2026-09-28, second pass (rule 9, reason recorded): the band shown is
+  // now the measured 10th-90th percentile of true/estimated AUC24, which is
+  // asymmetric. The symmetric +/-p80 band put about twice as many simulated
+  // patients above its upper bound (toxicity side) as below its lower bound.
+  // Same simulation, seeds 7/11/23 averaged.
+  const bands = { buelga: ['−30% / +46%', '−21% / +23%', '−18% / +18%', '−17% / +18%'],
+                  goti:   ['−40% / +63%', '−24% / +50%', '−21% / +40%', '−19% / +40%'],
+                  hughes: ['−27% / +37%', '−18% / +28%', '−17% / +26%', '−17% / +25%'] };
+  for (const m of Object.keys(bands)) {
+    test(`${m} displayed bands are its own simulated 10th-90th percentiles`, ()=>{
+      bands[m].forEach((b, n) => { const t = aucUncertaintyText(n, m); assert(t.includes(b), `n=${n}: ${t}`); });
+    });
+  }
+  test('Goti-HD uses Goti bands and says it was not simulated separately', ()=>{
     const t = aucUncertaintyText(1,'goti-hd');
-    assert(t.includes('±32%') && /not simulated separately/i.test(t), t);
+    assert(t.includes('−24% / +50%') && /not simulated separately/i.test(t), t);
     assert(!/not simulated/i.test(aucUncertaintyText(1,'goti')), 'plain Goti IS simulated');
   });
-  test('Every label states percentile and median', ()=>{
+  test('Every label states the coverage and the median error', ()=>{
     for (const m of ['buelga','goti','hughes']) for (const n of [0,1,2,3]) {
       const t = aucUncertaintyText(n, m);
-      assert(/80% of patients/.test(t) && /median ±\d+%/.test(t), `${m} n=${n}: ${t}`);
+      assert(/80% of patients/.test(t) && /median error ±\d+%/.test(t), `${m} n=${n}: ${t}`);
     }
   });
-  test('≥3 levels → ±17%', ()=>{ assert(aucUncertaintyText(5,'buelga').includes('±17%'), ''); });
+  test('≥3 levels uses the 3-level row', ()=>{ assert(aucUncertaintyText(5,'buelga').includes('−17% / +18%'), ''); });
+  test('The upper side is never narrower than the lower (true/est is log-normal)', ()=>{
+    for (const m of ['buelga','goti','hughes']) for (const n of [0,1,2,3]) {
+      const [, lo, hi] = aucUncertaintyText(n, m).match(/−(\d+)% \/ \+(\d+)%/).map(Number);
+      assert(hi >= lo, `${m} n=${n}: −${lo}/+${hi}`);
+    }
+  });
   test('Uncertainty is monotone non-increasing in level count', ()=>{
-    const pctOf = (s) => parseFloat(s.match(/±([0-9.]+)%/)[1]);
+    const pctOf = (s) => { const m = s.match(/−(\d+)% \/ \+(\d+)%/); return +m[1] + +m[2]; };   // band width
     for (const m of ['buelga','goti','hughes']) {
       const seq = [0,1,2,3].map(n => pctOf(aucUncertaintyText(n,m)));
       for (let i=1;i<seq.length;i++) {
@@ -2810,7 +2817,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
   const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
   const bodyOf = (name) => { const c = code.slice(code.indexOf('function ' + name + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
-  const { selectEffectiveScr, kdigoStage, ssCurve2comp, ssCtrough2comp, gotiGraphParams, calcAUC_trap,
+  const { selectEffectiveScr, kdigoStage, ssCurve2comp, ssCtrough2comp, gotiGraphParams, fitKelFromLevel,
           interpretLevelTiming, assessClinicalStatus, optFlagHTML, parseBayesCourse, calcCLv } = sandbox;
   const K = __extractConsts();
 
@@ -2864,8 +2871,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(gotiGraphParams({ model: 'buelga' }).ind === null, 'no 2-comp for Buelga');
     assert(!/r\.gotiInd/.test(code), 'r.gotiInd is never set — nothing may read it');
   });
-  test('AUC trapezoid never returns AUC per interval', ()=>{
-    assert(Math.abs(calcAUC_trap(25, 25, 12, 12, 0) - 600) < 1e-9, 'equal peak/trough at q12h → 25×24');
+  // 2026-09-28 second pass: the trapezoid (and its per-interval fallback) is
+  // gone; level mode reports AUC24 = TDD/CL like the recommendation (rule 9:
+  // the guarded defect — an AUC per interval — is now impossible by construction).
+  test('level-mode AUC24 is TDD/CL, never a trapezoid or a per-interval AUC', ()=>{
+    assert(!/function calcAUC_trap/.test(script), 'the trapezoid is back');
+    const f = fitKelFromLevel(15, 11.5, 1000, 12, 1, 60);
+    assert(f && Math.abs(f.auc24 - 1000 * 2 / f.clv) < 1e-9, JSON.stringify(f));
+    // long infusion, fast elimination: the trapezoid read ~5% low here
+    const g = fitKelFromLevel(8, 11.5, 1000, 12, 4, 60);
+    assert(g && Math.abs(g.auc24 - 1000 * 2 / g.clv) < 1e-9, 'TDD/CL');
   });
   test('Trough modes: infusion times validated, tinf >= tau refused, no silent 1 h fill', ()=>{
     const b = bodyOf('calculate');
@@ -2998,7 +3013,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('dose explorer: both sides of the band coloured alike; own interval listed', ()=>{
     assert(!/'border-range' : 'in-range'/.test(code), 'supratherapeutic must not be downplayed');
-    assert((code.match(/new Set\(\[8, 12, 24, d\.(tau|tlTau|rlTau)\]\)/g) || []).length === 3, 'three explorers');
+    // 2026-09-28 second pass: the three copies are one helper (rule 2), called by all three renderers.
+    assert((code.match(/doseExplorerRows\(\{ tau: d\.(tau|tlTau|rlTau),/g) || []).length === 3, 'three renderers, one helper');
+    assert(/new Set\(\[8, 12, 24, o\.tau\]\)/.test(code), 'own interval listed');
+    const rows = sandbox.doseExplorerRows({ tau: 48, tinf: 1, kel: 0.03, vd: 60, clv: 1.8, mic: 1, troughMin: 10, troughMax: 20, optDose: 1000 });
+    assert(/★ 1000mg Q48H/.test(rows), 'a Q48H patient gets the star on their own interval');
   });
   test('the AUC band is one pair of constants, not 400/600 literals', ()=>{
     const hits = code.match(/\bauc(?:24)?\s*(?:>=|<=|>|<)\s*(?:400|600)\b/g) || [];
@@ -3062,6 +3081,58 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('Buelga\'s published covariance is recorded as deliberately omitted', ()=>{
     assert(/DELIBERATE OMISSION[\s\S]{0,300}23\.12/.test(script), 'Table 4 omega_CL/omega_V must be disclosed');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 27 — engine audit, remaining minor items (2026-09-28)
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const { autoTinf, troughRailHTML, nextLevelValue } = sandbox;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 27 — engine audit, remaining minor items');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('autoTinf is the 1 g/h rule to the half hour, with no 3 h ceiling', ()=>{
+    const table = d => d<=500?0.5:d<=1000?1:d<=1500?1.5:d<=2000?2:d<=2500?2.5:3;
+    for (let d = 100; d <= 3000; d += 50) assert(autoTinf(d) === table(d), `${d} mg changed: ${autoTinf(d)}`);
+    assert(autoTinf(3250) === 3.5 && autoTinf(4000) === 4 && autoTinf(4500) === 4.5, [3250, 4000, 4500].map(autoTinf).join());
+  });
+  test('Bauer volume in obesity is disclosed, not silently TBW', ()=>{
+    assert(/s\('vd-model'\) === 'bauer' && bmiNow >= 30/.test(code), 'advisory must fire for Bauer Vd at BMI >= 30');
+    assert(/ideal body weight for Vd in obesity/.test(code), 'model note must disclose it');
+    assert(/k30: \(el, ev, arg\) => \{ updateModelInfo\(\); try \{ updateCrCl\(\); \}/.test(script), 'changing the Vd model refreshes the advisory');
+  });
+  test('the 10 mg/L trough floor is attributed to 2009 and no longer prescribes a dose rise', ()=>{
+    assert(!/ASHP\/IDSA 2020 (efficacy floor|minimum)/.test(script), 'the 2020 attribution is back');
+    const t = troughRailHTML(8, 450, 10);
+    assert(/2009 consensus/.test(t) && !/Consider a shorter interval or higher dose/.test(t), t);
+    assert(troughRailHTML(8, 700, 10) === '' && troughRailHTML(12, 450, 10) === '', 'only with AUC in range and trough < 10');
+  });
+  test('unsourced Trough-module heuristics are labelled preference (rule 8)', ()=>{
+    assert(/PREFERENCE \(rule 8\): the 20%\/50% gap cuts[\s\S]{0,250}function weightBasedDoseMgKg/.test(script), "mg/kg heuristic");
+    assert(/PREFERENCE \(rule 8\): the CrCl cut-points[\s\S]{0,300}function suggestInterval/.test(script), 'interval heuristic');
+    assert(/calculator heuristic, not a guideline/.test(code), 'on screen too');
+  });
+  test('FIT_BANDS: no "outer 5%" claim; the modest band defers to the next-level panel', ()=>{
+    assert(!/beyond 2 SD is roughly the outer 5%/.test(script), 'the rationale was wrong for MAP residuals');
+    assert(!/A further concentration would improve the exposure estimate/.test(code), 'must not contradict nextLevelValue');
+  });
+  test('next-level panel quotes the asymmetric band', ()=>{
+    const nl = nextLevelValue(450, 0, 'goti', 12, 4);
+    assert(/−40% \/ \+63%/.test(nl.detail) && /−24% \/ \+50%/.test(nl.detail), nl.detail);
+    assert(Math.abs(nl.hiNow - 450 * 1.63) < 1e-9 && Math.abs(nl.loNow - 450 * 0.60) < 1e-9, 'bounds are asymmetric');
+  });
+  test('uncertainty provenance points at the real generator; audit scripts are repo-relative', ()=>{
+    assert(!/Monte Carlo in phase2d/.test(script), 'phase2d computes no percentiles');
+    const dir = require('path').join(path.dirname(htmlPath), 'docs', 'audit');
+    const abs = fs.readdirSync(dir).filter(f => /\.cjs$/.test(f))
+      .filter(f => /\/Users\/[^'"]*AinaDaraTDM/.test(fs.readFileSync(require('path').join(dir, f), 'utf8')));
+    assert(abs.length === 0, 'absolute paths: ' + abs.join(', '));
   });
 }
 

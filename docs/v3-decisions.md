@@ -263,7 +263,9 @@ Two, both labelled in source:
 
 Neither changes a dose. Everything they sit beside is sourced: σ from each model's published
 residual error, the AUC band from Rybak 2020 Rec 1 (A-II), the 250 mg step from the
-dispensing increment, the uncertainty widths from the phase2d Monte Carlo.
+dispensing increment, the uncertainty widths from the Monte Carlo in
+`docs/audit/uncertainty-by-model.cjs` (originally `docs/audit/uncertainty.cjs`; never phase2d, which
+computes no percentiles).
 
 ## D6 — Input bounds, extended to the module that lacked them
 
@@ -346,7 +348,14 @@ residual error, n = 1500, seeds 7/11/23. The Buelga rows reproduce the shipped t
 (35.8/20.9/18.0/17.2), which validates the harness. For Goti the Buelga band covered only
 60–67% of patients, the misses mostly above — so the page understated the chance of exposure
 over 600. Widths (p80 / median, 0–3+ levels): Buelga 35/21/18/17, Goti 48/32/27/26,
-Hughes 31/22/20/20. Goti-HD is not simulated separately and says so. The Trough module's
+Hughes 31/22/20/20. Goti-HD is not simulated separately and says so.
+
+**Displayed as an asymmetric band (second pass).** A symmetric est × (1 ± p80) band put about
+twice as many simulated patients above its upper bound — the toxicity side — as below its lower
+one, because true/estimated AUC is log-normal. The band shown is now the measured 10th–90th
+percentile of true/estimated AUC₂₄ (seeds 7/11/23 averaged): Buelga −30/+46, −21/+23, −18/+18,
+−17/+18; Goti −40/+63, −24/+50, −21/+40, −19/+40; Hughes −27/+37, −18/+28, −17/+26, −17/+25
+(%, 0–3+ levels). For Goti the upper side at one level is +50%, where ±32% had been shown. The Trough module's
 ±22%/±30% has no simulation behind it and is now labelled "approx., not simulated".
 
 ## D10 — The MAP fit starts from five points and reports a second solution; ln V stays out

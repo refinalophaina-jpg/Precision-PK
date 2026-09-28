@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),vm=require('vm');
-const APP='/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM/index.html';
+const APP=require('path').join(__dirname,'..','..','index.html');
 const src=fs.readFileSync(APP,'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 let F={};
 function mk(id){return{get value(){return F[id]!==undefined?String(F[id]):''},set value(v){F[id]=v},

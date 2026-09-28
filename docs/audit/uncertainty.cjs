@@ -2,7 +2,10 @@
 // What is the ACTUAL posterior AUC uncertainty by number of levels, under the
 // verified Buelga 2005 prior? The app currently claims ~±15% at 1 level.
 const fs=require('fs'), vm=require('vm');
-const APP='/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM/index.html';
+// Resolved relative to this file (repo root), like the validation suites — the
+// hard-coded absolute path read the live repo, not the file under test.
+// Superseded for the shipped table by uncertainty-by-model.cjs.
+const APP=require('path').join(__dirname,'..','..','index.html');
 const script=fs.readFileSync(APP,'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 function mk(){return{value:'',textContent:'',innerHTML:'',style:{},checked:false,
  classList:{toggle(){},add(){},remove(){},contains(){return false}},querySelectorAll:()=>[],
@@ -13,7 +16,7 @@ const sb={document:{getElementById:()=>mk(),querySelector:()=>null,querySelector
  bState:{sex:'M',model:'buelga',dial:false,result:null,tinkCompare:[]}};
 sb.window=sb; vm.runInNewContext(script,sb);
 const {buelgaPopPK,burtonObjective,nelderMead2D,predictConc1comp}=sb;
-const {extract}=require('/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM/harness_constants.cjs');
+const {extract}=require(require('path').join(__dirname,'..','..','harness_constants.cjs'));
 const C=extract();
 
 let seed=7; const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};

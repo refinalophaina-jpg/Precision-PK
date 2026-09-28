@@ -3135,7 +3135,7 @@ const __ACT = {
   k27: (el, ev, arg) => { setRLMode('firstdose') },   /* setRLMode('firstdose') */
   k28: (el, ev, arg) => { setRLMode('steadystate') },   /* setRLMode('steadystate') */
   k29: (el, ev, arg) => { calcRLDelta() },   /* calcRLDelta() */
-  k30: (el, ev, arg) => { updateModelInfo() },   /* updateModelInfo() */
+  k30: (el, ev, arg) => { updateModelInfo(); try { updateCrCl(); } catch (e) {} },   /* updateModelInfo(); the Vd model drives an advisory */
   k31: (el, ev, arg) => { calculate() },   /* calculate() */
   k32: (el, ev, arg) => { resetForm() },   /* resetForm() */
   k33: (el, ev, arg) => { setBModel(el,'buelga') },   /* setBModel(this,'buelga') */
@@ -3521,6 +3521,10 @@ function checkAKI() {
 }
 
 // Suggest interval based on CrCl (called when demographics change)
+// PREFERENCE (rule 8): the CrCl cut-points 120/60/30/15 -> Q8/Q12/Q24/Q48H are
+// this calculator's starting heuristic, not a published nomogram. The hint says
+// "suggested"; the clinician's choice always wins, and the dose is then solved
+// for AUC at whatever interval is chosen.
 function suggestInterval() {
   const crclText = document.getElementById('crcl-result').textContent;
   const crcl = parseFloat(crclText.replace('CrCl:','')) || 0;
@@ -4092,14 +4096,21 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
 // DO about it, in the vocabulary DoseMeRx uses at the bedside ("good fit" /
 // "not ideal, needs review") but with the actual number kept on screen.
 //
-// PROVENANCE, STATED PLAINLY. The 1 and 2 boundaries are NOT literature
-// constants and there is no vancomycin paper that sets them. They are the
-// conventional reading of a standardised residual: inside 1 SD is ordinary
-// scatter, beyond 2 SD is roughly the outer 5% of what the model's own error
-// term says it should produce. Sigma itself IS sourced — it is each model's
-// published residual error (SIGMA_ADD_* / SIGMA_PROP_*), so the comparison a
-// band makes is against that model's declared precision, not an invented one.
-// They order the advice; they never change a dose.
+// PROVENANCE, STATED PLAINLY. The 1 and 2 boundaries are PREFERENCE (rule 8):
+// no vancomycin paper sets them. Sigma itself IS sourced — each model's
+// published residual error (SIGMA_ADD_* / SIGMA_PROP_*).
+//
+// What they are NOT (engine audit 2026-09-28): a post-fit MAP residual is not a
+// standardised N(0,1) quantity. The fit shrinks it, and by how much depends on
+// the number of levels. Simulated from each model's own prior, |residual| >= 2
+// sigma occurs in ~0% of 1-level fits (the MAP almost always absorbs one level),
+// ~1-3% at 2 levels and ~4-6% at 3; the "modest" band fires in ~6-8%, ~28% and
+// ~45%. So with ONE level even 1.3 sigma is an unusually large conflict, and
+// with three levels "modest" is ordinary. The old comment called 2 sigma "the
+// outer 5%", which holds only for an unfitted residual.
+// The bands order the wording; they never change a dose. The "modest" band no
+// longer tells the clinician to draw another level — whether one helps is
+// nextLevelValue's job, and the two used to give opposite advice.
 const FIT_BANDS = [
   { max: 1,        key: 'close',    label: 'Close agreement',
     verdict: 'The fit reproduces the levels',
@@ -4109,7 +4120,7 @@ const FIT_BANDS = [
   { max: 2,        key: 'modest',   label: 'Modest disagreement',
     verdict: 'The fit sits noticeably off this level',
     clinical: 'Measured concentrations differ modestly from model expectations.',
-    action:   'A further concentration would improve the exposure estimate.',
+    action:   'Check the draw and dose times. Whether a further level would change the dose is shown in the level panel further down.',
     tone: 'warn' },
   { max: Infinity, key: 'substantial', label: 'Substantial disagreement',
     verdict: 'The fit does not reproduce this level',
@@ -4917,7 +4928,12 @@ function fitKelFromLevel(cObs, t_obs, dose, tau, tinf, vd) {
   const clv = kel * vd;
   // Correct SS peak = end of infusion concentration
   const pt = calcPeakTrough(dose, tau, tinf, kel, vd);
-  const auc24 = calcAUC_trap_kel(dose, tau, tinf, kel, vd);
+  // AUC24 = TDD / CL — exact at steady state for this 1-comp model, and the
+  // same formula the recommendation uses. A linear-log trapezoid under-read a
+  // concave infusion segment by up to ~5% with long infusions and fast
+  // elimination, so re-entering the current dose showed a different AUC
+  // (engine audit 2026-09-28).
+  const auc24 = calcAUC(dose, tau, clv);
   return { kel, clv, peak: pt.peak, trough: pt.trough, trueTrough: pt.trough, auc24 };
 }
 
@@ -4960,7 +4976,7 @@ function fitKelFromEarlyLevel(cObs, tSinceDose, doseNumber, dose, tau, tinf, vd)
   const kel = (lo + hi) / 2;
   const pt  = calcPeakTrough(dose, tau, tinf, kel, vd);
   return { kel, clv: kel * vd, peak: pt.peak, trough: pt.trough, trueTrough: pt.trough,
-           auc24: calcAUC_trap_kel(dose, tau, tinf, kel, vd), doseNumber: n };
+           auc24: calcAUC(dose, tau, kel * vd), doseNumber: n };
 }
 
 // Fraction of steady state reached after n doses at this kel and interval.
@@ -4980,19 +4996,6 @@ function calcAUC(dose, tau, clv) {
   return (dose * (24 / tau)) / clv;
 }
 
-function calcAUC_trap(peak, trough, tau, tinf, kel) {
-  // The degenerate branch returned AUC per INTERVAL, printed as AUC24 — a 12 h
-  // bag on q12h at 25 mg/L read 300 instead of 600 (audit 2026-09-28).
-  if(peak <= trough || peak <= 0 || trough <= 0) return (peak + trough)/2 * tau * (24 / tau);
-  const linTrap = ((trough + peak) / 2) * tinf;
-  const logTrap = ((peak - trough) / Math.log(peak / trough)) * (tau - tinf);
-  return (linTrap + logTrap) * (24 / tau);
-}
-
-function calcAUC_trap_kel(dose, tau, tinf, kel, vd) {
-  const pt = calcPeakTrough(dose, tau, tinf, kel, vd);
-  return calcAUC_trap(pt.peak, pt.trough, tau, tinf, kel);
-}
 
 // ══════════════════════════════════════════════════════════════
 //  DOSE OPTIMIZATION — AUC PRIMARY (ASHP/IDSA 2020 guidelines)
@@ -5072,6 +5075,37 @@ function optFlagHTML(flag, flagMsg, tau, auc, trough, troughMin) {
   if (!msg) return '';
   return `<div class="model-info-box" style="margin-top:8px;background:rgba(191,133,48,0.05);border-color:rgba(191,133,48,0.25)">
     <span style="color:var(--text-secondary)">${escHtml(msg)}</span></div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  DOSE EXPLORER — one table for the three Trough-module renderers
+// ══════════════════════════════════════════════════════════════════════════
+// Rule 2: this was three near-identical copies (Steady State / Initial, Two
+// Levels, Random Level) that had already drifted once (AUC colours). One
+// implementation now. The patient's own interval is always listed; both sides
+// of the AUC band are coloured alike; the trough column is coloured against the
+// module's own trough target, which is what this module is organised around.
+const EXPLORER_DOSES = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
+function doseExplorerRows(o) {
+  const intervals = [...new Set([8, 12, 24, o.tau])].filter(x => x > 0).sort((a, b) => a - b);
+  let html = '';
+  for (const interval of intervals) {
+    for (const dose of EXPLORER_DOSES) {
+      const pt  = calcPeakTrough(dose, interval, o.tinf, o.kel, o.vd);
+      const auc = calcAUC(dose, interval, o.clv);
+      const tCls  = (pt.trough < o.troughMin || pt.trough > o.troughMax) ? 'out-range' : 'in-range';
+      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';
+      const isRec = dose === o.optDose && interval === o.tau;
+      html += `<tr class="${isRec ? 'recommended' : ''}">
+        <td>${isRec ? '★ ' : ''}${dose}mg Q${interval}H</td>
+        <td class="${tCls}">${pt.trough.toFixed(1)}</td>
+        <td>${pt.peak.toFixed(1)}</td>
+        <td class="${aUCls}">${auc.toFixed(0)}</td>
+        <td>${(auc / o.mic).toFixed(0)}</td>
+      </tr>`;
+    }
+  }
+  return html;
 }
 
 // Assess overall clinical status with AUC as primary, trough as secondary
@@ -5277,6 +5311,20 @@ function updateCrCl() {
         + 'rounding it up is not evidence based and under-doses (92.9% subtherapeutic, '
         + 'Drugs R&D 2017). If cystatin C is available, enter it to check for discordance.');
     }
+    // Bauer in obesity (engine audit 2026-09-28): the project's only Bauer
+    // reference, a compiled one-pager summarising Pharmacotherapy ch.e5, says
+    // "Obese: total body weight for CL, ideal body weight for VD". The chapter
+    // itself was not available to verify that or its obesity threshold, so the
+    // code keeps 0.70 L/kg TBW and says so rather than coding an unverified
+    // rule. BMI >= 30 is the WHO obesity definition, used here only to decide
+    // when to show the note.
+    const bmiNow = (tbw > 0 && ht > 0) ? tbw / Math.pow(ht / 100, 2) : NaN;
+    if (s('vd-model') === 'bauer' && bmiNow >= 30) {
+      msgs.push(`Bauer volume in obesity: the Bauer summary in this project says to use ideal body weight for Vd `
+        + `in obese patients; this calculator uses total body weight (0.70 L/kg TBW) because the textbook chapter `
+        + `has not been verified. For this patient the peak, trough and loading dose on the Bauer volume may be `
+        + `materially different from an IBW-based volume. AUC24 depends on clearance only and is not affected.`);
+    }
     if (nearMatzkeBreak(crcl) && s('vd-model') === 'matzke') {
       msgs.push(`CrCl is near 60 mL/min, where the Matzke Vd steps between 0.89 and `
         + `0.72 L/kg. Peak and trough shift ~5% across that boundary; AUC24 does not.`);
@@ -5302,7 +5350,7 @@ function updateModelInfo() {
     matzke_pooled: 'Vd = 0.875 L/kg, the n-weighted mean of all 56 patients (7×0.72 + 13×0.89 + 36×0.90)/56. Continuous in CrCl, and consistent with the paper\'s own finding of no Vd–CLCR relationship.',
     vancopk: 'Vd = 0.29(age) + 0.33(TBW) + 11 — Fewel 2021, verified. Age- and weight-based rather than a fixed L/kg.',
     buelga: 'Vd = 0.98 L/kg TBW.',
-    bauer: 'Vd = 0.70 L/kg TBW.'
+    bauer: 'Vd = 0.70 L/kg TBW. Note: the Bauer summary in this project says ideal body weight for Vd in obesity; that rule and its threshold are unverified against the textbook chapter, so it is not applied.'
   }[vdm] || '';
   document.getElementById('model-info-box').innerHTML =
     `<strong>Clearance:</strong> ${info[cl] || '—'}<br><br><strong>Volume:</strong> ${vdNote}`;
@@ -5625,6 +5673,9 @@ function calculate() {
   // AUC uncertainty for the Trough module. NOT simulated: unlike AUC_UNCERTAINTY
   // (AUC Precision) no Monte Carlo stands behind these two figures, so the page
   // calls them approximate rather than a confidence interval (audit 2026-09-28).
+  // PREFERENCE (rule 8), unsourced. The nearest published figure, Fewel 2021
+  // Table 4 (trough-only AUC RMSE 47.7 mg·h/L, ~9.5%, VancoPK Vd model only),
+  // is not a drop-in for this band and is not used.
   const aucUncertainty = levelFitted ? 0.22 : 0.30;
   const aucLo = Math.round(auc24 * (1 - aucUncertainty));
   const aucHi = Math.round(auc24 * (1 + aucUncertainty));
@@ -5723,25 +5774,8 @@ function renderResults(d) {
     : `approx. ±${uncertaintyPct}% population estimate (not simulated)`;
 
   // Dose explorer — fixed set of clinically relevant regimens using fitted PK
-  let explorerHTML = '';
-  const explorerIntervals = [...new Set([8, 12, 24, d.tau])].filter(x => x > 0).sort((a, b) => a - b);   // the patient's own interval is always listed
-  const explorerDoses = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
-  for(const interval of explorerIntervals) {
-    for(const dose of explorerDoses) {
-      const pt  = calcPeakTrough(dose, interval, d.tinf, d.kel, d.vd);
-      const auc = calcAUC(dose, interval, d.adjClv);
-      const tCls = pt.trough < d.troughMin ? 'out-range' : pt.trough > d.troughMax ? 'out-range' : 'in-range';
-      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';   // both sides alike, as the Tinkerer
-      const isRec = dose === d.optDose && interval === d.tau;
-      explorerHTML += `<tr class="${isRec?'recommended':''}">
-        <td>${isRec?'★ ':''}${dose}mg Q${interval}H</td>
-        <td class="${tCls}">${pt.trough.toFixed(1)}</td>
-        <td>${pt.peak.toFixed(1)}</td>
-        <td class="${aUCls}">${auc.toFixed(0)}</td>
-        <td>${(auc/d.mic).toFixed(0)}</td>
-      </tr>`;
-    }
-  }
+  const explorerHTML = doseExplorerRows({ tau: d.tau, tinf: d.tinf, kel: d.kel, vd: d.vd, clv: d.adjClv,
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
 
   // Build Initial Dosing tab HTML
   const clModelNames2 = {vancopk:'VancoPK',matzke:'Matzke',matzke_pooled:'Matzke',buelga:'Buelga',bauer:'Bauer'};
@@ -6067,25 +6101,8 @@ function renderTwoLevels(d) {
   };
 
   // Dose explorer using individual PK
-  let explorerHTML = '';
-  const explorerIntervals = [...new Set([8, 12, 24, d.tlTau])].filter(x => x > 0).sort((a, b) => a - b);   // the patient's own interval is always listed
-  const explorerDoses = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
-  for(const interval of explorerIntervals) {
-    for(const dose of explorerDoses) {
-      const pt  = calcPeakTrough(dose, interval, d.tlTinf, d.kel, d.vd);
-      const auc = calcAUC(dose, interval, d.clv);
-      const tCls  = pt.trough < d.troughMin ? 'out-range' : pt.trough > d.troughMax ? 'out-range' : 'in-range';
-      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';   // both sides alike, as the Tinkerer
-      const isRec = dose === d.optDose && interval === d.tlTau;
-      explorerHTML += `<tr class="${isRec?'recommended':''}">
-        <td>${isRec?'★ ':''}${dose}mg Q${interval}H</td>
-        <td class="${tCls}">${pt.trough.toFixed(1)}</td>
-        <td>${pt.peak.toFixed(1)}</td>
-        <td class="${aUCls}">${auc.toFixed(0)}</td>
-        <td>${(auc/d.mic).toFixed(0)}</td>
-      </tr>`;
-    }
-  }
+  const explorerHTML = doseExplorerRows({ tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
 
   rc.innerHTML = `
     <!-- Tab bar -->
@@ -6300,25 +6317,8 @@ function renderRandomLevel(d) {
     : `Steady-state equation: C(t) solved numerically at t=${d.rlT.toFixed(1)}h within Q${d.rlInterval}H dosing interval. Population Vd fixed; Kel fitted by bisection.`;
 
   // Dose explorer
-  let explorerHTML = '';
-  const explorerIntervals = [...new Set([8, 12, 24, d.rlTau])].filter(x => x > 0).sort((a, b) => a - b);   // the patient's own interval is always listed
-  const explorerDoses = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
-  for(const interval of explorerIntervals) {
-    for(const dose of explorerDoses) {
-      const pt  = calcPeakTrough(dose, interval, d.rlTinf, d.indKel, d.popVd);
-      const auc = calcAUC(dose, interval, d.indClv);
-      const tCls  = pt.trough < d.troughMin ? 'out-range' : pt.trough > d.troughMax ? 'out-range' : 'in-range';
-      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';   // both sides alike, as the Tinkerer
-      const isRec = dose === d.optDose && interval === d.rlTau;
-      explorerHTML += `<tr class="${isRec?'recommended':''}">
-        <td>${isRec?'★ ':''}${dose}mg Q${interval}H</td>
-        <td class="${tCls}">${pt.trough.toFixed(1)}</td>
-        <td>${pt.peak.toFixed(1)}</td>
-        <td class="${aUCls}">${auc.toFixed(0)}</td>
-        <td>${(auc/d.mic).toFixed(0)}</td>
-      </tr>`;
-    }
-  }
+  const explorerHTML = doseExplorerRows({ tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
 
   rc.innerHTML = `
     <div class="result-tabs">
@@ -6558,6 +6558,9 @@ function timeToDecayTo(cCurrent, cTarget, kel) {
 
 // Weight-based dose guidance (clinical heuristic for AKI level-based dosing)
 // Returns suggested mg/kg based on gap from target trough
+// PREFERENCE (rule 8): the 20%/50% gap cuts and the 10/12/15 mg/kg steps are
+// this calculator's heuristic for a reference figure beside the PK result; no
+// source gives them. It never sets the recommended dose.
 function weightBasedDoseMgKg(cCurrent, troughMin, troughMax) {
   const midTarget = (troughMin + troughMax) / 2;
   const gap = midTarget - cCurrent;
@@ -6641,7 +6644,7 @@ function calcPRNDose() {
         </div>
       </div>
       ${wbDose ? `<div style="font-size:0.72rem;color:var(--text-muted);padding:8px 12px;background:var(--paper-deep);border-radius:4px;border:1px solid var(--border)">
-        <span style="color:var(--text-secondary)">Weight-based reference (${mgKgRef} mg/kg × ${tbw.toFixed(0)} kg):</span>
+        <span style="color:var(--text-secondary)">Weight-based reference — calculator heuristic, not a guideline (${mgKgRef} mg/kg × ${tbw.toFixed(0)} kg):</span>
         <strong style="color:var(--text-primary);font-family:'DM Mono',monospace"> ${wbDose} mg</strong>
         ${Math.abs(wbDose - roundedDose) <= 250 ? '<span style="color:var(--success)"> ✓ Consistent with kinetic estimate</span>' :
           `<span style="color:var(--accent-amber)"> · differs from kinetic estimate (${roundedDose} mg) — use kinetic if Kel is well-characterised</span>`}
@@ -6712,20 +6715,25 @@ function tinkerDose(suffix) {
   }
 }
 
-// Minimum trough safety rail — warn when predicted trough < 10 mg/L even if AUC is in range
+// Trough note when AUC is in range but the trough is under 10 mg/L.
+// PROVENANCE (engine audit 2026-09-28): the 10 mg/L floor is the 2009 consensus
+// ("above 10 mg/L", Rybak MJ, Lomaestro BM et al. 2009, as cited by Goti 2018
+// p.4). It was attributed here to "ASHP/IDSA 2020", which is not in Literature/
+// and made AUC the target. The note used to advise a higher dose or shorter
+// interval on the trough alone — contradicting the optimizer's own AUC-primary
+// message — and coloured troughs under 6 (an unsourced cut) as danger. It is now
+// information, not an instruction.
+const TROUGH_FLOOR_2009 = 10;   // mg/L — Rybak 2009 consensus, via Goti 2018 p.4
 function troughRailHTML(trough, auc, troughMin) {
-  const HARD_FLOOR = 10; // ASHP/IDSA 2020 efficacy floor for MIC ≤ 1
-  if (trough >= HARD_FLOOR) return '';          // no warning needed
+  if (trough >= TROUGH_FLOOR_2009) return '';
   if (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) return '';        // AUC already flagged separately
-  // AUC in range but trough below floor
-  const severity = trough < 6 ? 'var(--danger)' : 'var(--warning)';
   return `<div style="margin-top:10px;padding:9px 13px;border-radius:var(--radius-sm);
-      background:rgba(191,133,48,0.08);border:1px solid rgba(191,133,48,0.25);
-      font-size:0.74rem;line-height:1.5;color:${severity}">
-    <strong>⚠ Trough below efficacy floor</strong> — predicted SS trough ${trough.toFixed(1)} mg/L
-    is below the ASHP/IDSA 2020 minimum of ${HARD_FLOOR} mg/L, even though AUC₂₄ (${Math.round(auc)}) is in range.
-    Consider a shorter interval or higher dose to bring trough ≥ 10 mg/L, particularly for organisms
-    with MIC ≤ 1 mg/L. AUC-guided dosing remains primary — use clinical judgement.
+      background:rgba(191,133,48,0.06);border:1px solid rgba(191,133,48,0.2);
+      font-size:0.74rem;line-height:1.5;color:var(--text-secondary)">
+    <strong>Trough under 10 mg/L with AUC in range</strong> — predicted steady-state trough ${trough.toFixed(1)} mg/L
+    is below the ${TROUGH_FLOOR_2009} mg/L trough floor of the 2009 consensus guideline, while AUC₂₄ (${Math.round(auc)})
+    is inside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}. This calculator treats AUC as the target; raising the dose on the
+    trough alone would push AUC up. Weigh it against the infection and the organism.
   </div>`;
 }
 
@@ -7339,14 +7347,13 @@ function nelderMead2D(fn, a0, b0, maxIter) {
 
 // ─── Institution infusion time table ───
 // 500 mg → 30 min (0.5h)  |  750–1000 mg → 1h  |  1250–1500 mg → 1.5h
-// 1750–2000 mg → 2h  |  2250–2500 mg → 2.5h  |  2750–3000+ mg → 3h
+// 1750–2000 mg → 2h  |  2250–2500 mg → 2.5h  |  2750–3000 mg → 3h  |  above: 1 g/h
+// The table above is exactly 1 g/h rounded UP to the half hour, so it is
+// written as that rule. The old step function stopped at 3 h, so 4000 mg ran
+// at 1333 mg/h against the stated 1 g/h (engine audit 2026-09-28); identical
+// to the table for every dose up to 3000 mg.
 function autoTinf(dose) {
-  if (dose <= 500)  return 0.5;
-  if (dose <= 1000) return 1.0;
-  if (dose <= 1500) return 1.5;
-  if (dose <= 2000) return 2.0;
-  if (dose <= 2500) return 2.5;
-  return 3.0;
+  return Math.max(0.5, Math.ceil(dose / 500) / 2);
 }
 
 // ─── Buelga 2005 population PK — VERIFIED against the source ───
@@ -8196,8 +8203,9 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
 // ══════════════════════════════════════════════════════════════════════════
 //  AUC UNCERTAINTY — one table, read by both the caption and the arithmetic
 // ══════════════════════════════════════════════════════════════════════════
-// These widths came from the Monte Carlo in phase2d (see docs/audit-2026-09.md)
-// and were previously reachable only as a formatted STRING. The next-level
+// These widths come from docs/audit/uncertainty-by-model.cjs (earlier from
+// docs/audit/uncertainty.cjs — never from phase2d_validation.cjs, which computes
+// no percentiles), and were previously reachable only as a formatted STRING. The next-level
 // advisor needs the same numbers as numbers, and rule 2 of this project says
 // one implementation per concept — so the table is the source and the caption
 // is derived from it, rather than the two drifting apart.
@@ -8214,16 +8222,28 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
 // model, n=1500. The Buelga rows reproduce the shipped table (35.8/20.9/18.0/
 // 17.2), which validates the harness. Goti and Hughes are stable to about one
 // point across seeds 7, 11 and 23. `frac` is the 80th-percentile relative AUC24
-// error; `median` the 50th. Goti-HD has not been simulated separately and uses
-// the Goti rows, and says so.
+// error and `median` the 50th — used for how much a further level narrows things.
+// Goti-HD has not been simulated separately and uses the Goti rows, and says so.
+//
+// `lo` / `hi` are the DISPLAYED interval (engine audit 2026-09-28): the 10th and
+// 90th percentiles of true/estimated AUC24, so 80% of simulated patients fall in
+// [est x (1 - lo), est x (1 + hi)]. A symmetric est x (1 +/- frac) band put about
+// twice as many patients above its upper bound (the toxicity side) as below its
+// lower one, because true/est is log-normal. For Goti the upper side is +40-63%,
+// where the symmetric band showed 27-48%. Means of seeds 7/11/23, n=1500 each.
 const AUC_UNCERTAINTY = {
-  buelga: [ { n:0, frac:0.35, median:0.19 }, { n:1, frac:0.21, median:0.10 },
-            { n:2, frac:0.18, median:0.09 }, { n:3, frac:0.17, median:0.08 } ],
-  goti:   [ { n:0, frac:0.48, median:0.25 }, { n:1, frac:0.32, median:0.17 },
-            { n:2, frac:0.27, median:0.14 }, { n:3, frac:0.26, median:0.14 } ],
-  hughes: [ { n:0, frac:0.31, median:0.16 }, { n:1, frac:0.22, median:0.11 },
-            { n:2, frac:0.20, median:0.10 }, { n:3, frac:0.20, median:0.10 } ],
+  buelga: [ { n:0, frac:0.35, median:0.19, lo:0.30, hi:0.46 }, { n:1, frac:0.21, median:0.10, lo:0.21, hi:0.23 },
+            { n:2, frac:0.18, median:0.09, lo:0.18, hi:0.18 }, { n:3, frac:0.17, median:0.08, lo:0.17, hi:0.18 } ],
+  goti:   [ { n:0, frac:0.48, median:0.25, lo:0.40, hi:0.63 }, { n:1, frac:0.32, median:0.17, lo:0.24, hi:0.50 },
+            { n:2, frac:0.27, median:0.14, lo:0.21, hi:0.40 }, { n:3, frac:0.26, median:0.14, lo:0.19, hi:0.40 } ],
+  hughes: [ { n:0, frac:0.31, median:0.16, lo:0.27, hi:0.37 }, { n:1, frac:0.22, median:0.11, lo:0.18, hi:0.28 },
+            { n:2, frac:0.20, median:0.10, lo:0.17, hi:0.26 }, { n:3, frac:0.20, median:0.10, lo:0.17, hi:0.25 } ],
 };
+
+// The displayed 80% interval as text: "−24% / +50%".
+function aucBandText(row) {
+  return `−${Math.round(row.lo * 100)}% / +${Math.round(row.hi * 100)}%`;
+}
 
 function aucUncertaintyRow(nLevels, model) {
   const key = model === 'hughes' ? 'hughes' : (model === 'goti' || model === 'goti-hd') ? 'goti' : 'buelga';
@@ -8246,7 +8266,7 @@ function aucUncertaintyText(nLevels, model) {
   const hdNote = model === 'goti-hd' ? '; HD not simulated separately — Goti rows' : '';
   // The widths were simulated on steady-state troughs; say so (audit 2026-09-28).
   const design = n === 0 ? '' : '; simulated for steady-state troughs';
-  return `${n === 0 ? '' : '~'}±${Math.round(row.frac * 100)}% (${lv}; ~80% of patients, median ±${Math.round(row.median * 100)}%${design}${hdNote})`;
+  return `${n === 0 ? '' : '~'}${aucBandText(row)} (${lv}; true AUC within this range for ~80% of patients, median error ±${Math.round(row.median * 100)}%${design}${hdNote})`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -8293,8 +8313,12 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind) {
   const uNext = aucUncertaintyFrac(n + 1, model);
   const gain  = uNow > 0 ? (uNow - uNext) / uNow : 0;
 
-  const loNow  = auc24 * (1 - uNow),  hiNow  = auc24 * (1 + uNow);
-  const loNext = auc24 * (1 - uNext), hiNext = auc24 * (1 + uNext);
+  // The interval itself is asymmetric (see AUC_UNCERTAINTY lo/hi); `frac` only
+  // measures how much a further level narrows it.
+  const rNow = aucUncertaintyRow(n, model), rNext = aucUncertaintyRow(n + 1, model);
+  const loNow  = auc24 * (1 - rNow.lo),  hiNow  = auc24 * (1 + rNow.hi);
+  const loNext = auc24 * (1 - rNext.lo), hiNext = auc24 * (1 + rNext.hi);
+  const bNow = aucBandText(rNow), bNext = aucBandText(rNext);
 
   // smallest prescribable change in exposure at this interval
   const stepAUC = (tau > 0 && CLind > 0) ? 250 * (24 / tau) / CLind : NaN;
@@ -8318,13 +8342,13 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind) {
   } else if (n === 0) {
     kind = 'management';
     headline = 'A first level may substantially change the regimen';
-    detail = `This is a population estimate (±${pct(uNow)}%). One measured concentration narrows it to about `
-           + `±${pct(uNext)}% and is the single largest improvement available.`;
+    detail = `This is a population estimate (${bNow}). One measured concentration narrows it to about `
+           + `${bNext} and is the single largest improvement available.`;
   } else if (gain < NEXT_LEVEL_MIN_GAIN) {
     kind = 'precision';
     headline = 'A further level would add little';
-    detail = `With ${n} level${n===1?'':'s'} the interval is ±${pct(uNow)}%; another would take it to about `
-           + `±${pct(uNext)}% — a ${pct(gain)}% narrowing. The maintenance regimen lands in the same place either way. `
+    detail = `With ${n} level${n===1?'':'s'} the interval is ${bNow}; another would take it to about `
+           + `${bNext} — a ${pct(gain)}% narrowing. The maintenance regimen lands in the same place either way. `
            + (nearEdge
               ? `The estimate does sit within one 250 mg step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, `
                 + `but a further level is not the lever that resolves that — cystatin C, a fresh creatinine, or comparing `
@@ -8335,14 +8359,14 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind) {
     kind = 'management';
     headline = 'A further level may change the regimen';
     detail = `The estimate is within one 250 mg dose step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, and a `
-           + `further level narrows ±${pct(uNow)}% to about ±${pct(uNext)}% `
+           + `further level narrows ${bNow} to about ${bNext} `
            + `(${loNow.toFixed(0)}–${hiNow.toFixed(0)} → ${loNext.toFixed(0)}–${hiNext.toFixed(0)} mg·h/L). `
            + `That is enough to change which dose you would write.`;
   } else {
     kind = 'precision';
     headline = 'A further level would improve precision, not the regimen';
     detail = `The estimate sits more than one 250 mg dose step inside the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band, `
-           + `so tightening ±${pct(uNow)}% to ±${pct(uNext)}% would not change the dose you would write. `
+           + `so tightening ${bNow} to ${bNext} would not change the dose you would write. `
            + `Useful for confidence; not decision-changing on its own.`;
   }
 

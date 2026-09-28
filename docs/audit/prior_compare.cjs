@@ -2,7 +2,7 @@
 // Is the drop in "% improvement over population" a regression, or the mechanical
 // consequence of a tighter, correct prior? Measure ABSOLUTE errors, not relative.
 const fs=require('fs'), vm=require('vm'), path=require('path');
-const APP='/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM/index.html';
+const APP=require('path').join(__dirname,'..','..','index.html');
 const script=fs.readFileSync(APP,'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 function mk(){return{value:'',textContent:'',innerHTML:'',style:{},checked:false,
  classList:{toggle(){},add(){},remove(){},contains(){return false}},
