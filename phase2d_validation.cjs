@@ -3007,6 +3007,65 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 26 — the Bayesian fit itself (engine audit 2026-09-28, bayes-fit)
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const { mapFit, confidenceAssessment } = sandbox;
+  const om = (n) => parseFloat(script.match(new RegExp('const ' + n + '\\s*=\\s*([0-9.]+)'))[1]);   // parsed (rule 6)
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 26 — the Bayesian fit itself');
+  console.log(`${'─'.repeat(60)}`);
+
+  const gotiCase = (crcl, wt, dose, tau, tinf, n, levels) => {
+    const pk = gotiPopPK(crcl, wt, false), doses = [];
+    for (let i = 0; i < n; i++) doses.push({ mg: dose, tinfH: tinf, timeH: i * tau });
+    const f = (a, b, c) => burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels);
+    const auc = e => dose * 24 / tau / (pk.TVCL * Math.exp(e[0]));
+    return { f, auc, single: nelderMead3D(f, 0, 0, 0, 400), multi: mapFit(f, 3, om('OMEGA2_CL_GOTI'), om('OMEGA2_VC_GOTI'), 400) };
+  };
+
+  test('multi-start finds the better MAP minimum a single start missed', ()=>{
+    // Goti, CrCl 25, 90 kg, 1500 mg q24h x8; trough 10, level 15 one hour into the infusion.
+    const c = gotiCase(25, 90, 1500, 24, 1.5, 8, [{ timeH: 167.5, conc: 10 }, { timeH: 169, conc: 15 }]);
+    assert(c.multi.obj < c.f(...c.single) - 1e-3, 'multi-start must reach a lower objective');
+    assert(Math.abs(c.auc(c.multi.eta) - 938) < 5, `MAP AUC ${c.auc(c.multi.eta).toFixed(0)}, expected ~938 (single start: ${c.auc(c.single).toFixed(0)})`);
+  });
+  test('a near-equal second minimum is reported, not hidden', ()=>{
+    const c = gotiCase(25, 90, 1500, 24, 1.5, 8, [{ timeH: 167.5, conc: 10 }, { timeH: 169, conc: 15 }]);
+    const alt = c.multi.alternative;
+    assert(alt && Math.abs(c.auc(alt.eta) - 487) < 5 && alt.dObj < 0.1, JSON.stringify(alt));
+  });
+  test('an ordinary peak/trough fit has one solution', ()=>{
+    const c = gotiCase(80, 70, 1000, 12, 1, 8, [{ timeH: 95.5, conc: 12 }, { timeH: 86, conc: 30 }]);
+    assert(c.multi.alternative === null, JSON.stringify(c.multi.alternative));
+    assert(Math.abs(c.auc(c.multi.eta) - c.auc(c.single)) < 1, 'same answer as a single start');
+  });
+  test('every fit in the engine goes through mapFit', ()=>{
+    const direct = code.match(/nelderMead[23]D\(/g) || [];
+    // the two definitions and mapFit's own two calls
+    assert(direct.length === 4, `direct optimizer calls outside mapFit: ${direct.length - 4}`);
+    assert(/PREFERENCE \(rule 8\)[\s\S]{0,200}MAP_TIE_OBJ/.test(script), 'cut-points must be labelled preference');
+  });
+  test('two solutions: shown on screen, in print, and confidence is Low', ()=>{
+    assert(/Two solutions fit these levels<\/div>/.test(code) && /items\.push\(\['warning',\s*`Two solutions fit/.test(code), 'screen and print');
+    const conf = confidenceAssessment({ levels: [{}, {}], CL_ind: 2, mapAlt: { CL: 3.5, dObj: 0.04 } }, null, null);
+    assert(conf.rank >= 2, `confidence rank ${conf.rank}`);
+    assert((script.match(/agCtx, mapAlt, lowCrClHold/g) || []).length === 3, 'all three payloads carry mapAlt');
+  });
+  test('D10: the 2-comp objectives omit ln(se2) by decision, and say why', ()=>{
+    assert(!/\/ se2 \+ Math\.log\(se2\)/.test(code), 'ln(se2) was rejected on simulation evidence');
+    assert(/decision D10/.test(script), 'the reason must stay beside the code');
+  });
+  test('Buelga\'s published covariance is recorded as deliberately omitted', ()=>{
+    assert(/DELIBERATE OMISSION[\s\S]{0,300}23\.12/.test(script), 'Table 4 omega_CL/omega_V must be disclosed');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

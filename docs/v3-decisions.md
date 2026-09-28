@@ -349,6 +349,37 @@ over 600. Widths (p80 / median, 0–3+ levels): Buelga 35/21/18/17, Goti 48/32/2
 Hughes 31/22/20/20. Goti-HD is not simulated separately and says so. The Trough module's
 ±22%/±30% has no simulation behind it and is now labelled "approx., not simulated".
 
+## D10 — The MAP fit starts from five points and reports a second solution; ln V stays out
+
+**Multi-start.** Every fit used to start once, at eta = 0. When levels conflict with each other
+or with the prior, the MAP objective can have two minima whose values differ by < 0.1 while
+their AUC₂₄ differs by 50–125%. Reproduced: Goti, CrCl 25, 90 kg, 1500 mg q24h × 8, trough 10
+and a level of 15 one hour into the infusion — the single start gave AUC 487 ("in range"), the
+better minimum 938. In ordinary Goti peak/trough designs drawn from the model's own prior it
+happened in ~0.3% of patients. `mapFit` now starts from eta = 0 and ±1 SD on CL and on V (Vc),
+the SDs being each model's published omegas, and keeps the lowest objective. When another start
+lands within `MAP_TIE_OBJ` (2) objective units at a clearance differing by more than
+`MAP_SPLIT_CL` (20%), both are shown, in print too, and confidence is capped at Low — picking
+the lower of two near-equal minima is itself close to arbitrary. Both cut-points are
+**preference** (rule 8). Population accuracy is unchanged (`uncertainty-by-model.cjs`,
+`SINGLE=1` vs default: identical p80 to 0.1 point); the change matters only in the rare
+two-solution patient, where it matters most.
+
+**ln V tested and rejected.** −2 log L of the combined additive + proportional error model
+carries Σ ln V(f), and Goti estimated with FOCEI, so the audit proposed adding it. In a
+self-consistent simulation (truth drawn from each model's prior and residual, n = 1500, seed 7)
+it lowered AUC estimates so that true exposure fell *above* the displayed interval more often —
+Goti 17–19% → 21–23% at 1–3 levels, Hughes up to 18% — with no improvement in median or p80
+error. The objective stays without it; the comment beside `burtonObj3D` says why.
+
+## D11 — Buelga's published CL–V covariance is disclosed, not guessed
+
+Buelga Table 4 lists "ω_CL/ω_V (%) 23.12", footnoted "parameter expressing covariance". The
+paper does not say whether that is a covariance on the omega scale (0.2312² → ρ 0.51) or a
+correlation (ρ 0.23), and the two readings move AUC₂₄ by up to ~4% in opposite directions on
+peak/trough designs. The prior stays diagonal and the omission is recorded beside the omegas —
+the one published Buelga parameter not in the model.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

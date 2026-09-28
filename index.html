@@ -4035,7 +4035,7 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     // excluded outside its BMI range.
     if (ctx.crcl > 0 && ctx.tbw > 0 && (!ctx.dial || active === 'buelga')) {
       const bp = buelgaPopPK(ctx.crcl, ctx.tbw);
-      const bf = nelderMead2D((a,b) => burtonObjective(a,b,bp.CL_pop,bp.V_pop,doses,levels), 0, 0, 400);
+      const bf = mapFit((a,b) => burtonObjective(a,b,bp.CL_pop,bp.V_pop,doses,levels), 2, OMEGA2_CL_BUELGA, OMEGA2_V_BUELGA, 400).eta;
       push('buelga', 'Buelga 1-comp', '1-compartment', bp.CL_pop * Math.exp(bf[0]));
     }
 
@@ -4045,8 +4045,8 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     if (crclG > 0 && ctx.tbw > 0) {
       const onHD = !!ctx.dial;
       const gp = gotiPopPK(crclG, ctx.tbw, onHD);
-      const gf = nelderMead3D((a,b,c) =>
-                   burtonObj3D(a,b,c,gp.TVCL,gp.TVVc,gp.TVVp,doses,levels), 0, 0, 0, 400);
+      const gf = mapFit((a,b,c) => burtonObj3D(a,b,c,gp.TVCL,gp.TVVc,gp.TVVp,doses,levels),
+                        3, OMEGA2_CL_GOTI, OMEGA2_VC_GOTI, 400).eta;
       push(onHD ? 'goti-hd' : 'goti',
            onHD ? 'Goti 2-comp · HD' : 'Goti 2-comp', '2-compartment',
            gp.TVCL * Math.exp(gf[0]));
@@ -4057,8 +4057,8 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     const hughesApplies = active === 'hughes' || (isFinite(bmi) && bmi >= AGREEMENT_BMI_HUGHES);
     if (hughesApplies && ctx.crclHughes > 0 && ctx.ffm > 0) {
       const hp = hughesPopPK(ctx.crclHughes, ctx.ffm);
-      const hf = nelderMead3D((a,b,c) =>
-                   burtonObj3D_hughes(a,b,c,hp.TVCL,hp.TVVc,hp.TVVp,hp.TVQ,doses,levels), 0, 0, 0, 400);
+      const hf = mapFit((a,b,c) => burtonObj3D_hughes(a,b,c,hp.TVCL,hp.TVVc,hp.TVVp,hp.TVQ,doses,levels),
+                        3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400).eta;
       push('hughes', 'Hughes 2-comp · FFM', '2-compartment',
            hp.TVCL * Math.exp(hf[0]),
            (isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
@@ -4338,6 +4338,7 @@ function confidenceAssessment(r, fd, ag) {
     else if (worst >= CONFIDENCE_SIGMA.moderate) cap(1, `The fit misses a level by ${worst.toFixed(1)} SD.`);
     else reasons.push({ good:true, text:`Every level is reproduced within ${Math.max(worst, 0.1).toFixed(1)} SD.` });
   }
+  if (r && r.mapAlt && r.CL_ind > 0) cap(2, `Two solutions fit these levels almost equally well: clearance ${r.CL_ind.toFixed(2)} or ${r.mapAlt.CL.toFixed(2)} L/h.`);
   if (n === 1) cap(1, 'One level: clearance and volume are not separately identifiable.');
   else reasons.push({ good:true, text:`${n} measured levels.` });
 
@@ -7377,6 +7378,15 @@ const BUELGA_V_PER_KG   = 0.98;   // V  (L) per kg TBW
 // IIV is exponential and residual error is additive: "the interindividual and
 // residual errors were best described by exponential and additive structures,
 // respectively" — Buelga 2005, Results.
+//
+// DELIBERATE OMISSION (engine audit 2026-09-28): Table 4 (p.4937) also lists
+// "omega_CL/omega_V (%) 23.12", footnoted "parameter expressing covariance",
+// and Methods says "Covariance was also estimated". The paper does not say
+// whether 23.12% is a covariance on the omega scale (0.2312^2 = 0.0535,
+// correlation 0.51) or a correlation (0.2312). The two readings move AUC24 by
+// up to ~4% in opposite directions on peak/trough designs. Rather than pick one
+// silently, the prior stays diagonal and this records why. It is the one
+// published Buelga parameter not in the model.
 const OMEGA2_CL_BUELGA  = 0.0793; // 0.2816^2, from omega_CL 28.16%
 const OMEGA2_V_BUELGA   = 0.1380; // 0.3715^2, from omega_V  37.15%
 const SIGMA_PROP_BUELGA = 0;      // Buelga's residual model is purely additive
@@ -7530,6 +7540,47 @@ function nelderMead3D(fn, a0, b0, c0, maxIter) {
   return s[0];
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  MULTI-START MAP (engine audit 2026-09-28)
+// ══════════════════════════════════════════════════════════════════════════
+// Every fit used to start once, at eta = 0. When levels conflict with each
+// other or with the prior, the MAP objective can have two minima whose values
+// differ by < 0.1 while their AUC24 differs by 50-125%; Nelder-Mead stops in the
+// nearer one. Reproduced: Goti, CrCl 25, 1500 mg q24h, trough 10 and a level of
+// 15 one hour into the infusion — the single start gave AUC 487 ("in range"),
+// the better minimum 938. In ordinary Goti peak/trough designs drawn from the
+// model's own prior it happened in ~0.3% of patients.
+//
+// The fit now starts from eta = 0 and from +/-1 SD on CL and on V (Vc), the SDs
+// being the model's own published omegas, and keeps the lowest objective. When
+// another start lands on a minimum that fits almost as well but implies a
+// clearance — and so an AUC24 = TDD/CL — that differs materially, both are
+// reported and confidence is lowered: choosing the lower of two near-equal
+// minima is itself close to arbitrary, so the clinician must be told.
+// PREFERENCE (rule 8): the two cut-points below are this calculator's choice.
+const MAP_TIE_OBJ   = 2;      // objective units (-2 log posterior); ~1 chi-square unit apart
+const MAP_SPLIT_CL  = 0.20;   // clearance ratio above which two minima are "different answers"
+
+function mapFit(fn, dim, omega2CL, omega2V, maxIter) {
+  const sC = Math.sqrt(omega2CL), sV = Math.sqrt(omega2V);
+  const starts = [[0, 0], [sC, 0], [-sC, 0], [0, sV], [0, -sV]];
+  const runs = starts.map(([a, b]) => {
+    const x = dim === 2 ? nelderMead2D(fn, a, b, maxIter) : nelderMead3D(fn, a, b, 0, maxIter);
+    return { x, f: fn(...x) };
+  }).filter(r => isFinite(r.f));
+  if (!runs.length) return { eta: dim === 2 ? [0, 0] : [0, 0, 0], obj: NaN, alternative: null };
+  runs.sort((p, q) => p.f - q.f);
+  const best = runs[0];
+  let alt = null;
+  for (const r of runs.slice(1)) {
+    const ratio = Math.exp(Math.abs(r.x[0] - best.x[0]));
+    if (r.f - best.f <= MAP_TIE_OBJ && ratio - 1 > MAP_SPLIT_CL && (!alt || ratio > alt.clRatio)) {
+      alt = { eta: r.x, obj: r.f, dObj: r.f - best.f, clRatio: ratio };
+    }
+  }
+  return { eta: best.x, obj: best.f, alternative: alt };
+}
+
 // ─── Burton objective for Goti (3 etas) ───
 function burtonObj3D(etaCL, etaVc, etaVp, TVCL, TVVc, TVVp, doses, levels) {
   const CL = TVCL * Math.exp(etaCL);
@@ -7541,6 +7592,12 @@ function burtonObj3D(etaCL, etaVc, etaVp, TVCL, TVVc, TVVp, doses, levels) {
   for (const lev of levels) {
     const Cpred = predictConc2comp(doses, lev.timeH, k10, k12, k21, Vc);
     const se2   = (SIGMA_PROP_GOTI*Cpred)**2 + SIGMA_ADD_GOTI**2;
+    // No ln(se2) term, deliberately (decision D10). -2 log L of the combined
+    // error model does carry ln V, and Goti estimated with FOCEI — but in a
+    // self-consistent simulation (truth from this prior and residual, n=1500)
+    // adding it lowered the AUC estimate so that true exposure fell ABOVE the
+    // displayed interval more often (Goti 17-19% -> 21-23%) with no gain in
+    // median or p80 error. It was tested and rejected on accuracy grounds.
     lik += (Cpred - lev.conc)**2 / se2;
   }
   return prior + lik;
@@ -7718,7 +7775,7 @@ function burtonObj3D_hughes(etaCL, etaVc, etaVp, TVCL, TVVc, TVVp, TVQ, doses, l
   for (const lev of levels) {
     const Cpred = predictConc2comp(doses, lev.timeH, k10, k12, k21, Vc);
     const se2   = (SIGMA_PROP_HUGHES*Cpred)**2 + SIGMA_ADD_HUGHES**2;
-    lik += (Cpred - lev.conc)**2 / se2;
+    lik += (Cpred - lev.conc)**2 / se2;   // no ln(se2): tested and rejected, see burtonObj3D (D10)
   }
   return prior + lik;
 }
@@ -9240,6 +9297,7 @@ function runBayesian() {
   let CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop, objFinal;
   let etaCL_opt=0, etaV_opt=0, etaVc_opt=0, etaVp_opt=0;
   let gotiResult = null;
+  let mapAlt = null;   // a second, near-equal MAP minimum (see mapFit)
 
   if (isGoti) {
     // ── Goti 2018 (2-Compartment) ──
@@ -9251,11 +9309,11 @@ function runBayesian() {
     const Vp_pop = pk.TVVp;
 
     if (filteredLevels.length > 0) {
-      const [eCL, eVc, eVp] = nelderMead3D(
-        (a,b,c) => burtonObj3D(a,b,c, pk.TVCL, pk.TVVc, pk.TVVp, doses, filteredLevels),
-        0, 0, 0, 400
-      );
+      const mf = mapFit((a,b,c) => burtonObj3D(a,b,c, pk.TVCL, pk.TVVc, pk.TVVp, doses, filteredLevels),
+                        3, OMEGA2_CL_GOTI, OMEGA2_VC_GOTI, 400);
+      const [eCL, eVc, eVp] = mf.eta;
       etaCL_opt=eCL; etaVc_opt=eVc; etaVp_opt=eVp;
+      if (mf.alternative) mapAlt = { CL: pk.TVCL * Math.exp(mf.alternative.eta[0]), dObj: mf.alternative.dObj };
     }
 
     CL_ind = pk.TVCL * Math.exp(etaCL_opt);
@@ -9304,7 +9362,7 @@ function runBayesian() {
     bState.result = {
       model:'goti', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
       levels:filteredLevels, objFinal, goti: gotiResult
     };
     // CODEX F-003: bind this fit to the inputs it came from.
@@ -9326,11 +9384,11 @@ function runBayesian() {
     const Q_h    = pk.TVQ;
 
     if (filteredLevels.length > 0) {
-      const [eCL, eVc, eVp] = nelderMead3D(
-        (a,b,c) => burtonObj3D_hughes(a,b,c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, filteredLevels),
-        0, 0, 0, 400
-      );
+      const mf = mapFit((a,b,c) => burtonObj3D_hughes(a,b,c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, filteredLevels),
+                        3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400);
+      const [eCL, eVc, eVp] = mf.eta;
       etaCL_opt=eCL; etaVc_opt=eVc; etaVp_opt=eVp;
+      if (mf.alternative) mapAlt = { CL: pk.TVCL * Math.exp(mf.alternative.eta[0]), dObj: mf.alternative.dObj };
     }
 
     CL_ind = pk.TVCL * Math.exp(etaCL_opt);
@@ -9379,7 +9437,7 @@ function runBayesian() {
     bState.result = {
       model:'hughes', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
       levels:filteredLevels, objFinal, goti: hughesResult
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -9392,11 +9450,11 @@ function runBayesian() {
     CL_pop = bk.CL_pop; V_pop = bk.V_pop;
 
     if (filteredLevels.length > 0) {
-      const [etaCL, etaV] = nelderMead2D(
-        (aCL, aV) => burtonObjective(aCL, aV, CL_pop, V_pop, doses, filteredLevels),
-        0, 0, 300
-      );
+      const mf = mapFit((aCL, aV) => burtonObjective(aCL, aV, CL_pop, V_pop, doses, filteredLevels),
+                        2, OMEGA2_CL_BUELGA, OMEGA2_V_BUELGA, 300);
+      const [etaCL, etaV] = mf.eta;
       etaCL_opt=etaCL; etaV_opt=etaV;
+      if (mf.alternative) mapAlt = { CL: CL_pop * Math.exp(mf.alternative.eta[0]), dObj: mf.alternative.dObj };
     }
 
     CL_ind = CL_pop * Math.exp(etaCL_opt);
@@ -9421,7 +9479,7 @@ function runBayesian() {
     const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC, null, mic);
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
+      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
       levels:filteredLevels, objFinal
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -10493,6 +10551,20 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         </div>
       </div>`;
   })();
+
+  // ── Two near-equal MAP solutions (see mapFit) ─────────────────────────────
+  if (r.mapAlt && r.mapAlt.CL > 0) {
+    const tdd = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau) : null;
+    const aucA = tdd ? tdd / CL_ind : null, aucB = tdd ? tdd / r.mapAlt.CL : null;
+    html += `<div class="diverge-warning" style="background:rgba(191,133,48,0.06);border-color:var(--warning);color:var(--text-secondary)">
+      <div style="font-weight:700;margin-bottom:6px;color:var(--warning)">Two solutions fit these levels</div>
+      <div style="font-size:0.8rem;line-height:1.6">The fit found two parameter sets that reproduce the levels almost equally well
+        (objective ${r.mapAlt.dObj.toFixed(2)} apart): clearance <strong>${CL_ind.toFixed(2)} L/h</strong>, used here,
+        and <strong>${r.mapAlt.CL.toFixed(2)} L/h</strong>${aucA ? ` — on the current regimen AUC₂₄ ${aucA.toFixed(0)} against ${aucB.toFixed(0)} mg·h/L` : ''}.
+        The data cannot tell them apart. This usually means the levels conflict with each other or one was drawn during the infusion.
+        Check the draw times; a further level drawn at a different point in the interval separates them.</div>
+    </div>`;
+  }
 
   // ── Does the fit actually reproduce the levels? ──────────────────────────
   (() => {
@@ -12127,6 +12199,9 @@ function _buildPrintReport() {
       if (u != null && detectVeryLowCrCl(u)) items.push(['danger',
         `Very low CrCl (${u.toFixed(0)} mL/min, <10) without RRT. The population models were not validated in this range.`]);
     } catch (e) {}
+    if (r.mapAlt && r.mapAlt.CL > 0 && r.CL_ind > 0) items.push(['warning',
+      `Two solutions fit these levels almost equally well: clearance ${r.CL_ind.toFixed(2)} L/h (used) or ${r.mapAlt.CL.toFixed(2)} L/h. ` +
+      'The data cannot separate them; a further level at a different point in the interval would.']);
     try {
       const ageN = parseFloat(age), scrN = parseFloat(scr);
       if (lowMuscleMassSuspected(ageN, sex === 'F' ? 'F' : 'M', scrN)) items.push(['info',
