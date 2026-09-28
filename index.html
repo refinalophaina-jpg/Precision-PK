@@ -2265,12 +2265,13 @@
         <div class="field-group">
           <label class="field-label" for="dosing-wt">Dosing Weight for CrCl</label>
           <div class="toggle-group" id="dosingwt-toggle">
-            <button class="toggle-opt active" data-onclick="k14">TBW</button>
+            <button class="toggle-opt active" data-onclick="k73" title="TBW, or AdjBW when TBW is more than 20% above IBW">Auto</button>
+            <button class="toggle-opt" data-onclick="k14">TBW</button>
             <button class="toggle-opt" data-onclick="k15">IBW</button>
             <button class="toggle-opt" data-onclick="k16">AdjBW</button>
           </div>
-          <input type="hidden" id="dosing-wt" value="TBW">
-          <p class="field-hint" id="crcl-hint" style="margin-top:4px">Cockcroft-Gault • AdjBW auto if TBW >20% above IBW</p>
+          <input type="hidden" id="dosing-wt" value="auto">
+          <p class="field-hint" id="crcl-hint" style="margin-top:4px">Cockcroft-Gault • Auto uses AdjBW when TBW is &gt;20% above IBW</p>
         </div>
         <div id="crcl-result" style="display:none;font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent-amber)"></div>
         <div id="crcl-advisory" style="display:none;font-size:0.76rem;color:var(--warning);line-height:1.45"></div>
@@ -2583,6 +2584,21 @@
       </div>
 
       <hr class="section-divider">
+
+      <div id="tl-cur-tau-row" style="display:none;margin-bottom:12px">
+        <p class="section-label">Interval the levels were drawn on</p>
+        <select id="tl-cur-tau" class="dt-input" style="font-family:'Outfit',sans-serif">
+          <option value="">— choose —</option>
+          <option value="8">Q8H</option>
+          <option value="12">Q12H</option>
+          <option value="18">Q18H</option>
+          <option value="24">Q24H</option>
+          <option value="36">Q36H</option>
+          <option value="48">Q48H</option>
+        </select>
+        <p class="field-hint" style="margin-top:6px">The regimen the patient was ON when both levels were drawn.
+          At steady state the volume depends on it; the target interval below does not change it.</p>
+      </div>
 
       <div>
         <p class="section-label">Target Maintenance Interval</p>
@@ -3159,7 +3175,17 @@ const __ACT = {
   k70: (el, ev, arg) => { deleteProfile(String(arg)) },   /* deleteProfile('${p.id}') */
   k71: (el, ev, arg) => { pickMatrixCell(String(arg)) },   /* pickMatrixCell('dose|tau') */
   k72: (el, ev, arg) => { matrixKeyNav(el, ev) },   /* arrow-key grid navigation */
+  k73: (el, ev, arg) => { setDosingWt(el,'auto') },   /* setDosingWt(this,'auto') */
 };
+// How a CrCl should be labelled wherever it is shown. The manual override is
+// deliberately global (it reaches every module), but it used to be labelled
+// "Cockcroft-Gault" in AUC Precision and in the printed report — so a what-if
+// clearance set in the Trough tab could reach a real Bayesian fit and a printed
+// handoff looking like a measured estimate (engine audit 2026-09-28).
+function crclSourceLabel() {
+  return (crclOverride.on && crclOverride.value > 0) ? 'manual override' : 'Cockcroft-Gault';
+}
+
 function setCrclOverride() {
   const cb = document.getElementById('crcl-override-on');
   const inp = document.getElementById('crcl-override-val');
@@ -3276,7 +3302,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // ══════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════
-let state = { sex:'M', dosingWt:'TBW', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose' };
+let state = { sex:'M', dosingWt:'auto', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose' };
 
 // ══════════════════════════════════════════
 //  UI HELPERS
@@ -3323,6 +3349,8 @@ function setTlBasis(el, val) {
   state.tlBasis = val;
   el.parentElement.querySelectorAll('.toggle-opt').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
+  const row = document.getElementById('tl-cur-tau-row');
+  if (row) row.style.display = val === 'steadystate' ? '' : 'none';
 }
 
 function setDosingWt(el, val) {
@@ -4280,6 +4308,10 @@ function confidenceAssessment(r, fd, ag) {
   }
 
   const ctx = (r && r.agCtx) || {};
+  // Disclosure, not a downgrade: the fit rests on a clearance the clinician
+  // typed, and that must be visible where the fit is judged.
+  if (ctx.crclSource === 'manual override')
+    reasons.push({ good:false, text:`The prior uses a manually entered CrCl (${Number(ctx.crcl).toFixed(0)} mL/min), not a Cockcroft-Gault estimate. Hughes uses its own FFM-based CrCl and ignores it.` });
   const bmi = (ctx.tbw > 0 && ctx.htCm > 0) ? ctx.tbw / Math.pow(ctx.htCm / 100, 2) : NaN;
   if (r.model === 'hughes' && isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
     cap(2, `Hughes 2024 is validated at BMI ≥ ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}.`);
@@ -5293,7 +5325,22 @@ function calculate() {
     const popVd   = calcVd(s('vd-model'), age, tbw, crclVal);
     const popKel  = popClv / popVd;
 
-    const tlPK = solveTwoLevelsPK(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, tlTau, state.tlBasis);
+    // At steady state the accumulation term in the volume needs the interval
+    // the patient was ON when the levels were drawn — not the target. Engine
+    // audit 2026-09-28: passing the target made the fitted clearance move
+    // whenever the clinician explored an interval. True patient ke 0.0866,
+    // V 52 L on 1000 mg q12h: target Q8H gave Vd +29% and a regimen shown at
+    // AUC 515 (true 666); target Q24H gave Vd -26% and AUC 451 (true 333).
+    // tlTau stays the TARGET, used below only for the new regimen.
+    let accumTau = tlTau;
+    if (state.tlBasis === 'steadystate') {
+      accumTau = parseFloat((document.getElementById('tl-cur-tau') || {}).value);
+      if (!(accumTau > 0)) {
+        alert('These levels are marked as drawn at steady state.\n\nChoose the interval the patient was on when they were drawn — the volume depends on it.');
+        return;
+      }
+    }
+    const tlPK = solveTwoLevelsPK(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, accumTau, state.tlBasis);
     if (!tlPK) { alert('Could not solve PK — check that Level 2 is lower than Level 1 and both are post-infusion.'); return; }
 
     // Find optimal maintenance dose using individual PK
@@ -5326,7 +5373,13 @@ function calculate() {
   const bmi   = tbw / ((ht/100)**2);
   const adjbw = calcAdjBW(tbw, ibw);
 
-  // Dosing weight for CrCl — auto AdjBW if TBW >20% above IBW and user left on TBW
+  // Dosing weight for CrCl. The default is 'auto' — TBW, or AdjBW when TBW is
+  // >20% above IBW — the same rule AUC Precision uses. Engine audit 2026-09-28:
+  // commit aa9dd6b added a literal `case 'TBW'` to pickCrClWeight while the
+  // default button still said TBW, so the default silently stopped applying
+  // AdjBW. For a 50 M, 130 kg, 175 cm the Trough module then ran CrCl 162.5
+  // against AUC Precision's 117.8 for the same patient (+38%). 'auto' is now the
+  // default and a button of its own; TBW is a deliberate literal choice.
   const crclWt = pickCrClWeight(state.dosingWt, tbw, ibw).wt;
 
   const crclVal  = calcCrCl(age, state.sex, scr, crclWt, SCR_POLICY.ACTUAL);
@@ -6875,7 +6928,9 @@ function updateBayesCrCl() {
   const res  = document.getElementById('b-crcl-result');
   if (crcl) {
     res.style.display = 'block';
-    res.textContent   = `CrCl ≈ ${crcl.toFixed(0)} mL/min (Cockcroft-Gault)`;
+    res.textContent   = `CrCl ≈ ${crcl.toFixed(0)} mL/min (${crclSourceLabel()})`
+      + (crclSourceLabel() === 'manual override'
+          ? ' — set in the Trough-Based panel; Hughes uses its own FFM-based CrCl' : '');
   } else {
     res.style.display = 'none';
   }
@@ -7920,28 +7975,50 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
 // advisor needs the same numbers as numbers, and rule 2 of this project says
 // one implementation per concept — so the table is the source and the caption
 // is derived from it, rather than the two drifting apart.
-const AUC_UNCERTAINTY = [
-  { n:0, frac:0.35, note:'population prior — no levels; ~80% of patients' },
-  { n:1, frac:0.21, note:'1 level; ~80% of patients, median ±10%' },
-  { n:1, frac:0.25, is2comp:true, note:'1 level, 2-comp — estimated, not simulated' },
-  { n:2, frac:0.18, note:'2 levels; ~80% of patients, median ±9%' },
-  { n:3, frac:0.17, note:'≥3 levels; ~80% of patients, median ±8%' },
-];
+// Keyed BY MODEL (engine audit 2026-09-28). Previously only Buelga was
+// simulated; Goti and Hughes borrowed the Buelga rows at 0, 2 and 3+ levels
+// under a "~80% of patients" label, and the print report called them
+// "simulated against this model's own prior". For Goti the displayed interval
+// actually covered 60-67% of patients, with the misses mostly ABOVE the upper
+// bound — understating the risk of exposure over 600.
+//
+// PROVENANCE: docs/audit/uncertainty-by-model.cjs — the same design as the
+// original Buelga Monte Carlo (1000 mg q12h x 8, steady-state troughs), truth
+// drawn from EACH model's own prior and residual error, fitted with the same
+// model, n=1500. The Buelga rows reproduce the shipped table (35.8/20.9/18.0/
+// 17.2), which validates the harness. Goti and Hughes are stable to about one
+// point across seeds 7, 11 and 23. `frac` is the 80th-percentile relative AUC24
+// error; `median` the 50th. Goti-HD has not been simulated separately and uses
+// the Goti rows, and says so.
+const AUC_UNCERTAINTY = {
+  buelga: [ { n:0, frac:0.35, median:0.19 }, { n:1, frac:0.21, median:0.10 },
+            { n:2, frac:0.18, median:0.09 }, { n:3, frac:0.17, median:0.08 } ],
+  goti:   [ { n:0, frac:0.48, median:0.25 }, { n:1, frac:0.32, median:0.17 },
+            { n:2, frac:0.27, median:0.14 }, { n:3, frac:0.26, median:0.14 } ],
+  hughes: [ { n:0, frac:0.31, median:0.16 }, { n:1, frac:0.22, median:0.11 },
+            { n:2, frac:0.20, median:0.10 }, { n:3, frac:0.20, median:0.10 } ],
+};
 
-function aucUncertaintyFrac(nLevels, model) {
-  const is2comp = model === 'goti' || model === 'hughes';
+function aucUncertaintyRow(nLevels, model) {
+  const key = model === 'hughes' ? 'hughes' : (model === 'goti' || model === 'goti-hd') ? 'goti' : 'buelga';
   const n = Math.max(0, Math.min(3, Number(nLevels) || 0));
-  const exact = AUC_UNCERTAINTY.find(r => r.n === n && !!r.is2comp === is2comp);
-  return (exact || AUC_UNCERTAINTY.find(r => r.n === n) || AUC_UNCERTAINTY[0]).frac;
+  return Object.assign({ key }, AUC_UNCERTAINTY[key].find(r => r.n === n));
 }
 
+// The model key the uncertainty table is read by: Goti on dialysis is reported
+// as 'goti-hd' so the label can say it was not simulated separately.
+function uncertaintyModelKey(r) {
+  return r && r.model === 'goti' && r.dial ? 'goti-hd' : (r ? r.model : 'buelga');
+}
+
+function aucUncertaintyFrac(nLevels, model) { return aucUncertaintyRow(nLevels, model).frac; }
+
 function aucUncertaintyText(nLevels, model) {
-  const is2comp = model === 'goti' || model === 'hughes';
+  const row = aucUncertaintyRow(nLevels, model);
   const n = Math.max(0, Math.min(3, Number(nLevels) || 0));
-  const row = AUC_UNCERTAINTY.find(r => r.n === n && !!r.is2comp === is2comp)
-           || AUC_UNCERTAINTY.find(r => r.n === n) || AUC_UNCERTAINTY[0];
-  const pct = Math.round(row.frac * 100);
-  return `${n === 0 ? '' : '~'}±${pct}% (${row.note})`;
+  const lv = n === 0 ? 'population prior, no levels' : n >= 3 ? '≥3 levels' : `${n} level${n === 1 ? '' : 's'}`;
+  const hdNote = model === 'goti-hd' ? '; HD not simulated separately — Goti rows' : '';
+  return `${n === 0 ? '' : '~'}±${Math.round(row.frac * 100)}% (${lv}; ~80% of patients, median ±${Math.round(row.median * 100)}%${hdNote})`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -8614,19 +8691,48 @@ function removeScrRow(id) {
   updateScrTrendDisplay();
 }
 
-function readSerialScr() {
+// Serial SCr rows, with the same EMPTY / COMPLETE / INCOMPLETE contract the dose
+// and level rows have had since CODEX F-002. Engine audit 2026-09-28 found three
+// silent failures here:
+//   - a time typed "6:00" (the field is type=text; its pattern is not enforced)
+//     parsed to NaN, the sort left the row in DOM order, and getEffectiveScrForDose
+//     could then never replace it — so an OLD creatinine became the effective SCr
+//     for the whole fit: CrCl 130 mL/min instead of 39 from the current 2.0;
+//   - serial values skipped INPUT_LIMITS, so 88 (a umol/L value typed as mg/dL)
+//     drove CrCl silently to the floor;
+//   - a row with a value but no date or time was dropped without a word.
+// A malformed row is now an error the fit refuses on. Nothing is auto-repaired:
+// a mistyped time is shown back to the clinician, not guessed.
+function readSerialScrChecked() {
   const rows = document.querySelectorAll('[id^="b-scr-row-"]');
-  const result = [];
-  rows.forEach(row => {
-    const val   = parseFloat(row.querySelector('.b-scr-val')?.value);
-    const dateS = row.querySelector('.b-scr-date')?.value;
-    const timeS = row.querySelector('.b-scr-time')?.value;
-    if (!isNaN(val) && val > 0 && dateS && timeS) {
-      result.push({ scr: val, timeH: new Date(`${dateS}T${timeS}`).getTime() / 3600000 });
+  const readings = [], errors = [];
+  rows.forEach((row, i) => {
+    const raw   = (row.querySelector('.b-scr-val')?.value || '').trim();
+    const dateS = (row.querySelector('.b-scr-date')?.value || '').trim();
+    const timeS = (row.querySelector('.b-scr-time')?.value || '').trim();
+    const label = `Serial SCr row ${i + 1}`;
+    if (!raw && !dateS && !timeS) return;                       // EMPTY
+    if (!raw || !dateS || !timeS) {                              // INCOMPLETE
+      errors.push(`${label}: needs a value, a date and a time (${[!raw && 'value', !dateS && 'date', !timeS && 'time'].filter(Boolean).join(', ')} missing).`);
+      return;
     }
+    const chk = checkValue(raw, 'scr', `${label} value`);
+    if (!chk.ok) { errors.push(chk.message); return; }
+    if (!/^\d{2}:\d{2}$/.test(timeS)) {
+      errors.push(`${label}: time "${timeS}" is not in HH:MM form (for 6 am, type 06:00).`);
+      return;
+    }
+    const tH = new Date(`${dateS}T${timeS}`).getTime() / 3600000;
+    if (!isFinite(tH)) { errors.push(`${label}: date and time "${dateS} ${timeS}" could not be read.`); return; }
+    readings.push({ scr: chk.value, timeH: tH });
   });
-  return result.sort((a,b) => a.timeH - b.timeH);
+  readings.sort((a, b) => a.timeH - b.timeH);
+  return { readings, errors };
 }
+
+// Valid readings only — the trend display and any caller that just needs data.
+// The fit calls readSerialScrChecked so it can refuse on errors.
+function readSerialScr() { return readSerialScrChecked().readings; }
 
 function getEffectiveScrForDose(doseTimeH, scrReadings) {
   if (!scrReadings || !scrReadings.length) return null;
@@ -8807,7 +8913,14 @@ function runBayesian() {
   const tbw   = parseFloat(document.getElementById('b-tbw').value);
   const htCm  = parseFloat(document.getElementById('b-height').value) || 0;
   const scrEl = parseFloat(document.getElementById('b-scr').value);
-  const serialScr = readSerialScr();
+  const serialChk = readSerialScrChecked();
+  if (serialChk.errors.length) {
+    alert('Some serial SCr rows cannot be used, so the fit was not run.\n\n• '
+      + serialChk.errors.join('\n• ')
+      + '\n\nCorrect or delete these rows, then run again.');
+    return;
+  }
+  const serialScr = serialChk.readings;
 
   // AUDIT A3/A4, extended to this module. runBayesian used to test PRESENCE
   // only — `!age || !tbw` — so an out-of-range value reached the population
@@ -8850,6 +8963,7 @@ function runBayesian() {
   const agCtx = {
     activeModel: bState.model,
     crcl, tbw, htCm, age, sex: bState.sex, scr: effScr,
+    crclSource: crclSourceLabel(),
     dial: !!bState.dial,
     crclGoti:   (function(){ try { return getGotiCrCl(effScr); }   catch (e) { return null; } })(),
     crclHughes: (function(){ try { return getHughesCrCl(effScr); } catch (e) { return null; } })(),
@@ -9575,7 +9689,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span class="bayes-model-badge">${modelBadge}</span>
-        <span class="bayes-uncertainty-tag">AUC uncertainty: ${aucUncertaintyText(nLev, r.model)}</span>
+        <span class="bayes-uncertainty-tag">AUC uncertainty: ${aucUncertaintyText(nLev, uncertaintyModelKey(r))}</span>
       </div>
     </div>`;
 
@@ -10312,7 +10426,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
                     : (cur2 && cur2.auc24 != null) ? cur2.auc24 : null;
     const tauForVOI = (rec && !rec.noSolution) ? rec.tau : (cur2 ? cur2.tau : null);
     if (!(aucForVOI > 0)) return;
-    const nlv = nextLevelValue(aucForVOI, nLev, r.model, tauForVOI, CL_ind);
+    const nlv = nextLevelValue(aucForVOI, nLev, uncertaintyModelKey(r), tauForVOI, CL_ind);
     if (!nlv) return;
     const mgmt = nlv.kind === 'management';
     const col  = mgmt ? 'var(--accent-amber)' : 'var(--success)';
@@ -11131,7 +11245,7 @@ function snapshotPatientCore() {
     core[f.key] = val(f.bayes) || val(f.trough) || '';
   }
   core.sex       = state.sex === 'F' ? 'F' : 'M';   // one patient attribute — see setPatientSex
-  core.dosingWt  = state.dosingWt || 'TBW';
+  core.dosingWt  = state.dosingWt || 'auto';
   core.amputation = Object.assign({}, ampState);
   core.crcl      = (crclOverride.on && crclOverride.value > 0)
                      ? { on:true, value:crclOverride.value } : { on:false, value:null };
@@ -11544,7 +11658,7 @@ function _buildPrintReport() {
       <tr><td>Age</td><td class="pr-val">${age} yr</td><td>Sex</td><td class="pr-val">${sex}</td></tr>
       <tr><td>Weight</td><td class="pr-val">${tbw} kg</td><td>Height</td><td class="pr-val">${ht} cm</td></tr>
       <tr><td>BMI</td><td class="pr-val">${bmi} kg/m²</td><td>SCr</td><td class="pr-val">${scr} mg/dL</td></tr>
-      ${r.crcl ? `<tr><td>CrCl (Cockcroft-Gault)</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td>Uncapped</td><td class="pr-val">${(() => { try { const u = getUncappedCrCl(); return u != null ? u.toFixed(0) + ' mL/min' : '—'; } catch (e) { return '—'; } })()}</td></tr>` : ''}
+      ${r.crcl ? `<tr><td>CrCl (${escHtml((r.agCtx && r.agCtx.crclSource) || 'Cockcroft-Gault')})</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td>Uncapped</td><td class="pr-val">${(() => { try { const u = getUncappedCrCl(); return u != null ? u.toFixed(0) + ' mL/min' : '—'; } catch (e) { return '—'; } })()}</td></tr>` : ''}
       ${(() => {
         try {
           const htN = parseFloat(ht), tbwN = parseFloat(tbw);
@@ -11653,7 +11767,7 @@ function _buildPrintReport() {
     // invited the reader to compare two different things.
     const inBand = cur.auc24 >= 400 && cur.auc24 <= 600;
     let unc = '';
-    try { unc = aucUncertaintyText((r.levels || []).length, r.model); } catch (e) {}
+    try { unc = aucUncertaintyText((r.levels || []).length, uncertaintyModelKey(r)); } catch (e) {}
     return `<div class="pr-section"><div class="pr-section-title">Exposure on the Current Regimen</div>
       <table class="pr-table"><tbody>
         <tr><td>Projected AUC₂₄</td><td class="pr-val">${cur.auc24.toFixed(0)} mg·h/L</td>
@@ -11664,8 +11778,9 @@ function _buildPrintReport() {
             <td>Selected target</td><td class="pr-val">${r.targetAUC ? r.targetAUC + ' mg·h/L' : '—'}</td></tr>
       </tbody></table>
       ${unc ? `<div class="pr-note"><strong>Uncertainty:</strong> ${escHtml(unc)} on AUC₂₄ with
-        ${(r.levels || []).length} level${(r.levels || []).length === 1 ? '' : 's'}. Figures are simulated against
-        this model's own prior, not asserted.</div>` : ''}
+        ${(r.levels || []).length} level${(r.levels || []).length === 1 ? '' : 's'}. Widths come from a
+        Monte Carlo against this model's own prior and residual error (trough sampling design), not
+        from the fit of this patient${r.model === 'goti' && r.dial ? '; Goti-HD uses the Goti widths' : ''}.</div>` : ''}
     </div>`;
   })();
 

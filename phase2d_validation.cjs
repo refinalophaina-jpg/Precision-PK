@@ -1011,30 +1011,43 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // verified Buelga prior), quoted at the ~80th percentile with the percentile
   // stated. The old figures (±15% at 1 level) were met by only 66% of patients,
   // so they read as a bound while behaving like a median.
-  test('0 levels → ±35% (all models)', ()=>{
-    assert(aucUncertaintyText(0,'buelga').includes('±35%'), 'Buelga 0 levels');
-    assert(aucUncertaintyText(0,'goti').includes('±35%'),   'Goti 0 levels');
-    assert(aucUncertaintyText(0,'hughes').includes('±35%'), 'Hughes 0 levels');
+  // RETIRED 2026-09-28 (rule 9, reason recorded): the "all models share the
+  // Buelga widths" and "2-comp ±25%, estimated" assertions pinned a table that
+  // was only simulated for Buelga. docs/audit/uncertainty-by-model.cjs, run
+  // against each model's own prior (n=1500, seeds 7/11/23), showed the Buelga
+  // rows covered only 60-67% of Goti patients (misses mostly above). The
+  // widths are now keyed by model; these tests pin the simulated figures.
+  test('Buelga widths unchanged: 35 / 21 / 18 / 17', ()=>{
+    const got = [0,1,2,3].map(n => aucUncertaintyText(n,'buelga'));
+    ['±35%','±21%','±18%','±17%'].forEach((w,i) => assert(got[i].includes(w), `n=${i}: ${got[i]}`));
   });
-  test('1 level + Buelga → ±21% (measured p80)', ()=>{ assert(aucUncertaintyText(1,'buelga').includes('±21%'), ''); });
-  test('1 level + Goti → ±25% (2-comp, flagged as estimated)', ()=>{
-    assert(aucUncertaintyText(1,'goti').includes('±25%'), '');
-    assert(/estimated/i.test(aucUncertaintyText(1,'goti')), '2-comp figure must be marked as not simulated');
+  test('Goti widths are its own simulated p80: 48 / 32 / 27 / 26', ()=>{
+    const got = [0,1,2,3].map(n => aucUncertaintyText(n,'goti'));
+    ['±48%','±32%','±27%','±26%'].forEach((w,i) => assert(got[i].includes(w), `n=${i}: ${got[i]}`));
   });
-  test('1 level + Hughes → ±25% (2-comp, same as Goti)', ()=>{
-    assert(aucUncertaintyText(1,'hughes').includes('±25%'), '');
+  test('Hughes widths are its own simulated p80: 31 / 22 / 20 / 20', ()=>{
+    const got = [0,1,2,3].map(n => aucUncertaintyText(n,'hughes'));
+    ['±31%','±22%','±20%','±20%'].forEach((w,i) => assert(got[i].includes(w), `n=${i}: ${got[i]}`));
   });
-  test('2 levels → ±18% (all models)', ()=>{
-    assert(aucUncertaintyText(2,'buelga').includes('±18%'), '');
-    assert(aucUncertaintyText(2,'goti').includes('±18%'),   '');
-    assert(aucUncertaintyText(2,'hughes').includes('±18%'), '');
+  test('Goti-HD uses Goti widths and says it was not simulated separately', ()=>{
+    const t = aucUncertaintyText(1,'goti-hd');
+    assert(t.includes('±32%') && /not simulated separately/i.test(t), t);
+    assert(!/not simulated/i.test(aucUncertaintyText(1,'goti')), 'plain Goti IS simulated');
+  });
+  test('Every label states percentile and median', ()=>{
+    for (const m of ['buelga','goti','hughes']) for (const n of [0,1,2,3]) {
+      const t = aucUncertaintyText(n, m);
+      assert(/80% of patients/.test(t) && /median ±\d+%/.test(t), `${m} n=${n}: ${t}`);
+    }
   });
   test('≥3 levels → ±17%', ()=>{ assert(aucUncertaintyText(5,'buelga').includes('±17%'), ''); });
   test('Uncertainty is monotone non-increasing in level count', ()=>{
     const pctOf = (s) => parseFloat(s.match(/±([0-9.]+)%/)[1]);
-    const seq = [0,1,2,3].map(n => pctOf(aucUncertaintyText(n,'buelga')));
-    for (let i=1;i<seq.length;i++) {
-      assert(seq[i] <= seq[i-1], `more levels must not widen uncertainty: ${seq.join(' → ')}`);
+    for (const m of ['buelga','goti','hughes']) {
+      const seq = [0,1,2,3].map(n => pctOf(aucUncertaintyText(n,m)));
+      for (let i=1;i<seq.length;i++) {
+        assert(seq[i] <= seq[i-1], `${m}: more levels must not widen uncertainty: ${seq.join(' → ')}`);
+      }
     }
   });
 }
@@ -2681,6 +2694,89 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(Math.abs(f - 0.75) < 0.02, `expected ~0.75, got ${f.toFixed(3)}`);
     assert(fractionOfSteadyState(0.693 / 6, 12, 3) > 0.95, 'a short half-life reaches steady state');
     assert(/three doses reach only/.test(script), 'the warning must be shown');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 23 — engine audit, second batch (2026-09-28)
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const { readSerialScrChecked, uncertaintyModelKey, crclSourceLabel, setCrclOverride } = sandbox;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 23 — engine audit, second batch');
+  console.log(`${'─'.repeat(60)}`);
+
+  // Serial SCr rows are read through querySelectorAll; stub the rows.
+  const withRows = (rows, fn) => {
+    const prev = sandbox.document.querySelectorAll;
+    sandbox.document.querySelectorAll = () => rows.map(([v, d, t]) => ({
+      querySelector: (sel) => ({ '.b-scr-val': { value: v }, '.b-scr-date': { value: d }, '.b-scr-time': { value: t } })[sel] || null,
+    }));
+    try { return fn(); } finally { sandbox.document.querySelectorAll = prev; }
+  };
+
+  test('serial SCr: a time typed "6:00" is an error, never a silently mis-sorted reading', ()=>{
+    const r = withRows([['1.0', '2026-09-01', '6:00'], ['2.0', '2026-09-03', '06:00']], readSerialScrChecked);
+    assert(r.errors.length === 1 && /HH:MM/.test(r.errors[0]), JSON.stringify(r.errors));
+    assert(r.readings.length === 1 && r.readings[0].scr === 2.0, 'only the valid row is a reading');
+  });
+  test('serial SCr: a µmol/L value (88) typed as mg/dL is refused by INPUT_LIMITS', ()=>{
+    const r = withRows([['88', '2026-09-01', '06:00']], readSerialScrChecked);
+    assert(r.errors.length === 1 && r.readings.length === 0, JSON.stringify(r));
+  });
+  test('serial SCr: a value with no time is reported, a blank row is ignored', ()=>{
+    const r = withRows([['1.2', '2026-09-01', ''], ['', '', '']], readSerialScrChecked);
+    assert(r.errors.length === 1 && /time/.test(r.errors[0]), JSON.stringify(r.errors));
+  });
+  test('serial SCr: valid rows are sorted by time', ()=>{
+    const r = withRows([['2.0', '2026-09-03', '06:00'], ['1.0', '2026-09-01', '06:00']], readSerialScrChecked);
+    assert(r.errors.length === 0 && r.readings.map(x => x.scr).join() === '1,2', JSON.stringify(r));
+  });
+  test('the Bayesian fit refuses on serial SCr errors', ()=>{
+    const b = script.slice(script.indexOf('function runBayesian'));
+    assert(/readSerialScrChecked\(\)/.test(b.slice(0, b.indexOf('\nfunction '))), 'runBayesian must use the checked reader');
+  });
+
+  test('two levels at steady state: the accumulation term uses the CURRENT interval, not the target', ()=>{
+    assert(/id="tl-cur-tau"/.test(src), 'the current-interval picker is missing');
+    assert(/solveTwoLevelsPK\(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, accumTau, state\.tlBasis\)/.test(script),
+      'solveTwoLevelsPK must receive the interval the levels were drawn on');
+    // The defect it guards: the steady-state volume moves with the tau passed in.
+    const { solveTwoLevelsPK } = sandbox;
+    const a = solveTwoLevelsPK(1000, 1, 30, 2, 15, 10, 12, 'steadystate');
+    const b = solveTwoLevelsPK(1000, 1, 30, 2, 15, 10, 8,  'steadystate');
+    assert(a && b && Math.abs(a.vd - b.vd) / a.vd > 0.05, 'tau must matter at steady state — else the picker is pointless');
+  });
+
+  test('dosing weight defaults to Auto (the aa9dd6b regression)', ()=>{
+    assert(/let state = \{[^}]*dosingWt:'auto'/.test(script), 'state.dosingWt must default to auto');
+    assert(/id="dosing-wt" value="auto"/.test(src), 'the hidden field must default to auto');
+  });
+
+  test('a manual CrCl override is labelled as such, never as Cockcroft-Gault', ()=>{
+    const prev = sandbox.document.getElementById;
+    const els = { 'crcl-override-on': { checked: true }, 'crcl-override-val': { value: '45', disabled: false } };
+    sandbox.document.getElementById = (id) => els[id] || prev(id);
+    // The override state is written before any DOM refresh; the stubbed DOM
+    // cannot run updateCrCl(), so only that trailing UI refresh is tolerated.
+    const set = () => { try { setCrclOverride(); } catch (e) {} };
+    try {
+      set();
+      assert(crclSourceLabel() === 'manual override', crclSourceLabel());
+      els['crcl-override-on'].checked = false; set();
+      assert(crclSourceLabel() === 'Cockcroft-Gault', crclSourceLabel());
+    } finally { sandbox.document.getElementById = prev; }
+    assert(/crclSource: crclSourceLabel\(\)/.test(script), 'the result payload must carry the label to the print report');
+  });
+
+  test('uncertainty is read by the model actually fitted (Goti on HD → goti-hd)', ()=>{
+    assert(uncertaintyModelKey({ model: 'goti', dial: true }) === 'goti-hd', '');
+    assert(uncertaintyModelKey({ model: 'goti', dial: false }) === 'goti', '');
+    assert(uncertaintyModelKey({ model: 'hughes' }) === 'hughes', '');
+    assert(!/Figures are simulated against\s+this model's own prior/.test(src), 'the old unqualified print claim is back');
   });
 }
 
