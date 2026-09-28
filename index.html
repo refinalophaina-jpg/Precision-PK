@@ -3292,13 +3292,30 @@ function switchModule(m) {
 
 }
 
-function setSex(el, val) {
-  state.sex = val;
-  document.getElementById('sex').value = val;
-  el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-  autoWeights();
+// ── Sex is ONE patient attribute, not one per module ────────────────────
+// It used to live twice: state.sex (Trough-Based) and bState.sex (AUC
+// Precision), each written only by its own module's button. bState.sex
+// defaults to 'M', so a female patient entered in Trough-Based was saved to a
+// profile — and reloaded into BOTH modules — as male (engine audit 2026-09-28):
+// 70 F, 60 kg, 160 cm, SCr 0.9 -> CrCl 55.1 became 64.8 mL/min (+18%), a male
+// IBW, and the male Janmahasatian FFM on Hughes. Either button now sets both
+// states and both modules' toggles. Rule 2: one implementation per concept.
+function setPatientSex(val) {
+  const v = val === 'F' ? 'F' : 'M';
+  state.sex = v;
+  if (typeof bState !== 'undefined') bState.sex = v;
+  const tHidden = document.getElementById('sex');   if (tHidden) tHidden.value = v;
+  const bHidden = document.getElementById('b-sex'); if (bHidden) bHidden.value = v;
+  // restyle BOTH modules' Male/Female toggles to match
+  document.querySelectorAll('[data-onclick="k9"],[data-onclick="k39"]')
+    .forEach(b => b.classList.toggle('active', v === 'M'));
+  document.querySelectorAll('[data-onclick="k10"],[data-onclick="k40"]')
+    .forEach(b => b.classList.toggle('active', v === 'F'));
+  try { autoWeights(); } catch (e) {}
+  try { updateBayesCrCl(); } catch (e) {}
 }
+
+function setSex(el, val) { setPatientSex(val); }
 
 // Which point in the course the two entered levels come from. Elimination is
 // basis-independent; volume is not — see solveTwoLevelsPK.
@@ -4073,17 +4090,27 @@ function fitDiagnostics(r) {
   // have to re-enter the case to see it. Only meaningful for a single level on a
   // recognisable regimen, and only worth showing when the fit actually missed.
   let anchored = null;
+  // Solved by SUPERPOSITION on the doses actually given, not by fitting the
+  // level to a steady-state curve. Engine audit 2026-09-28: the steady-state
+  // fit attributed accumulation that had not happened yet, so early in therapy
+  // — when first levels are drawn — it read CL high and AUC low: true AUC24 667
+  // shown as 491 after two doses (-26%), 562 after three (-16%), correct only
+  // near steady state. V is held at the population value, as the Trough-Based
+  // module holds it; the steady-state figures are then PROJECTIONS for the
+  // detected regimen, which is what they were always presented as.
   if (rows.length === 1 && Math.abs(worst.sigma) >= 1 && r.regimen &&
       r.regimen.dose > 0 && r.regimen.tau > 0 && r.tbw > 0) {
     try {
-      const last = r.doses.filter(d => d.timeH <= worst.timeH)
-                          .sort((a, b) => b.timeH - a.timeH)[0];
-      const tObs = last ? worst.timeH - last.timeH : null;
       const vPop = BUELGA_V_PER_KG * r.tbw;
-      if (tObs > 0 && vPop > 0) {
-        const k = fitKelFromLevel(worst.obs, tObs, r.regimen.dose, r.regimen.tau,
-                                  r.regimen.tinfH || autoTinf(r.regimen.dose), vPop);
-        if (k && isFinite(k.auc24) && k.clv > 0) anchored = { ...k, tObs, vPop };
+      const conc = CL => predictConc1comp(r.doses, worst.timeH, CL / vPop, vPop);
+      let lo = 0.02, hi = 80;
+      if (vPop > 0 && conc(lo) >= worst.obs && conc(hi) <= worst.obs) {
+        for (let i = 0; i < 100; i++) { const m = (lo + hi) / 2; if (conc(m) > worst.obs) lo = m; else hi = m; }
+        const clv  = (lo + hi) / 2, kel = clv / vPop;
+        const tinf = r.regimen.tinfH || autoTinf(r.regimen.dose);
+        const pt   = calcPeakTrough(r.regimen.dose, r.regimen.tau, tinf, kel, vPop);
+        anchored = { kel, clv, vPop, peak: pt.peak, trough: pt.trough,
+                     auc24: r.regimen.dose * (24 / r.regimen.tau) / clv, superposition: true };
       }
     } catch (e) { anchored = null; }
   }
@@ -5315,10 +5342,23 @@ function calculate() {
   }
 
   // ── Level-based PK fitting ──
-  const hasLevel   = document.getElementById('has-level').checked;
+  // Gated on the mode: Initial Dosing used to fit a level left behind, hidden,
+  // from Steady State mode (engine audit 2026-09-28).
+  const hasLevel   = state.calcMode === 'level' && document.getElementById('has-level').checked;
   const levelVal   = v('level-val');
   if(hasLevel) calcTimeDelta(); // force-refresh hidden delta field before reading (guards against oninput not firing in Safari/mobile)
   const tDoseToLvl = v('time-dose-to-level'); // hours from dose start to draw
+
+  // A level that was entered is never silently replaced by population values.
+  // Engine audit 2026-09-28: a measured 28 mg/L (true AUC24 ~840) with a blank
+  // draw time, or one dated before the dose, fell through to the population
+  // branch and was told "continue, AUC 472" — the D2 class of silent timing
+  // failure, moved from the arithmetic into a branch condition.
+  if (hasLevel && levelVal > 0 && !(tDoseToLvl > 0)) {
+    alert('A level is entered, but its draw time is missing or dated before the dose.\n\n'
+        + 'Fix the dose and draw dates, or switch the level off to dose from population values.');
+    return;
+  }
 
   let adjKel = popKel, adjClv = popClv;
   let peak, trough, auc24, aucMethod;
@@ -6773,13 +6813,7 @@ let bDoseCount = 0;
 let bLevelCount = 0;
 
 // ─── Sex toggle ───
-function setBSex(el, val) {
-  bState.sex = val;
-  document.getElementById('b-sex').value = val;
-  el.parentElement.querySelectorAll('.toggle-opt, .model-opt').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-  updateBayesCrCl();
-}
+function setBSex(el, val) { setPatientSex(val); }
 
 // ─── CrCl computation (scrOverride: optional — used when serial SCr is active) ───
 // Shared reader for the Bayesian module's demographics. One place that decides
@@ -7564,12 +7598,37 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   const intervals = [8, 12, 24, 48];   // standard intervals for recommendation
   const results   = [];
 
+  // Both neighbouring 250 mg steps per interval, not just the nearest one.
+  // Engine audit 2026-09-28: with one candidate per interval, rounding a dose
+  // UP past DOSE_MAX_PER_DOSE_MG or DOSE_MAX_TDD_MG lost the whole interval even
+  // when the step below was admissible and in band. High-clearance patients were
+  // told "every candidate regimen breached a hard safety limit ... whether
+  // vancomycin is the right agent" while the exposure matrix on the same screen
+  // showed several in-band regimens. A young patient at the Buelga CrCl cap
+  // (CL 9.72 L/h) was refused at targets 525-600 with no levels at all; ~260
+  // such refusals on a CL x target grid. The nearest step still wins wherever it
+  // is admissible (ranking is unchanged), so this only adds a regimen where
+  // there was a false refusal. No new constant: the 250 mg dispensing step and
+  // the existing caps.
   for (const tau of intervals) {
     // At steady state: AUC per interval = dose/CL, so AUC24 = dose*(24/tau)/CL
     // Solve for dose: dose = targetAUC * CL / (24/tau)
     const rawDose = targetAUC * CLind / (24/tau);
-    const dose    = Math.round(rawDose / 250) * 250;
-    if (dose < 250) continue;
+    // The nearest-rounded step is listed FIRST so that when two steps at the
+    // same interval are exactly equidistant from the target, the stable tie-break
+    // keeps the historical Math.round choice. Without this, 4 of 7,398 grid
+    // cases silently moved to the lower step — a change nobody asked for.
+    const nearest = Math.round(rawDose / 250) * 250;
+    const other   = nearest > rawDose ? Math.floor(rawDose / 250) * 250 : Math.ceil(rawDose / 250) * 250;
+    // ...and the largest dose the caps allow at this interval. Neighbours alone
+    // are not enough: at CL 9.72 / target 550 both Q8H neighbours (1750, 2000)
+    // exceed the 4500 mg daily cap, while 1500 mg Q8H (TDD exactly 4500, AUC24
+    // 463, in band) is admissible two steps down. It is farther from target
+    // than any admissible neighbour, so it is chosen only when both neighbours
+    // breach a cap — i.e. only where there would otherwise be a refusal.
+    const capped  = Math.floor(Math.min(DOSE_MAX_PER_DOSE_MG, DOSE_MAX_TDD_MG * tau / 24) / 250) * 250;
+    const steps = [...new Set([nearest, other, capped])].filter(d => d >= 250);
+    for (const dose of steps) {
 
     const tinfH = autoTinf(dose);
     const auc24 = dose * (24/tau) / CLind;   // exact at SS, model-independent
@@ -7620,6 +7679,7 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
       text:`AUC24 ${auc24.toFixed(0)} is below the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} target band (Rybak 2020 Rec 1, at MIC 1 mg/L).` });
 
     results.push({ tau, dose, tinfH, auc24, tdd, Cpeak: Cpeak_ss, Ctrough, flags, hardFail });
+    }
   }
 
   if (!results.length) {
@@ -7713,9 +7773,21 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
 
   // Outside the target band but admissible: still returned, but say so plainly.
   if (!inBand.length) {
-    best.flags = (best.flags || []).concat([{ level:'warning',
-      text:`No candidate reached the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L band. This is the closest admissible regimen; review before use.` }]);
+    // Below the band BECAUSE of the ceilings is a different situation from a
+    // rounding miss, and it must say so loudly. Before the cap-bound candidate
+    // existed, these patients (CL >~12 L/h, typically augmented clearance) were
+    // refused with "reconsider ... whether vancomycin is the right agent" — which
+    // was the useful part. They now get the highest admissible regimen AND that
+    // guidance, instead of either a bare refusal or a quiet number.
+    const capBound = best.auc24 < AUC24_TARGET_MIN &&
+      (best.dose >= DOSE_MAX_PER_DOSE_MG || best.tdd >= DOSE_MAX_TDD_MG - 1e-6);
+    best.flags = (best.flags || []).concat([capBound
+      ? { level:'danger',
+          text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. This is the highest admissible regimen and it falls short at AUC₂₄ ${best.auc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` }
+      : { level:'warning',
+          text:`No candidate reached the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L band. This is the closest admissible regimen; review before use.` }]);
     best.outsideTargetBand = true;
+    if (capBound) best.capBound = true;
   }
   best.regimen = best;   // callers read rec.dose directly; keep that contract
   best.noSolution = false;
@@ -9456,6 +9528,15 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   document.getElementById('b-placeholder').style.display = 'none';
   const cont = document.getElementById('b-results');
   cont.style.display = 'flex';
+  // BACKSTOP (engine audit 2026-09-28, critical). If anything below throws, the
+  // page must NOT keep showing the previous run's recommendation as if it were
+  // current — which it did: html is assembled in a string and written once at
+  // the end, so an exception left the old innerHTML in place while runBayesian
+  // had already stamped the new inputs as fresh. Clear first, write last.
+  cont.innerHTML = `<div class="fitdx" style="border-left:3px solid var(--danger)">
+    <div class="fitdx-plain" style="color:var(--danger)">These results could not be displayed.</div>
+    <div class="fitdx-plain fitdx-plain-muted">The fit ran, but rendering it failed. No recommendation is being shown
+    rather than a previous one. Please report the inputs used.</div></div>`;
 
   let html = '';
 
@@ -10047,8 +10128,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         const gap = aucBayes ? Math.abs(fd.anchored.auc24 - aucBayes) / ((fd.anchored.auc24 + aucBayes) / 2) * 100 : null;
         note += `<div class="fitdx-note" style="border-top:1px solid var(--rule);margin-top:9px;padding-top:9px">
           <strong>Using the data you already have.</strong> Anchoring on the measurement instead of the
-          prior — solve elimination so the curve passes through your level, volume held at the population
-          value — is what the <em>Trough-Based</em> module does. On this course it gives:
+          prior — solve clearance so the curve passes through your level on the doses actually given,
+          volume held at the population value. On this course, projected to steady state on the detected
+          regimen, it gives:
           <div class="fitdx-row" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px">
             <span class="fitdx-t">Level-anchored</span>
             <span class="fitdx-n">CL ${fd.anchored.clv.toFixed(2)} L/h</span>
@@ -10062,9 +10144,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           ${gap != null ? `<div style="margin-top:6px">That is <strong>${gap.toFixed(0)}%</strong>
             from the Bayesian AUC above. Where the two disagree, note which one reproduces your
             measurement — the level-anchored estimate does so by construction.</div>` : ''}
-          <div style="margin-top:6px;color:var(--text-muted)">Its own assumptions: the level is treated as
-            a <strong>steady-state</strong> concentration on this regimen, and volume is fixed at the
-            population value rather than fitted. Both are reasonable here and neither is free.</div>
+          <div style="margin-top:6px;color:var(--text-muted)">Its own assumptions: clearance is solved on the
+            doses actually given, with volume fixed at the population value rather than fitted. One level
+            cannot separate the two, so this is one point on a range — see the clearance estimates under
+            <em>Confidence</em> for the others.</div>
         </div>`;
       }
     }
@@ -10087,7 +10170,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   })();
 
   // ── Dose recommendation ──
-  if (rec) {
+  // A refusal ({noSolution:true, regimen:null}) is a truthy object. Guarding on
+  // `if (rec)` alone called rec.auc24.toFixed on undefined and threw — the
+  // refusal banner never appeared and the previous run stayed on screen.
+  if (rec && !rec.noSolution) {
     // Colours from the sourced bands, not inline literals. The trough is labelled
     // on this card as "a safety check, not a target", so it is coloured by the
     // safety tiers (TROUGH_WARN_MGL / TROUGH_HIGH_MGL) — the old 10-20 rule
@@ -10331,7 +10417,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <div class="tinkerer-header">Dose Tinkerer — Individual PK</div>
       <div class="tinkerer-row" style="flex-wrap:wrap;gap:8px">
         <label style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap">Dose</label>
-        <input type="number" class="tinkerer-input" id="b-tink-dose" value="${rec?rec.dose:1000}" min="250" max="4500" step="250" style="width:110px">
+        <input type="number" class="tinkerer-input" id="b-tink-dose" value="${rec && !rec.noSolution ? rec.dose : 1000}" min="250" max="4500" step="250" style="width:110px">
         <label style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap">mg</label>
         <label style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap">Q</label>
         <select id="b-tink-int" class="tinkerer-input" style="width:85px;font-family:'Outfit',sans-serif;font-size:0.82rem">
@@ -10372,7 +10458,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // ── Draw graph and pre-select tinkerer interval ──
   requestAnimationFrame(() => {
     refreshProfileGraph();
-    if (rec) {
+    if (rec && !rec.noSolution) {
       const sel = document.getElementById('b-tink-int');
       if (sel) sel.value = rec.tau;
     }
@@ -10941,6 +11027,9 @@ function bayesInputFingerprint() {
     return JSON.stringify({
       age: g('b-age'), tbw: g('b-tbw'), ht: g('b-height'), scr: g('b-scr'),
       cysc: g('cysc'), sex: bState.sex, model: bState.model, dial: !!bState.dial,
+      // target and MIC change the recommendation, so a changed target must read
+      // as a stale fit — it did not (engine audit 2026-09-28)
+      target: g('b-auc-target'), mic: g('b-mic'),
       doses: doses.map(d => [d.mg, d.tinfH, +d.timeH.toFixed(4)]),
       levels: levels.map(l => [l.conc, +l.timeH.toFixed(4)]),
     });
@@ -11041,7 +11130,7 @@ function snapshotPatientCore() {
     // Prefer whichever module actually has a value, so saving from either works.
     core[f.key] = val(f.bayes) || val(f.trough) || '';
   }
-  core.sex       = (typeof bState !== 'undefined' && bState.sex) || state.sex || 'M';
+  core.sex       = state.sex === 'F' ? 'F' : 'M';   // one patient attribute — see setPatientSex
   core.dosingWt  = state.dosingWt || 'TBW';
   core.amputation = Object.assign({}, ampState);
   core.crcl      = (crclOverride.on && crclOverride.value > 0)
@@ -11062,18 +11151,7 @@ function applyPatientCore(core) {
   // Sex and dosing-weight basis are toggles, not inputs — drive them through
   // the same setters the buttons use so the active styling follows.
   try {
-    if (core.sex) {
-      const sexBtns = document.querySelectorAll('#app-shell-bayesian .toggle-opt');
-      state.sex = core.sex;
-      if (typeof bState !== 'undefined') bState.sex = core.sex;
-      document.querySelectorAll('.toggle-group').forEach(g => {
-        const opts = g.querySelectorAll('.toggle-opt');
-        if (opts.length === 2 && /male/i.test(opts[0].textContent)) {
-          opts[0].classList.toggle('active', core.sex === 'M');
-          opts[1].classList.toggle('active', core.sex === 'F');
-        }
-      });
-    }
+    if (core.sex) setPatientSex(core.sex);   // one attribute, both modules
     if (core.amputation) {
       Object.keys(ampState).forEach(k => { ampState[k] = core.amputation[k] || null; });
       const cb = document.getElementById('amp-enabled');
@@ -11174,8 +11252,9 @@ function loadProfileIntoForm(id) {
     const sexIdx = s.demographics.sex === 'F' ? 1 : 0;
     tGroups[0].querySelectorAll('.toggle-opt').forEach((b,i)=>b.classList.toggle('active', i===sexIdx));
   }
-  bState.sex = s.demographics.sex === 'F' ? 'F' : 'M';
-  const sexHidden = document.getElementById('b-sex'); if (sexHidden) sexHidden.value = bState.sex;
+  // The core, when present, is authoritative — demographics.sex of a profile
+  // saved before the fix may carry the old bState default of 'M'.
+  setPatientSex((s.core && s.core.sex) || s.demographics.sex);
 
   const modelIdx =
     s.model === 'goti'   ? 1 :
@@ -11541,8 +11620,13 @@ function _buildPrintReport() {
   html += `<tr><td>η_CL</td><td class="pr-val">${r.etaCL >= 0 ? '+' : ''}${r.etaCL.toFixed(3)}</td><td>0.000</td><td></td></tr>`;
   html += '</tbody></table></div>';
 
-  // AUC & Dose Recommendation
-  if (r.rec) {
+  // AUC & Dose Recommendation — a refusal prints its reason, never
+  // "undefined mg QundefinedH".
+  if (r.rec && r.rec.noSolution) {
+    html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
+    html += `<div class="pr-metric"><strong>No regimen offered.</strong> ${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</div>`;
+    html += `<div class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</div></div>`;
+  } else if (r.rec) {
     const best = r.rec;
     html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
     html += `<div class="pr-highlight">`;

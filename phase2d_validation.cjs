@@ -1576,17 +1576,27 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('When the fit misses, the level-anchored alternative is offered', ()=>{
-    // What the Trough-Based module would say, computed inline so a clinician
-    // does not have to re-enter the case to get the answer from the data they
-    // already have. Reproduces the separately-reported 466 / 13.4 / 26.8.
+    // CHANGED 2026-09-28 (engine audit), with the reason recorded per rule 9.
+    // This test used to pin CL 4.29 / AUC 466 / trough 13.4 / peak 26.8 — the
+    // Trough-Based module's STEADY-STATE fit. But this course is a load and two
+    // maintenance doses, not steady state, and that fit does not reproduce the
+    // level it claims to be anchored to: run on the doses actually given,
+    // CL 4.29 predicts 11.33 mg/L against the measured 12.20. The panel said
+    // the anchored estimate reproduces the measurement "by construction"; it
+    // did not. Solving by superposition on the actual doses gives CL 4.04 /
+    // AUC24 495 and reproduces 12.20 exactly. The pinned numbers were the
+    // defect's output, so they are replaced by the property that matters.
     const withReg = Object.assign({}, CASE, { tbw: 69.4, regimen: { dose: 1000, tau: 12, tinfH: 1 } });
     const fd = fitDiagnostics(withReg);
     assert(fd.anchored, 'a >1 sigma miss must offer the level-anchored estimate');
-    assert(Math.abs(fd.anchored.auc24 - 466) < 3, `AUC ${fd.anchored.auc24.toFixed(0)}, expected ~466`);
-    assert(Math.abs(fd.anchored.trough - 13.4) < 0.15, `trough ${fd.anchored.trough.toFixed(1)}, expected ~13.4`);
-    assert(Math.abs(fd.anchored.peak - 26.8) < 0.2, `peak ${fd.anchored.peak.toFixed(1)}, expected ~26.8`);
-    assert(Math.abs(fd.anchored.clv - 4.29) < 0.05, `CL ${fd.anchored.clv.toFixed(2)}, expected ~4.29`);
-    // The whole point: it reproduces the measurement, unlike the MAP fit.
+    const V = 0.98 * 69.4;
+    const c = predictConc1comp(CASE.doses, CASE.levels[0].timeH, fd.anchored.kel, V);
+    assert(Math.abs(c - 12.2) < 0.02,
+      `the anchored estimate must reproduce the measured 12.2 on the doses actually given; gives ${c.toFixed(2)}`);
+    assert(Math.abs(fd.anchored.clv - 4.04) < 0.05, `CL ${fd.anchored.clv.toFixed(2)}, expected ~4.04`);
+    assert(Math.abs(fd.anchored.auc24 - 495) < 4, `AUC ${fd.anchored.auc24.toFixed(0)}, expected ~495`);
+    assert(fd.anchored.superposition === true, 'must be solved by superposition, not a steady-state curve');
+    // And it differs materially from the prior-dominated MAP fit.
     assert(Math.abs(fd.anchored.trough - fd.rows[0].pred) > 4,
       'the anchored estimate should differ materially from the prior-dominated fit');
   });
@@ -2541,6 +2551,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   const src    = fs.readFileSync(htmlPath, 'utf8');
   const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
   const { fitKelFromLevel, fitKelFromEarlyLevel, fractionOfSteadyState } = sandbox;
+  const K = __extractConsts();
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log('  SUITE 22 — engine audit findings');
@@ -2587,6 +2598,81 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('the dose-number choice is required, not defaulted', ()=>{
     assert(/<option value="">— choose —<\/option>/.test(src), 'the dose number must default to unchosen');
     assert(/Choose whether it followed the 1st or the 2nd dose/.test(script), 'an unchosen dose number must block');
+  });
+
+  // CRITICAL — a refused recommendation left the previous run on screen.
+  test('a refused recommendation cannot leave the previous run on screen', ()=>{
+    const start = script.indexOf('function renderBayesianResults');
+    const body = script.slice(start, start + 150000);
+    const clearAt = body.indexOf('cont.innerHTML = `');
+    const buildAt = body.indexOf("let html = '';");
+    assert(clearAt > 0 && clearAt < buildAt,
+      'the results must be cleared BEFORE the new html is built, so an exception cannot preserve the old run');
+    assert(/Dose recommendation ──[\s\S]{0,400}if \(rec && !rec\.noSolution\)/.test(body),
+      'the dose card must not treat a refusal ({noSolution:true}) as a recommendation');
+    assert(!/if \(rec\) \{\s*const sel/.test(body), 'the tinkerer preselect must also exclude a refusal');
+  });
+
+  test('the print report prints a refusal\'s reason, not "undefined mg"', ()=>{
+    assert(/r\.rec && r\.rec\.noSolution[\s\S]{0,300}No regimen offered/.test(script),
+      'the print report must handle a refusal explicitly');
+  });
+
+  test('a changed target or MIC marks the fit as stale', ()=>{
+    const f = sandbox.bayesInputFingerprint.toString();
+    assert(/b-auc-target/.test(f) && /b-mic/.test(f), 'target and MIC must be part of the fingerprint');
+  });
+
+  test('a young patient at the CrCl cap is offered a regimen, not refused', ()=>{
+    // Buelga CL at CrCl 150 = 9.72 L/h. Rounding the nearest step past a cap
+    // used to lose the interval; ~260 grid cases were falsely refused.
+    const { bayesDoseOptimizer } = sandbox;
+    for (const t of [525, 550, 575, 600]) {
+      const r = bayesDoseOptimizer(9.72, 80, t, null, 1);
+      assert(!r.noSolution, `target ${t} was refused at CL 9.72: ${r.reason || ''}`);
+      assert(r.dose <= K.DOSE_MAX_PER_DOSE_MG && r.auc24 <= K.AUC24_ABSOLUTE_MAX, 'must still respect the hard tier');
+    }
+  });
+
+  test('a cap-limited shortfall keeps the "alternative agent" guidance, at danger level', ()=>{
+    // CL 13.5: no regimen within 2000 mg / 4500 mg reaches 400. It used to be
+    // refused; it now returns the highest admissible regimen, and must not do so
+    // quietly.
+    const r = sandbox.bayesDoseOptimizer(13.5, 80, 450, null, 1);
+    assert(!r.noSolution && r.capBound === true, 'expected a cap-bound regimen');
+    const f = (r.flags || []).find(x => /conventional ceilings/.test(x.text));
+    assert(f && f.level === 'danger', 'the cap-limited shortfall must be a danger-level note');
+    assert(/alternative agent/.test(f.text) && /Confirm the clearance/.test(f.text), 'must carry the guidance');
+  });
+
+  test('offering both dose steps preserves the historical equidistant choice', ()=>{
+    // 1000 mg Q24H (AUC 444) and 1250 mg Q24H (AUC 556) are both 56 from 500.
+    // Math.round chose 1250; the fix must not silently change that.
+    const r = sandbox.bayesDoseOptimizer(2.25, 55, 500, null, 1);
+    assert(r.dose === 1250 && r.tau === 24, `expected 1250 mg Q24H, got ${r.dose} mg Q${r.tau}H`);
+  });
+
+  test('an entered level with no usable draw time is refused, never replaced by population', ()=>{
+    const c = script.slice(script.indexOf('function calculate()'));
+    const body = c.slice(0, c.indexOf('\nfunction '));
+    assert(/hasLevel && levelVal > 0 && !\(tDoseToLvl > 0\)/.test(body),
+      'a level with a blank or reversed draw time must block, not fall through to population');
+    assert(/state\.calcMode === 'level' && document\.getElementById\('has-level'\)\.checked/.test(body),
+      'a level left over from Steady State mode must not be fitted in Initial Dosing');
+  });
+
+  test('patient sex is one attribute across both modules', ()=>{
+    const { setPatientSex, snapshotPatientCore } = sandbox;
+    assert(typeof setPatientSex === 'function', 'setPatientSex missing');
+    assert(/function setSex\(el, val\) \{ setPatientSex\(val\); \}/.test(script), 'the Trough button must use it');
+    assert(/function setBSex\(el, val\) \{ setPatientSex\(val\); \}/.test(script), 'the AUC button must use it');
+    // state/bState are `let` in the vm, so the property check goes through the
+    // setter's source: it must write BOTH.
+    const src2 = setPatientSex.toString();
+    assert(/state\.sex = v/.test(src2) && /bState\.sex = v/.test(src2), 'setPatientSex must write both states');
+    const f = snapshotPatientCore.toString();
+    assert(!/bState\.sex\) \|\| state\.sex/.test(f),
+      'the snapshot must not prefer bState.sex, whose default "M" overwrote a female patient');
   });
 
   test('"Yes, >= 3 doses" warns when three doses are not steady state', ()=>{
