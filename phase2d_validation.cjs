@@ -2801,6 +2801,135 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 24 — engine audit, medium findings (2026-09-28)
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf = (name) => { const c = code.slice(code.indexOf('function ' + name + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  const { selectEffectiveScr, kdigoStage, ssCurve2comp, ssCtrough2comp, gotiGraphParams, calcAUC_trap,
+          interpretLevelTiming, assessClinicalStatus, optFlagHTML, parseBayesCourse, calcCLv } = sandbox;
+  const K = __extractConsts();
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 24 — engine audit, medium findings');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('serial SCr rows default to LOCAL date (not UTC)', ()=>{
+    const b = bodyOf('addScrRow');
+    assert(/localDateStr\(\)/.test(b) && !/toISOString/.test(b), 'addScrRow must use localDateStr');
+  });
+  test('effective SCr is the most recent reading; a shift across the fit is flagged', ()=>{
+    const rs = [{ scr: 1.0, timeH: 14 }, { scr: 2.0, timeH: 29 }];   // last dose at 20 h
+    const sel = selectEffectiveScr(rs, 20);
+    assert(sel.scr === 2.0, `newest must win, got ${sel.scr}`);
+    assert(sel.nearestScr === 1.0 && sel.changedAcrossFit === true, JSON.stringify(sel));
+    assert(selectEffectiveScr([{ scr: 1.0, timeH: 14 }, { scr: 1.1, timeH: 29 }], 20).changedAcrossFit === false, 'a 0.1 drift is not a change');
+  });
+  test('KDIGO: a stable SCr of 4.2 is not "AKI Stage 3"', ()=>{
+    assert(kdigoStage([{ scr: 4.2, timeH: 0 }, { scr: 4.2, timeH: 24 }]) === 0, '');
+  });
+  test('KDIGO: 0.3 rise within 48 h from the LOWEST prior reading, not the first', ()=>{
+    // old rule: last/first = 1.07 and first-48h window = +0.1 → stage 0
+    assert(kdigoStage([{ scr: 1.5, timeH: 0 }, { scr: 1.0, timeH: 24 }, { scr: 1.6, timeH: 60 }]) === 1, '');
+  });
+  test('KDIGO: fold thresholds within 7 days, and >= 4.0 is stage 3 only with AKI', ()=>{
+    assert(kdigoStage([{ scr: 1.0, timeH: 0 }, { scr: 2.1, timeH: 72 }]) === 2, 'x2.1 → stage 2');
+    assert(kdigoStage([{ scr: 1.0, timeH: 0 }, { scr: 3.0, timeH: 100 }]) === 3, 'x3 → stage 3');
+    assert(kdigoStage([{ scr: 2.0, timeH: 0 }, { scr: 4.1, timeH: 72 }]) === 3, 'AKI and >= 4.0 → stage 3');
+    assert(kdigoStage([{ scr: 1.0, timeH: 0 }, { scr: 1.5, timeH: 200 }]) === 0, 'outside 7 days and 48 h → none');
+  });
+  test('stale-fit fingerprint covers serial SCr and the regimen override', ()=>{
+    const b = bodyOf('bayesInputFingerprint');
+    assert(/readSerialScr\(\)/.test(b) && /regimenOverrideH/.test(b), 'fingerprint must include both');
+  });
+  test('2-comp SS curve is at steady state and matches the card trough (low CL)', ()=>{
+    const CL = 4.5 * Math.pow(20/120, 0.8), Vc = 58.4 * 80/70, Vp = 38.4, Q = 6.5;
+    const pts = ssCurve2comp(250, 8, 1, CL, Vc, Vp, null, 200, Q);
+    const card = ssCtrough2comp(250, 8, 1, CL, Vc, Vp, Q);
+    const start = pts[0].c, end = pts[pts.length - 1].c;
+    assert(Math.abs(end - card) / card < 0.01, `drawn trough ${end.toFixed(2)} vs card ${card.toFixed(2)}`);
+    assert(Math.abs(start - end) / end < 0.01, `not periodic: ${start.toFixed(2)} → ${end.toFixed(2)}`);
+    assert(pts.some(p => Math.abs(p.t - 1) < 1e-12), 'the end of the infusion must be sampled');
+    assert(!/ssCurve2comp\([^)]*, 12, 200/.test(code), 'callers must not pin 12 cycles');
+  });
+  test('print report: 2-comp micro-constants come from one accessor, also for saved profiles', ()=>{
+    const live = gotiGraphParams({ model: 'goti', CL_ind: 4, goti: { k10_ind: 0.1, k12_ind: 0.2, k21_ind: 0.3, Vc_ind: 40 } });
+    assert(live.ind.k10 === 0.1 && live.ind.Vc === 40, JSON.stringify(live));
+    const saved = gotiGraphParams({ model: 'hughes', CL_ind: 4, CL_pop: 5, goti: { Vc_ind: 40, Vp_ind: 50, Vc_pop: 45, Vp_pop: 55, Q: 6.36 } });
+    assert(Math.abs(saved.ind.k10 - 0.1) < 1e-12 && Math.abs(saved.ind.k21 - 6.36/50) < 1e-12, JSON.stringify(saved));
+    assert(gotiGraphParams({ model: 'buelga' }).ind === null, 'no 2-comp for Buelga');
+    assert(!/r\.gotiInd/.test(code), 'r.gotiInd is never set — nothing may read it');
+  });
+  test('AUC trapezoid never returns AUC per interval', ()=>{
+    assert(Math.abs(calcAUC_trap(25, 25, 12, 12, 0) - 600) < 1e-9, 'equal peak/trough at q12h → 25×24');
+  });
+  test('Trough modes: infusion times validated, tinf >= tau refused, no silent 1 h fill', ()=>{
+    const b = bodyOf('calculate');
+    assert(/must be shorter than the dosing interval/.test(b), 'tinf >= tau must be refused');
+    assert(!/v\('(rl|tl|init)-tinf'\) \|\| 1/.test(b), 'no "|| 1" infusion fallback');
+    assert(/\['tinf','tinf'\]/.test(b) && /\['level-val', 'level'/.test(b), 'tinf and level go through INPUT_LIMITS');
+  });
+  test('a level charted at the dose start is that dose\'s trough, not "during the infusion"', ()=>{
+    const doses = [0, 12, 24, 36, 48].map(h => ({ mg: 1000, tinfH: 1, timeH: h }));
+    const t = interpretLevelTiming(48, doses, 12);
+    assert(t.classification !== 'during_infusion' && Math.abs(t.hoursFromDoseStart - 12) < 1e-9, JSON.stringify(t));
+  });
+  test('AUC above target with a low trough is a reduction, without the inverted Vd claim', ()=>{
+    const a = assessClinicalStatus(700, 8, 10, 20);
+    assert(a.action === 'reduce', a.action);
+    assert(!/large Vd with slow clearance/.test(a.summary), a.summary);
+  });
+  test('optimizer out-of-band flag is rendered in all three Trough renderers', ()=>{
+    assert(/No dose at Q12H/.test(optFlagHTML('auc_supra', null, 12, 666, 23.8, 10)), 'message');
+    assert(optFlagHTML(null) === '', 'no flag, no box');
+    assert((script.match(/optFlagHTML\(d\.optFlag/g) || []).length === 4, 'four rec cards');
+    assert(/optFlag: tlOpt\.flag/.test(script) && /optFlag: rlOpt\.flag/.test(script), 'two-level and random payloads');
+  });
+  test('profile reload restores the CrCl weight basis', ()=>{
+    assert(/setDosingWt\(dwBtn, core\.dosingWt\)/.test(bodyOf('applyPatientCore')), 'applyPatientCore must restore dosingWt');
+  });
+
+  // parseBayesCourse reads rows by id; stub the DOM for it.
+  const withCourse = (doseRows, lvlRows, fn) => {
+    const prevQ = sandbox.document.querySelectorAll, prevG = sandbox.document.getElementById;
+    const f = {};
+    doseRows.forEach(([mg, ti, d, t], i) => Object.assign(f, { [`b-dose-mg-${i}`]: mg, [`b-dose-tinf-${i}`]: ti, [`b-dose-date-${i}`]: d, [`b-dose-time-${i}`]: t }));
+    lvlRows.forEach(([c, d, t], i) => Object.assign(f, { [`b-lvl-conc-${i}`]: c, [`b-lvl-date-${i}`]: d, [`b-lvl-time-${i}`]: t }));
+    sandbox.document.querySelectorAll = (sel) => /dose-row/.test(sel) ? doseRows.map((_, i) => ({ id: `b-dose-row-${i}` }))
+      : /level-row/.test(sel) ? lvlRows.map((_, i) => ({ id: `b-level-row-${i}` })) : [];
+    sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
+    try { return fn(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+  };
+  test('course rows: a blank time is an error, never midnight', ()=>{
+    const r = withCourse([['1000', '1', '2026-09-01', '']], [], parseBayesCourse);
+    assert(r.errors.length === 1 && /time/.test(r.errors[0]) && r.doses.length === 0, JSON.stringify(r.errors));
+  });
+  test('course rows: dose, infusion and concentration go through INPUT_LIMITS', ()=>{
+    const r = withCourse([['10000', '1', '2026-09-01', '08:00'], ['1000', '60', '2026-09-01', '20:00']], [['1500', '2026-09-02', '07:00']], parseBayesCourse);
+    assert(r.errors.length === 3, JSON.stringify(r.errors));
+  });
+  test('course rows: a duplicated dose row and an overlapping infusion are errors', ()=>{
+    const dup = withCourse([['1000', '1', '2026-09-01', '08:00'], ['1000', '1', '2026-09-01', '08:00']], [], parseBayesCourse);
+    assert(dup.errors.some(e => /duplicate/.test(e)), JSON.stringify(dup.errors));
+    const ovl = withCourse([['1000', '2', '2026-09-01', '08:00'], ['1000', '1', '2026-09-01', '09:00']], [], parseBayesCourse);
+    assert(ovl.errors.some(e => /before the .* infusion ends/.test(e)), JSON.stringify(ovl.errors));
+  });
+  test('print report derives SCr, uncapped CrCl and advisories from the SCr the fit used', ()=>{
+    const b = script.slice(script.indexOf('function _buildPrintReport'));
+    assert(/getUncappedCrCl\(fitScrN/.test(b) && /gotiScrTruncationActive\(fitScrN/.test(b), 'report must use the fitted SCr');
+    assert(!/getUncappedCrCl\(\)/.test(b.slice(0, 20000)), 'no argument-less (baseline) call in the report');
+  });
+  test('Buelga CrCl limit: one guard in both modules, labelled as the calculator\'s', ()=>{
+    const cap = parseFloat(script.match(/CRCL_MODEL_CAP = ([0-9.]+)/)[1]);   // parsed, never copied (rule 6)
+    const cl = calcCLv('buelga', 256, 80);
+    assert(Math.abs(cl - 1.08 * cap * 0.06) < 1e-9, `Trough Buelga must apply the guard, got ${cl}`);
+    assert(!/Buelga 2005'} caps CrCl/.test(script) && /extrapolation guard/.test(script), 'the cap must not be attributed to Buelga');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

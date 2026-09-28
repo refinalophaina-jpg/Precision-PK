@@ -318,6 +318,37 @@ Verified live under the production CSP with real keystrokes: `250|8` →**→** 
 13.1, peak 35.8. One tab stop throughout. `SUITE 20` fails the build if a positive `tabindex`
 appears anywhere in the body.
 
+## D8 — The 150 mL/min CrCl limit on Buelga is the calculator's, and applies in both modules
+
+The 150 mL/min truncation is Goti's ("CrCL greater than 150 ml/min was truncated to 150 ml/min",
+Goti 2018 Methods). Buelga 2005 has no cap: its population was CLcr 89.4 ± 39.2 mL/min
+(Table 1), and the PDF contains no truncation language. The ARC advisory nonetheless said
+"Buelga 2005 caps CrCl at 150 mL/min in the published model", and only AUC Precision applied
+it — the Trough module's Buelga, described as "the same model the AUC module uses", did not.
+One ARC patient (25 M, 80 kg, SCr 0.5, CG 256 mL/min) therefore had two Buelga clearances,
+16.6 and 9.7 L/h.
+
+**Decision:** keep 150 on the Buelga path as an **extrapolation guard** — CG at 256 is far
+outside the data Buelga was fitted on, and Cockcroft-Gault overestimates most at low SCr —
+apply it in both modules, and label it everywhere as the calculator's choice, never the
+paper's. The posterior can still move above the prior when levels are measured.
+
+**Reversible:** removing the guard is one line in `calcCLv` and one in `getBayesCrCl`, plus
+`SUITE 24`'s Buelga test. It is a clinical choice the reviewing pharmacist may overrule.
+
+## D9 — AUC uncertainty is simulated per model
+
+`AUC_UNCERTAINTY` was simulated only for Buelga; Goti and Hughes borrowed its rows under a
+"~80% of patients" label, and the print report said the widths were "simulated against this
+model's own prior". `docs/audit/uncertainty-by-model.cjs` repeats the original design
+(1000 mg q12h × 8, steady-state troughs) with truth drawn from each model's own prior and
+residual error, n = 1500, seeds 7/11/23. The Buelga rows reproduce the shipped table
+(35.8/20.9/18.0/17.2), which validates the harness. For Goti the Buelga band covered only
+60–67% of patients, the misses mostly above — so the page understated the chance of exposure
+over 600. Widths (p80 / median, 0–3+ levels): Buelga 35/21/18/17, Goti 48/32/27/26,
+Hughes 31/22/20/20. Goti-HD is not simulated separately and says so. The Trough module's
+±22%/±30% has no simulation behind it and is now labelled "approx., not simulated".
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

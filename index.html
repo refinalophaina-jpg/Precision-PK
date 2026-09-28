@@ -4757,7 +4757,9 @@ function calcCLv(model, crcl, tbw) {
   switch(model) {
     // Buelga 2005 (AAC 2005;49:4934-41), general model, VERIFIED against source:
     // "CL (liters/h) = 1.08 x CLCR(Cockcroft and Gault) (liters/h)"
-    case 'buelga':  return (1.08 * crcl) * ML_MIN_TO_L_H;
+    // CrCl limited to CRCL_MODEL_CAP — the same extrapolation guard AUC
+    // Precision's Buelga prior uses (see CRCL_MODEL_CAP for provenance, D8).
+    case 'buelga':  return (1.08 * Math.min(crcl, CRCL_MODEL_CAP)) * ML_MIN_TO_L_H;
     // VancoPK: CLv = 0.75(CrCl) + 4, per vancopk.com's own documentation, which
     // states the equation was "updated November 2023 ... derived using linear
     // regression of vancomycin clearance and creatinine clearance". Site
@@ -4954,7 +4956,9 @@ function calcAUC(dose, tau, clv) {
 }
 
 function calcAUC_trap(peak, trough, tau, tinf, kel) {
-  if(peak <= trough || peak <= 0 || trough <= 0) return (peak + trough)/2 * tau;
+  // The degenerate branch returned AUC per INTERVAL, printed as AUC24 — a 12 h
+  // bag on q12h at 25 mg/L read 300 instead of 600 (audit 2026-09-28).
+  if(peak <= trough || peak <= 0 || trough <= 0) return (peak + trough)/2 * tau * (24 / tau);
   const linTrap = ((trough + peak) / 2) * tinf;
   const logTrap = ((peak - trough) / Math.log(peak / trough)) * (tau - tinf);
   return (linTrap + logTrap) * (24 / tau);
@@ -5026,6 +5030,25 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
   return { ...best, flag: best.auc > 600 ? 'auc_supra' : 'auc_sub' };
 }
 
+// findOptimalDose's flag was computed and never rendered (audit 2026-09-28):
+// with low clearance on a short interval the card recommended 500 mg Q12H at
+// AUC 666 as "the" dose, while the explorer beside it listed in-band regimens.
+function optFlagHTML(flag, flagMsg, tau, auc, trough, troughMin) {
+  if (!flag) return '';
+  let msg = flagMsg || '';
+  const inBand = auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX;
+  if (flag === 'auc_supra' || flag === 'auc_sub' || (flag === 'auc_borderline' && !inBand)) {
+    msg = `No dose at Q${fmtTau(tau)}H on 250 mg steps reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L; `
+        + `this is the closest (AUC₂₄ ${auc.toFixed(0)}). Check the dose explorer for another interval.`;
+  } else if (flag === 'auc_borderline') {
+    msg = `AUC₂₄ ${auc.toFixed(0)} mg·h/L is in range, but the trough (${trough.toFixed(1)} mg/L) is well below the `
+        + `${troughMin} mg/L trough target. AUC is the primary target; confirm with a level.`;
+  }
+  if (!msg) return '';
+  return `<div class="model-info-box" style="margin-top:8px;background:rgba(191,133,48,0.05);border-color:rgba(191,133,48,0.25)">
+    <span style="color:var(--text-secondary)">${escHtml(msg)}</span></div>`;
+}
+
 // Assess overall clinical status with AUC as primary, trough as secondary
 function assessClinicalStatus(auc24, trough, troughMin, troughMax) {
   // Primary: AUC status
@@ -5089,9 +5112,13 @@ function assessClinicalStatus(auc24, trough, troughMin, troughMax) {
   }
 
   if(aucSupra && troughLow) {
-    return { status:'warn', primary:'AUC supratherapeutic, trough low', secondary:'Unusual PK pattern',
-      action:'review', color:'warning',
-      summary:`AUC ${auc24.toFixed(0)} mg·h/L is elevated despite a low trough — this unusual pattern may suggest a large Vd with slow clearance, or level timing issues. Review dose timing and consider additional levels.`,
+    // AUC is the primary target, so this is a reduction. The old text blamed "a
+    // large Vd with slow clearance", which gives a HIGH trough; a high AUC with a
+    // low trough means a short half-life relative to the interval — a large
+    // peak-to-trough swing (audit 2026-09-28).
+    return { status:'warn', primary:'AUC supratherapeutic, trough low', secondary:'Large peak-to-trough swing',
+      action:'reduce', color:'warning',
+      summary:`AUC₂₄ ${auc24.toFixed(0)} mg·h/L is above target although the trough is low: the half-life is short relative to the interval, so exposure is concentrated in a high peak. AUC is the primary target — reduce the daily dose, and check the level timing.`,
       divergence: true };
   }
 
@@ -5242,7 +5269,7 @@ function updateModelInfo() {
     vancopk: 'VancoPK — CL = 0.75(CrCl) + 4. Per vancopk.com\'s own documentation, an in-house linear regression "updated November 2023". Site documentation, not peer-reviewed. The Vd model (0.29·age + 0.33·TBW + 11) IS published — Fewel 2021, J Clin Pharm Ther 46:1426–32.',
     matzke: 'Matzke 1984 (AAC 25:433–7) — CL = 3.66 + 0.689(CrCl), r = 0.8807, verified verbatim. 56 patients across three renal strata.',
     matzke_pooled: 'Matzke 1984, same clearance equation. Vd uses the n-weighted mean of all 56 patients (0.875 L/kg) instead of switching on CrCl 60 — the paper found "no significant relationship between the steady-state volume of distribution and CLCR".',
-    buelga: 'Buelga 2005 (AAC 49:4934–41), general model, verified verbatim: CL (L/h) = 1.08 × CLcr (L/h), V = 0.98 × TBW. Developed in haematological malignancy. Same model the AUC module uses as its Bayesian prior.',
+    buelga: 'Buelga 2005 (AAC 49:4934–41), general model, verified verbatim: CL (L/h) = 1.08 × CLcr (L/h), V = 0.98 × TBW. Developed in haematological malignancy (CLcr 89 ± 39 mL/min). CLcr above 150 mL/min is limited to 150 — a calculator extrapolation guard, not part of the paper. Same model and guard as the AUC module\'s Bayesian prior.',
     bauer: 'Bauer, Pharmacotherapy 11e ch.e5 — textbook method, Vd 0.7 L/kg, normalised to TBW. No standalone source paper.'
   };
   const vdNote = {
@@ -5274,11 +5301,32 @@ function calculate() {
         ['age', 'age'], ['tbw', 'weight'], ['height', 'height'], ['scr', 'scr'],
       ]))) return;
 
+  // Regimen inputs and concentrations go through the same limits (engine audit
+  // 2026-09-28). A blank infusion time used to be silently filled with 1 h in
+  // the Two-Level and Random modes, and read as 0 (NaN peak and trough beside a
+  // dose) in Steady State mode; nothing rejected an infusion as long as the
+  // interval, which gives a trough above the peak and an AUC per interval.
+  const regimenSpecs = isRandomLevel ? [['rl-dose','dose'], ['rl-tinf','tinf'], ['rl-c','level','Measured level']]
+    : isTwoLevels ? [['tl-dose','dose'], ['tl-tinf','tinf'], ['tl-c1','level','Level 1'], ['tl-c2','level','Level 2']]
+    : isInitial   ? [['init-tinf','tinf']]
+    : [['dose','dose'], ['tinf','tinf']];
+  if (!reportValidation(validateFields(regimenSpecs))) return;
+  {
+    const tinfId = isRandomLevel ? 'rl-tinf' : isTwoLevels ? 'tl-tinf' : isInitial ? 'init-tinf' : 'tinf';
+    const tauId  = isRandomLevel ? 'rl-tau'  : isTwoLevels ? 'tl-tau'  : isInitial ? 'init-interval' : 'interval';
+    const ti = v(tinfId), ta = v(tauId);
+    if (!(ta > 0)) { alert('Choose the dosing interval.'); return; }
+    if (ti >= ta) {
+      alert(`The infusion time (${ti} h) must be shorter than the dosing interval (${ta} h).\n\nContinuous or overlapping infusion is not supported by this calculator.`);
+      return;
+    }
+  }
+
   // ── Random Level mode: fit Kel from single level at any timepoint ──
   if (isRandomLevel) {
-    const rlDose = v('rl-dose'), rlTinf = v('rl-tinf') || 1;
+    const rlDose = v('rl-dose'), rlTinf = v('rl-tinf');
     const rlC    = v('rl-c');
-    const rlTau  = v('rl-tau') || 12;
+    const rlTau  = v('rl-tau');
     calcRLDelta();
     const rlT = parseFloat(document.getElementById('rl-t-hours').value) || 0;
     if (!rlDose)  { alert('Please enter the dose given.'); return; }
@@ -5315,7 +5363,7 @@ function calculate() {
       rlInterval: state.rlMode === 'steadystate' ? (v('rl-interval') || 12) : null,
       indKel, indClv, indT12,
       troughMin, troughMax, mic,
-      optDose: rlOpt.dose,
+      optDose: rlOpt.dose, optFlag: rlOpt.flag, optFlagMsg: rlOpt.flagMsg,
       optPT:   calcPeakTrough(rlOpt.dose, rlTau, rlTinf, indKel, popVd),
       optAUC:  calcAUC(rlOpt.dose, rlTau, indClv)
     });
@@ -5324,10 +5372,10 @@ function calculate() {
 
   // ── Two Levels mode: solve PK from two first-dose levels, then render separate view ──
   if (isTwoLevels) {
-    const tlDose = v('tl-dose'), tlTinf = v('tl-tinf') || 1;
+    const tlDose = v('tl-dose'), tlTinf = v('tl-tinf');
     const tlC1   = v('tl-c1'),   tlT1   = parseFloat(document.getElementById('tl-t1-hours').value) || 0;
     const tlC2   = v('tl-c2'),   tlT2   = parseFloat(document.getElementById('tl-t2-hours').value) || 0;
-    const tlTau  = v('tl-tau')  || 12;
+    const tlTau  = v('tl-tau');
     if (!tlDose)         { alert('Please enter the dose given.'); return; }
     if (!tlC1 || !tlT1)  { alert('Please enter Level 1 concentration and draw time.'); return; }
     if (!tlC2 || !tlT2)  { alert('Please enter Level 2 concentration and draw time.'); return; }
@@ -5374,7 +5422,7 @@ function calculate() {
       tlDose, tlTinf, tlTau,
       ...tlPK,
       troughMin, troughMax, mic,
-      optDose:tlOpt.dose, optPT:calcPeakTrough(tlOpt.dose, tlTau, tlTinf, tlPK.kel, tlPK.vd),
+      optDose:tlOpt.dose, optFlag: tlOpt.flag, optFlagMsg: tlOpt.flagMsg, optPT:calcPeakTrough(tlOpt.dose, tlTau, tlTinf, tlPK.kel, tlPK.vd),
       optAUC:calcAUC(tlOpt.dose, tlTau, tlPK.clv)
     });
     return; // done — skip the rest of calculate()
@@ -5383,8 +5431,8 @@ function calculate() {
   // Mode-specific regimen inputs
   let dose, tau, tinf;
   if (isInitial) {
-    tau  = v('init-interval') || 12;
-    tinf = v('init-tinf') || 1;
+    tau  = v('init-interval');
+    tinf = v('init-tinf');
     dose = 0; // will be auto-solved below after computing population PK
   } else {
     dose = v('dose'); tau = v('interval'); tinf = v('tinf');
@@ -5429,6 +5477,7 @@ function calculate() {
   // draw time, or one dated before the dose, fell through to the population
   // branch and was told "continue, AUC 472" — the D2 class of silent timing
   // failure, moved from the arithmetic into a branch condition.
+  if (hasLevel && !reportValidation(validateFields([['level-val', 'level', 'Measured level']]))) return;
   if (hasLevel && levelVal > 0 && !(tDoseToLvl > 0)) {
     alert('A level is entered, but its draw time is missing or dated before the dose.\n\n'
         + 'Fix the dose and draw dates, or switch the level off to dose from population values.');
@@ -5736,6 +5785,7 @@ function renderResults(d) {
       <p class="section-label">Maintenance Dose Recommendation</p>
       <div class="rec-box" style="margin-top:0">
         <div class="rec-dose">${d.optDose} mg <span>Q${d.tau}H</span></div>
+        ${optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin)}
         <div class="rec-rationale">Based on population PK — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L</div>
         <div class="rec-targets" style="margin-top:10px">
           <div class="rec-target-chip"><span class="dot"></span>SS Trough: ${d.optPT.trough.toFixed(1)} mg/L</div>
@@ -5777,6 +5827,7 @@ function renderResults(d) {
         ${a.divergence ? `<span class="stat-badge badge-warn" style="position:static;background:rgba(184,125,48,0.15);color:var(--accent-amber);border-color:rgba(184,125,48,0.35)">Trough–AUC Divergence</span>` : ''}
       </div>
       <div class="rec-dose">${recRegimen.split(' ')[0]} <span>${recRegimen.split(' ').slice(1).join(' ')}</span></div>
+      ${showOptDose ? optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin) : ''}
       ${recRat ? `<div class="rec-rationale">${recRat}</div>` : ''}
       ${divergenceHTML}
       <div class="rec-targets">
@@ -6086,6 +6137,7 @@ function renderTwoLevels(d) {
       <p class="section-label">Maintenance Dose Recommendation</p>
       <div class="rec-box" style="margin-top:0">
         <div class="rec-dose">${d.optDose} mg <span>Q${d.tlTau}H</span></div>
+        ${optFlagHTML(d.optFlag, d.optFlagMsg, d.tlTau, d.optAUC, d.optPT.trough, d.troughMin)}
         <div class="rec-rationale">Based on individual PK — estimated SS trough ${trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L · t½ ${t12Ind} hr</div>
         <div class="rec-targets" style="margin-top:10px">
           <div class="rec-target-chip"><span class="dot ${aucStatus!=='ok'?'warn':''}"></span>AUC₂₄: ${d.optAUC.toFixed(0)} mg·h/L</div>
@@ -6315,6 +6367,7 @@ function renderRandomLevel(d) {
       <p class="section-label">Scheduled Maintenance Dose Recommendation</p>
       <div class="rec-box" style="margin-top:0">
         <div class="rec-dose">${d.optDose} mg <span>Q${d.rlTau}H</span></div>
+        ${optFlagHTML(d.optFlag, d.optFlagMsg, d.rlTau, d.optAUC, d.optPT.trough, d.troughMin)}
         <div class="rec-rationale">Based on fitted Kel (Vd population) — estimated SS trough ${trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L · t½ ${d.indT12.toFixed(1)} hr</div>
         <div class="rec-targets" style="margin-top:10px">
           <div class="rec-target-chip"><span class="dot ${aucStatus!=='ok'?'warn':''}"></span>AUC₂₄: ${d.optAUC.toFixed(0)} mg·h/L</div>
@@ -6912,7 +6965,16 @@ function readBayesPatient(scrOverride) {
 
 // AUDIT A7: every CrCl in the suite now uses the MEASURED creatinine. The only
 // SCr transformation left is Goti's, and it lives on the Goti path alone.
+//
+// PROVENANCE of the 150 (engine audit 2026-09-28): it is GOTI's — "CrCL greater
+// than 150 ml/min was truncated to 150 ml/min" (Goti 2018, Methods). Buelga 2005
+// has no cap; its population was CLCR 89.4 ± 39.2 mL/min (Table 1). On the
+// Buelga path the same 150 is a CALCULATOR EXTRAPOLATION GUARD, not the published
+// model, and is labelled so. It now applies to Buelga in both modules: the Trough
+// module's Buelga was uncapped, so one ARC patient had two Buelga clearances
+// (16.6 vs 9.7 L/h at CG 256). Decision D8, docs/v3-decisions.md.
 const CRCL_MODEL_FLOOR = 5, CRCL_MODEL_CAP = 150;
+const BUELGA_CLCR_MEAN = 89.4, BUELGA_CLCR_SD = 39.2;   // Buelga 2005 Table 1 — context only
 
 function getBayesCrCl(scrOverride) {
   const p = readBayesPatient(scrOverride);
@@ -7080,6 +7142,11 @@ function removeBayesLevel(id) {
 //   COMPLETE   — used.
 //   INCOMPLETE — something typed but not enough, or not plausible. Reported by
 //                row number and never silently discarded.
+// Engine audit 2026-09-28: a blank time silently became 00:00 and the row
+// counted as complete; dose, infusion time and concentration skipped
+// INPUT_LIMITS (a first dose typed 10000 was fitted as a loading dose, CL +19%);
+// and a row entered twice was fitted twice (CL +10.5%) while the regimen banner
+// reported a clean schedule. Each is now an error naming the row.
 // Returns { doses, levels, errors }; callers must refuse to run on errors.
 function parseBayesCourse() {
   const doses = [], levels = [], errors = [];
@@ -7090,45 +7157,63 @@ function parseBayesCourse() {
     const mgRaw = (document.getElementById(`b-dose-mg-${id}`)   || {}).value;
     const tiRaw = (document.getElementById(`b-dose-tinf-${id}`) || {}).value;
     const dateS = (document.getElementById(`b-dose-date-${id}`) || {}).value;
-    const timeS = (document.getElementById(`b-dose-time-${id}`) || {}).value || '00:00';
-    const anything = [mgRaw, tiRaw, dateS].some(v => v !== undefined && String(v).trim() !== '');
+    const timeS = ((document.getElementById(`b-dose-time-${id}`) || {}).value || '').trim();
+    const anything = [mgRaw, tiRaw, dateS, timeS].some(v => v !== undefined && String(v).trim() !== '');
     if (!anything) return;                                  // an untouched spare row
-    const mg = parseFloat(mgRaw), tinf = parseFloat(tiRaw);
     const miss = [];
-    if (!(mg > 0))   miss.push('dose (mg)');
-    if (!(tinf > 0)) miss.push('infusion duration');
+    const mgChk = checkValue(mgRaw, 'dose'), tiChk = checkValue(tiRaw, 'tinf');
+    if (!mgChk.ok) miss.push(mgRaw ? `dose (${mgChk.message})` : 'dose (mg)');
+    if (!tiChk.ok) miss.push(tiRaw ? `infusion duration (${tiChk.message})` : 'infusion duration');
     if (!dateS)      miss.push('date');
-    const tMs = dateS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
-    if (dateS && !Number.isFinite(tMs)) miss.push('a valid date/time');
+    if (!/^\d{2}:\d{2}$/.test(timeS)) miss.push(timeS ? `time "${timeS}" (use HH:MM)` : 'time');
+    const tMs = dateS && timeS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
+    if (dateS && timeS && !Number.isFinite(tMs)) miss.push('a valid date/time');
     if (miss.length) {
       errors.push(`Dose row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
       return;
     }
-    doses.push({ mg, tinfH: tinf, timeH: tMs / 3600000 });
+    doses.push({ mg: mgChk.value, tinfH: tiChk.value, timeH: tMs / 3600000, label: `${dateS} ${timeS}` });
   });
 
   document.querySelectorAll('[id^="b-level-row-"]').forEach(row => {
     const id    = row.id.replace('b-level-row-','');
     const cRaw  = (document.getElementById(`b-lvl-conc-${id}`) || {}).value;
     const dateS = (document.getElementById(`b-lvl-date-${id}`) || {}).value;
-    const timeS = (document.getElementById(`b-lvl-time-${id}`) || {}).value || '00:00';
-    const anything = [cRaw, dateS].some(v => v !== undefined && String(v).trim() !== '');
+    const timeS = ((document.getElementById(`b-lvl-time-${id}`) || {}).value || '').trim();
+    const anything = [cRaw, dateS, timeS].some(v => v !== undefined && String(v).trim() !== '');
     if (!anything) return;
-    const conc = parseFloat(cRaw);
     const miss = [];
-    if (!(conc > 0)) miss.push('concentration');
+    const cChk = checkValue(cRaw, 'level');
+    if (!cChk.ok) miss.push(cRaw ? `concentration (${cChk.message})` : 'concentration');
     if (!dateS)      miss.push('date');
-    const tMs = dateS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
-    if (dateS && !Number.isFinite(tMs)) miss.push('a valid date/time');
+    if (!/^\d{2}:\d{2}$/.test(timeS)) miss.push(timeS ? `time "${timeS}" (use HH:MM)` : 'time');
+    const tMs = dateS && timeS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
+    if (dateS && timeS && !Number.isFinite(tMs)) miss.push('a valid date/time');
     if (miss.length) {
       errors.push(`Level row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
       return;
     }
-    levels.push({ conc, timeH: tMs / 3600000 });
+    levels.push({ conc: cChk.value, timeH: tMs / 3600000, label: `${dateS} ${timeS}` });
   });
 
   doses.sort((a,b) => a.timeH - b.timeH);
   levels.sort((a,b) => a.timeH - b.timeH);
+  // Same-minute duplicates and overlapping infusions: a dose started before the
+  // previous bag finished is almost always a row entered twice or a mistyped time.
+  const MIN_H = 1 / 60;
+  for (let i = 1; i < doses.length; i++) {
+    const a = doses[i - 1], b = doses[i];
+    if (b.timeH - a.timeH < MIN_H) {
+      errors.push(`Two doses are entered at ${b.label} — remove the duplicate row.`);
+    } else if (b.timeH < a.timeH + a.tinfH - 1e-9) {
+      errors.push(`The dose at ${b.label} starts before the ${a.label} infusion ends — check the times.`);
+    }
+  }
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i].timeH - levels[i - 1].timeH < MIN_H) {
+      errors.push(`Two levels are entered at ${levels[i].label} — keep one.`);
+    }
+  }
   return { doses, levels, errors };
 }
 
@@ -7319,8 +7404,8 @@ function getGotiCrCl(scrOverride) {
 
 // True when the Goti path is transforming this patient's creatinine, so the UI
 // can say why the Goti CrCl differs from the displayed one.
-function gotiScrTruncationActive() {
-  const p = readBayesPatient();
+function gotiScrTruncationActive(scrOverride) {
+  const p = readBayesPatient(scrOverride);
   return !!p && p.scr < GOTI_SCR_FLOOR && p.age > GOTI_SCR_FLOOR_AGE;
 }
 
@@ -7468,18 +7553,41 @@ function ssPeak2comp(dose, tau, tinfH, CL, Vc, Vp, Q) {
   return predictConc2comp(synth, (n-1)*tau + tinfH, k10, k12, k21, Vc);
 }
 // Full SS cycle curve for 2-comp (used in tinkerer SS profile canvas)
+// Engine audit 2026-09-28: the cycle count was a fixed 12, so for low CL the
+// "SS Dosing Profile" was drawn well below steady state (CrCl 20, 250 mg q8h:
+// drawn trough 16-17 against 27.6 on the card beside it) and not even periodic.
+// It now takes the same terminal-half-life count as ssCtrough2comp/ssPeak2comp,
+// and samples the end of the infusion explicitly so the drawn peak is the peak.
 function ssCurve2comp(dose, tau, tinfH, CL, Vc, Vp, nCycles, nPts, Q) {
   if (Q == null) Q = Q_GOTI;
-  nCycles = nCycles || 12; nPts = nPts || 120;
   const k10=CL/Vc, k12=Q/Vc, k21=Q/Vp;
+  nCycles = nCycles || ssCycles2comp(tau, k10, k12, k21); nPts = nPts || 120;
   const synth = Array.from({length:nCycles}, (_,i) => ({mg:dose, tinfH, timeH: i*tau}));
   const tBase = (nCycles-1)*tau;
-  const pts = [];
-  for (let j=0; j<=nPts; j++) {
-    const t = tBase + (j/nPts)*tau;
-    pts.push({ t: t-tBase, c: predictConc2comp(synth, t, k10, k12, k21, Vc) });
-  }
-  return pts;
+  const ts = [];
+  for (let j=0; j<=nPts; j++) ts.push((j/nPts)*tau);
+  if (tinfH > 0 && tinfH < tau) ts.push(tinfH);
+  ts.sort((a, b) => a - b);
+  return ts.map(dt => ({ t: dt, c: predictConc2comp(synth, tBase + dt, k10, k12, k21, Vc) }));
+}
+
+// The 2-comp micro-constants a Bayesian result carries on r.goti, in the shape
+// drawProfileGraph and predictConc2comp read. One accessor for every consumer:
+// the print report read r.gotiInd, which is never set, and fell back to a
+// 1-comp prediction with V = Vc (printed Pred 14-20% high for Goti).
+function gotiGraphParams(r) {
+  const g = r && (r.model === 'goti' || r.model === 'hughes') ? r.goti : null;
+  if (!g) return { ind: null, pop: null };
+  // A saved profile keeps volumes and Q, not micro-constants: derive them.
+  const Q = g.Q != null ? g.Q : Q_GOTI;
+  const mk = (CL, Vc, Vp, k10, k12, k21) => {
+    if (k10 != null && k12 != null && k21 != null && Vc > 0) return { k10, k12, k21, Vc };
+    return (CL > 0 && Vc > 0 && Vp > 0) ? { k10: CL / Vc, k12: Q / Vc, k21: Q / Vp, Vc } : null;
+  };
+  return {
+    ind: mk(r.CL_ind, g.Vc_ind, g.Vp_ind, g.k10_ind, g.k12_ind, g.k21_ind),
+    pop: mk(r.CL_pop, g.Vc_pop, g.Vp_pop, g.k10_pop, g.k12_pop, g.k21_pop),
+  };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -8689,8 +8797,10 @@ function addScrRow() {
   const isEmpty = tbody.querySelector('.course-empty-msg');
   if (isEmpty) tbody.innerHTML = '';
   const id    = ++bScrCount;
-  const today = new Date().toISOString().slice(0,10);
-  const now   = new Date().toTimeString().slice(0,5);
+  // Local date AND local time — toISOString() is UTC, so an evening row west of
+  // UTC defaulted to tomorrow (CODEX F-008, fixed for dose/level rows only).
+  const today = localDateStr();
+  const now   = localTimeStr();
   const tr    = document.createElement('tr');
   tr.id = `b-scr-row-${id}`;
   tr.innerHTML = `
@@ -8720,7 +8830,7 @@ function removeScrRow(id) {
 // and level rows have had since CODEX F-002. Engine audit 2026-09-28 found three
 // silent failures here:
 //   - a time typed "6:00" (the field is type=text; its pattern is not enforced)
-//     parsed to NaN, the sort left the row in DOM order, and getEffectiveScrForDose
+//     parsed to NaN, the sort left the row in DOM order, and the effective-SCr pick
 //     could then never replace it — so an OLD creatinine became the effective SCr
 //     for the whole fit: CrCl 130 mL/min instead of 39 from the current 2.0;
 //   - serial values skipped INPUT_LIMITS, so 88 (a umol/L value typed as mg/dL)
@@ -8749,7 +8859,7 @@ function readSerialScrChecked() {
     }
     const tH = new Date(`${dateS}T${timeS}`).getTime() / 3600000;
     if (!isFinite(tH)) { errors.push(`${label}: date and time "${dateS} ${timeS}" could not be read.`); return; }
-    readings.push({ scr: chk.value, timeH: tH });
+    readings.push({ scr: chk.value, timeH: tH, label: `${dateS} ${timeS}` });
   });
   readings.sort((a, b) => a.timeH - b.timeH);
   return { readings, errors };
@@ -8759,13 +8869,37 @@ function readSerialScrChecked() {
 // The fit calls readSerialScrChecked so it can refuse on errors.
 function readSerialScr() { return readSerialScrChecked().readings; }
 
-function getEffectiveScrForDose(doseTimeH, scrReadings) {
+// KDIGO Clinical Practice Guideline for Acute Kidney Injury. Kidney Int Suppl
+// 2012;2(1). Section 2.1.1: AKI is a rise in SCr of >= 0.3 mg/dL within 48 h, or
+// to >= 1.5x baseline known or presumed to have occurred within the prior 7 days.
+// Table 2 stages: 1 = 1.5-1.9x or >= 0.3 rise; 2 = 2.0-2.9x; 3 = >= 3.0x or a rise
+// to >= 4.0 mg/dL (or RRT, not captured here).
+const KDIGO_ABS_RISE_MGDL = 0.3;
+const KDIGO_ABS_WINDOW_H  = 48;
+const KDIGO_FOLD_WINDOW_H = 7 * 24;
+const KDIGO_FOLD = [1.5, 2.0, 3.0];
+const KDIGO_STAGE3_SCR_MGDL = 4.0;
+
+// The SCr that sets CrCl and the prior (engine audit 2026-09-28). It used to be
+// the reading NEAREST the last dose in either direction, so with a rising
+// creatinine the pre-AKI value could win over a newer one: SCr 1.0 at 14:00
+// beside 2.0 at 05:00 the next day gave CrCl 78 instead of 39 and a dose
+// 250 mg higher. It is now the most recent reading. When the reading nearest
+// the last dose differs from it by the KDIGO absolute criterion, the renal
+// function changed across the fit window, and the result says so.
+function selectEffectiveScr(scrReadings, lastDoseTimeH) {
   if (!scrReadings || !scrReadings.length) return null;
-  let best = scrReadings[0];
+  const newest = scrReadings.reduce((a, b) => (b.timeH >= a.timeH ? b : a));
+  let nearest = scrReadings[0];
   for (const sr of scrReadings) {
-    if (Math.abs(sr.timeH - doseTimeH) < Math.abs(best.timeH - doseTimeH)) best = sr;
+    if (Math.abs(sr.timeH - lastDoseTimeH) < Math.abs(nearest.timeH - lastDoseTimeH)) nearest = sr;
   }
-  return best.scr;
+  const shift = newest.scr - nearest.scr;
+  return {
+    scr: newest.scr, label: newest.label || null,
+    nearestScr: nearest.scr, nearestLabel: nearest.label || null,
+    changedAcrossFit: nearest !== newest && Math.abs(shift) >= KDIGO_ABS_RISE_MGDL - 1e-9,
+  };
 }
 
 // ─── SCr trend + KDIGO AKI staging ───
@@ -8778,18 +8912,37 @@ function detectScrTrend(scrReadings) {
 
   const direction = pctChg > 0.10 ? 'rising' : pctChg < -0.10 ? 'falling' : 'stable';
 
-  // KDIGO staging: fold-change from baseline; also check absolute ≥0.3 in 48h
-  const foldChange  = last / first;
-  const absIncrease = last - first;
-  const maxIn48h    = Math.max(...scrReadings
-    .filter(r => r.timeH <= scrReadings[0].timeH + 48)
-    .map(r => r.scr));
-  let kdigo_stage = 0;
-  if (last >= 4.0 || foldChange >= 3.0)                       kdigo_stage = 3;
-  else if (foldChange >= 2.0)                                  kdigo_stage = 2;
-  else if (foldChange >= 1.5 || (maxIn48h - first) >= 0.3)   kdigo_stage = 1;
+  // KDIGO staging (engine audit 2026-09-28). The old rule compared only the
+  // LAST reading with the FIRST, took the 0.3 rise only inside the first
+  // reading's 48 h, and staged any SCr >= 4.0 as stage 3 — a stable CKD
+  // creatinine of 4.2 read "AKI Stage 3 (Severe)". Each reading is now
+  // compared with the lowest reading in its own prior 48 h (absolute rise) and
+  // prior 7 days (fold rise), and >= 4.0 raises the stage only when AKI is
+  // otherwise present. The stage reported is the highest reached.
+  const kdigo_stage = kdigoStage(scrReadings);
 
   return { direction, pctChg, first, last, maxScr, kdigo_stage };
+}
+
+function kdigoStage(readings) {
+  const rs = [...readings].sort((a, b) => a.timeH - b.timeH);
+  const eps = 1e-9;
+  let stage = 0;
+  rs.forEach(r => {
+    const before = (w) => rs.filter(p => p.timeH < r.timeH && p.timeH >= r.timeH - w).map(p => p.scr);
+    const b48 = before(KDIGO_ABS_WINDOW_H), b7d = before(KDIGO_FOLD_WINDOW_H);
+    let st = 0;
+    if (b48.length && r.scr - Math.min(...b48) >= KDIGO_ABS_RISE_MGDL - eps) st = 1;
+    if (b7d.length) {
+      const fold = r.scr / Math.min(...b7d);
+      if (fold >= KDIGO_FOLD[2] - eps) st = 3;
+      else if (fold >= KDIGO_FOLD[1] - eps) st = Math.max(st, 2);
+      else if (fold >= KDIGO_FOLD[0] - eps) st = Math.max(st, 1);
+    }
+    if (st >= 1 && r.scr >= KDIGO_STAGE3_SCR_MGDL) st = 3;
+    stage = Math.max(stage, st);
+  });
+  return stage;
 }
 
 function updateScrTrendDisplay() {
@@ -8971,11 +9124,10 @@ function runBayesian() {
     return;
   }
 
-  // Effective SCr: nearest serial reading to last dose time; else fall back to baseline SCr field
+  // Effective SCr: the most recent serial reading; else the baseline SCr field.
   const lastDoseTimeH = doses[doses.length - 1].timeH;
-  const effScr = serialScr.length > 0
-    ? getEffectiveScrForDose(lastDoseTimeH, serialScr)
-    : scrEl;
+  const scrSel = serialScr.length > 0 ? selectEffectiveScr(serialScr, lastDoseTimeH) : null;
+  const effScr = scrSel ? scrSel.scr : scrEl;
 
   const crcl = getBayesCrCl(effScr);
   if (!crcl) { alert('Could not calculate CrCl — check patient demographics.'); return; }
@@ -8988,6 +9140,7 @@ function runBayesian() {
   const agCtx = {
     activeModel: bState.model,
     crcl, tbw, htCm, age, sex: bState.sex, scr: effScr,
+    scrSource: scrSel ? 'serial' : 'baseline', scrLabel: scrSel ? scrSel.label : null,
     crclSource: crclSourceLabel(),
     dial: !!bState.dial,
     crclGoti:   (function(){ try { return getGotiCrCl(effScr); }   catch (e) { return null; } })(),
@@ -9114,7 +9267,7 @@ function runBayesian() {
     // CODEX F-003: bind this fit to the inputs it came from.
   try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
   renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
-      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, arcInfo, lowCrClInfo });
+      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel, arcInfo, lowCrClInfo });
 
   } else if (isHughes) {
     // ── Hughes 2024 (2-Compartment, obese) ──
@@ -9188,7 +9341,7 @@ function runBayesian() {
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
-      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, arcInfo, lowCrClInfo });
+      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel, arcInfo, lowCrClInfo });
 
   } else {
     // ── Buelga 2005 (1-Compartment) ──
@@ -9230,7 +9383,7 @@ function runBayesian() {
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
-      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, arcInfo, lowCrClInfo });
+      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel, arcInfo, lowCrClInfo });
   }
 }
 
@@ -9484,7 +9637,10 @@ function detectRegimen(inputDoses, partialOptions) {
 // nonsensical classification.
 function doseBefore(doses, levelTimeH) {
   let best = null;
-  for (const d of doses) if (d.timeH <= levelTimeH && (!best || d.timeH > best.timeH)) best = d;
+  // Strictly before: a level charted at the minute a dose starts is that
+  // dose's pre-dose trough — the concentration predictors skip dt <= 0 too.
+  // It used to be read as "drawn during the infusion" (audit 2026-09-28).
+  for (const d of doses) if (d.timeH < levelTimeH && (!best || d.timeH > best.timeH)) best = d;
   return best;
 }
 
@@ -9844,7 +10000,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       const isHughesArc = r.model === 'hughes';
       const cappingNote = isHughesArc
         ? 'Hughes 2024 uses an FFM-based CrCl with no cap, so the model is using the actual value.'
-        : `${r.model === 'goti' ? 'Goti 2018' : 'Buelga 2005'} caps CrCl at 150 mL/min in the published model — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. Individual CL estimated by the Bayesian posterior may still capture the elevated clearance from any measured levels.`;
+        : (r.model === 'goti'
+            ? `Goti 2018 truncated CrCl at ${CRCL_MODEL_CAP} mL/min when the model was built`
+            : `Buelga 2005 was developed at CrCl ${BUELGA_CLCR_MEAN}±${BUELGA_CLCR_SD} mL/min and has no cap; this calculator limits its input to ${CRCL_MODEL_CAP} mL/min as an extrapolation guard`)
+          + ` — the prior used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the estimated ${crclTrue.toFixed(0)}. With measured levels the posterior clearance can move above the prior.`;
       html += `<div class="arc-advisory">
         ⚡ <strong>Augmented renal clearance suspected</strong>
         <span class="arc-crcl-tag">CrCl ≈ ${crclTrue.toFixed(0)} mL/min</span>
@@ -9905,9 +10064,18 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Phase 2C: Serial SCr in use note ──
   if (p2c.scrUsedSerial && p2c.effScr) {
+    const sel = p2c.scrSel || {};
     html += `<div style="font-size:0.69rem;color:var(--text-muted);padding:3px 0 1px">
-      📍 Serial SCr: nearest reading to last dose (<strong style="color:var(--text-secondary)">${p2c.effScr.toFixed(2)} mg/dL</strong>) used for CrCl and population PK.
+      📍 Serial SCr: most recent reading (<strong style="color:var(--text-secondary)">${p2c.effScr.toFixed(2)} mg/dL</strong>${sel.label ? ' at ' + escHtml(sel.label) : ''}) used for CrCl and population PK.
     </div>`;
+    if (sel.changedAcrossFit) {
+      html += `<div class="model-info-box" style="background:rgba(191,133,48,0.05);border-color:rgba(191,133,48,0.25)">
+        <strong style="color:var(--accent-amber)">Renal function changed across the fit.</strong>
+        <span style="color:var(--text-secondary)"> SCr was ${sel.nearestScr.toFixed(2)} mg/dL${sel.nearestLabel ? ' at ' + escHtml(sel.nearestLabel) : ''}, nearest the last dose, and is now ${sel.scr.toFixed(2)}.
+        The fit assumes one clearance for the whole course, so levels drawn before the change describe the earlier kidney function.
+        Recheck with a level drawn after the change before relying on the projection.</span>
+      </div>`;
+    }
   }
 
   // ── Current regimen metrics ──
@@ -10876,10 +11044,8 @@ function refreshProfileGraph() {
 
   const allDoses  = [...r.doses, ...projDoses];
   requestAnimationFrame(() => {
-    const g = r.goti;
-    const gotiInd2 = g ? { k10:g.k10_ind, k12:g.k12_ind, k21:g.k21_ind, Vc:g.Vc_ind } : null;
-    const gotiPop2 = g ? { k10:g.k10_pop, k12:g.k12_pop, k21:g.k21_pop, Vc:g.Vc_pop } : null;
-    drawProfileGraph(canvas, allDoses, r.levels, r.CL_ind, r.V_ind, r.CL_pop, r.V_pop, gotiInd2, gotiPop2, projDoses.length);
+    const gp = gotiGraphParams(r);
+    drawProfileGraph(canvas, allDoses, r.levels, r.CL_ind, r.V_ind, r.CL_pop, r.V_pop, gp.ind, gp.pop, projDoses.length);
   });
 }
 
@@ -10899,7 +11065,7 @@ function addToComparison() {
   let pts;
   if (is2compC) {
     const { Vc_ind, Vp_ind, Q } = bState.result.goti;
-    pts = ssCurve2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, 12, 200, Q);
+    pts = ssCurve2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, null, 200, Q);
   } else {
     const kel = CL_ind / V_ind;
     pts = ssCurve(dose, tau, tinfH, kel, V_ind, 200);
@@ -11057,7 +11223,7 @@ function runBayesTinkerer() {
     const { Vc_ind, Vp_ind, Q } = bState.result.goti;
     Ctrough    = ssCtrough2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, Q);
     Cpeak_ss   = ssPeak2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, Q);
-    ssProfilePts = ssCurve2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, 12, 200, Q);
+    ssProfilePts = ssCurve2comp(dose, tau, tinfH, CL_ind, Vc_ind, Vp_ind, null, 200, Q);
   } else {
     const kel   = CL_ind / V_ind;
     const R0    = dose / tinfH;
@@ -11216,6 +11382,10 @@ function bayesInputFingerprint() {
       // target and MIC change the recommendation, so a changed target must read
       // as a stale fit — it did not (engine audit 2026-09-28)
       target: g('b-auc-target'), mic: g('b-mic'),
+      // serial SCr overrides b-scr in the fit, and the regimen override changes
+      // the projected current AUC — both must stale a saved fit
+      serialScr: readSerialScr().map(r => [r.scr, +r.timeH.toFixed(4)]),
+      regimenOverrideH: bState.regimenOverrideH,
       doses: doses.map(d => [d.mg, d.tinfH, +d.timeH.toFixed(4)]),
       levels: levels.map(l => [l.conc, +l.timeH.toFixed(4)]),
     });
@@ -11338,6 +11508,11 @@ function applyPatientCore(core) {
   // the same setters the buttons use so the active styling follows.
   try {
     if (core.sex) setPatientSex(core.sex);   // one attribute, both modules
+    // The CrCl weight basis was saved but never restored, so a profile saved on
+    // AdjBW reopened on whatever was selected (audit 2026-09-28).
+    const dwKey = { auto:'k73', TBW:'k14', IBW:'k15', AdjBW:'k16' }[core.dosingWt];
+    const dwBtn = dwKey ? document.querySelector(`[data-onclick="${dwKey}"]`) : null;
+    if (dwBtn) setDosingWt(dwBtn, core.dosingWt);
     if (core.amputation) {
       Object.keys(ampState).forEach(k => { ampState[k] = core.amputation[k] || null; });
       const cb = document.getElementById('amp-enabled');
@@ -11589,11 +11764,11 @@ function _buildPrintGraph(r) {
     // and Hughes report silently fell back to a one-compartment curve while the
     // rest of the report used the 2-comp fit. Use the same accessor the on-screen
     // renderer uses.
-    const is2c = (r.model === 'goti' || r.model === 'hughes') && r.goti;
-    const gInd = is2c ? (r.gotiInd || r.goti.ind || r.goti) : null;
-    const gPop = is2c ? (r.gotiPop || r.goti.pop || null) : null;
+    // Engine audit 2026-09-28: r.goti's keys are k10_ind/Vc_ind, not k10/Vc, so
+    // passing it straight through drew NaN. gotiGraphParams maps them.
+    const gp = gotiGraphParams(r);
     drawProfileGraph(off, r.doses, r.levels || [], r.CL_ind, r.V_ind, r.CL_pop, r.V_pop,
-                     gInd, gPop, r.nProj || 0);
+                     gp.ind, gp.pop, r.nProj || 0);
     try { Object.defineProperty(window, 'devicePixelRatio', { value: prevDpr, configurable: true }); } catch (e) {}
     const url = off.toDataURL('image/png');
     return `<div class="pr-section pr-section-wide"><div class="pr-section-title">Concentration–Time Profile</div>
@@ -11666,8 +11841,9 @@ function _prLevelRows(r, fmtAbsH, t0) {
       if (t.hoursFromDoseStart != null) since = t.hoursFromDoseStart.toFixed(2) + ' h';
     } catch (e) {}
     try {
-      const p = (r.model === 'goti' || r.model === 'hughes') && r.gotiInd
-        ? predictConc2comp(r.doses, lev.timeH, r.gotiInd.k10, r.gotiInd.k12, r.gotiInd.k21, r.gotiInd.Vc)
+      const gi = gotiGraphParams(r).ind;
+      const p = gi
+        ? predictConc2comp(r.doses, lev.timeH, gi.k10, gi.k12, gi.k21, gi.Vc)
         : predictConc1comp(r.doses, lev.timeH, r.CL_ind / r.V_ind, r.V_ind);
       if (Number.isFinite(p)) pred = p.toFixed(1);
     } catch (e) {}
@@ -11709,7 +11885,14 @@ function _buildPrintReport() {
   const sex = bState.sex || state?.sex || '—';
   const tbw = document.getElementById('b-tbw')?.value || document.getElementById('weight')?.value || '—';
   const ht  = document.getElementById('b-height')?.value || document.getElementById('height')?.value || '—';
-  const scr = document.getElementById('b-scr')?.value || document.getElementById('scr')?.value || '—';
+  // The SCr the fit USED (engine audit 2026-09-28). With serial SCr this is the
+  // serial reading, not b-scr; the report used to print the baseline and derive
+  // the uncapped CrCl, ARC, very-low, low-muscle and Goti-truncation advisories
+  // from it — an ARC warning beside a dose computed for CrCl 61.
+  const fitScrN = r && r.agCtx && r.agCtx.scr > 0 ? r.agCtx.scr : null;
+  const scrSerial = !!(r && r.agCtx && r.agCtx.scrSource === 'serial');
+  const scr = fitScrN != null ? String(fitScrN)
+    : (document.getElementById('b-scr')?.value || document.getElementById('scr')?.value || '—');
   const htM = ht && ht !== '—' ? parseFloat(ht)/100 : null;
   const bmi = htM && tbw !== '—' ? (parseFloat(tbw)/(htM*htM)).toFixed(1) : '—';
 
@@ -11729,8 +11912,8 @@ function _buildPrintReport() {
     <table class="pr-table"><tbody>
       <tr><td>Age</td><td class="pr-val">${age} yr</td><td>Sex</td><td class="pr-val">${sex}</td></tr>
       <tr><td>Weight</td><td class="pr-val">${tbw} kg</td><td>Height</td><td class="pr-val">${ht} cm</td></tr>
-      <tr><td>BMI</td><td class="pr-val">${bmi} kg/m²</td><td>SCr</td><td class="pr-val">${scr} mg/dL</td></tr>
-      ${r.crcl ? `<tr><td>CrCl (${escHtml((r.agCtx && r.agCtx.crclSource) || 'Cockcroft-Gault')})</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td>Uncapped</td><td class="pr-val">${(() => { try { const u = getUncappedCrCl(); return u != null ? u.toFixed(0) + ' mL/min' : '—'; } catch (e) { return '—'; } })()}</td></tr>` : ''}
+      <tr><td>BMI</td><td class="pr-val">${bmi} kg/m²</td><td>SCr${scrSerial ? ' (serial, used for fit)' : ''}</td><td class="pr-val">${escHtml(scr)} mg/dL${scrSerial && r.agCtx.scrLabel ? ' · ' + escHtml(r.agCtx.scrLabel) : ''}</td></tr>
+      ${r.crcl ? `<tr><td>CrCl (${escHtml((r.agCtx && r.agCtx.crclSource) || 'Cockcroft-Gault')})</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td>Uncapped</td><td class="pr-val">${(() => { try { const u = getUncappedCrCl(fitScrN != null ? fitScrN : undefined); return u != null ? u.toFixed(0) + ' mL/min' : '—'; } catch (e) { return '—'; } })()}</td></tr>` : ''}
       ${(() => {
         try {
           const htN = parseFloat(ht), tbwN = parseFloat(tbw);
@@ -11860,7 +12043,7 @@ function _buildPrintReport() {
   html += (() => {
     const items = [];
     try {
-      const u = getUncappedCrCl();
+      const u = getUncappedCrCl(fitScrN != null ? fitScrN : undefined);
       if (u != null && detectARC(u)) items.push(['warning',
         `Augmented renal clearance: uncapped CrCl ${u.toFixed(0)} mL/min (≥130). Clearance may exceed the model's range.`]);
       if (u != null && detectVeryLowCrCl(u)) items.push(['danger',
@@ -11873,7 +12056,7 @@ function _buildPrintReport() {
         'Measured creatinine is used as entered; it is not rounded up.']);
     } catch (e) {}
     try {
-      if (typeof gotiScrTruncationActive === 'function' && r.model === 'goti' && gotiScrTruncationActive())
+      if (typeof gotiScrTruncationActive === 'function' && r.model === 'goti' && gotiScrTruncationActive(fitScrN != null ? fitScrN : undefined))
         items.push(['info', 'Goti SCr truncation applied (SCr <1.0 and age >65, per the 2019 erratum). ' +
           'This affects the Goti model input only, not the displayed CrCl.']);
     } catch (e) {}
