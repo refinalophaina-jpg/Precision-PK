@@ -3190,12 +3190,19 @@ function setCrclOverride() {
   const cb = document.getElementById('crcl-override-on');
   const inp = document.getElementById('crcl-override-val');
   crclOverride.on    = !!(cb && cb.checked);
-  crclOverride.value = inp ? parseFloat(inp.value) : NaN;
+  const raw = inp ? inp.value : '';
+  // The override reached every model unbounded — 3000 typed for 300 gave a
+  // VancoPK CL of 135 L/h (audit 2026-09-28). Out of range, it stays inactive
+  // and says why; nothing is clamped or guessed.
+  const chk = checkValue(raw, 'crclOverride');
+  crclOverride.value = chk.ok ? chk.value : NaN;
   if (inp) inp.disabled = !crclOverride.on;
   const note = document.getElementById('crcl-override-note');
   if (note) {
     const active = crclOverride.on && crclOverride.value > 0;
-    note.style.display = active ? 'block' : 'none';
+    const invalid = crclOverride.on && String(raw).trim() !== '' && !chk.ok;
+    note.style.display = (active || invalid) ? 'block' : 'none';
+    if (invalid) note.textContent = `${chk.message} The override is not applied.`;
     if (active) {
       note.innerHTML = `Every module is now using <strong>${crclOverride.value.toFixed(0)} mL/min</strong>
         instead of the Cockcroft-Gault estimate. Hughes' FFM-scaled clearance covariate is left alone —
@@ -3709,7 +3716,8 @@ function elapsedHours(fromVal, toVal) {
 // asked to be able to see, at a glance, that the tool read the timestamps the
 // way they meant them.
 function formatElapsed(hr) {
-  const neg  = hr < 0, a = Math.abs(hr);
+  // Round to the displayed 0.1 h BEFORE splitting, or 47.96 h read "1d 24.0h".
+  const neg  = hr < 0, a = Math.round(Math.abs(hr) * 10) / 10;
   const days = Math.floor(a / 24), rem = a - days * 24;
   const sign = neg ? '−' : '';
   return days > 0
@@ -3970,10 +3978,15 @@ function troughTarget() {
 // of error. No (CL,V) pair that reproduces 12.2 gives an AUC below ~480.
 // Residual sign convention: observed - predicted. Positive = the patient is
 // running HIGHER than the model believes.
-// Fit the OTHER prior on the same data and compare exposure. Agreement is
-// reassurance that the answer is driven by the levels rather than by the choice
-// of prior; disagreement says the opposite, which is exactly when a clinician
-// should want to know. Bands are stated in the units the decision is made in.
+// Fit the OTHER priors on the same data and compare exposure. The spread says
+// how much the answer depends on WHICH model is used. It is not a measure of the
+// active model's accuracy: the priors differ structurally (CL linear in CrCl for
+// Buelga, CrCl^0.8 for Goti, FFM for Hughes) and those differences persist with
+// data. Engine audit 2026-09-28 simulated patients drawn from the active model's
+// own prior: the band barely tracked its error (Goti, 1 trough, p80 30/33/33% for
+// High/Moderate/Low), so the page no longer calls a wide spread "prior-driven".
+// PREFERENCE (rule 8): the 10% and 20% cut-points are this calculator's choice,
+// not a literature constant.
 const MODEL_AGREEMENT_BANDS = [
   { max:10, label:'High',     tone:'ok'     },
   { max:20, label:'Moderate', tone:'warn'   },
@@ -4005,7 +4018,9 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
   try {
     if (!doses || !doses.length || !(dailyDose > 0)) return null;
     if (!ctx) return null;
-    const active = ctx.activeModel || 'buelga';
+    // Goti on dialysis is stored as model 'goti' with dial set, but its row is
+    // 'goti-hd' — so no row was marked in use (engine audit 2026-09-28).
+    const active = (ctx.activeModel === 'goti' && ctx.dial) ? 'goti-hd' : (ctx.activeModel || 'buelga');
     const rows = [];
 
     const push = (key, label, struct, CL, note) => {
@@ -4014,8 +4029,11 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
                   active: key === active, note: note || null });
     };
 
-    // ── Buelga, 1-compartment ──
-    if (ctx.crcl > 0 && ctx.tbw > 0) {
+    // ── Buelga, 1-compartment ── Not a peer on dialysis: a non-dialysis
+    // haematology population fitted at the CrCl floor only manufactures
+    // disagreement (every HD patient read "Low"), the same reason Hughes is
+    // excluded outside its BMI range.
+    if (ctx.crcl > 0 && ctx.tbw > 0 && (!ctx.dial || active === 'buelga')) {
       const bp = buelgaPopPK(ctx.crcl, ctx.tbw);
       const bf = nelderMead2D((a,b) => burtonObjective(a,b,bp.CL_pop,bp.V_pop,doses,levels), 0, 0, 400);
       push('buelga', 'Buelga 1-comp', '1-compartment', bp.CL_pop * Math.exp(bf[0]));
@@ -4324,7 +4342,7 @@ function confidenceAssessment(r, fd, ag) {
   else reasons.push({ good:true, text:`${n} measured levels.` });
 
   if (ag && ag.band) {
-    if (ag.band.tone === 'danger') cap(n <= 1 ? 2 : 1, `The applicable priors disagree by ${ag.diffPct.toFixed(0)}% on exposure — the estimate is partly prior-driven.`);
+    if (ag.band.tone === 'danger') cap(n <= 1 ? 2 : 1, `The applicable models disagree by ${ag.diffPct.toFixed(0)}% on exposure — the answer depends on which model is right.`);
     else if (ag.band.tone === 'warn' && n <= 1) cap(1, `Priors differ by ${ag.diffPct.toFixed(0)}% on exposure.`);
     else reasons.push({ good:true, text:`Applicable priors agree within ${ag.diffPct.toFixed(0)}%.` });
   }
@@ -4442,6 +4460,8 @@ const INPUT_LIMITS = {
   tinf:   { min: 0.25, max: 24,   label: 'Infusion duration',    unit: 'h' },
   level:  { min: 0.1,  max: 200,  label: 'Concentration',        unit: 'mg/L' },
   auc:    { min: 200,  max: 1200, label: 'Target AUC24',         unit: 'mg·h/L' },
+  // UI plausibility limit (the field's own min/max), not a clinical constant.
+  crclOverride: { min: 1, max: 250, label: 'CrCl override',      unit: 'mL/min' },
 };
 
 // Returns {ok, value, message}. Blank/non-numeric is an error, not a zero.
@@ -4946,6 +4966,10 @@ function fitKelFromEarlyLevel(cObs, tSinceDose, doseNumber, dose, tau, tinf, vd)
 // Used to warn when "Yes, >= 3 doses" is not actually steady state — three
 // doses is not steady state once the half-life approaches the interval
 // (t1/2 18 h on q12h reaches ~75%).
+// PREFERENCE (rule 8): below this fraction of steady state a level is called
+// "before steady state" in advice text. It changes wording only, never a dose.
+const SS_FRACTION_NOTE = 0.9;
+
 function fractionOfSteadyState(kel, tau, n) {
   if (!(kel > 0) || !(tau > 0) || !(n >= 1)) return NaN;
   return 1 - Math.exp(-kel * tau * n);
@@ -4989,7 +5013,7 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
 
   // P1: AUC in range + trough fully in range — lowest qualifying dose
   const ideal = candidates.filter(c =>
-    c.auc >= 400 && c.auc <= 600 && c.trough >= troughMin && c.trough <= troughMax
+    c.auc >= AUC24_TARGET_MIN && c.auc <= AUC24_TARGET_MAX && c.trough >= troughMin && c.trough <= troughMax
   );
   if(ideal.length > 0) return { ...ideal[0], flag: null };
 
@@ -5000,7 +5024,7 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
     // satisfied "trough >= 80% of troughMin" and was caught here — reporting it
     // as BELOW target and making the P3 high-trough branch unreachable. The
     // band is now explicitly the borderline-LOW window only.
-    c.auc >= 400 && c.auc <= 600 && c.trough >= troughMin * 0.80 && c.trough < troughMin
+    c.auc >= AUC24_TARGET_MIN && c.auc <= AUC24_TARGET_MAX && c.trough >= troughMin * 0.80 && c.trough < troughMin
   );
   if(aucOkTroughLow.length > 0) return {
     ...aucOkTroughLow[0],
@@ -5010,7 +5034,7 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
 
   // P3: AUC in range + trough high — reduce dose to stay in AUC range while lowering trough
   const aucOkTroughHigh = candidates.filter(c =>
-    c.auc >= 400 && c.auc <= 600 && c.trough > troughMax
+    c.auc >= AUC24_TARGET_MIN && c.auc <= AUC24_TARGET_MAX && c.trough > troughMax
   );
   if(aucOkTroughHigh.length > 0) return {
     ...aucOkTroughHigh[0],
@@ -5019,7 +5043,7 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
   };
 
   // P4: AUC subtherapeutic — find dose achieving AUC ≥400 with lowest trough risk
-  const subThera = candidates.filter(c => c.auc >= 400 && c.auc <= 650);
+  const subThera = candidates.filter(c => c.auc >= AUC24_TARGET_MIN && c.auc <= 650);
   if(subThera.length > 0) return { ...subThera[0], flag: 'auc_borderline' };
 
   // P5: Nothing meets AUC — find closest to AUC 500 target
@@ -5027,7 +5051,7 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
   const best = candidates.reduce((a,b) =>
     Math.abs(b.auc - target) < Math.abs(a.auc - target) ? b : a
   );
-  return { ...best, flag: best.auc > 600 ? 'auc_supra' : 'auc_sub' };
+  return { ...best, flag: best.auc > AUC24_TARGET_MAX ? 'auc_supra' : 'auc_sub' };
 }
 
 // findOptimalDose's flag was computed and never rendered (audit 2026-09-28):
@@ -5052,10 +5076,10 @@ function optFlagHTML(flag, flagMsg, tau, auc, trough, troughMin) {
 // Assess overall clinical status with AUC as primary, trough as secondary
 function assessClinicalStatus(auc24, trough, troughMin, troughMax) {
   // Primary: AUC status
-  const aucInRange  = auc24 >= 400 && auc24 <= 600;
-  const aucSub      = auc24 < 400;
-  const aucSupra    = auc24 > 600;
-  const aucBorderHi = auc24 > 600 && auc24 <= 700; // grey zone
+  const aucInRange  = auc24 >= AUC24_TARGET_MIN && auc24 <= AUC24_TARGET_MAX;
+  const aucSub      = auc24 < AUC24_TARGET_MIN;
+  const aucSupra    = auc24 > AUC24_TARGET_MAX;
+  const aucBorderHi = auc24 > AUC24_TARGET_MAX && auc24 <= 700; // grey zone
 
   // Secondary: trough status
   const troughInRange  = trough >= troughMin && trough <= troughMax;
@@ -5487,6 +5511,11 @@ function calculate() {
   let adjKel = popKel, adjClv = popClv;
   let peak, trough, auc24, aucMethod;
   let trueTrough, extrapolated = false, extrapDelta = 0, levelFitted = false;
+  // Where the displayed trough comes from: 'observed' (drawn at the interval
+  // end), 'extrapolated', or 'model' (an early or during-infusion level, where
+  // the trough is the fitted projection). A during-infusion level used to be
+  // certified "✓ True trough … (end of dosing interval)" (audit 2026-09-28).
+  let troughBasis = null;
   let popPeak, popTrough;
 
   // Always compute population predictions from current regimen
@@ -5527,21 +5556,26 @@ function calculate() {
       trueTrough = fitted.trough;
       extrapolated = false;
       extrapDelta = 0;
+      troughBasis = 'model';
     } else if(tDoseToLvl <= tinf) {
-      // Level drawn during infusion — cannot reliably fit, use population
+      // Level drawn during infusion — the fit still uses it; the trough shown
+      // is the fitted projection, not a measurement.
       trueTrough = fitted.trough;
       extrapolated = false;
       extrapDelta = 0;
+      troughBasis = 'model';
     } else if(Math.abs(timeRemaining) < 0.5) {
       // True trough — level is at interval end
       trueTrough = levelVal;
       extrapolated = false;
       extrapDelta = 0;
+      troughBasis = 'observed';
     } else {
       // Early or late — extrapolate to end of interval
       trueTrough = levelVal * Math.exp(-adjKel * timeRemaining);
       extrapolated = true;
       extrapDelta = timeRemaining;
+      troughBasis = 'extrapolated';
     }
 
     peak  = fitted.peak;
@@ -5553,7 +5587,7 @@ function calculate() {
     // "Yes, >= 3 doses" is not steady state once t1/2 approaches tau.
     if (!earlyLevel) {
       const f3 = fractionOfSteadyState(adjKel, tau, 3);
-      if (isFinite(f3) && f3 < 0.9) {
+      if (isFinite(f3) && f3 < SS_FRACTION_NOTE) {
         aucMethod += ` · caution: at this Ke three doses reach only ${Math.round(f3 * 100)}% of steady state, so a level after dose 3 still understates accumulation`;
       }
     }
@@ -5584,7 +5618,7 @@ function calculate() {
   else if(trough <= troughMax * 1.2) troughStatus = 'warn';
   else                               troughStatus = 'danger';
 
-  const aucStatus = auc24 < 400 ? 'warn' : auc24 <= 600 ? 'ok' : 'danger';
+  const aucStatus = auc24 < AUC24_TARGET_MIN ? 'warn' : auc24 <= AUC24_TARGET_MAX ? 'ok' : 'danger';
   const aucMIC    = auc24 / mic;
 
   // AUC uncertainty for the Trough module. NOT simulated: unlike AUC_UNCERTAINTY
@@ -5612,7 +5646,7 @@ function calculate() {
     popClv, adjClv, vd, kel:adjKel, popKel, t12, popT12,
     dose, tau, tinf,
     peak, trough, popPeak, popTrough,
-    levelVal, tDoseToLvl, levelFitted, extrapolated, extrapDelta,
+    levelVal, tDoseToLvl, levelFitted, extrapolated, extrapDelta, troughBasis,
     auc24, aucMIC, aucMethod, aucLo, aucHi, aucUncertainty,
     troughMin, troughMax, troughStatus,
     aucStatus, mic,
@@ -5689,14 +5723,14 @@ function renderResults(d) {
 
   // Dose explorer — fixed set of clinically relevant regimens using fitted PK
   let explorerHTML = '';
-  const explorerIntervals = [8, 12, 24];
+  const explorerIntervals = [...new Set([8, 12, 24, d.tau])].filter(x => x > 0).sort((a, b) => a - b);   // the patient's own interval is always listed
   const explorerDoses = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
   for(const interval of explorerIntervals) {
     for(const dose of explorerDoses) {
       const pt  = calcPeakTrough(dose, interval, d.tinf, d.kel, d.vd);
       const auc = calcAUC(dose, interval, d.adjClv);
       const tCls = pt.trough < d.troughMin ? 'out-range' : pt.trough > d.troughMax ? 'out-range' : 'in-range';
-      const aUCls = auc < 400 ? 'out-range' : auc > 600 ? 'border-range' : 'in-range';
+      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';   // both sides alike, as the Tinkerer
       const isRec = dose === d.optDose && interval === d.tau;
       explorerHTML += `<tr class="${isRec?'recommended':''}">
         <td>${isRec?'★ ':''}${dose}mg Q${interval}H</td>
@@ -5739,7 +5773,7 @@ function renderResults(d) {
         <div class="ld-stat">
           <div class="ld-stat-label">First maintenance</div>
           <div class="ld-stat-val">${d.optDose} mg Q${d.tau}H</div>
-          <div style="font-size:0.62rem;color:var(--text-muted)">pop-estimated optimal dose</div>
+          <div style="font-size:0.62rem;color:var(--text-muted)">${d.levelFitted ? 'from the level-fitted Ke' : 'pop-estimated optimal dose'}</div>
         </div>
       </div>
       <div style="font-size:0.7rem;color:var(--text-muted);line-height:1.5;border-top:1px solid var(--border);padding-top:8px">
@@ -5786,7 +5820,7 @@ function renderResults(d) {
       <div class="rec-box" style="margin-top:0">
         <div class="rec-dose">${d.optDose} mg <span>Q${d.tau}H</span></div>
         ${optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin)}
-        <div class="rec-rationale">Based on population PK — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L</div>
+        <div class="rec-rationale">Based on ${d.levelFitted ? 'the level-fitted Ke (not population PK)' : 'population PK'} — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L</div>
         <div class="rec-targets" style="margin-top:10px">
           <div class="rec-target-chip"><span class="dot"></span>SS Trough: ${d.optPT.trough.toFixed(1)} mg/L</div>
           <div class="rec-target-chip"><span class="dot"></span>SS Peak: ${d.optPT.peak.toFixed(1)} mg/L</div>
@@ -5890,7 +5924,9 @@ function renderResults(d) {
       <div class="interp-detail" style="margin-top:8px">
         ${d.extrapolated
           ? `<span style="color:var(--accent-amber)">⟳ Extrapolated trough</span> — observed ${d.levelVal} mg/L at ${d.tDoseToLvl.toFixed(1)}h → true trough: <strong>${d.trough.toFixed(1)} mg/L</strong> (${d.extrapDelta>0?`${d.extrapDelta.toFixed(1)}h before next dose`:`${Math.abs(d.extrapDelta).toFixed(1)}h after due`})`
-          : `<span style="color:var(--success)">✓ True trough</span> — level drawn at ${d.tDoseToLvl.toFixed(1)}h (end of dosing interval)`
+          : d.troughBasis === 'model'
+            ? `<span style="color:var(--accent-amber)">Model-predicted trough</span> — the level was drawn at ${d.tDoseToLvl.toFixed(1)}h (${d.tDoseToLvl <= d.tinf ? 'during the infusion' : 'before steady state'}), so the trough shown is the fitted steady-state projection, not a measurement`
+            : `<span style="color:var(--success)">✓ True trough</span> — level drawn at ${d.tDoseToLvl.toFixed(1)}h (end of dosing interval)`
         }
       </div>` : `
       <div class="interp-detail">Population-estimated trough from ${clModelNames[d.clModel]} model · No measured level entered</div>`}
@@ -5939,7 +5975,7 @@ function renderResults(d) {
         </div>
         ${d.levelFitted ? `
         <div class="pk-row"><span class="pk-param">Observed level</span><span class="pk-val">${d.levelVal} <span style="font-size:0.7rem;color:var(--text-muted)">at ${d.tDoseToLvl.toFixed(1)}h from dose</span></span><span class="pk-unit">mg/L</span></div>
-        <div class="pk-row"><span class="pk-param">${d.extrapolated?'Extrapolated trough':'True trough'}</span><span class="pk-val">${d.trough.toFixed(1)}</span><span class="pk-unit">mg/L</span></div>` : ''}
+        <div class="pk-row"><span class="pk-param">${d.extrapolated ? 'Extrapolated trough' : d.troughBasis === 'model' ? 'Predicted trough' : 'True trough'}</span><span class="pk-val">${d.trough.toFixed(1)}</span><span class="pk-unit">mg/L</span></div>` : ''}
         <div class="pk-row"><span class="pk-param">Pred. SS peak</span><span class="pk-val">${d.peak.toFixed(1)}</span><span class="pk-unit">mg/L</span></div>
         <div class="pk-row"><span class="pk-param">IBW / AdjBW</span><span class="pk-val">${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}</span><span class="pk-unit">kg</span></div>
         <div class="pk-row"><span class="pk-param">BMI</span><span class="pk-val">${d.bmi.toFixed(1)}</span><span class="pk-unit">kg/m²</span></div>
@@ -6006,7 +6042,7 @@ function renderTwoLevels(d) {
   rc.style.display = 'flex';
 
   // AUC status
-  const aucStatus  = d.auc24 < 400 ? 'warn' : d.auc24 <= 600 ? 'ok' : 'danger';
+  const aucStatus  = d.auc24 < AUC24_TARGET_MIN ? 'warn' : d.auc24 <= AUC24_TARGET_MAX ? 'ok' : 'danger';
   const aucBadge   = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[aucStatus];
   const aucText    = {ok:'In Range', warn:'Subtherapeutic', danger:'Supratherapeutic'}[aucStatus];
 
@@ -6031,14 +6067,14 @@ function renderTwoLevels(d) {
 
   // Dose explorer using individual PK
   let explorerHTML = '';
-  const explorerIntervals = [8, 12, 24];
+  const explorerIntervals = [...new Set([8, 12, 24, d.tlTau])].filter(x => x > 0).sort((a, b) => a - b);   // the patient's own interval is always listed
   const explorerDoses = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
   for(const interval of explorerIntervals) {
     for(const dose of explorerDoses) {
       const pt  = calcPeakTrough(dose, interval, d.tlTinf, d.kel, d.vd);
       const auc = calcAUC(dose, interval, d.clv);
       const tCls  = pt.trough < d.troughMin ? 'out-range' : pt.trough > d.troughMax ? 'out-range' : 'in-range';
-      const aUCls = auc < 400 ? 'out-range' : auc > 600 ? 'border-range' : 'in-range';
+      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';   // both sides alike, as the Tinkerer
       const isRec = dose === d.optDose && interval === d.tlTau;
       explorerHTML += `<tr class="${isRec?'recommended':''}">
         <td>${isRec?'★ ':''}${dose}mg Q${interval}H</td>
@@ -6061,7 +6097,7 @@ function renderTwoLevels(d) {
 
     <!-- Observed Levels Summary -->
     <div class="animate-in">
-      <p class="section-label">Observed Levels — First Dose</p>
+      <p class="section-label">Observed Levels — ${d.basis === 'steadystate' ? 'At Steady State' : 'First Dose'}</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
           <div style="font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Level 1</div>
@@ -6129,7 +6165,7 @@ function renderTwoLevels(d) {
           <span class="pk-unit">kg</span>
         </div>
       </div>
-      <p class="auc-method-note">Kel = ln(C₁/C₂) / (t₂−t₁) · Vd from single-dose peak equation · CLv = Kel × Vd</p>
+      <p class="auc-method-note">Kel = ln(C₁/C₂) / (t₂−t₁) · ${d.basis === 'steadystate' ? 'Vd from the steady-state peak equation (accumulation on the interval the levels were drawn on)' : 'Vd from single-dose peak equation'} · CLv = Kel × Vd</p>
     </div>
 
     <!-- Maintenance Dose Recommendation -->
@@ -6218,7 +6254,7 @@ function renderTwoLevels(d) {
 
     <!-- Footer note -->
     <div style="font-size:0.7rem;color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px;line-height:1.6">
-      <strong style="color:var(--text-secondary)">Clinical Disclaimer</strong> — Two-level PK estimation after the first dose assumes the levels are in the post-distribution phase. This approach is most reliable in patients with stable renal function. Verify recommended dose with a steady-state level once available. AinaDara v1.0 · Phase 2 (Two Levels After First Dose)
+      <strong style="color:var(--text-secondary)">Clinical Disclaimer</strong> — Two-level PK estimation ${d.basis === 'steadystate' ? 'at steady state' : 'after the first dose'} assumes the levels are in the post-distribution phase. This approach is most reliable in patients with stable renal function. Verify recommended dose with a steady-state level once available. AinaDara v1.0 · Phase 2 (Two Levels${d.basis === 'steadystate' ? ' at Steady State' : ' After First Dose'})
     </div>
 
     </div>`; /* close Two Levels tab panel */
@@ -6264,14 +6300,14 @@ function renderRandomLevel(d) {
 
   // Dose explorer
   let explorerHTML = '';
-  const explorerIntervals = [8, 12, 24];
+  const explorerIntervals = [...new Set([8, 12, 24, d.rlTau])].filter(x => x > 0).sort((a, b) => a - b);   // the patient's own interval is always listed
   const explorerDoses = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
   for(const interval of explorerIntervals) {
     for(const dose of explorerDoses) {
       const pt  = calcPeakTrough(dose, interval, d.rlTinf, d.indKel, d.popVd);
       const auc = calcAUC(dose, interval, d.indClv);
       const tCls  = pt.trough < d.troughMin ? 'out-range' : pt.trough > d.troughMax ? 'out-range' : 'in-range';
-      const aUCls = auc < 400 ? 'out-range' : auc > 600 ? 'border-range' : 'in-range';
+      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';   // both sides alike, as the Tinkerer
       const isRec = dose === d.optDose && interval === d.rlTau;
       explorerHTML += `<tr class="${isRec?'recommended':''}">
         <td>${isRec?'★ ':''}${dose}mg Q${interval}H</td>
@@ -6636,7 +6672,7 @@ function tinkerDose(suffix) {
   const auc = calcAUC(d, tau, clv);
   const aucMIC = mic ? auc / mic : null;
   const toughCls = pt.trough < troughMin ? 'var(--danger)' : pt.trough > troughMax ? 'var(--warning)' : 'var(--success)';
-  const aucCls   = auc < 400 ? 'var(--warning)' : auc > 600 ? 'var(--danger)' : 'var(--success)';
+  const aucCls   = auc < AUC24_TARGET_MIN ? 'var(--warning)' : auc > AUC24_TARGET_MAX ? 'var(--danger)' : 'var(--success)';
 
   const res = document.getElementById('tinker-result-' + suffix);
   res.innerHTML = `
@@ -6661,7 +6697,7 @@ function tinkerDose(suffix) {
       <span class="tinkerer-chip-sub">ratio</span>
     </div>` : ''}
     <div style="font-size:0.68rem;color:var(--text-muted);align-self:flex-end;padding-bottom:4px">
-      ${d} mg Q${tau}H · ${auc >= 400 && auc <= 600 && pt.trough >= troughMin && pt.trough <= troughMax ? '✓ Both AUC and trough in range' : auc >= 400 && auc <= 600 ? '✓ AUC in range' + (pt.trough < troughMin ? ' · trough low (AUC primary)' : ' · trough elevated') : auc < 400 ? '⚠ AUC subtherapeutic' : '⚠ AUC supratherapeutic'}
+      ${d} mg Q${tau}H · ${auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX && pt.trough >= troughMin && pt.trough <= troughMax ? '✓ Both AUC and trough in range' : auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX ? '✓ AUC in range' + (pt.trough < troughMin ? ' · trough low (AUC primary)' : ' · trough elevated') : auc < AUC24_TARGET_MIN ? '⚠ AUC subtherapeutic' : '⚠ AUC supratherapeutic'}
     </div>`;
   res.classList.add('visible');
 
@@ -6679,7 +6715,7 @@ function tinkerDose(suffix) {
 function troughRailHTML(trough, auc, troughMin) {
   const HARD_FLOOR = 10; // ASHP/IDSA 2020 efficacy floor for MIC ≤ 1
   if (trough >= HARD_FLOOR) return '';          // no warning needed
-  if (auc < 400 || auc > 600) return '';        // AUC already flagged separately
+  if (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) return '';        // AUC already flagged separately
   // AUC in range but trough below floor
   const severity = trough < 6 ? 'var(--danger)' : 'var(--warning)';
   return `<div style="margin-top:10px;padding:9px 13px;border-radius:var(--radius-sm);
@@ -8151,7 +8187,9 @@ function aucUncertaintyText(nLevels, model) {
   const n = Math.max(0, Math.min(3, Number(nLevels) || 0));
   const lv = n === 0 ? 'population prior, no levels' : n >= 3 ? '≥3 levels' : `${n} level${n === 1 ? '' : 's'}`;
   const hdNote = model === 'goti-hd' ? '; HD not simulated separately — Goti rows' : '';
-  return `${n === 0 ? '' : '~'}±${Math.round(row.frac * 100)}% (${lv}; ~80% of patients, median ±${Math.round(row.median * 100)}%${hdNote})`;
+  // The widths were simulated on steady-state troughs; say so (audit 2026-09-28).
+  const design = n === 0 ? '' : '; simulated for steady-state troughs';
+  return `${n === 0 ? '' : '~'}±${Math.round(row.frac * 100)}% (${lv}; ~80% of patients, median ±${Math.round(row.median * 100)}%${design}${hdNote})`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -8205,7 +8243,12 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind) {
   const stepAUC = (tau > 0 && CLind > 0) ? 250 * (24 / tau) / CLind : NaN;
   const margin  = Math.min(auc24 - AUC24_TARGET_MIN, AUC24_TARGET_MAX - auc24);
   const nearEdge = isFinite(stepAUC) ? margin < stepAUC : margin < 50;
-  const outright = auc24 < AUC24_TARGET_MIN || auc24 > AUC24_TARGET_MAX;
+  // The same derived rounding grace the optimizer uses (half of one 250 mg
+  // step): otherwise a recommended regimen at AUC 379 — accepted by the
+  // optimizer without a flag — was called "outside 400-600, a dose change is
+  // indicated" by this panel (engine audit 2026-09-28).
+  const grace = isFinite(stepAUC) ? stepAUC / 2 : 0;
+  const outright = auc24 < AUC24_TARGET_MIN - grace || auc24 > AUC24_TARGET_MAX + grace;
 
   const pct = x => Math.round(x * 100);
   let kind, headline, detail;
@@ -9261,7 +9304,7 @@ function runBayesian() {
     bState.result = {
       model:'goti', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
       levels:filteredLevels, objFinal, goti: gotiResult
     };
     // CODEX F-003: bind this fit to the inputs it came from.
@@ -9336,7 +9379,7 @@ function runBayesian() {
     bState.result = {
       model:'hughes', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx,
+      etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
       levels:filteredLevels, objFinal, goti: hughesResult
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -9378,7 +9421,7 @@ function runBayesian() {
     const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC, null, mic);
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
-      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx,
+      etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
       levels:filteredLevels, objFinal
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -9920,6 +9963,22 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <span class="bayes-uncertainty-tag">AUC uncertainty: ${aucUncertaintyText(nLev, uncertaintyModelKey(r))}</span>
       </div>
     </div>`;
+  // A level drawn before steady state carries less information than the trough
+  // design the widths were simulated on (Buelga, one trough after dose 1: p80
+  // 33% against 21% at steady state), so say so rather than quote the SS figure.
+  {
+    const kelT = t12_ind > 0 ? Math.LN2 / t12_ind : NaN;
+    const t0 = r.doses && r.doses.length ? r.doses[0].timeH : NaN;
+    const early = (r.levels || []).map(l => 1 - Math.exp(-kelT * (l.timeH - t0)))
+      .filter(f => isFinite(f) && f < SS_FRACTION_NOTE);
+    if (early.length) {
+      html += `<div style="font-size:0.69rem;color:var(--text-muted);padding:3px 0 1px">
+        ${early.length === 1 ? 'A level was' : `${early.length} levels were`} drawn before steady state
+        (about ${Math.round(Math.min(...early) * 100)}% of the way, at the fitted half-life, unless a loading dose was given).
+        The uncertainty above was simulated for steady-state troughs; for an early level it is wider.
+      </div>`;
+    }
+  }
 
   // ── Warnings ──
   if (divergeMsg) html += `<div class="diverge-warning">⚠ ${divergeMsg}</div>`;
@@ -9999,7 +10058,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     } else if (kind === 'arc') {
       const isHughesArc = r.model === 'hughes';
       const cappingNote = isHughesArc
-        ? 'Hughes 2024 uses an FFM-based CrCl with no cap, so the model is using the actual value.'
+        ? 'Hughes 2024 uses its own CrCl computed on fat-free mass, with no upper cap — a different scale from the Cockcroft-Gault value shown.'
         : (r.model === 'goti'
             ? `Goti 2018 truncated CrCl at ${CRCL_MODEL_CAP} mL/min when the model was built`
             : `Buelga 2005 was developed at CrCl ${BUELGA_CLCR_MEAN}±${BUELGA_CLCR_SD} mL/min and has no cap; this calculator limits its input to ${CRCL_MODEL_CAP} mL/min as an extrapolation guard`)
@@ -10037,7 +10096,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       r.model === 'goti'   ? 'Goti 2018'  :
                              'Buelga 2005';
     const cappingNote = isHughesLow
-      ? 'Hughes 2024 uses an FFM-based CrCl with no clamp, so the model is using the actual value.'
+      ? 'Hughes 2024 uses its own CrCl computed on fat-free mass (floored at 5 mL/min), a different scale from the Cockcroft-Gault value shown.'
       : `${modelName} clamps CrCl ≥ 5 mL/min in this calculator — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. None of the implemented popPK models were validated below CrCl 10; treat individual CL estimates with caution.`;
     html += `<div class="lowcrcl-advisory">
       ⚠ <strong>Severe renal impairment (non-dialysis) suspected</strong>
@@ -10425,10 +10484,11 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           course, on ${onReg} — AUC₂₄
           ${ag.lo.toFixed(0)}–${ag.hi.toFixed(0)} mg·h/L.
           ${ag.band.tone === 'ok'
-            ? 'Close agreement means the answer is being driven by the measured levels rather than by the choice of prior.'
+            ? 'The models give similar exposure, so the choice of model matters little here.'
             : ag.band.tone === 'warn'
-              ? 'Moderate disagreement — the prior is still doing noticeable work. Weigh a second level before a large dose change.'
-              : '<strong>The priors disagree more than they agree.</strong> With this much spread the exposure estimate is prior-driven, not data-driven; a further concentration is worth more than choosing between them.'}
+              ? 'The models differ moderately. The difference comes from their structure as much as from your data; weigh a second level before a large dose change.'
+              : '<strong>The models differ widely on exposure.</strong> The answer depends on which model is right for this patient; a further concentration, drawn at a different time from the first, helps more than choosing between them.'}
+          The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.
           ${caveats}
         </div>
       </div>`;
@@ -10459,9 +10519,12 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     let note = '';
     if (a >= 1) {
       const dir = fd.worst.resid > 0 ? 'HIGHER' : 'LOWER';
+      // Not "probably": under a correctly centred prior the residual's sign says
+      // nothing about the direction of the AUC error (right ~50% of the time in
+      // simulation). It is informative only if the prior is mis-centred.
       const consequence = fd.worst.resid > 0
-        ? 'so true exposure is probably <strong>higher</strong> than the AUC above'
-        : 'so true exposure is probably <strong>lower</strong> than the AUC above';
+        ? 'and if the population prior is mis-centred for this patient (for example Cockcroft-Gault overestimating clearance), true exposure is <strong>higher</strong> than the AUC above'
+        : 'and if the population prior is mis-centred for this patient (for example Cockcroft-Gault underestimating clearance), true exposure is <strong>lower</strong> than the AUC above';
       note = `<div class="fitdx-note">
         The measured level is <strong>${Math.abs(fd.worst.resid).toFixed(1)} mg/L ${dir}</strong> than the
         fitted model predicts (${Math.abs(fd.worst.sigma).toFixed(1)} σ of this model's residual error,
@@ -10474,8 +10537,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           ${r.crcl != null ? r.crcl.toFixed(0) : '—'} mL/min entered.
           If Cockcroft-Gault is overestimating (low muscle mass, low SCr), the prior is centred in the
           wrong place and the level is the better evidence.` : ''}
-        <br><strong>With one level, CL and V are not separately identifiable</strong> — a second level,
-        or cystatin C, resolves this far better than re-running the fit.
+        ${(r.levels || []).length === 1 ? `<br><strong>With one level, CL and V are not separately identifiable</strong> — a second level,
+        or cystatin C, resolves this far better than re-running the fit.` : ''}
       </div>`;
       if (fd.anchored) {
         const aucBayes = cur2 && cur2.dose && cur2.tau ? (cur2.dose * (24 / cur2.tau)) / CL_ind : null;
@@ -10527,7 +10590,17 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // A refusal ({noSolution:true, regimen:null}) is a truthy object. Guarding on
   // `if (rec)` alone called rec.auc24.toFixed on undefined and threw — the
   // refusal banner never appeared and the previous run stayed on screen.
-  if (rec && !rec.noSolution) {
+  // Very low CrCl without RRT and no levels: the advisory says give one loading
+  // dose and HOLD. An empiric maintenance card beneath it contradicted that for
+  // the patients at highest accumulation risk (engine audit 2026-09-28).
+  if (r.lowCrClHold && rec && !rec.noSolution) {
+    html += `<div class="rec-box" style="margin-top:12px">
+      <div class="rec-title" style="color:var(--danger)">No empiric maintenance regimen</div>
+      <div class="rec-rationale">CrCl is below the range any implemented model was developed in and no level has been
+        measured. Follow the severe renal impairment advisory above: one loading dose, then dose by measured levels.
+        The exposure matrix below is shown for reference only.</div>
+    </div>`;
+  } else if (rec && !rec.noSolution) {
     // Colours from the sourced bands, not inline literals. The trough is labelled
     // on this card as "a safety check, not a target", so it is coloured by the
     // safety tiers (TROUGH_WARN_MGL / TROUGH_HIGH_MGL) — the old 10-20 rule
@@ -10801,8 +10874,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     html += `
       <div class="model-info-box" style="background:color-mix(in srgb, var(--purple) 5%, transparent);border-color:color-mix(in srgb, var(--purple) 20%, transparent)">
         <strong style="color:var(--accent-blue)">Population estimate only</strong> — No observed levels provided.
-        Results reflect Buelga 2005 population PK for this patient's demographics (AUC uncertainty ±30%).
-        Add 1–2 measured vancomycin levels and re-run to obtain individualized Bayesian estimates (~±15–12%).
+        Results reflect the ${escHtml(modelLabel)} population prior for this patient's demographics
+        (AUC uncertainty ${escHtml(aucUncertaintyText(0, uncertaintyModelKey(r)))}).
+        One steady-state trough narrows it to ${escHtml(aucUncertaintyText(1, uncertaintyModelKey(r)))};
+        two to ${escHtml(aucUncertaintyText(2, uncertaintyModelKey(r)))}.
       </div>`;
   }
 
@@ -11272,7 +11347,7 @@ function runBayesTinkerer() {
     </div>
     <div style="margin-top:8px;font-size:0.73rem;color:${colAUC}">
       ${inRange ? '✓ Within AUC target range (400–600 mg·h/L)'
-        : auc24 < 400 ? '↑ Below target — consider higher dose or shorter interval'
+        : auc24 < AUC24_TARGET_MIN ? '↑ Below target — consider higher dose or shorter interval'
         : '↓ Above target — consider lower dose or longer interval'}
     </div>
     <div class="tink-ss-wrap">
@@ -11995,6 +12070,9 @@ function _buildPrintReport() {
     html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
     html += `<div class="pr-metric"><strong>No regimen offered.</strong> ${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</div>`;
     html += `<div class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</div></div>`;
+  } else if (r.rec && r.lowCrClHold) {
+    html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
+    html += `<div class="pr-metric"><strong>No empiric maintenance regimen.</strong> Very low CrCl without RRT and no measured level: one loading dose, then dose by levels.</div></div>`;
   } else if (r.rec) {
     const best = r.rec;
     html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
@@ -12020,7 +12098,7 @@ function _buildPrintReport() {
     // Judge against the guideline range only. An arbitrary +/-20% band around the
     // selected target is not a defined concept and printing it beside 400-600
     // invited the reader to compare two different things.
-    const inBand = cur.auc24 >= 400 && cur.auc24 <= 600;
+    const inBand = cur.auc24 >= AUC24_TARGET_MIN && cur.auc24 <= AUC24_TARGET_MAX;
     let unc = '';
     try { unc = aucUncertaintyText((r.levels || []).length, uncertaintyModelKey(r)); } catch (e) {}
     return `<div class="pr-section"><div class="pr-section-title">Exposure on the Current Regimen</div>
@@ -12029,7 +12107,7 @@ function _buildPrintReport() {
             <td>Guideline range</td><td class="pr-val">400–600</td></tr>
         ${cur.Ctrough != null ? `<tr><td>Projected trough</td><td class="pr-val">${cur.Ctrough.toFixed(1)} mg/L</td>
             <td>Projected peak</td><td class="pr-val">${cur.Cpeak != null ? cur.Cpeak.toFixed(1) + ' mg/L' : '—'}</td></tr>` : ''}
-        <tr><td>Status</td><td class="pr-val">${inBand ? 'within 400–600' : (cur.auc24 > 600 ? 'ABOVE 600' : 'BELOW 400')}</td>
+        <tr><td>Status</td><td class="pr-val">${inBand ? 'within 400–600' : (cur.auc24 > AUC24_TARGET_MAX ? 'ABOVE 600' : 'BELOW 400')}</td>
             <td>Selected target</td><td class="pr-val">${r.targetAUC ? r.targetAUC + ' mg·h/L' : '—'}</td></tr>
       </tbody></table>
       ${unc ? `<div class="pr-note"><strong>Uncertainty:</strong> ${escHtml(unc)} on AUC₂₄ with

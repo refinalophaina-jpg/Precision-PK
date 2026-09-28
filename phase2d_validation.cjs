@@ -2621,7 +2621,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const buildAt = body.indexOf("let html = '';");
     assert(clearAt > 0 && clearAt < buildAt,
       'the results must be cleared BEFORE the new html is built, so an exception cannot preserve the old run');
-    assert(/Dose recommendation ──[\s\S]{0,400}if \(rec && !rec\.noSolution\)/.test(body),
+    // 2026-09-28: the card gained a very-low-CrCl hold branch ahead of it; both
+    // branches must still exclude a refusal (rule 9: tightened, not loosened).
+    assert(/Dose recommendation ──[\s\S]{0,600}if \(r\.lowCrClHold && rec && !rec\.noSolution\)[\s\S]{0,900}\} else if \(rec && !rec\.noSolution\)/.test(body),
       'the dose card must not treat a refusal ({noSolution:true}) as a recommendation');
     assert(!/if \(rec\) \{\s*const sel/.test(body), 'the tinkerer preselect must also exclude a refusal');
   });
@@ -2926,6 +2928,81 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const cl = calcCLv('buelga', 256, 80);
     assert(Math.abs(cl - 1.08 * cap * 0.06) < 1e-9, `Trough Buelga must apply the guard, got ${cl}`);
     assert(!/Buelga 2005'} caps CrCl/.test(script) && /extrapolation guard/.test(script), 'the cap must not be attributed to Buelga');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 25 — engine audit, wording and consistency (2026-09-28)
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const { nextLevelValue, formatElapsed, modelAgreement, aucUncertaintyText, checkValue } = sandbox;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 25 — engine audit, wording and consistency');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('population-only box: no hard-coded Buelga, ±30% or ±15–12%', ()=>{
+    assert(!/Results reflect Buelga 2005 population PK/.test(code) && !/±15–12%/.test(code) && !/AUC uncertainty ±30%/.test(code), 'stale literals are back');
+    assert(/aucUncertaintyText\(1, uncertaintyModelKey\(r\)\)/.test(code), 'the box must read the model\'s own widths');
+  });
+  test('uncertainty labels say they were simulated for steady-state troughs', ()=>{
+    assert(/steady-state troughs/.test(aucUncertaintyText(1, 'buelga')), aucUncertaintyText(1, 'buelga'));
+    assert(/drawn before steady state/.test(code), 'an early level must be called out');
+  });
+  test('model agreement: bands labelled as preference; no "prior-driven, not data-driven" claim', ()=>{
+    assert(/PREFERENCE \(rule 8\)[\s\S]{0,200}MODEL_AGREEMENT_BANDS/.test(script), 'rule 8 label missing');
+    assert(!/prior-driven, not data-driven/.test(code) && !/driven by the measured levels rather than by the choice of prior/.test(code), 'unsupported claim is back');
+  });
+  test('fit panel: no unconditional "probably higher/lower"; identifiability only at one level', ()=>{
+    assert(!/true exposure is probably/.test(code), 'directional claim must be conditional');
+    assert(/\(r\.levels \|\| \[\]\)\.length === 1 \? `<br><strong>With one level, CL and V are not separately identifiable/.test(code), 'one-level sentence must be gated');
+  });
+  test('next-level panel does not contradict the optimizer\'s rounding grace', ()=>{
+    // CL 3.3, Q24H: one 250 mg step = 75.8 AUC; 378.8 is inside half a step of 400
+    const nl = nextLevelValue(378.8, 1, 'buelga', 24, 3.3);
+    assert(!/outside/.test(nl.detail), nl.detail);
+    const far = nextLevelValue(300, 1, 'buelga', 24, 3.3);
+    assert(far.kind === 'management' && /outside/.test(far.detail), 'a real miss is still called out');
+  });
+  test('very low CrCl without levels: no empiric maintenance card, on screen or in print', ()=>{
+    assert((script.match(/lowCrClHold: lowCrClInfo\.detected && filteredLevels\.length === 0/g) || []).length === 3, 'all three payloads');
+    assert(/No empiric maintenance regimen/.test(code) && /r\.rec && r\.lowCrClHold/.test(code), 'screen and print');
+  });
+  test('Hughes advisories describe its FFM CrCl truthfully', ()=>{
+    assert(!/so the model is using the actual value/.test(code), 'Hughes does not use the displayed CrCl');
+  });
+  test('Goti-HD: the active row is marked, Buelga is not compared on dialysis', ()=>{
+    const ctx = { activeModel: 'goti', dial: true, crcl: 20, crclGoti: 20, tbw: 70, htCm: 175 };
+    const doses = [0, 48].map(h => ({ mg: 1500, tinfH: 1.5, timeH: h }));
+    const ag = modelAgreement(ctx, doses, [{ conc: 18, timeH: 96 }], 750);
+    assert(ag === null || (ag.rows.every(r => r.key !== 'buelga') && ag.rows.some(r => r.active)), JSON.stringify(ag && ag.rows));
+    assert(/ctx\.activeModel === 'goti' && ctx\.dial\) \? 'goti-hd'/.test(code), 'active key must map to goti-hd');
+  });
+  test('formatElapsed never prints "24.0h" of remainder', ()=>{
+    assert(formatElapsed(47.96) === '2d 0.0h (total 48.0h)', formatElapsed(47.96));
+    assert(formatElapsed(23.96) === '1d 0.0h (total 24.0h)', formatElapsed(23.96));
+  });
+  test('CrCl override is range-checked, not clamped or passed through', ()=>{
+    assert(checkValue('3000', 'crclOverride').ok === false && checkValue('45', 'crclOverride').ok === true, '');
+    assert(/checkValue\(raw, 'crclOverride'\)/.test(code), 'setCrclOverride must validate');
+  });
+  test('a during-infusion or early level is never certified "True trough"', ()=>{
+    assert(/troughBasis = 'model'/.test(code) && /Model-predicted trough/.test(code), 'third label state');
+  });
+  test('two-level labels follow the basis actually used', ()=>{
+    assert(/d\.basis === 'steadystate' \? 'At Steady State' : 'First Dose'/.test(code), 'header');
+    assert(/steady-state peak equation/.test(code), 'method note');
+  });
+  test('dose explorer: both sides of the band coloured alike; own interval listed', ()=>{
+    assert(!/'border-range' : 'in-range'/.test(code), 'supratherapeutic must not be downplayed');
+    assert((code.match(/new Set\(\[8, 12, 24, d\.(tau|tlTau|rlTau)\]\)/g) || []).length === 3, 'three explorers');
+  });
+  test('the AUC band is one pair of constants, not 400/600 literals', ()=>{
+    const hits = code.match(/\bauc(?:24)?\s*(?:>=|<=|>|<)\s*(?:400|600)\b/g) || [];
+    assert(hits.length === 0, hits.join(' | '));
   });
 }
 
