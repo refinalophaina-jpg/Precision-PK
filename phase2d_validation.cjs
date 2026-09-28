@@ -2015,7 +2015,13 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('no clock-only time input survives outside a date-paired field', ()=>{
     // b-dose-time-*, b-lvl-time-* and .b-scr-time each sit beside their own
     // <input type="date">, so they are unambiguous. Nothing else may be.
-    const clockOnly = [...body.matchAll(/<input[^>]*placeholder="HH:MM"[^>]*>/g)].map(m => m[0]);
+    // Re-pointed (design track C, 2026-09-28): the course time fields' placeholder
+    // became the hint "24-hour, e.g. 08:00", so matching placeholder="HH:MM"
+    // alone would now find nothing and pass vacuously. A clock-only field is
+    // found by its HH:MM pattern, the old placeholder, or data-time24 — and the
+    // three course fields must actually be found.
+    const clockOnly = [...body.matchAll(/<input[^>]*(?:placeholder="HH:MM"|pattern="\[0-2\]\[0-9\]:\[0-5\]\[0-9\]"|data-time24)[^>]*>/g)].map(m => m[0]);
+    assert(clockOnly.length >= 3, `expected the dose, level and SCr time fields, found ${clockOnly.length}`);
     const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"/;
     const orphans = clockOnly.filter(t => !paired.test(t));
     assert(orphans.length === 0,
@@ -3169,6 +3175,164 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const b = bodyOf('drawSSTinkCanvas');
     const i = b.indexOf('ctx.fillRect(0, 0, W, H)');
     assert(i > 0 && /ctx\.fillStyle\s*=\s*themeColor\('--paper'/.test(b.slice(0, i)), 'fillStyle must be set before the background fill');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE track C — mobile layout and data entry (design track C, 2026-09-28)
+//
+// On a 375px phone the header wrapped to three rows (187px) and the dose table
+// was 396px inside a 343px overflow:hidden box, clipping the time field and the
+// remove button. New dose rows defaulted to "now" with a placeholder "1000"
+// that read as an entered dose, and nothing showed how a typed sampling time
+// had been read. These tests pin the fixes.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const style  = src.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const body   = src.slice(src.indexOf('<body>'));
+  const code   = script.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf = (name) => { const c = code.slice(code.indexOf('function ' + name + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  const { nextDoseDefault, courseReadback, fmtGapHM, formatTime24Input, addBayesDose } = sandbox;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE track C — mobile layout and data entry');
+  console.log(`${'─'.repeat(60)}`);
+
+  const row = (mg, tinf, date, time) => ({ mg, tinf, date, time });
+
+  test('nextDoseDefault: one dated dose → that dose + 12 h, same amount and infusion', ()=>{
+    assert(typeof nextDoseDefault === 'function', 'nextDoseDefault is missing');
+    const d = nextDoseDefault([row('1000', '1', '2026-09-01', '08:00')]);
+    assert(d && d.date === '2026-09-01' && d.time === '20:00', JSON.stringify(d));
+    assert(d.mg === '1000' && d.tinf === '1' && d.intervalH === 12, JSON.stringify(d));
+  });
+  test('nextDoseDefault: the interval is the gap between the two latest doses, across midnight', ()=>{
+    const d = nextDoseDefault([row('1250', '1.5', '2026-09-01', '08:00'), row('1250', '1.5', '2026-09-01', '16:00')]);
+    assert(d.date === '2026-09-02' && d.time === '00:00' && d.intervalH === 8, JSON.stringify(d));
+  });
+  test('nextDoseDefault: rows entered out of order continue from the LATEST dose in time', ()=>{
+    const d = nextDoseDefault([row('750', '1', '2026-09-02', '08:00'), row('1000', '1', '2026-09-01', '20:00')]);
+    assert(d.date === '2026-09-02' && d.time === '20:00' && d.mg === '750', JSON.stringify(d));
+  });
+  test('nextDoseDefault: a half-typed time is ignored, never guessed; a duplicate falls back to 12 h', ()=>{
+    const d = nextDoseDefault([row('1000', '1', '2026-09-01', '08:00'), row('1000', '1', '2026-09-01', '20:00'),
+                               row('1500', '', '2026-09-02', '8:00')]);
+    assert(d.date === '2026-09-02' && d.time === '08:00' && d.mg === '1000', `the "8:00" row must not count: ${JSON.stringify(d)}`);
+    const dup = nextDoseDefault([row('1000', '1', '2026-09-01', '08:00'), row('1000', '1', '2026-09-01', '08:00')]);
+    assert(dup.time === '20:00' && dup.intervalH === 12, JSON.stringify(dup));
+  });
+  test('nextDoseDefault: no rows → null (now); undated rows → amount only; no non-positive amount is copied', ()=>{
+    assert(nextDoseDefault([]) === null, 'no rows must return null');
+    const u = nextDoseDefault([row('1000', '1', '', '')]);
+    assert(u.date === null && u.time === null && u.mg === '1000', JSON.stringify(u));
+    const z = nextDoseDefault([row('0', '', '2026-09-01', '08:00')]);
+    assert(z.mg === '' && z.tinf === '', JSON.stringify(z));
+  });
+
+  test('addBayesDose defaults a second row to the previous dose + the interval (DOM stubbed)', ()=>{
+    const doc = sandbox.document;
+    const prev = { get: doc.getElementById, qsa: doc.querySelectorAll, make: doc.createElement };
+    const appended = [];
+    const tbody  = { querySelector: () => null, appendChild: (tr) => appended.push(tr) };
+    const fields = { 'b-dose-mg-7': { value: '1000' }, 'b-dose-tinf-7': { value: '1' },
+                     'b-dose-date-7': { value: '2026-09-01' }, 'b-dose-time-7': { value: '08:00' } };
+    doc.getElementById    = (id) => id === 'b-dose-tbody' ? tbody : (fields[id] || null);
+    doc.querySelectorAll  = (sel) => /b-dose-row-/.test(sel) ? [{ id: 'b-dose-row-7' }] : [];
+    doc.createElement     = () => ({ id: '', className: '', innerHTML: '' });
+    try { addBayesDose(); }
+    finally { doc.getElementById = prev.get; doc.querySelectorAll = prev.qsa; doc.createElement = prev.make; }
+    assert(appended.length === 1, 'a row must be appended');
+    const html = appended[0].innerHTML;
+    const val = (f) => (html.match(new RegExp(`id="b-dose-${f}-\\d+"[^>]*?value="([^"]*)"`)) || [])[1];
+    assert(val('date') === '2026-09-01' && val('time') === '20:00', `expected 2026-09-01 20:00, got ${val('date')} ${val('time')}`);
+    assert(val('mg') === '1000' && val('tinf') === '1', `expected 1000 mg over 1 h, got ${val('mg')} / ${val('tinf')}`);
+    assert(appended[0].className === 'course-row', 'the row must carry the reflowing grid class');
+  });
+  test('level and SCr rows still default to now on the local clock', ()=>{
+    for (const fn of ['addBayesLevel', 'addScrRow']) {
+      const b = bodyOf(fn);
+      assert(/localDateStr\(/.test(b) && /localTimeStr\(/.test(b), `${fn} must default to the local now`);
+      assert(!/nextDoseDefault/.test(b), `${fn} must not continue the dose schedule`);
+    }
+  });
+
+  test('the dose-amount placeholder is not a number (it read as an entered dose)', ()=>{
+    const tag = (bodyOf('addBayesDose').match(/<input[^>]*id="b-dose-mg-\$\{id\}"[^>]*>/) || [])[0];
+    assert(tag, 'the amount input is missing');
+    const ph = (tag.match(/placeholder="([^"]*)"/) || [])[1];
+    assert(ph === undefined || !/^\s*[\d.,]+\s*$/.test(ph), `numeric placeholder: "${ph}"`);
+    assert(!/placeholder="auto"/.test(bodyOf('addBayesDose')), 'the infusion placeholder "auto" is back');
+  });
+  test('every row input and remove button carries an accessible name', ()=>{
+    const want = {
+      addBayesDose:  ['aria-label="Dose ${id} amount (mg)"', 'aria-label="Dose ${id} infusion duration (h)"',
+                      'aria-label="Dose ${id} date"', 'aria-label="Dose ${id} time (24-hour)"', 'aria-label="Remove dose ${id}"'],
+      addBayesLevel: ['aria-label="Level ${id} concentration (mg/L)"', 'aria-label="Level ${id} date"',
+                      'aria-label="Level ${id} time (24-hour)"', 'aria-label="Remove level ${id}"'],
+      addScrRow:     ['aria-label="SCr ${n} value (mg/dL)"', 'aria-label="SCr ${n} date"',
+                      'aria-label="SCr ${n} time (24-hour)"', 'aria-label="Remove SCr ${n}"'],
+    };
+    for (const [fn, labels] of Object.entries(want)) {
+      const b = bodyOf(fn);
+      for (const l of labels) assert(b.includes(l), `${fn}: missing ${l}`);
+      const unnamed = [...b.matchAll(/<(input|button)\b[^>]*>/g)].map(m => m[0]).filter(t => !/aria-label="/.test(t));
+      assert(unnamed.length === 0, `${fn}: unnamed control ${unnamed.join(' | ').slice(0, 160)}`);
+      assert(!/[✕×]/.test(b), `${fn}: a glyph is used as the remove icon`);
+    }
+  });
+  test('time fields: 24-hour hint as placeholder, HH:MM pattern kept, colon never re-added on delete', ()=>{
+    for (const fn of ['addBayesDose', 'addBayesLevel', 'addScrRow']) {
+      const t = (bodyOf(fn).match(/<input[^>]*data-time24[^>]*>/) || [])[0];
+      assert(t && /placeholder="24-hour, e\.g\. 08:00"/.test(t) && /pattern="\[0-2\]\[0-9\]:\[0-5\]\[0-9\]"/.test(t),
+        `${fn}: ${t && t.slice(0, 160)}`);
+    }
+    const f = (value, inputType) => { const el = { value }; formatTime24Input(el, { inputType }); return el.value; };
+    assert(f('08', 'insertText') === '08:', 'typing two digits adds the colon');
+    assert(f('08', 'deleteContentBackward') === '08', 'deleting past the colon must be possible');
+    assert(f('0800', 'insertText') === '0800', 'a mistyped time is shown back, never repaired');
+    assert(f('08:3a0', 'insertText') === '08:30', 'non-digits are dropped, as before');
+  });
+
+  test('read-back: dose gaps and level timing, to the minute, from the right dose', ()=>{
+    const D = [{ n: '1', date: '2026-09-01', time: '08:00', tinf: '1' }, { n: '2', date: '2026-09-01', time: '20:00', tinf: '1.5' }];
+    const far = new Date('2030-01-01T00:00').getTime();
+    const r = courseReadback(D, [{ n: '1', date: '2026-09-02', time: '03:30' }, { n: '2', date: '2026-09-01', time: '21:00' },
+                                 { n: '3', date: '2026-09-01', time: '07:00' }, { n: '4', date: '2026-09-02', time: '03:3' }], far);
+    assert(r.dose['1'] === 'first dose' && r.dose['2'] === '12 h after dose 1', JSON.stringify(r.dose));
+    assert(r.level['1'] === '7 h 30 min after dose 2 started', r.level['1']);
+    assert(r.level['2'] === '1 h after dose 2 started, during its infusion', r.level['2']);
+    assert(r.level['3'] === 'before the first dose started', r.level['3']);
+    assert(r.level['4'] === '', `an incomplete time reads nothing, got "${r.level['4']}"`);
+  });
+  test('read-back: chronology, not row order; duplicates and future times are named', ()=>{
+    const D = [{ n: '1', date: '2026-09-02', time: '08:00' }, { n: '2', date: '2026-09-01', time: '20:00' },
+               { n: '3', date: '2026-09-02', time: '08:00' }];
+    const r = courseReadback(D, [], new Date('2026-09-02T00:00').getTime());
+    assert(r.dose['2'] === 'first dose', JSON.stringify(r.dose));
+    assert(r.dose['1'] === 'same time as dose 3 · in the future', JSON.stringify(r.dose));
+    assert(fmtGapHM(12) === '12 h' && fmtGapHM(7.5) === '7 h 30 min' && fmtGapHM(0.75) === '45 min', 'fmtGapHM');
+    assert(/elapsedHours\(/.test(bodyOf('courseReadback')), 'intervals must come from the one elapsed-time helper');
+  });
+
+  test('the brand links home to the pharmacy hub', ()=>{
+    assert(/<a class="brand" href="\/" aria-label="AinaDara pharmacy — home">/.test(body), 'the brand is not a link to "/"');
+  });
+  test('the header is one row on a phone, <= 60px, and results clear it', ()=>{
+    assert(!/\.header\s*\{[^}]*flex-wrap:\s*wrap/.test(style), 'the header wraps again');
+    const phone = style.match(/@media \(max-width: 600px\) \{\s*:root \{ --header-h: (\d+)px; \}/);
+    assert(phone && Number(phone[1]) <= 60, 'the phone header height token is missing or over 60px');
+    assert(/\.header \{[^}]*min-height: var\(--header-h\)/.test(style), 'the header must take its height from the token');
+    assert(/#b-results \{[^}]*scroll-margin-top: calc\(var\(--header-h\)/.test(style), 'results must clear the header by the same token');
+    assert(/\.module-tab \{[^}]*min-height: 44px/.test(style), 'module segments must be 44px targets');
+  });
+  test('row inputs are 16px (no iOS zoom), rows reflow by container, nothing clips', ()=>{
+    const ct = (style.match(/\.course-table input \{([^}]*)\}/) || [])[1] || '';
+    assert(/font-size:var\(--fs-md\)/.test(ct) && /min-height:44px/.test(ct), `course inputs: ${ct}`);
+    assert(!/\.course-table input[^{]*\{[^}]*font-size:var\(--fs-xs\)/.test(style), 'a 12px course input rule is back');
+    assert(/\.course-table-wrap \{[^}]*overflow:visible[^}]*container-type:inline-size/.test(style), 'the course list must not clip');
+    assert(/@container course/.test(style) && /\.course-table \.course-row \{[^}]*display: grid/.test(style), 'rows must be a reflowing grid');
   });
 }
 

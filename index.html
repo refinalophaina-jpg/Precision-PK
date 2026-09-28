@@ -179,12 +179,19 @@
      into dark mode. */
   body > * { position: relative; z-index: 1; }
 
-  /* ─── HEADER ─── */
+  /* ─── HEADER ───
+     One row at every width (design track C, 2026-09-28). On a phone it used to
+     wrap to three rows, 187px — 23% of the screen above every input. Its
+     height is the token --header-h (set with the phone overrides in the track C
+     block), and whatever scrolls under it reads the same token. */
+  :root { --header-h: 64px; }
   .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 32px;
+    gap: 16px;
+    min-height: var(--header-h);
+    padding: 8px 32px;
     border-bottom: 1px solid var(--border);
     background: var(--glass-bg);
     width: 100%; max-width: 1800px; margin-inline: auto;
@@ -192,22 +199,28 @@
     top: 0;
     z-index: 100;
   }
+  /* The brand is a link home to the pharmacy hub. */
   .brand {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
+    min-height: 44px;
+    flex: none;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
   }
   .brand-mark {
     width: 40px;
     height: 40px;
+    flex: none;
     border-radius: 50%;
-    border: 2px solid var(--accent-terra);
+    border: 2px solid var(--terracotta);
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(circle at 50% 50%, rgba(201,107,60,0.08) 0%, transparent 70%);
   }
   .brand-mark svg { width: 22px; height: 22px; }
   .brand-name {
@@ -215,6 +228,7 @@
     font-size:var(--fs-lg);
     color: var(--text-primary);
     letter-spacing: 0.02em;
+    white-space: nowrap;
   }
   .brand-name span { color: var(--accent-terra); }
   .header-tag {
@@ -222,35 +236,45 @@
     font-weight: 500;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-muted);
     border: 1px solid var(--rule);
     padding: 5px 12px;
     border-radius: var(--radius-pill);
     background: transparent;
+    white-space: nowrap;
   }
+  /* The module switch is one segmented control, in the same grammar as the
+     .toggle-group pills: selection is a background step and terracotta ink.
+     Each segment is a full 44px target; the transparent 2px border insets the
+     painted step (background-clip) so the box needs no padding of its own and
+     the phone header stays one 44px row. Terracotta TEXT is the ink step. */
   .module-tabs {
     display: flex;
-    gap: 4px;
+    flex: none;
+    gap: 0;
+    padding: 0;
     background: var(--paper-deep);
-    padding: 4px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--rule);
   }
   .module-tab {
-    padding: 7px 18px;
+    min-height: 44px;
+    padding: 0 18px;
     border-radius: var(--radius-sm);
-    font-size:var(--fs-xs);
+    border: 2px solid transparent;
+    background: none;
+    background-clip: padding-box;
+    font-size:var(--fs-sm);
     font-weight: 500;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     cursor: pointer;
     color: var(--text-muted);
-    border: none;
-    background: none;
-    transition: all 0.25s;
   }
+  .module-tab:hover:not(.active) { color: var(--ink); }
   .module-tab.active {
-    background: var(--terracotta);
-    color: var(--paper);
+    background-color: var(--paper);
+    color: var(--terracotta-ink);
   }
 
   /* ─── LAYOUT ─── */
@@ -1236,7 +1260,7 @@
     .app-shell { grid-template-columns: 1fr; }
     .panel-left { border-right: none; border-bottom: 1px solid var(--border); }
     /* .result-row reflows on its own (auto-fit); no override needed. */
-    .header { padding: 14px 20px; flex-wrap: wrap; gap: 10px; }
+    .header { padding-inline: 20px; gap: 12px; }   /* one row; see the track C block for phones */
   }
   @media (max-width: 600px) {
     .panel-left { padding: 20px 16px; }
@@ -1395,11 +1419,17 @@
     transition:all 0.2s; letter-spacing:0.04em;
   }
   .course-add-btn:hover { background:var(--bg-elevated); color:var(--text-primary); border-style:solid; border-color:var(--accent-blue); }
+  /* The course tables are lists of rows that reflow (design track C): each row
+     is a grid laid out in the track C block, sized by the container, not the
+     viewport. At 375px the old fixed table was 396px inside a 343px
+     overflow:hidden box, which clipped the time field and the remove button.
+     Nothing here may clip: overflow stays visible. */
   .course-table-wrap {
     background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:var(--radius-sm); overflow:hidden;
+    border-radius:var(--radius-sm); overflow:visible;
+    container-type:inline-size; container-name:course;
   }
-  .course-table { width:100%; border-collapse:collapse; }
+  .course-table { display:block; width:100%; border-collapse:collapse; }
   .course-table th {
     text-align:left; padding:8px 10px;
     font-size:var(--fs-xs); font-weight:600; letter-spacing:0.1em; text-transform:uppercase;
@@ -1407,28 +1437,28 @@
   }
   .course-table td {
     padding:6px 7px; font-size:var(--fs-xs);
-    border-bottom:1px solid rgba(0,0,0,0.05); vertical-align:middle;
+    border-bottom:1px solid var(--rule); vertical-align:middle;
   }
   .course-table tr:last-child td { border-bottom:none; }
+  /* 16px so iOS does not zoom on focus; 44px tall so a thumb can hit it. */
   .course-table input {
     background:var(--bg-input); border:1px solid var(--border); border-radius: var(--radius-sm);
-    color:var(--text-primary); font-family:var(--font-num); font-size:var(--fs-xs);
-    padding:5px 7px; width:100%; outline:none; -moz-appearance:textfield;
+    color:var(--text-primary); font-family:var(--font-num); font-size:var(--fs-md);
+    min-height:44px; padding:8px 10px; width:100%; min-width:0; outline:none; -moz-appearance:textfield;
   }
   .course-table input[type="number"]::-webkit-outer-spin-button,
   .course-table input[type="number"]::-webkit-inner-spin-button { -webkit-appearance:none; }
-  .course-table input[type="datetime-local"] { font-size:var(--fs-xs); }
-  .course-table input[type="date"],
-  .course-table input[placeholder="HH:MM"] { font-size:var(--fs-xs); }
-  .course-dt-cell { display:flex; gap:4px; align-items:center; }
-  .course-dt-cell input[type="date"]  { width:120px; }
-  .course-dt-cell input[placeholder="HH:MM"]  { width:72px; font-family:var(--font-num); font-size:var(--fs-xs); text-align:center; }
   .course-table input:focus { border-color:var(--terracotta); box-shadow: 0 0 0 3px color-mix(in srgb, var(--terracotta) 18%, transparent); }
+  /* A 44px target with a drawn cross. Removing a row is not an alarm, so the
+     hover is an ink step, never the alarm hue. */
   .course-remove-btn {
-    background:none; border:none; color:var(--text-muted); cursor:pointer;
-    font-size:var(--fs-base); line-height:1; padding:3px 6px; border-radius:4px; transition:color 0.15s;
+    display:inline-flex; align-items:center; justify-content:center;
+    width:44px; height:44px; min-height:44px; padding:0;
+    background:none; border:1px solid transparent; color:var(--ink-muted); cursor:pointer;
+    border-radius:var(--radius-sm); transition:color 0.15s, background-color 0.15s;
   }
-  .course-remove-btn:hover { color:var(--danger); }
+  .course-remove-btn svg { width:14px; height:14px; display:block; }
+  .course-remove-btn:hover { color:var(--ink); background:var(--paper-edge); }
   .course-empty-msg {
     text-align:center; padding:14px; font-size:var(--fs-xs); color:var(--text-muted); font-style:italic;
   }
@@ -1881,8 +1911,8 @@
   /* ── Theme toggle ─────────────────────────────────────────────────── */
   .theme-toggle {
     display:inline-flex; align-items:center; justify-content:center;
-    width:34px; height:34px; min-width:34px; flex-shrink:0;
-    margin-left:8px; padding:0;
+    width:44px; height:44px; min-width:44px; flex-shrink:0;   /* one 44px target at every width */
+    margin-left:0; padding:0;
     background:transparent; border:1px solid var(--rule);
     border-radius:var(--radius-pill); cursor:pointer;
     color:var(--ink-soft); transition:color .2s ease, border-color .2s ease;
@@ -2051,7 +2081,7 @@
      top-tier safety, always beside a signal word and a drawn icon.
      ══════════════════════════════════════════════════════════════════════ */
   .panel-right { container-type: inline-size; container-name: results; }
-  #b-results { gap: 0 !important; scroll-margin-top: 96px; }
+  #b-results { gap: 0 !important; scroll-margin-top: calc(var(--header-h) + 16px); }   /* clears the sticky header */
   #b-results > * { max-width: 100%; }
 
   .vx-top {
@@ -2171,7 +2201,7 @@
   .note-list li { margin: 3px 0; }
   .vx-more { font-size: var(--fs-sm); color: var(--terracotta-ink); padding-left: 24px; text-underline-offset: 4px; }
 
-  details.ev { border-bottom: 1px solid var(--rule); scroll-margin-top: 96px; }
+  details.ev { border-bottom: 1px solid var(--rule); scroll-margin-top: calc(var(--header-h) + 16px); }
   details.ev > summary {
     list-style: none; cursor: pointer; display: flex; align-items: baseline; flex-wrap: wrap;
     gap: 4px 14px; padding: 16px 0; min-height: 44px;
@@ -2259,6 +2289,125 @@
 
   /* ── design track C: mobile & data entry — insert this track's CSS below this line ── */
 
+  /* Header on narrower screens: still one row. The version pill goes first,
+     then the module names shorten to "Trough" / "AUC" (the full names stay the
+     accessible names), then the wordmark on the smallest phones. At 375px the
+     header is 56px — it was 187px. */
+  @media (max-width: 720px) {
+    .header-tag { display: none; }
+  }
+  @media (max-width: 600px) {
+    :root { --header-h: 56px; }
+    .header { padding: 4px 16px; gap: 8px; }
+    .brand { gap: 8px; }
+    .brand-mark { width: 32px; height: 32px; }
+    .module-tab { padding: 0 12px; }
+  }
+  @media (max-width: 480px) {
+    .mt-more {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+  }
+  @media (max-width: 359px) {
+    .brand-name { display: none; }
+  }
+
+  /* Every typed field is 16px at every width, so iOS never zooms on focus
+     (an iPhone in landscape is wider than any phone breakpoint). */
+  input[type="number"], input[type="text"], input[type="date"], input[type="time"],
+  input[type="datetime-local"], select, textarea,
+  .dt-input, .prn-ctrl-input, .tinkerer-input, .profile-save-row input[type="text"] {
+    font-size: var(--fs-md);
+  }
+  /* These two selects carry an inline font-size, so only !important reaches them. */
+  #rl-interval, #rl-tau { font-size: var(--fs-md) !important; }
+
+  /* Native pickers follow the page: color-scheme is set per theme on :root and
+     inherited; the accent is the terracotta ink step. Spinners stay stripped
+     (see the polish pass) — they invite mis-clicks on a dosing field. */
+  input[type="number"], input[type="text"], input[type="date"], input[type="time"],
+  input[type="datetime-local"], select {
+    accent-color: var(--terracotta-ink);
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    cursor: pointer; opacity: .65; border-radius: var(--radius-sm);
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  input[type="time"]::-webkit-calendar-picker-indicator:hover,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+  /* iOS centres a date's text; the rest of the form reads from the left. */
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; }
+
+  /* ── Course rows: dose, level and serial SCr ────────────────────────────
+     Each row is a grid that reflows with the width of its own list (container
+     query), never the viewport:
+        narrow   Dose 3 · 12 h after dose 2               [x]
+                 [ 1000  mg ] over [ 1  h ]               [x]
+                 [ 2026-09-28   ] [ 20:00           ]
+        wide     Dose 3 · 12 h after dose 2                               [x]
+                 [ 1000 mg ] over [ 1 h ]   [ 2026-09-28 ] [ 20:00 ]      [x]
+     The column heads are gone: every field names itself — a unit on screen
+     that stays once typed, and an aria-label ("Dose 3 amount (mg)"). */
+  .course-table > thead { display: none; }
+  .course-table > tbody { display: block; }
+  .course-table > tbody > tr:not(.course-row),
+  .course-table > tbody > tr:not(.course-row) > td { display: block; }
+  .course-table .course-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-areas: "head rm" "what rm" "when when";
+    align-items: center;
+    gap: 6px 8px;
+    padding: 10px 10px 12px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .course-table .course-row:last-child { border-bottom: 0; }
+  .course-table .course-row > td { padding: 0; border: 0; min-width: 0; }
+  .course-table .course-head {
+    grid-area: head; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px;
+    font-size: var(--fs-sm); line-height: 1.4;
+  }
+  .course-n { color: var(--ink); font-weight: 500; }
+  .course-readback { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .course-what { grid-area: what; display: flex; align-items: center; gap: 8px; }
+  .course-when {
+    grid-area: when; display: grid; gap: 8px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .course-rm { grid-area: rm; align-self: end; justify-self: end; }
+  .course-field { position: relative; display: block; flex: 1 1 0; min-width: 0; }
+  .course-field-wide { flex: 0 1 11rem; }
+  .course-table input { font-variant-numeric: tabular-nums; }
+  /* Room on the right for the unit: its 10px inset, the unit (13px text), 4px. */
+  .course-table .course-field input { padding-right: 32px; }
+  .course-table .course-field-wide input { padding-right: 54px; }
+  .course-unit {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: var(--fs-sm); color: var(--ink-muted); pointer-events: none;
+  }
+  .course-over { flex: none; font-size: var(--fs-sm); color: var(--ink-muted); }
+  .course-table input::placeholder { font-size: var(--fs-sm); color: var(--ink-muted); opacity: 1; }
+  /* The smallest phones (a 320px screen): the remove button joins the head
+     line so the amount line has the full width; the date and time fields
+     tighten so the date and the 24-hour hint both fit. */
+  @container course (max-width: 339px) {
+    .course-table .course-row { grid-template-areas: "head rm" "what what" "when when"; }
+    .course-rm { align-self: center; }
+    .course-when { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+    .course-table .course-when input { padding-inline: 8px; }
+    .course-table .course-when input::placeholder { font-size: var(--fs-xs); }
+  }
+  @container course (min-width: 640px) {
+    .course-table .course-row {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+      grid-template-areas: "head head rm" "what when rm";
+    }
+  }
+
 
   /* ── design track D: Trough-module results — insert this track's CSS below this line ── */
 
@@ -2287,11 +2436,14 @@
 
 <!-- HEADER -->
 <header class="header">
-  <div class="brand">
-    <div class="brand-mark">
+  <!-- The brand is the way home: "/" is the pharmacy hub (pharmacy.ainadara.com).
+       One compact row at every width; on a phone the module names shorten and
+       the version pill hides (design track C, 2026-09-28). -->
+  <a class="brand" href="/" aria-label="AinaDara pharmacy — home">
+    <span class="brand-mark">
       <!-- The AinaDara mark, from ainadara.com/favicon.svg. Terracotta rings
            (the signal), purple rays (structure), moss arc (growth). -->
-      <svg viewBox="0 0 64 64" aria-label="AinaDara" role="img">
+      <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
         <circle cx="32" cy="32" r="24" fill="var(--paper-deep)" stroke="var(--ink)" stroke-width="1.3"/>
         <g stroke="var(--terracotta)" fill="none" stroke-width="1.1" stroke-linecap="round">
           <circle cx="23" cy="27" r="6"/><circle cx="23" cy="27" r="3.3"/><circle cx="23" cy="27" r="1.3"/>
@@ -2302,15 +2454,15 @@
         </g>
         <path d="M 19 42 Q 32 51 45 42" stroke="var(--moss)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
       </svg>
-    </div>
-    <span class="brand-name">Aina<span>Dara</span></span>
-  </div>
-  <div class="module-tabs">
-    <button class="module-tab active" data-onclick="k1">Trough-Based</button>
-    <button class="module-tab" data-onclick="k2">AUC Precision</button>
+    </span>
+    <span class="brand-name" aria-hidden="true">Aina<span>Dara</span></span>
+  </a>
+  <div class="module-tabs" role="group" aria-label="Calculator module">
+    <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
+    <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </div>
   <div class="header-tag">Vancomycin TDM v3.0</div>
-  <button class="theme-toggle" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
+  <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
       <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
@@ -7388,29 +7540,48 @@ function localTimeStr(d) {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// Rows are a reflowing grid (design track C): a head line (the row's name and
+// its live read-back), the amount line, the date-and-time line, and a 44px
+// remove button. The row's number is its id — parseBayesCourse names a bad row
+// "Dose row N" by the same id, so the error and the row always agree. Every
+// field carries its own accessible name; units stay on screen once typed.
 function addBayesDose() {
   const id    = ++bDoseCount;
   const tbody = document.getElementById('b-dose-tbody');
   const empty = tbody.querySelector('tr:has(.course-empty-msg)') || tbody.querySelector('tr');
   if (empty && empty.querySelector('.course-empty-msg')) empty.remove();
 
+  // A new row continues the course: the previous dose's start plus the interval
+  // between the last two, at the same amount (nextDoseDefault). With no dated
+  // dose yet it starts at now, on the local clock (CODEX F-008).
   const now      = new Date();
   now.setSeconds(0, 0);
-  const dateStr  = localDateStr(now);
-  const timeStr  = localTimeStr(now);
+  const next     = nextDoseDefault(readCourseDoseRows());
+  const dateStr  = next && next.date ? next.date : localDateStr(now);
+  const timeStr  = next && next.time ? next.time : localTimeStr(now);
+  const mgStr    = next ? escHtml(next.mg)   : '';
+  const tinfStr  = next ? escHtml(next.tinf) : '';
+  const rb       = `course-rb-dose-${id}`;
 
   const tr = document.createElement('tr');
   tr.id = `b-dose-row-${id}`;
+  tr.className = 'course-row';
   tr.innerHTML = `
-    <td><input type="number" id="b-dose-mg-${id}" placeholder="1000" min="100" max="4000" step="50" style="width:68px"
-         data-oninput="k60" data-arg="${id}"></td>
-    <td><input type="number" id="b-dose-tinf-${id}" placeholder="auto" min="0.25" max="6" step="0.25" style="width:52px" title="Auto-set by dose; override as needed"></td>
-    <td><div class="course-dt-cell">
-      <input type="date" id="b-dose-date-${id}" value="${dateStr}">
-      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="b-dose-time-${id}" value="${timeStr}">
-    </div></td>
-    <td><button class="course-remove-btn" data-onclick="k61" data-arg="${id}" title="Remove">✕</button></td>`;
+    <td class="course-head"><span class="course-n">Dose ${id}</span> <span class="course-readback" id="${rb}"></span></td>
+    <td class="course-what">
+      <span class="course-field"><input type="number" id="b-dose-mg-${id}" inputmode="decimal" min="100" max="4000" step="50" value="${mgStr}"
+         aria-label="Dose ${id} amount (mg)" data-oninput="k60" data-arg="${id}"><span class="course-unit" aria-hidden="true">mg</span></span>
+      <span class="course-over" aria-hidden="true">over</span>
+      <span class="course-field"><input type="number" id="b-dose-tinf-${id}" inputmode="decimal" min="0.25" max="6" step="0.25" value="${tinfStr}"
+         aria-label="Dose ${id} infusion duration (h)" title="Auto-set by dose; override as needed"><span class="course-unit" aria-hidden="true">h</span></span>
+    </td>
+    <td class="course-when">
+      <input type="date" id="b-dose-date-${id}" value="${dateStr}" aria-label="Dose ${id} date" aria-describedby="${rb}">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="b-dose-time-${id}" value="${timeStr}" aria-label="Dose ${id} time (24-hour)" aria-describedby="${rb}">
+    </td>
+    <td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k61" data-arg="${id}" aria-label="Remove dose ${id}">${courseRemoveIcon()}</button></td>`;
   tbody.appendChild(tr);
+  scheduleCourseReadback();
 }
 
 function removeBayesDose(id) {
@@ -7420,9 +7591,11 @@ function removeBayesDose(id) {
   if (!tbody.querySelector('tr')) {
     tbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add Dose</td></tr>';
   }
+  scheduleCourseReadback();   // every later row's "after dose N" may have changed
 }
 
 // ─── Add/remove level rows ───
+// A level defaults to now (local clock): it is usually entered as it is drawn.
 function addBayesLevel() {
   const id    = ++bLevelCount;
   const tbody = document.getElementById('b-level-tbody');
@@ -7433,17 +7606,24 @@ function addBayesLevel() {
   now.setSeconds(0, 0);
   const dateStr  = localDateStr(now);
   const timeStr  = localTimeStr(now);
+  const rb       = `course-rb-level-${id}`;
 
   const tr = document.createElement('tr');
   tr.id = `b-level-row-${id}`;
+  tr.className = 'course-row';
   tr.innerHTML = `
-    <td><input type="number" id="b-lvl-conc-${id}" placeholder="—" min="0.1" max="200" step="0.1" style="width:72px"></td>
-    <td><div class="course-dt-cell">
-      <input type="date" id="b-lvl-date-${id}" value="${dateStr}">
-      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" id="b-lvl-time-${id}" value="${timeStr}">
-    </div></td>
-    <td><button class="course-remove-btn" data-onclick="k62" data-arg="${id}" title="Remove">✕</button></td>`;
+    <td class="course-head"><span class="course-n">Level ${id}</span> <span class="course-readback" id="${rb}"></span></td>
+    <td class="course-what">
+      <span class="course-field course-field-wide"><input type="number" id="b-lvl-conc-${id}" inputmode="decimal" min="0.1" max="200" step="0.1"
+         aria-label="Level ${id} concentration (mg/L)"><span class="course-unit" aria-hidden="true">mg/L</span></span>
+    </td>
+    <td class="course-when">
+      <input type="date" id="b-lvl-date-${id}" value="${dateStr}" aria-label="Level ${id} date" aria-describedby="${rb}">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="b-lvl-time-${id}" value="${timeStr}" aria-label="Level ${id} time (24-hour)" aria-describedby="${rb}">
+    </td>
+    <td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k62" data-arg="${id}" aria-label="Remove level ${id}">${courseRemoveIcon()}</button></td>`;
   tbody.appendChild(tr);
+  scheduleCourseReadback();
 }
 
 function removeBayesLevel(id) {
@@ -9116,17 +9296,23 @@ function addScrRow() {
   // UTC defaulted to tomorrow (CODEX F-008, fixed for dose/level rows only).
   const today = localDateStr();
   const now   = localTimeStr();
+  // Serial SCr errors name a row by POSITION ("Serial SCr row 2"), so its label
+  // is positional too, and renumberScrRows keeps it so after a removal.
+  const n     = tbody.querySelectorAll('[id^="b-scr-row-"]').length + 1;
   const tr    = document.createElement('tr');
   tr.id = `b-scr-row-${id}`;
+  tr.className = 'course-row';
   tr.innerHTML = `
-    <td><input type="number" class="course-input b-scr-val" placeholder="—" step="0.1" min="0.1" max="20" style="width:72px"></td>
-    <td>
-      <div class="course-dt-cell">
-        <input type="date" class="b-scr-date" value="${today}">
-        <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" class="b-scr-time" value="${now}">
-      </div>
+    <td class="course-head"><span class="course-n">SCr ${n}</span></td>
+    <td class="course-what">
+      <span class="course-field course-field-wide"><input type="number" class="course-input b-scr-val" inputmode="decimal" step="0.1" min="0.1" max="20"
+         aria-label="SCr ${n} value (mg/dL)"><span class="course-unit" aria-hidden="true">mg/dL</span></span>
     </td>
-    <td><button class="course-remove-btn" data-onclick="k63" data-arg="${id}">×</button></td>`;
+    <td class="course-when">
+      <input type="date" class="b-scr-date" value="${today}" aria-label="SCr ${n} date">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 class="b-scr-time" value="${now}" aria-label="SCr ${n} time (24-hour)">
+    </td>
+    <td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k63" data-arg="${id}" aria-label="Remove SCr ${n}">${courseRemoveIcon()}</button></td>`;
   tbody.appendChild(tr);
   updateScrTrendDisplay();
 }
@@ -9138,6 +9324,7 @@ function removeScrRow(id) {
   if (tbody && !tbody.querySelectorAll('[id^="b-scr-row-"]').length) {
     tbody.innerHTML = '<tr><td colspan="3" class="course-empty-msg">No SCr entries — Bayesian uses baseline SCr above</td></tr>';
   }
+  renumberScrRows();
   updateScrTrendDisplay();
 }
 
@@ -12506,6 +12693,201 @@ if (typeof document !== 'undefined' && document.addEventListener) {
 
 
 // ── design track C: mobile & data entry — insert this track's helpers below this line ──
+
+// The drawn cross on a row's remove button (no glyph icons).
+function courseRemoveIcon() {
+  return '<svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 3l8 8M11 3l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+}
+
+// A course row's instant, parsed exactly as parseBayesCourse parses it: a full
+// date, an HH:MM time, local clock. NaN when either is incomplete — nothing is
+// guessed, so a half-typed time shows no read-back rather than a wrong one.
+function courseRowMs(date, time) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !/^\d{2}:\d{2}$/.test(String(time || '').trim())) return NaN;
+  const ms = new Date(`${date}T${String(time).trim()}`).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+// The dose rows as typed, in row order: [{ id, mg, tinf, date, time }].
+function readCourseDoseRows() {
+  if (typeof document === 'undefined' || !document.querySelectorAll || !document.getElementById) return [];
+  const val = (x) => { const el = document.getElementById(x); return el && el.value != null ? String(el.value).trim() : ''; };
+  return Array.from(document.querySelectorAll('[id^="b-dose-row-"]') || []).map(row => {
+    const id = String(row.id).replace('b-dose-row-', '');
+    return { id, mg: val(`b-dose-mg-${id}`), tinf: val(`b-dose-tinf-${id}`),
+             date: val(`b-dose-date-${id}`), time: val(`b-dose-time-${id}`) };
+  });
+}
+
+// What a new dose row starts with. Pure: rows in, defaults out.
+//   time   = the latest dated dose + the interval between the latest two dated
+//            doses, or 12 h when only one is dated (or the two coincide);
+//   amount = that latest dose's amount, infusion likewise.
+// Returns null when there is no row; date/time are null when no row has a
+// readable date and time (the caller then uses now). Only a positive number is
+// carried forward — a half-typed amount is not copied. Presentation only: the
+// clinician sees and can change every value, and the row's read-back states
+// the gap ("12 h after dose 2") before anything is fitted.
+function nextDoseDefault(prevRows) {
+  const rows = (prevRows || []).filter(Boolean);
+  if (!rows.length) return null;
+  const dated = rows
+    .map(r => ({ r, dt: `${r.date}T${String(r.time || '').trim()}`, ms: courseRowMs(r.date, r.time) }))
+    .filter(x => Number.isFinite(x.ms))
+    .sort((a, b) => a.ms - b.ms);
+  const last = dated.length ? dated[dated.length - 1] : null;
+  const src  = last ? last.r : rows[rows.length - 1];
+  const num  = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? String(n) : ''; };
+  const out  = { mg: num(src.mg), tinf: num(src.tinf), date: null, time: null, intervalH: null };
+  if (!last) return out;
+  let tau = 12;
+  if (dated.length >= 2) {
+    const g = elapsedHours(dated[dated.length - 2].dt, last.dt);
+    if (g.ok && g.hours > 0) tau = g.hours;
+  }
+  const d = new Date(last.ms + tau * 3600000);
+  return Object.assign(out, { date: localDateStr(d), time: localTimeStr(d), intervalH: tau });
+}
+
+// "12 h", "7 h 30 min", "45 min" — to the minute.
+function fmtGapHM(h) {
+  const mins = Math.round(Math.abs(Number(h)) * 60);
+  const hh = Math.floor(mins / 60), mm = mins % 60;
+  if (hh && mm) return `${hh} h ${mm} min`;
+  return hh ? `${hh} h` : `${mm} min`;
+}
+
+// The live read-back. Pure: doses [{ n, date, time, tinf }] and levels
+// [{ n, date, time }] as typed; returns { dose: {n: text}, level: {n: text} }.
+// A dose reads its gap from the dose before it IN TIME ("12 h after dose 2");
+// a level reads its time from the latest dose START at or before it ("7 h 30 min
+// after dose 4 started"), and says so when that is inside the infusion. An
+// incomplete row reads nothing. Intervals come from elapsedHours, the one
+// elapsed-time helper. Sampling time is the riskiest input; this shows the
+// clinician how the tool read it while they type.
+function courseReadback(doses, levels, nowMs) {
+  const stamp = (x) => Object.assign({}, x, { dt: `${x.date}T${String(x.time || '').trim()}`, ms: courseRowMs(x.date, x.time) });
+  const D = (doses || []).map(stamp);
+  const L = (levels || []).map(stamp);
+  const dated = D.filter(d => Number.isFinite(d.ms)).sort((a, b) => a.ms - b.ms);
+  const future = (ms) => Number.isFinite(nowMs) && ms > nowMs ? ' · in the future' : '';
+  const out = { dose: {}, level: {} };
+
+  D.forEach(d => {
+    let text = '';
+    if (Number.isFinite(d.ms)) {
+      const others = dated.filter(x => x.n !== d.n);
+      const same   = others.find(x => x.ms === d.ms);
+      const before = others.filter(x => x.ms < d.ms);
+      const prev   = before.length ? before[before.length - 1] : null;
+      if (same) text = `same time as dose ${same.n}`;
+      else if (prev) {
+        const g = elapsedHours(prev.dt, d.dt);
+        text = g.ok ? `${fmtGapHM(g.hours)} after dose ${prev.n}` : '';
+      } else if (others.length) text = 'first dose';
+      if (text) text += future(d.ms);
+    }
+    out.dose[d.n] = text;
+  });
+
+  L.forEach(l => {
+    let text = '';
+    if (Number.isFinite(l.ms) && dated.length) {
+      const atOrBefore = dated.filter(x => x.ms <= l.ms);
+      const prev = atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : null;
+      if (!prev) text = 'before the first dose started';
+      else {
+        const g = elapsedHours(prev.dt, l.dt);
+        if (g.ok) {
+          text = Math.round(g.hours * 60) === 0
+            ? `at the start of dose ${prev.n}`
+            : `${fmtGapHM(g.hours)} after dose ${prev.n} started`;
+          const tinf = parseFloat(prev.tinf);
+          if (Number.isFinite(tinf) && tinf > 0 && g.hours < tinf) text += ', during its infusion';
+        }
+      }
+      if (text) text += future(l.ms);
+    }
+    out.level[l.n] = text;
+  });
+  return out;
+}
+
+// Write the read-back into every dose and level row.
+function refreshCourseReadback() {
+  if (typeof document === 'undefined' || !document.querySelectorAll || !document.getElementById) return;
+  const val = (x) => { const el = document.getElementById(x); return el && el.value != null ? String(el.value).trim() : ''; };
+  const ids = (sel, prefix) => Array.from(document.querySelectorAll(sel) || []).map(r => String(r.id).replace(prefix, ''));
+  const doses  = ids('[id^="b-dose-row-"]', 'b-dose-row-').map(n =>
+    ({ n, date: val(`b-dose-date-${n}`), time: val(`b-dose-time-${n}`), tinf: val(`b-dose-tinf-${n}`) }));
+  const levels = ids('[id^="b-level-row-"]', 'b-level-row-').map(n =>
+    ({ n, date: val(`b-lvl-date-${n}`), time: val(`b-lvl-time-${n}`) }));
+  const rb = courseReadback(doses, levels, Date.now());
+  const put = (id, text) => { const el = document.getElementById(id); if (el && el.textContent !== text) el.textContent = text; };
+  doses.forEach(d  => put(`course-rb-dose-${d.n}`,  rb.dose[d.n]  || ''));
+  levels.forEach(l => put(`course-rb-level-${l.n}`, rb.level[l.n] || ''));
+}
+
+// Once per tick, after the current handler: a profile load adds a row and then
+// sets its values in the same task, so the read-back must run after both.
+function scheduleCourseReadback() {
+  if (scheduleCourseReadback.queued) return;
+  scheduleCourseReadback.queued = true;
+  Promise.resolve().then(() => {
+    scheduleCourseReadback.queued = false;
+    try { refreshCourseReadback(); } catch (e) { if (typeof console !== 'undefined') console.warn('course read-back failed', e); }
+  });
+}
+
+// Serial SCr rows are named by position; keep the names true after a removal.
+function renumberScrRows() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  Array.from(document.querySelectorAll('[id^="b-scr-row-"]') || []).forEach((row, i) => {
+    const n = i + 1;
+    const label = (sel, text) => { const el = row.querySelector(sel); if (el) el.setAttribute('aria-label', text); };
+    const head = row.querySelector('.course-n'); if (head) head.textContent = `SCr ${n}`;
+    label('.b-scr-val', `SCr ${n} value (mg/dL)`);
+    label('.b-scr-date', `SCr ${n} date`);
+    label('.b-scr-time', `SCr ${n} time (24-hour)`);
+    label('.course-remove-btn', `Remove SCr ${n}`);
+  });
+}
+
+// 24-hour entry: a colon after two digits as you type, never while deleting
+// (the old helper re-added it on every backspace, so the field could not be
+// cleared past the colon). Nothing else is repaired — "0800" or "8:00" stays
+// as typed and parseBayesCourse reports it (use HH:MM).
+function formatTime24Input(el, ev) {
+  let v = String(el.value || '').replace(/[^0-9:]/g, '');
+  const deleting = ev && typeof ev.inputType === 'string' && ev.inputType.indexOf('delete') === 0;
+  if (!deleting && v.length === 2 && v.indexOf(':') === -1) v += ':';
+  if (v.length > 5) v = v.slice(0, 5);
+  if (el.value !== v) el.value = v;
+}
+
+// The module switch states its selection to assistive tech. switchModule sets
+// .active; this mirrors it into aria-pressed after the delegated handler runs.
+function syncModuleSwitch() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  document.querySelectorAll('.module-tab').forEach(t =>
+    t.setAttribute('aria-pressed', t.classList.contains('active') ? 'true' : 'false'));
+}
+
+// Delegated, like every handler here: rows are rendered later via innerHTML.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  const onCourseEdit = (e) => {
+    const t = e && e.target;
+    if (!t || !t.closest || !t.closest('.course-row')) return;
+    if (e.type === 'input' && t.hasAttribute && t.hasAttribute('data-time24')) formatTime24Input(t, e);
+    refreshCourseReadback();
+  };
+  document.addEventListener('input', onCourseEdit);
+  document.addEventListener('change', onCourseEdit);
+  document.addEventListener('click', (e) => {
+    const t = e && e.target;
+    if (t && t.closest && t.closest('.module-tab')) syncModuleSwitch();
+  });
+}
 
 
 // ── design track D: Trough-module results — insert this track's helpers below this line ──
