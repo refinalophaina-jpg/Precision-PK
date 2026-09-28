@@ -3173,6 +3173,192 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 29 — design track A: forms and accessibility (design pass 2026-09-28)
+//
+// The input panels are read by expert users at speed, often by keyboard and
+// sometimes by screen reader. The audit found controls a screen reader could
+// not name (the CrCl override, the trough max, both target-interval selects,
+// the custom interval, the Loading Dose switch), <label for> pointing at
+// hidden inputs, toggles that never said which option was selected, a body
+// diagram that was mouse-only, section labels styled as eyebrows, no <h1>,
+// and sex silently preselected as Male in both modules.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const markup = src.slice(src.indexOf('<body>'), src.indexOf('<script>'));
+  const attr   = (s, n) => { const m = s.match(new RegExp('\\s' + n + '="([^"]*)"')); return m ? m[1] : null; };
+  const ids    = new Set([...markup.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));
+  const fields = [...markup.matchAll(/<(input|select|textarea)\b([^>]*)>/g)];
+  const hidden = new Set(fields.filter(f => attr(f[2], 'type') === 'hidden').map(f => attr(f[2], 'id')).filter(Boolean));
+  const labelFor = [...markup.matchAll(/<label\b[^>]*\sfor="([^"]+)"/g)].map(m => m[1]);
+  const trackCss = src.slice(src.indexOf("design track A: forms & accessibility — insert this track's CSS"),
+                             src.indexOf("design track B: validation & errors — insert this track's CSS"));
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 29 — design track A: forms and accessibility');
+  console.log(`${'─'.repeat(60)}`);
+
+  test('exactly one <h1>, and one <main> landmark holding both modules', ()=>{
+    const h1 = (src.match(/<h1\b/g) || []).length;
+    assert(h1 === 1, `${h1} <h1> elements in the page, expected exactly one`);
+    assert((markup.match(/<main\b/g) || []).length === 1, 'expected one <main>');
+    const main = markup.slice(markup.indexOf('<main'), markup.indexOf('</main>'));
+    assert(main.includes('<h1'), 'the <h1> should open the <main> landmark');
+    assert(main.includes('class="app-shell"') && main.includes('id="app-shell-bayesian"'),
+      '<main> must contain both module shells');
+    assert(/<nav class="module-tabs" aria-label="[^"]+"/.test(markup), 'the module tabs should be a labelled <nav>');
+  });
+
+  test('form sections are real headings, not uppercase eyebrow labels', ()=>{
+    assert(!/class="section-label"/.test(markup), 'a static .section-label eyebrow is still in the input panels');
+    const h2 = [...markup.matchAll(/<h2 class="form-h2[^"]*"[^>]*>([^<]*)</g)].map(m => m[1].trim());
+    assert(h2.length >= 24, `${h2.length} form <h2> headings, expected every section (24)`);
+    for (const want of ['Patient demographics', 'Renal function', 'Regimen preferences', 'Current regimen',
+                        'Loading dose', 'Drug level', 'PK model', 'Therapeutic target', 'Dosing course history']) {
+      assert(h2.includes(want), `missing section heading "${want}"`);
+    }
+    // Sentence case: after the first letter, a capital starts only an acronym or a name.
+    const KEEP = /^(SCr|PK|AUC|Sawchuk-Zaske|Sawchuk|Zaske)$/;
+    const bad = h2.filter(t => t.split(/\s+/).slice(1).some(w => /^[A-Z][a-z]/.test(w) && !KEEP.test(w)));
+    assert(bad.length === 0, `headings not in sentence case: ${bad.join(' | ')}`);
+    const shell = markup.slice(markup.indexOf('<main'), markup.indexOf('</main>'));
+    assert(!/text-transform:\s*uppercase/.test(shell), 'an inline uppercase label survives in the input panels');
+    assert(/\.form-h2\s*\{[^}]*font-weight:\s*600[^}]*font-size:\s*var\(--fs-sm\)[^}]*text-transform:\s*none/.test(trackCss),
+      '.form-h2 must be Outfit 600 --fs-sm, sentence case');
+  });
+
+  test('every static input, select and textarea has a programmatic label', ()=>{
+    const missing = [];
+    for (const f of fields) {
+      const a = f[2];
+      if (attr(a, 'type') === 'hidden') continue;
+      const id = attr(a, 'id');
+      const aria = (attr(a, 'aria-label') || '').trim() !== '';
+      const lb   = attr(a, 'aria-labelledby');
+      const byIds = !!lb && lb.trim().split(/\s+/).every(x => ids.has(x));
+      const byFor = !!id && labelFor.includes(id);
+      const before = markup.slice(0, f.index);
+      const open = before.lastIndexOf('<label'), close = before.lastIndexOf('</label>');
+      const wrapped = open > close &&
+        markup.slice(open, markup.indexOf('</label>', f.index)).replace(/<[^>]*>/g, '').trim() !== '';
+      if (!(aria || byIds || byFor || wrapped)) missing.push(id || a.trim().slice(0, 40));
+    }
+    assert(missing.length === 0, `unlabelled controls: ${missing.join(', ')}`);
+  });
+
+  test('no <label for> points at a hidden input — the visible group is labelled instead', ()=>{
+    const bad = labelFor.filter(id => hidden.has(id));
+    assert(bad.length === 0, `label for= a hidden input: ${bad.join(', ')}`);
+    const groups = [...markup.matchAll(/<div class="(toggle-group|model-grid|calc-mode-bar)"([^>]*)>/g)];
+    assert(groups.length >= 8, `found ${groups.length} control groups`);
+    for (const g of groups) {
+      assert(attr(g[2], 'role') === 'group', `a .${g[1]} has no role="group": ${g[0]}`);
+      const lb = attr(g[2], 'aria-labelledby');
+      assert(attr(g[2], 'aria-label') || (lb && lb.split(/\s+/).every(x => ids.has(x))), `unnamed group: ${g[0]}`);
+    }
+  });
+
+  test('segmented controls, model cards and module tabs declare aria-pressed matching their selection', ()=>{
+    const TOGGLES = ['toggle-opt', 'model-opt', 'calc-mode-btn', 'module-tab'];
+    const btns = [...markup.matchAll(/<button\b([^>]*)>/g)]
+      .map(m => m[1]).filter(a => (attr(a, 'class') || '').split(/\s+/).some(c => TOGGLES.includes(c)));
+    assert(btns.length >= 20, `found ${btns.length} toggle buttons`);
+    for (const a of btns) {
+      const active = (attr(a, 'class') || '').split(/\s+/).includes('active');
+      assert(attr(a, 'aria-pressed') === (active ? 'true' : 'false'),
+        `aria-pressed out of step with .active: <button${a}>`);
+    }
+  });
+
+  test('sex is not preselected — neither module shows Male (or Female) pressed', ()=>{
+    for (const k of ['k9', 'k10', 'k39', 'k40']) {
+      const m = markup.match(new RegExp(`<button\\b[^>]*data-onclick="${k}"[^>]*>`));
+      assert(m, `sex button ${k} missing`);
+      assert(!/class="[^"]*\bactive\b/.test(m[0]), `sex button ${k} is preselected: ${m[0]}`);
+      assert(attr(m[0], 'aria-pressed') === 'false', `sex button ${k} must render unpressed`);
+    }
+  });
+
+  test('the Loading Dose and Drug Level switches are named by their visible headings', ()=>{
+    for (const [id, heading] of [['has-ld', 'Loading dose'], ['has-level', 'Drug level']]) {
+      const m = markup.match(new RegExp(`<input\\b[^>]*id="${id}"[^>]*>`));
+      assert(m, `${id} missing`);
+      const lb = attr(m[0], 'aria-labelledby');
+      assert(lb, `${id} has no aria-labelledby`);
+      const h = markup.match(new RegExp(`id="${lb}"[^>]*>([^<]*)<`));
+      assert(h && h[1].trim() === heading, `${id} is labelled by "${h && h[1]}", expected "${heading}"`);
+    }
+  });
+
+  test('the amputation joints are keyboard buttons naming limb and level', ()=>{
+    assert(!/<svg class="amp-figure"[^>]*role="img"/.test(markup),
+      'role="img" makes the joints presentational — a screen reader cannot reach them');
+    const joints = [...markup.matchAll(/<circle id="jt-[^"]+"[^>]*>/g)].map(m => m[0]);
+    assert(joints.length === 12, `${joints.length} joints`);
+    for (const j of joints) {
+      assert(attr(j, 'tabindex') === '0' && attr(j, 'role') === 'button', `not focusable as a button: ${j}`);
+      assert(attr(j, 'aria-pressed') === 'false', `joint must declare aria-pressed: ${j}`);
+      assert(/^(Right|Left) (arm|leg): \S/.test(attr(j, 'aria-label') || ''), `aria-label must name limb and level: ${j}`);
+      assert(attr(j, 'data-onkeydown') === 'kA1' && attr(j, 'data-arg'), `no key handler: ${j}`);
+    }
+    assert(/^\s*kA1: \(el, ev, arg\) => \{ ampJointKey\(ev, arg\); \}/m.test(script), 'registry key kA1 missing');
+  });
+
+  test('Enter and Space toggle a joint; other keys and a held key do not', ()=>{
+    const { ampJointKey, amputationPct } = sandbox;
+    assert(typeof ampJointKey === 'function', 'ampJointKey missing');
+    // an earlier suite leaves getElementById returning a bare {value}; the
+    // re-render after a pick needs the full element stub for this test only
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = () => makeEl();
+    try {
+      let prevented = 0;
+      const ev = (key, repeat) => ({ key, repeat: !!repeat, preventDefault() { prevented++; } });
+      const start = amputationPct();
+      assert(start === 0, `test assumes no amputation selected (got ${start})`);
+      ampJointKey(ev('Enter'), 'RL:hip');
+      assert(Math.abs(amputationPct() * 100 - 16.0) < 1e-9, 'Enter did not select the hip');
+      ampJointKey(ev('Enter', true), 'RL:hip');
+      ampJointKey(ev('a'), 'RL:hip');
+      ampJointKey(ev('Tab'), 'RL:hip');
+      assert(Math.abs(amputationPct() * 100 - 16.0) < 1e-9, 'a held key or another key changed the selection');
+      ampJointKey(ev(' '), 'RL:hip');
+      assert(amputationPct() === 0, 'Space on the selected joint should clear it');
+      assert(prevented === 2, `preventDefault called ${prevented} times, expected 2 (Enter, Space)`);
+    } finally { sandbox.document.getElementById = prevGet; }
+  });
+
+  test('aria-pressed is mirrored from the selection class', ()=>{
+    const { a11ySyncPressed } = sandbox;
+    assert(typeof a11ySyncPressed === 'function', 'a11ySyncPressed missing');
+    const mk = (classes) => { const at = { 'aria-pressed': 'false' }; return {
+      classList: { contains: c => classes.includes(c) },
+      getAttribute: n => at[n], setAttribute: (n, v) => { at[n] = v; }, at }; };
+    const on = mk(['toggle-opt', 'active']);   a11ySyncPressed(on);  assert(on.at['aria-pressed'] === 'true', '.active -> true');
+    const jt = mk(['selected']);               a11ySyncPressed(jt);  assert(jt.at['aria-pressed'] === 'true', '.selected -> true');
+    const off = mk(['toggle-opt']); off.at['aria-pressed'] = 'true';
+    a11ySyncPressed(off); assert(off.at['aria-pressed'] === 'false', 'no selection class -> false');
+    assert(/new MutationObserver\(/.test(script) && /attributeFilter: \['class'\]/.test(script),
+      'no observer keeps aria-pressed in step with the class');
+  });
+
+  test('static placeholders do not read as entered values', ()=>{
+    const numeric = fields.map(f => f[2]).filter(a => /^\s*[\d.]/.test(attr(a, 'placeholder') || ''));
+    assert(numeric.length === 0, `numeric placeholders: ${numeric.map(a => attr(a, 'id')).join(', ')}`);
+  });
+
+  test('focus is a 2px terracotta-ink outline, and the hidden switch shows it on its track', ()=>{
+    assert(/input:focus[^{]*\{[^}]*outline:\s*2px solid var\(--terracotta-ink\);\s*outline-offset:\s*1px;[^}]*box-shadow:\s*none/.test(trackCss),
+      'input focus must be a 2px --terracotta-ink outline at 1px offset with no ring');
+    assert(/\.toggle-switch input:focus-visible \+ \.slider\s*\{[^}]*outline:\s*2px solid var\(--terracotta-ink\)/.test(trackCss),
+      'the switch checkbox is invisible; its focus ring must land on the slider');
+    assert(/\.toggle-opt\.active\s*\{[^}]*color:\s*var\(--terracotta-ink\)/.test(trackCss),
+      'selected toggle text must be --terracotta-ink (the canonical --terracotta is 3:1 as text)');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
