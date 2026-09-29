@@ -239,8 +239,7 @@
   .header-tag {
     font-size:var(--fs-xs);
     font-weight: 500;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: 0.01em;
     color: var(--ink-muted);
     border: 1px solid var(--rule);
     padding: 5px 12px;
@@ -993,23 +992,16 @@
     margin-top: 14px;
   }
   .tinkerer-header {
-    font-size:var(--fs-xs);
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-muted);
+    font-size:var(--fs-sm);
+    font-weight: 500;
+    color: var(--ink-soft);
     margin-bottom: 12px;
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  .tinkerer-header::before {
-    content: '⟳';
-    color: var(--accent-amber);
-    font-size:var(--fs-base);
-    font-style: normal;
-    letter-spacing: 0;
-  }
+  /* No glyph kicker: "⟳" was a text icon (house style: drawn icons only). */
+  .tinkerer-header::before { content: none; }
   .tinkerer-row {
     display: flex;
     gap: 8px;
@@ -1046,7 +1038,7 @@
     transition: all 0.18s;
     white-space: nowrap;
   }
-  .tinkerer-btn:hover { background: var(--accent-amber); border-color: var(--accent-amber); color: #000; }
+  .tinkerer-btn:hover { background: var(--accent-amber); border-color: var(--accent-amber); color: var(--paper); }
   .tinkerer-tau {
     background: var(--bg-input);
     border: 1px solid var(--border-light);
@@ -1509,7 +1501,7 @@
               font-variant-numeric:tabular-nums; }
   .mx-grid th, .mx-grid td { padding:0; text-align:center; }
   .mx-grid thead th { font-family:'Outfit',sans-serif; font-size:var(--fs-xs);
-              letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted);
+              color:var(--text-muted);   /* "q12h" as the verdict writes it — no tracked capitals */
               font-weight:600; padding:7px 6px; border-bottom:1px solid var(--rule); }
   .mx-grid tbody th { font-family:var(--font-num); font-size:var(--fs-xs);
               color:var(--text-secondary); white-space:nowrap; padding:0 10px 0 14px;
@@ -1634,8 +1626,7 @@
   .tink-ss-header {
     display:flex; align-items:center; justify-content:space-between;
     padding:8px 14px; border-bottom:1px solid var(--border);
-    font-size:var(--fs-xs); font-weight:600; letter-spacing:0.08em;
-    text-transform:uppercase; color:var(--text-muted);
+    font-size:var(--fs-xs); font-weight:500; color:var(--text-muted);
   }
   .tink-add-btn {
     background:color-mix(in srgb, var(--purple) 10%, transparent); border:1px solid color-mix(in srgb, var(--purple) 30%, transparent);
@@ -1653,10 +1644,7 @@
     display:flex; align-items:center; justify-content:space-between;
     padding:10px 16px; border-bottom:1px solid color-mix(in srgb, var(--purple) 15%, transparent);
   }
-  .compare-title {
-    font-size:var(--fs-xs); font-weight:600; letter-spacing:0.08em;
-    text-transform:uppercase; color:var(--accent-blue);
-  }
+  .compare-title { font-size:var(--fs-sm); font-weight:500; color:var(--ink-soft); }
   .compare-clear-btn {
     background:none; border:1px solid var(--paper-edge);
     color:var(--ink-soft); padding:3px 10px; border-radius:var(--radius-sm);
@@ -1680,7 +1668,7 @@
     display:grid; grid-template-columns:1.5fr 1fr 1fr; padding:11px 18px;
     background:var(--paper-deep); border-bottom:1px solid var(--border);
   }
-  .bayes-pk-col-head { font-size:var(--fs-xs); font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); }
+  .bayes-pk-col-head { font-size:var(--fs-xs); font-weight:600; color:var(--text-muted); }
   .bayes-pk-col-head.ind { color: var(--terracotta-ink); }
   .bayes-pk-col-head.pop { color:var(--text-muted); }
   .bayes-pk-row {
@@ -2096,6 +2084,7 @@
   #b-results { gap: 0 !important; scroll-margin-top: calc(var(--header-h) + 16px); }   /* clears the sticky header */
   #b-results > * { max-width: 100%; }
 
+  #b-results .vx-top { animation: fadeIn .32s ease-out; }   /* one quiet fade on arrival (direction contract) */
   .vx-top {
     display: grid; column-gap: 32px; row-gap: 0; align-items: start;
     grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
@@ -2536,7 +2525,7 @@
      same vocabulary as the Bayesian panel: verdict first, hairlines between
      evidence sections, terracotta only for the recommendation and its
      projection, the alarm hue only beside a signal word and a drawn icon. */
-  #results-content { gap: 0 !important; scroll-margin-top: 96px; }
+  #results-content { gap: 0 !important; scroll-margin-top: calc(var(--header-h) + 16px); }   /* the token, as #b-results */
   #results-content > * { max-width: 100%; }
   .tx-result { animation: fadeIn .32s ease-out; }
   .tx-top {
@@ -2611,14 +2600,14 @@
   }
 
   /* The Dose Tinkerer and PRN tool inside an evidence section: no box, no kicker. */
-  #results-content .tinkerer-box { border: 0; background: none; padding: 0; margin: 0; border-radius: 0; }
-  #results-content .tinkerer-header { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-soft); margin-bottom: 8px; }
-  #results-content .tinkerer-header::before { content: none; }
-  #results-content .tinkerer-row { flex-wrap: wrap; gap: 8px 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
-  #results-content .tinkerer-input, #results-content .tinkerer-tau { font-size: var(--fs-md); min-height: 44px; }
-  #results-content .tinkerer-btn { min-height: 44px; font-size: var(--fs-sm); }
-  #results-content .tinkerer-btn:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-  #results-content .tinkerer-result.visible { display: grid; gap: 10px; }
+  :is(#results-content, #b-results) .tinkerer-box { border: 0; background: none; padding: 0; margin: 0; border-radius: 0; }
+  :is(#results-content, #b-results) .tinkerer-header { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-soft); margin-bottom: 8px; }
+  :is(#results-content, #b-results) .tinkerer-header::before { content: none; }
+  :is(#results-content, #b-results) .tinkerer-row { flex-wrap: wrap; gap: 8px 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
+  :is(#results-content, #b-results) .tinkerer-input, :is(#results-content, #b-results) .tinkerer-tau { font-size: var(--fs-md); min-height: 44px; }
+  :is(#results-content, #b-results) .tinkerer-btn { min-height: 44px; font-size: var(--fs-sm); }
+  :is(#results-content, #b-results) .tinkerer-btn:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  :is(#results-content, #b-results) .tinkerer-result.visible { display: grid; gap: 10px; }
   .tx-tink-head { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: var(--fs-sm); color: var(--ink-soft); }
   .tx-tink-head .ic { margin-top: 2px; color: var(--amber); }
   .tx-tink-caution strong { color: var(--ink); }

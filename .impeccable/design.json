@@ -1,0 +1,625 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-29T12:30:00Z",
+  "title": "Design System: AinaDara Vancomycin TDM",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Bone Paper",
+        "cssVar": "--paper",
+        "dark": "#1c1815",
+        "canonical": "oklch(97.2% 0.012 80)",
+        "tonalRamp": [
+          "#0e0b06",
+          "#27231e",
+          "#433f39",
+          "#615d56",
+          "#817d75",
+          "#a29e96",
+          "#c8c3bc",
+          "#f3eee6"
+        ]
+      },
+      "paper-deep": {
+        "role": "neutral",
+        "displayName": "Deep Paper",
+        "cssVar": "--paper-deep",
+        "dark": "#252119",
+        "canonical": "oklch(94.4% 0.018 86)",
+        "tonalRamp": [
+          "#0f0b04",
+          "#28241a",
+          "#443f35",
+          "#625d52",
+          "#827d71",
+          "#a39e92",
+          "#c9c4b7",
+          "#f4eee1"
+        ]
+      },
+      "paper-edge": {
+        "role": "neutral",
+        "displayName": "Paper Edge",
+        "cssVar": "--paper-edge",
+        "dark": "#322d24",
+        "canonical": "oklch(90.9% 0.023 85)",
+        "tonalRamp": [
+          "#100a02",
+          "#292317",
+          "#453f32",
+          "#645d4f",
+          "#847c6e",
+          "#a59e8f",
+          "#cbc3b4",
+          "#f6eedd"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Raised Card",
+        "cssVar": "--card (house extension)",
+        "dark": "#221e18",
+        "canonical": "oklch(99.4% 0.007 89)",
+        "tonalRamp": [
+          "#0c0b08",
+          "#252420",
+          "#41403c",
+          "#5f5d59",
+          "#7f7d79",
+          "#a09e9a",
+          "#c6c4bf",
+          "#f0eee9"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Input Ground",
+        "cssVar": "--input (house extension)",
+        "dark": "#2a251d",
+        "canonical": "oklch(96.2% 0.014 85)",
+        "tonalRamp": [
+          "#0e0b05",
+          "#27241c",
+          "#433f37",
+          "#615d55",
+          "#817d74",
+          "#a29e95",
+          "#c8c4ba",
+          "#f3eee4"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "cssVar": "--ink",
+        "dark": "#ece4d2",
+        "canonical": "oklch(31.4% 0.023 132)",
+        "tonalRamp": [
+          "#080d04",
+          "#20261b",
+          "#3b4236",
+          "#596153",
+          "#788072",
+          "#99a293",
+          "#bfc7b8",
+          "#e9f2e2"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "cssVar": "--ink-soft",
+        "dark": "#b8af9d",
+        "canonical": "oklch(48.2% 0.026 127)",
+        "tonalRamp": [
+          "#080d03",
+          "#212618",
+          "#3c4233",
+          "#5a6151",
+          "#798070",
+          "#9aa290",
+          "#bfc8b5",
+          "#eaf2df"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "cssVar": "--ink-muted (text-contrast extension)",
+        "dark": "#9a9282",
+        "canonical": "oklch(52.0% 0.021 121)",
+        "tonalRamp": [
+          "#0a0c04",
+          "#22261b",
+          "#3e4236",
+          "#5c6053",
+          "#7b7f72",
+          "#9ca193",
+          "#c2c6b8",
+          "#ecf1e2"
+        ]
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "cssVar": "--ink-faint (marks only)",
+        "dark": "#7d7666",
+        "canonical": "oklch(63.9% 0.021 120)",
+        "tonalRamp": [
+          "#0a0c04",
+          "#23261a",
+          "#3e4235",
+          "#5c6052",
+          "#7b7f72",
+          "#9ca192",
+          "#c2c6b7",
+          "#ecf1e1"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "cssVar": "--rule",
+        "dark": "rgba(236, 228, 210, .1)"
+      },
+      "terracotta": {
+        "role": "primary",
+        "displayName": "Terracotta",
+        "cssVar": "--terracotta (fills, strokes, outlines)",
+        "dark": "#d88a6e",
+        "canonical": "oklch(65.8% 0.113 39)",
+        "tonalRamp": [
+          "#2b0000",
+          "#4d0000",
+          "#6f2305",
+          "#914329",
+          "#b56448",
+          "#da8568",
+          "#ffaa8d",
+          "#ffd5b6"
+        ]
+      },
+      "terracotta-ink": {
+        "role": "primary",
+        "displayName": "Terracotta Ink",
+        "cssVar": "--terracotta-ink (text-contrast extension)",
+        "dark": "#e39a7f",
+        "canonical": "oklch(49.7% 0.111 39)",
+        "tonalRamp": [
+          "#2b0000",
+          "#4c0000",
+          "#6e2407",
+          "#91442a",
+          "#b4644a",
+          "#d9856a",
+          "#ffab8e",
+          "#ffd5b7"
+        ]
+      },
+      "terracotta-q": {
+        "role": "primary",
+        "displayName": "Terracotta Quiet",
+        "cssVar": "--terracotta-q",
+        "dark": "#b56e54",
+        "canonical": "oklch(77.9% 0.076 49)",
+        "tonalRamp": [
+          "#210000",
+          "#401500",
+          "#5f3217",
+          "#805035",
+          "#a37054",
+          "#c69174",
+          "#eeb699",
+          "#ffe0c2"
+        ]
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "Amber",
+        "cssVar": "--amber (caution)",
+        "dark": "#d9a765",
+        "canonical": "oklch(50.9% 0.098 68)",
+        "tonalRamp": [
+          "#220000",
+          "#411600",
+          "#603300",
+          "#815210",
+          "#a37237",
+          "#c69358",
+          "#eeb97d",
+          "#ffe3a7"
+        ]
+      },
+      "alarm": {
+        "role": "tertiary",
+        "displayName": "Alarm Crimson",
+        "cssVar": "--alarm = --red (danger extension)",
+        "dark": "#ef8fa8",
+        "canonical": "oklch(46.4% 0.165 9)",
+        "tonalRamp": [
+          "#360000",
+          "#5a0012",
+          "#7f002d",
+          "#a42349",
+          "#cb4968",
+          "#f16c88",
+          "#ff93ad",
+          "#ffcddd"
+        ]
+      },
+      "purple": {
+        "role": "tertiary",
+        "displayName": "Purple",
+        "cssVar": "--purple (creatinine data)",
+        "dark": "#a293d4",
+        "canonical": "oklch(40.4% 0.100 291)",
+        "tonalRamp": [
+          "#0f0030",
+          "#26164f",
+          "#413470",
+          "#5e5291",
+          "#7e72b4",
+          "#9e93d8",
+          "#c4b9ff",
+          "#eee3ff"
+        ]
+      },
+      "moss": {
+        "role": "tertiary",
+        "displayName": "Moss",
+        "cssVar": "--moss (success / data)",
+        "dark": "#9aad68",
+        "canonical": "oklch(44.7% 0.079 125)",
+        "tonalRamp": [
+          "#050f00",
+          "#1b2a00",
+          "#364711",
+          "#536531",
+          "#728651",
+          "#93a871",
+          "#b8ce95",
+          "#e2f9bf"
+        ]
+      },
+      "rose": {
+        "role": "tertiary",
+        "displayName": "Rose",
+        "cssVar": "--rose (incumbent house extension)",
+        "dark": "#d08ba0",
+        "canonical": "oklch(55.4% 0.112 5)",
+        "tonalRamp": [
+          "#2a0006",
+          "#4b001d",
+          "#6d1f38",
+          "#903f55",
+          "#b45f74",
+          "#d98095",
+          "#ffa5ba",
+          "#ffcfe5"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The regimen, one per result."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Evidence-section titles, the loading-dose heading, the panel title, the wordmark."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "The one key number beside the regimen (AUC24)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sentence-case form headings and verdict inline keys."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "UI body and evidence lead lines."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Verdict sub-lines, notes, chart summaries; 72-78ch cap."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Units, axes, legends, table heads; 12px floor."
+      },
+      "field": {
+        "displayName": "Field",
+        "purpose": "Every typed field, 16px so iOS never zooms."
+      }
+    },
+    "typeScale": [
+      {
+        "name": "fs-xs",
+        "value": "0.75rem"
+      },
+      {
+        "name": "fs-sm",
+        "value": "0.8125rem"
+      },
+      {
+        "name": "fs-base",
+        "value": "0.875rem"
+      },
+      {
+        "name": "fs-md",
+        "value": "1rem"
+      },
+      {
+        "name": "fs-lg",
+        "value": "1.25rem"
+      },
+      {
+        "name": "fs-xl",
+        "value": "1.75rem"
+      },
+      {
+        "name": "fs-2xl",
+        "value": "2.5rem"
+      }
+    ],
+    "shadows": [
+      {
+        "name": "none",
+        "value": "none",
+        "purpose": "The system has no shadows (--shadow-card, --shadow-glow are none). Depth is a hairline, the paper to paper-deep step, and a 1-2px hover lift."
+      },
+      {
+        "name": "focus-outline",
+        "value": "outline: 2px solid var(--terracotta-ink); outline-offset: 1px",
+        "purpose": "The only ring: keyboard and field focus. Buttons use --terracotta with a 2px offset."
+      }
+    ],
+    "atmosphere": {
+      "value": "radial-gradient(ellipse 1200px 800px at 15% 10%, color-mix(in srgb, var(--terracotta) 5%, transparent), transparent 60%), radial-gradient(ellipse 900px 700px at 85% 70%, color-mix(in srgb, var(--purple) 3%, transparent), transparent 60%), radial-gradient(ellipse 800px 600px at 50% 100%, color-mix(in srgb, var(--moss) 2.5%, transparent), transparent 60%)",
+      "dark": "strengths 8% / 6% / 4%",
+      "purpose": "The page ground wash mirrored from ainadara.com; on body only, never on components."
+    },
+    "motion": [
+      {
+        "name": "result-fade",
+        "value": "fadeIn .32s ease-out (both results panels); ad-rise .26s ease, 4px rise (result cards)",
+        "purpose": "One quiet fade on arrival; removed under prefers-reduced-motion."
+      },
+      {
+        "name": "disclosure",
+        "value": "transform .18s cubic-bezier(.2,.7,.2,1)",
+        "purpose": "The evidence chevron turning."
+      },
+      {
+        "name": "state-colour",
+        "value": "background-color .18s ease, border-color .18s ease, color .18s ease",
+        "purpose": "Hover and selection on controls; theme switch .22s."
+      },
+      {
+        "name": "press",
+        "value": "transform .08s ease, translateY(1px)",
+        "purpose": "Press feedback on buttons."
+      },
+      {
+        "name": "hover-lift",
+        "value": "translateY(-2px) calculate; translateY(-1px) print action",
+        "purpose": "The only lift in the system."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "results-one-column",
+        "value": "container results max-width 760px"
+      },
+      {
+        "name": "results-narrow-tables",
+        "value": "container results max-width 520px"
+      },
+      {
+        "name": "header-tag-hidden",
+        "value": "720px"
+      },
+      {
+        "name": "phone",
+        "value": "600px (header 56px)"
+      },
+      {
+        "name": "short-module-names",
+        "value": "480px"
+      },
+      {
+        "name": "model-grid-one-column",
+        "value": "420px"
+      },
+      {
+        "name": "wordmark-hidden",
+        "value": "359px"
+      },
+      {
+        "name": "course-row-wide",
+        "value": "container course min-width 640px"
+      },
+      {
+        "name": "course-row-tight",
+        "value": "container course max-width 339px"
+      }
+    ],
+    "canvas": {
+      "rule": "Canvas colours resolve tokens through themeColor(name, fallback) / themeRGBA(name, alpha, fallback); redrawAllCanvases() replays on theme change."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled action in a panel (Calculate).",
+      "html": "<button class=\"ds-btn-primary\">Calculate</button>",
+      "css": ".ds-btn-primary{background:var(--terracotta-ink,#96492f);color:var(--paper,#faf5ed);border:1px solid var(--terracotta-ink,#96492f);border-radius:4px;padding:14px 32px;min-height:44px;font:600 0.875rem/1.2 'Outfit',system-ui,sans-serif;letter-spacing:.04em;cursor:pointer;transition:background-color .18s ease,border-color .18s ease,transform .08s ease}.ds-btn-primary:hover{background:color-mix(in srgb,var(--terracotta-ink,#96492f) 86%,var(--ink,#2d3428));transform:translateY(-2px)}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A second action in the same panel (Reset): an outline, not a second colour.",
+      "html": "<button class=\"ds-btn-secondary\">Reset</button>",
+      "css": ".ds-btn-secondary{background:transparent;color:var(--terracotta-ink,#96492f);border:1px solid var(--terracotta-q,#e0a98c);border-radius:4px;padding:14px 32px;min-height:44px;font:600 0.875rem/1.2 'Outfit',system-ui,sans-serif;cursor:pointer;transition:background-color .18s ease}.ds-btn-secondary:hover{background:var(--paper-deep,#f2ecdf)}.ds-btn-secondary:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}"
+    },
+    {
+      "name": "Text Action",
+      "kind": "button",
+      "refersTo": "text-action",
+      "description": "The verdict actions: underlined terracotta-ink text, no box.",
+      "html": "<div class=\"ds-acts\"><a class=\"ds-act\" href=\"#\">Why this dose</a><a class=\"ds-act\" href=\"#\">Show the math</a></div>",
+      "css": ".ds-acts{display:flex;flex-wrap:wrap;gap:2px 18px}.ds-act{font:500 0.8125rem/1.2 'Outfit',system-ui,sans-serif;color:var(--terracotta-ink,#96492f);padding:10px 0;min-height:44px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:4px;text-decoration-color:color-mix(in srgb,var(--terracotta,#cc785c) 45%,transparent)}.ds-act:hover{text-decoration-color:currentColor}.ds-act:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Every typed field: input ground, 16px, tabular figures, a unit inside.",
+      "html": "<label class=\"ds-field\"><input class=\"ds-input\" type=\"text\" inputmode=\"numeric\" value=\"1000\" aria-label=\"Dose amount (mg)\"><span class=\"ds-unit\">mg</span></label>",
+      "css": ".ds-field{position:relative;display:block;max-width:12rem}.ds-input{width:100%;background:var(--input,#f7f2e8);color:var(--ink,#2d3428);border:1px solid var(--paper-edge,#e8e0d0);border-radius:4px;padding:10px 40px 10px 14px;min-height:44px;font:400 1rem 'Outfit',system-ui,sans-serif;font-variant-numeric:tabular-nums;transition:border-color .22s ease}.ds-input:hover{border-color:var(--terracotta-q,#e0a98c)}.ds-input:focus{outline:2px solid var(--terracotta-ink,#96492f);outline-offset:1px;border-color:var(--paper-edge,#e8e0d0)}.ds-unit{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:400 0.8125rem 'Outfit',system-ui,sans-serif;color:var(--ink-muted,#676b5e);pointer-events:none}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented-control",
+      "description": "Selection is a background step and terracotta ink, not a border.",
+      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Sex\"><button class=\"ds-seg-opt is-active\" aria-pressed=\"true\">Male</button><button class=\"ds-seg-opt\" aria-pressed=\"false\">Female</button></div>",
+      "css": ".ds-seg{display:flex;gap:4px;background:var(--paper-deep,#f2ecdf);padding:3px;border-radius:4px;border:1px solid var(--rule,rgba(45,52,40,.1));max-width:16rem}.ds-seg-opt{flex:1;padding:7px 10px;min-height:44px;border:0;border-radius:4px;background:none;color:var(--ink-muted,#676b5e);font:500 0.75rem 'Outfit',system-ui,sans-serif;cursor:pointer;transition:background-color .18s ease,color .18s ease}.ds-seg-opt:hover:not(.is-active){color:var(--terracotta-ink,#96492f)}.ds-seg-opt.is-active{background:var(--paper,#faf5ed);color:var(--terracotta-ink,#96492f)}.ds-seg-opt:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}"
+    },
+    {
+      "name": "Module Tabs",
+      "kind": "nav",
+      "refersTo": "module-tab-active",
+      "description": "The header module switch: one segmented control, the active tab filled in terracotta ink.",
+      "html": "<nav class=\"ds-tabs\" aria-label=\"Module\"><button class=\"ds-tab\">Trough-Based</button><button class=\"ds-tab is-active\" aria-current=\"page\">AUC Precision</button></nav>",
+      "css": ".ds-tabs{display:inline-flex;background:var(--paper-deep,#f2ecdf);border:1px solid var(--paper-edge,#e8e0d0);border-radius:4px}.ds-tab{min-height:44px;padding:0 18px;border:2px solid transparent;background-clip:padding-box;border-radius:4px;background:none;color:var(--ink-muted,#676b5e);font:500 0.8125rem 'Outfit',system-ui,sans-serif;letter-spacing:.02em;cursor:pointer;transition:background-color .18s ease,color .18s ease}.ds-tab:hover:not(.is-active){color:var(--ink,#2d3428)}.ds-tab.is-active{background-color:var(--terracotta-ink,#96492f);color:var(--paper,#faf5ed)}.ds-tab:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}"
+    },
+    {
+      "name": "Verdict",
+      "kind": "custom",
+      "refersTo": "verdict-regimen",
+      "description": "The regimen at the now end of the course: serif order string, AUC figure, confidence word, next step.",
+      "html": "<section class=\"ds-verdict\"><h3 class=\"ds-regimen\">1 g IV <span class=\"ds-freq\">q12h</span></h3><p class=\"ds-inf\">Infuse over 1 h · <span class=\"ds-prov\">provisional</span></p><p class=\"ds-auc\">AUC<sub>24</sub> <span class=\"ds-auc-n\">447</span> mg·h/L<span class=\"ds-likely\">likely 353 to 549</span></p><p class=\"ds-conf\"><strong class=\"ds-conf-word\">Low confidence</strong> — one level: clearance and volume are not separately identifiable.</p><p class=\"ds-next\"><strong>Next</strong> A further level would add little.</p></section>",
+      "css": ".ds-verdict{max-width:300px;font:400 0.8125rem/1.55 'Outfit',system-ui,sans-serif;font-variant-numeric:tabular-nums lining-nums;color:var(--ink-soft,#5a6151)}.ds-regimen{font:400 2.5rem/1.05 'DM Serif Display',Georgia,serif;letter-spacing:-.005em;color:var(--ink,#2d3428);margin:0 0 6px;text-wrap:balance}.ds-freq{color:var(--terracotta-ink,#96492f)}.ds-inf{margin:0 0 16px}.ds-prov{color:var(--amber,#8a5a1c);font-weight:600}.ds-auc{margin:0}.ds-auc-n{font-size:1.75rem;font-weight:500;letter-spacing:-.01em;color:var(--ink,#2d3428)}.ds-likely{display:block;font-size:.875rem;color:var(--ink,#2d3428)}.ds-conf{margin:14px 0 8px;padding-top:14px;border-top:1px solid var(--rule,rgba(45,52,40,.1))}.ds-conf-word{font-weight:600;color:var(--amber,#8a5a1c)}.ds-next{color:var(--ink,#2d3428);margin:0}"
+    },
+    {
+      "name": "Evidence Section",
+      "kind": "custom",
+      "refersTo": "evidence-title",
+      "description": "A hairline-bottomed details band: drawn chevron, serif title, muted gist.",
+      "html": "<details class=\"ds-ev\"><summary><span class=\"ds-ev-title\">Why this dose</span><span class=\"ds-ev-gist\">Low confidence · 1 level</span></summary><div class=\"ds-ev-body\">The fitted clearance and the target AUC set the daily dose.</div></details>",
+      "css": ".ds-ev{border-bottom:1px solid var(--rule,rgba(45,52,40,.1));font-family:'Outfit',system-ui,sans-serif}.ds-ev>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px;padding:16px 0;min-height:44px}.ds-ev>summary::-webkit-details-marker{display:none}.ds-ev>summary::before{content:'';width:7px;height:7px;align-self:center;border-right:1.5px solid var(--ink-muted,#676b5e);border-bottom:1.5px solid var(--ink-muted,#676b5e);transform:rotate(-45deg);transition:transform .18s cubic-bezier(.2,.7,.2,1)}.ds-ev[open]>summary::before{transform:rotate(45deg)}.ds-ev>summary:hover .ds-ev-title{color:var(--terracotta-ink,#96492f)}.ds-ev>summary:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}.ds-ev-title{font:400 1.25rem/1.2 'DM Serif Display',Georgia,serif;color:var(--ink,#2d3428)}.ds-ev-gist{font-size:.8125rem;color:var(--ink-muted,#676b5e)}.ds-ev-body{padding:0 0 22px 19px;font-size:.875rem;line-height:1.55;color:var(--ink,#2d3428)}"
+    },
+    {
+      "name": "Caution Note",
+      "kind": "custom",
+      "description": "An unboxed note: drawn icon, signal word, indented body. Alarm variant swaps amber for the alarm hue.",
+      "html": "<div class=\"ds-note ds-note-caution\"><div class=\"ds-note-word\"><svg class=\"ds-ic\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M8 2.2 14.2 13H1.8Z\"/><path d=\"M8 6.5v3\"/><path d=\"M8 11.4v.1\"/></svg>Caution</div><div class=\"ds-note-body\">Creatinine rose 40% in 48 h; the fit assumes stable clearance.</div></div>",
+      "css": ".ds-note{font:400 0.8125rem/1.6 'Outfit',system-ui,sans-serif;color:var(--ink-soft,#5a6151)}.ds-note-word{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ink,#2d3428);margin-bottom:2px}.ds-note-caution .ds-note-word{color:var(--amber,#8a5a1c)}.ds-ic{width:16px;height:16px;flex:none}.ds-note-body{padding-left:24px;max-width:78ch}"
+    },
+    {
+      "name": "Print Action",
+      "kind": "button",
+      "refersTo": "print-action",
+      "description": "The fixed pill print action, shown only with a result.",
+      "html": "<button class=\"ds-print\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"6 9 6 2 18 2 18 9\"/><path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"8\"/></svg><span>Print or save as PDF</span></button>",
+      "css": ".ds-print{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:8px 16px 8px 13px;border-radius:999px;background:var(--paper,#faf5ed);color:var(--ink,#2d3428);border:1px solid var(--paper-edge,#e8e0d0);font:500 0.8125rem/1.2 'Outfit',system-ui,sans-serif;cursor:pointer;transition:transform .18s ease,background-color .18s ease,border-color .18s ease}.ds-print:hover{transform:translateY(-1px);background:var(--paper-deep,#f2ecdf);border-color:var(--ink-faint,#8a8e80)}.ds-print:focus-visible{outline:2px solid var(--terracotta,#cc785c);outline-offset:2px}.ds-print svg{width:16px;height:16px;color:var(--ink-soft,#5a6151)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Course Read Aloud",
+    "overview": "The answer is read off the patient's own course. A results panel opens on a strip of what was given and measured (dose bars as wide as each infusion, level dots with their values, creatinine ticks, a dashed \"now\"), and the verdict stands at the strip's \"now\" end in a serif large enough to be the first thing seen. The concentration curve runs beneath on the same clock-time axis, and everything else is evidence behind a hairline, one click away. The world is the AinaDara house: warm bone paper, green-black ink, a terracotta that only ever means \"this one\", and a faint three-colour atmosphere wash on the page ground.\n\nDensity is a pharmacist's working density: small Outfit text (13–14px) with tabular figures, generous line height (1.55–1.6), and very little chrome. Structure comes from hairlines and a single background step, never from boxes. Nothing in the results sits in a card, carries a side stripe, casts a shadow or blurs what is behind it. Colour is spent on meaning: terracotta for the recommendation, the selection and the projection; amber for caution and the de-rated state; one muted crimson for top-tier safety, always beside its signal word.\n\nThe system is mirrored, not invented: its primitives come from the live ainadara.com stylesheet, with two recorded extensions a clinical tool needs (a raised `card` ground and a danger crimson) and two text-contrast steps (`ink-muted`, `terracotta-ink`). Dark mode is a full remap of the same token names, on screen only; print always resolves the light palette.",
+    "keyCharacteristics": [
+      "Answer first: the regimen in DM Serif Display at 40px, at the \"now\" end of the course.",
+      "One shared time axis and one cursor across the course strip and the curve.",
+      "Hairlines (`rule`) and a paper-to-paper-deep step do all the separating.",
+      "Outfit with tabular, lining figures for every number; no monospace anywhere.",
+      "Three shape values only: 4px, pill, circle.",
+      "Every colour comes from a token, including canvas (through `themeColor()` / `themeRGBA()`)."
+    ],
+    "rules": [
+      {
+        "name": "The \"This One\" Rule",
+        "body": "Terracotta marks the recommended regimen, the selected option and the projection, plus the one action a surface asks for. It is never decoration and never a second status colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Step Rule",
+        "body": "Terracotta as text is always `terracotta-ink`; raw `terracotta` is for fills, strokes and outlines. The same split holds for ink: `ink-muted` for text, `ink-faint` for marks.",
+        "section": "colors"
+      },
+      {
+        "name": "The Signal Word Rule",
+        "body": "The alarm crimson never appears as colour alone. It sits beside a signal word, and in a note beside the drawn alarm icon. A de-rated result is one hue: \"provisional\" and the Low confidence word are both amber, because the alarm is reserved for safety.",
+        "section": "colors"
+      },
+      {
+        "name": "The Token-Only Rule",
+        "body": "Every colour resolves from a token, including canvas, which reads tokens through `themeColor()` / `themeRGBA()` so it re-themes. Tints are `color-mix()` over a token, never a raw `rgba()` literal.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number is Outfit with tabular figures. There is no monospace in this system, and none is added for data.",
+        "section": "typography"
+      },
+      {
+        "name": "The Serif Speaks the Answer Rule",
+        "body": "DM Serif Display is for the regimen, the loading dose, section titles and the wordmark. Labels, figures and controls are Outfit.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Headings carry the label themselves, in sentence case. Nothing on screen is set in CSS capitals: the results grammar strips tracked uppercase from every evidence internal (confidence titles, value-of-information tags, the tinkerer header, the exposure-matrix heads, which read \"q12h\" as the verdict writes it), and `docs/audit/browser-flows.cjs` fails if any returns.",
+        "section": "typography"
+      },
+      {
+        "name": "The Shared Axis Rule",
+        "body": "The course strip and the concentration curve share one time domain and padding, and one cursor: pointing at either draws one dashed rule on both at the same instant. Anything drawn on either uses that axis.",
+        "section": "layout"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Sections are separated by a 1px `rule` line, never enclosed. A bordered box inside a bordered box is the failure this system was built to remove.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Step-Not-Border Rule",
+        "body": "Selection is a background step plus terracotta ink, never a nested or coloured border.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Three-Value Shape Rule",
+        "body": "4px, 999px, 50%. Do not reintroduce a radius scale.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** open a result on the course: strip, verdict at the \"now\" end, curve beneath on the same axis.",
+      "**Do** set the regimen in DM Serif Display at 2.5rem and print doses in ISMP form (\"1 g\", \"1.25 g IV q12h\").",
+      "**Do** separate results sections with a 1px `rule` hairline and show selection as a `paper-deep`/`paper` step plus `terracotta-ink`.",
+      "**Do** use `terracotta-ink` for any terracotta text and `ink-muted` for any muted text.",
+      "**Do** put the alarm hue only beside a signal word, and in notes beside the drawn alarm icon.",
+      "**Do** use the drawn `ICON` set for alarm, caution and info.",
+      "**Do** give every canvas colour through `themeColor()` / `themeRGBA()` and every tint through `color-mix()` over a token.",
+      "**Do** keep touch targets at 44px and typed fields at 16px.",
+      "**Do** keep motion to one quiet fade on arrival (0.26–0.32s, no transform beyond 4px) and colour transitions of about 0.2s, all dropped under `prefers-reduced-motion`."
+    ],
+    "donts": [
+      "**Don't** put results in cards, give a callout a coloured side stripe, or use backdrop blur.",
+      "**Don't** use `box-shadow` for depth; the only rings are focus outlines.",
+      "**Don't** use a monospace face for numbers or data.",
+      "**Don't** use glyph or emoji icons (\"⚠\", \"💡\", \"✓\").",
+      "**Don't** set labels or headings in tracked uppercase; headings carry the label in sentence case.",
+      "**Don't** use raw `terracotta` or `ink-faint` as text; both are near 3:1.",
+      "**Don't** fade a de-rated dose; the word \"provisional\" carries the state and the dose stays at full ink.",
+      "**Don't** add a radius value beyond 4px, 999px and 50%, or a type step beyond the seven.",
+      "**Don't** hard-code a colour, including a canvas fallback used as the drawn value."
+    ]
+  }
+}

@@ -44,7 +44,11 @@ async function canvasInk(page, sel) {
 }
 function watch(page, tag) {
   const problems = [];
-  page.on('console', m => { if ((m.type() === 'error' || m.type() === 'warning') && !/willReadFrequently/.test(m.text())) problems.push(`${tag} console.${m.type()}: ${m.text()}`); });
+  // Two messages are not the app's: this script's own getImageData readback hint,
+  // and, on production, the CSP refusing scripts Cloudflare injects into the page
+  // (Web Analytics beacon, challenge platform). Those are the policy working.
+  const notOurs = /willReadFrequently|cloudflareinsights|cdn-cgi\/challenge-platform|cdn-cgi\/rum/;
+  page.on('console', m => { if ((m.type() === 'error' || m.type() === 'warning') && !notOurs.test(m.text())) problems.push(`${tag} console.${m.type()}: ${m.text()}`); });
   page.on('pageerror', e => problems.push(`${tag} pageerror: ${e.message}`));
   return problems;
 }
@@ -102,6 +106,16 @@ async function enterCourse(page) {
   ok('Trough error summary cleared', !(await page.locator('#fe-trough').isVisible()) || !(await page.locator('#fe-trough').innerText()).trim());
   ok('print action shown with a result', await page.locator('.print-fab').isVisible());
   ok('disclaimer on screen under the Trough result', await page.locator('#panel-right .rp-disclaimer').isVisible());
+  const tCaps = await page.evaluate(() => {
+    const ds = [...document.querySelectorAll('#results-content details')]; const was = ds.map(d => d.open);
+    ds.forEach(d => { d.open = true; });
+    const hits = [...document.querySelectorAll('body *')].filter(e => e.offsetParent && getComputedStyle(e).textTransform === 'uppercase'
+      && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()))
+      .map(e => (e.id || e.tagName) + '.' + String(e.className).slice(0, 30) + ' "' + e.textContent.trim().slice(0, 24) + '"');
+    ds.forEach((d, i) => { d.open = was[i]; });
+    return hits;
+  });
+  ok('Trough evidence: no text set in CSS capitals', !tCaps.length, tCaps.join(' | '));
   // Scrolled so the result's foot — the evidence and the disclaimer under it — is on screen.
   await page.evaluate(() => document.querySelector('#panel-right .rp-disclaimer').scrollIntoView({ block: 'end', behavior: 'instant' }));
   await page.waitForTimeout(200);
@@ -187,6 +201,18 @@ async function enterCourse(page) {
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));
   ok('the privacy note is not a box inside the profiles box', look.noteBox === '0px', look.noteBox);
+  // House style: no eyebrows — nothing on screen is set in CSS capitals. Every
+  // evidence section is opened for the check and restored after it.
+  const caps = await page.evaluate(() => {
+    const ds = [...document.querySelectorAll('#b-results details')]; const was = ds.map(d => d.open);
+    ds.forEach(d => { d.open = true; });
+    const hits = [...document.querySelectorAll('body *')].filter(e => e.offsetParent && getComputedStyle(e).textTransform === 'uppercase'
+      && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()))
+      .map(e => (e.id || e.tagName) + '.' + String(e.className).slice(0, 30) + ' "' + e.textContent.trim().slice(0, 24) + '"');
+    ds.forEach((d, i) => { d.open = was[i]; });
+    return hits;
+  });
+  ok('no text on screen is set in CSS capitals (no eyebrows)', !caps.length, caps.join(' | '));
 
   await page.locator('#b-results .vx-top, #b-results').first().scrollIntoViewIfNeeded();
   await page.evaluate(() => { const el = document.querySelector('#b-results .vx-top') || document.getElementById('b-results'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 72, behavior: 'instant' }); });

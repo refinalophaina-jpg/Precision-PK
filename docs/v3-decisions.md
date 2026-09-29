@@ -431,6 +431,12 @@ from 1,000 mg; the layout is "the course timeline" (`.impeccable/surfaces/index-
   ground step rather than a terracotta border. Declined: graded 50/80% fan bands. The engine
   simulates only the 80% range, and a 50% band would be a number with no simulation behind it
   (rule 1).
+- **What documenting the build found.** Deriving `DESIGN.md` from the shipped code turned up
+  drift the review had not looked at. Tracked capitals remained in the evidence internals, the
+  exposure-matrix heads ("Q12H", against the verdict's "q12h") and the version pill. There was a
+  "⟳" glyph kicker, a hard-coded `#000` hover that broke dark mode, and no arrival fade on the
+  Bayesian panel although the contract promises one. All are fixed. A browser check now fails if
+  any text on screen is set in CSS capitals, with every evidence section open.
 
 ## D13 — Input defects that only real keystrokes and clicks found (2026-09-29)
 
