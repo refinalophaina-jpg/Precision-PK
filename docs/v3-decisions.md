@@ -455,6 +455,34 @@ clicked buttons, desktop and 375px, and fails on any console error. On its first
 - **Every phone button was forced to 16px.** A ≤600px rule meant to stop iOS zoom-on-focus —
   which only form fields trigger — also hit buttons; the mode tabs grew until "RANDOM" clipped.
 
+## D14 — Model and measurement in different colours (2026-09-29)
+
+Asked for directly: "have different colors for posterior, data … so it's easy to identify and
+differentiate". The redesign had drawn the posterior curve, its band, the ring at each level and
+the measured dots all in ink, so the chart's most important distinction, between what was
+measured and what the model fitted, rested on shape alone.
+
+- **This patient's fit is `--series-fit`**: the curve (solid, then dashed after "now"), the 80%
+  band as a 16% tint, the open ring at the fit's value at each level, the cursor's dot, and the
+  Trough chart's current-regimen curve, which is also a fit.
+- **Measured levels stay ink**, with a paper halo and their value. **The population prior is a
+  thin `--ink-muted` dash.** **The projection is `--series-projection`.**
+- **Hues are the house's, stepped, and validated rather than eyeballed.** Brand purple (#4a3d7a)
+  failed the dataviz lightness band (L 0.40) and moss read nearly grey (C 0.08). Holding each
+  hue, the chart steps are #6751a8 light / #9583d5 dark for the fit, and terracotta light /
+  #cb7a5d dark (the same hue, stepped into the dark band) for the projection. The validator
+  passes both themes: protan/deutan ΔE 22.0 light and 18.0 dark, with every mark at least 3:1
+  against paper.
+- **Rejected: moss for the creatinine ticks.** Against terracotta it collapsed under red-green
+  deficiency (ΔE 2.6–6.5). The ticks are muted ink, named by their lane label and values.
+  Purple no longer appears on the strip, so on the linked strip and curve it means only the fit.
+- **Rejected: a colour for the measured dots.** Amber is the caution status, rose sits beside the
+  alarm crimson, and terracotta means "this one". Ink data against a coloured fit is also the
+  convention of pharmacokinetic plots.
+- The Trough chart's summary, which is also its accessible name, said the current regimen "is
+  drawn in ink". It now says the regimen is drawn beside the recommendation for comparison: a
+  written summary never names a colour.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

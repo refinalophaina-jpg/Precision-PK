@@ -251,7 +251,7 @@
       "purple": {
         "role": "tertiary",
         "displayName": "Purple",
-        "cssVar": "--purple (creatinine data)",
+        "cssVar": "--purple (the hue --series-fit is stepped from)",
         "dark": "#a293d4",
         "canonical": "oklch(40.4% 0.100 291)",
         "tonalRamp": [
@@ -298,6 +298,20 @@
           "#ffa5ba",
           "#ffcfe5"
         ]
+      },
+      "series-fit": {
+        "role": "data",
+        "displayName": "Series Fit",
+        "cssVar": "--series-fit (this patient's fit: curve, 80% band, ring at each level, cursor, Trough current-regimen curve)",
+        "dark": "#9583d5",
+        "canonical": "oklch(50.0% 0.135 292.5)"
+      },
+      "series-projection": {
+        "role": "data",
+        "displayName": "Series Projection",
+        "cssVar": "--series-projection (the recommendation's future: projected curve, band, dose marks; Trough recommended curve)",
+        "dark": "#cb7a5d",
+        "canonical": "oklch(65.8% 0.113 39.1)"
       }
     },
     "typographyMeta": {
@@ -597,6 +611,11 @@
         "name": "The Three-Value Shape Rule",
         "body": "4px, 999px, 50%. Do not reintroduce a radius scale.",
         "section": "shapes"
+      },
+      {
+        "name": "The Model-and-Measurement Rule",
+        "body": "On a concentration chart, measured data is ink and the fit is `series-fit`. Neither colour is used for the other. The fit's value at a measured level is an open ring in the fit's hue beside the ink dot, so the residual reads as the distance between two colours. The legend's swatches read the same tokens as the plot, and a chart's written summary never names a colour.",
+        "section": "colors"
       }
     ],
     "dos": [

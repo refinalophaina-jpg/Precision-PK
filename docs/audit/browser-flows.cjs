@@ -216,6 +216,11 @@ async function enterCourse(page) {
   ok('the course strip marks after-now as prediction', look.future);
   ok('beside the verdict the strip leaves "now" to the curve', !look.stripNow);
   ok('measured levels are ink, not rose', look.levelFill === look.ink, look.levelFill + ' vs ' + look.ink);
+  // Model and measurement in different colours (D14): the key's fit swatch, its band and
+  // its ring share one hue; the measured-level swatch is ink; the two never coincide.
+  const key = await page.evaluate(() => { const g = (sel, prop) => { const e = document.querySelector('#b-results ' + sel); return e && getComputedStyle(e)[prop]; };
+    return { fit: g('.lg-ind', 'borderTopColor'), ring: g('.lg-ring', 'borderTopColor'), data: g('.lg-lv', 'backgroundColor'), prior: g('.lg-pop', 'borderTopColor') }; });
+  ok('the key separates model from measurement', key.fit && key.fit === key.ring && key.fit !== key.data && key.prior !== key.fit && key.prior !== key.data, JSON.stringify(key));
   ok('the de-rated state is one hue ("provisional" and the confidence word)', look.confColour === look.provColour, look.confColour + ' / ' + look.provColour);
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));

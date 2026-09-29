@@ -20,6 +20,8 @@ colors:
   purple: "#4a3d7a"
   moss: "#4a5c28"
   rose: "#a8546a"
+  series-fit: "#6751a8"
+  series-projection: "#cc785c"
 typography:
   display:
     fontFamily: "'DM Serif Display', Georgia, serif"
@@ -186,7 +188,7 @@ A warm, low-chroma paper-and-ink palette with one earthen accent and two small s
 
 ### Tertiary
 - **Alarm Crimson** (`alarm`, the `--red` extension at 342°, deliberately apart from terracotta's 15°): top-tier safety only. Alarm notes' signal word and icon, refused-field borders, the error-summary link underline, and the hold headline when no regimen is given.
-- **Purple** (`purple`): the serial-creatinine ticks on the course strip; a data colour, not an accent.
+- **Purple** (`purple`): the house hue the fit's chart colour is stepped from (`series-fit`); not used directly in the results.
 - **Moss** (`moss`): the `success` alias and a 10% band in the comparison canvases; a data colour.
 - **Rose** (`rose`): an incumbent house extension kept in `:root`; the results world does not use it for levels (measured levels are ink).
 
@@ -196,11 +198,17 @@ A warm, low-chroma paper-and-ink palette with one earthen accent and two small s
 - **Paper Edge** (`paper-edge`): 1px borders on fields, the header's bottom edge and the input panel's right edge.
 - **Raised Card** (`card`): the extension's raised ground, used sparingly in the input panel.
 - **Input Ground** (`input`): every typed field and unselected model option.
-- **Ink** (`ink`): headline text, the regimen, key figures, dose bars, level dots and the posterior curve.
+- **Ink** (`ink`): headline text, the regimen, key figures, dose bars and every measured level: data is ink.
 - **Soft Ink** (`ink-soft`): secondary text: verdict sub-lines, notes, evidence body copy.
-- **Muted Ink** (`ink-muted`): labels, units, axes, legends and gists; the text step that clears 4.5:1 on every ground.
-- **Faint Ink** (`ink-faint`): rules and marks only (the "now" dash, strip ticks, the population-prior dash); 3.1:1, never text.
+- **Muted Ink** (`ink-muted`): labels, units, axes, legends and gists; the text step that clears 4.5:1 on every ground. As a mark: the population prior's dash and the creatinine ticks.
+- **Faint Ink** (`ink-faint`): rules and marks only (the "now" dash, strip ticks, gridlines); 3.1:1, never text.
 - **Hairline** (`rule`, ink at 10%): every divider between results sections, evidence rows and table rows.
+
+### Chart Series
+The concentration curves encode model and measurement in different colours, so a reader can tell at a glance what was measured, what the model fitted, and what the population predicted. Both hues are the house's own, stepped into a chart band (OKLCH L 0.43–0.77 light, 0.48–0.67 dark; chroma ≥ 0.10) and validated with a colour-vision simulation: fit against projection is ΔE 22.0 light and 18.0 dark under protanopia and deuteranopia.
+- **Series Fit** (`series-fit`, #6751a8; #9583d5 dark): this patient's fit wherever it is drawn. The posterior curve (solid, then dashed after "now"), its simulated 80% band as a 16% tint, the open ring at the fit's value at each measured level, the shared cursor's dot, and the Trough chart's current-regimen curve.
+- **Series Projection** (`series-projection`, terracotta #cc785c; #cb7a5d dark, the same hue stepped into the dark band): the recommendation's future: the projected curve, its band tint, projected dose marks and bars, and the Trough chart's recommended curve.
+- Measured levels are **ink** dots with a 2px paper halo and their value. The population prior is a thin **muted-ink** dash.
 
 ### Named Rules
 **The "This One" Rule.** Terracotta marks the recommended regimen, the selected option and the projection, plus the one action a surface asks for. It is never decoration and never a second status colour.
@@ -210,6 +218,8 @@ A warm, low-chroma paper-and-ink palette with one earthen accent and two small s
 **The Signal Word Rule.** The alarm crimson never appears as colour alone. It sits beside a signal word, and in a note beside the drawn alarm icon. A de-rated result is one hue: "provisional" and the Low confidence word are both amber, because the alarm is reserved for safety.
 
 **The Token-Only Rule.** Every colour resolves from a token, including canvas, which reads tokens through `themeColor()` / `themeRGBA()` so it re-themes. Tints are `color-mix()` over a token, never a raw `rgba()` literal.
+
+**The Model-and-Measurement Rule.** On a concentration chart, measured data is ink and the fit is `series-fit`. Neither colour is used for the other. The fit's value at a measured level is an open ring in the fit's hue beside the ink dot, so the residual reads as the distance between two colours. The legend's swatches read the same tokens as the plot, and a chart's written summary never names a colour.
 
 ## Typography
 
@@ -296,7 +306,7 @@ A 2×2 grid (one column at ≤420px) of 4px tiles on the input ground with a pap
 - **Disabled:** paper-deep ground, a dashed faint-ink border and muted text, with the state also in a word.
 
 ### Course Strip (signature)
-An SVG timeline across the top of the results: "Dose" and "Level" lanes in muted 12px labels, ink dose bars as wide as each infusion with the dose in 12px Outfit 500 above the first bar and elapsed gaps ("12 h") beneath, ink level dots with values, purple creatinine ticks, a paper-deep region after "now", and projected doses in terracotta. It carries its own clock axis on a phone. A sideways drag scrubs the shared cursor; a vertical one still scrolls.
+An SVG timeline across the top of the results: "Dose" and "Level" lanes in muted 12px labels, ink dose bars as wide as each infusion with the dose in 12px Outfit 500 above the first bar and elapsed gaps ("12 h") beneath, ink level dots with values, muted creatinine ticks, a paper-deep region after "now", and projected doses in the projection's hue. It carries its own clock axis on a phone. A sideways drag scrubs the shared cursor; a vertical one still scrolls.
 
 ### Verdict (signature)
 A column with no box: the regimen in Display with the interval in terracotta-ink; an "Infuse over…" line (plus amber "provisional" when confidence is Low); AUC₂₄ as a Figure with "likely X to Y" and its lopsided percentages; a 20-dot plot of plausible AUCs over a 7% ink target band, filled dots inside the band, hollow outside, a terracotta point-estimate tick; the trough as a safety check; then, below a hairline, one confidence word with its reason and model, one "Next" line, and the text actions.

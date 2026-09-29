@@ -47,6 +47,15 @@
     --amber:        #8a5a1c;   /* caution; >=4.5:1 on every light surface */
     --red:          #9f1d45;   /* the ALARM hue: 342deg, clearly apart from terracotta (15deg); always with a signal word */
     --rose:         #a8546a;
+    /* Chart series (2026-09-29). The brand's purple hue (292°) and terracotta,
+       stepped into a chart band: OKLCH L 0.43-0.77 light / 0.48-0.67 dark,
+       chroma >= 0.10, validated with the dataviz palette validator (protan/deutan
+       dE 22.0 light, 18.0 dark). --series-fit is this patient's fit wherever it
+       is drawn: the curve, its 80% band, its value at each level, the cursor.
+       --series-projection is the recommendation's future. Measured data is ink;
+       the population prior is --ink-muted. */
+    --series-fit:        #6751a8;
+    --series-projection: #cc785c;
     /* Text-contrast extensions (design audit 2026-09-28). The canonical
        --ink-faint (#8a8e80, 3.1:1) and --terracotta (#cc785c, 3.0:1) stay for
        rules, fills and outlines; TEXT uses these, which clear 4.5:1 on paper,
@@ -126,6 +135,8 @@
       --amber:        #d9a765;
       --red:          #ef8fa8;
       --rose:         #d08ba0;
+      --series-fit:        #9583d5;
+      --series-projection: #cb7a5d;   /* terracotta's hue, stepped into the dark band */
       --ink-muted:      #9a9282;
       --terracotta-ink: #e39a7f;
       --shadow-card:  none;
@@ -151,6 +162,8 @@
       --amber:        #d9a765;
       --red:          #ef8fa8;
       --rose:         #d08ba0;
+      --series-fit:        #9583d5;
+      --series-projection: #cb7a5d;   /* terracotta's hue, stepped into the dark band */
       --ink-muted:      #9a9282;
       --terracotta-ink: #e39a7f;
       --shadow-card:  none;
@@ -2108,13 +2121,13 @@
   .course .lane { font-size: 12px; fill: var(--ink-muted); }
   .course .base { stroke: var(--rule); stroke-width: 1; }
   .course .bar  { fill: var(--ink); }
-  .course .bar.proj { fill: var(--terracotta); }
+  .course .bar.proj { fill: var(--series-projection); }
   .course .dl   { font-size: 12px; font-weight: 500; fill: var(--ink); }
   .course .dl.proj { fill: var(--terracotta-ink); }
   .course .gap  { font-size: 12px; fill: var(--ink-muted); }
   .course .lv   { fill: var(--ink); stroke: var(--paper); stroke-width: 1.5; }
   .course .lvv  { font-size: 12px; font-weight: 500; fill: var(--ink); }
-  .course .scr  { stroke: var(--purple); stroke-width: 1.5; }
+  .course .scr  { stroke: var(--ink-muted); stroke-width: 1.5; }   /* its lane label names it; purple now means the fit */
   .course .scrv { font-size: 12px; fill: var(--ink-muted); }
   .course .now  { stroke: var(--ink-faint); stroke-dasharray: 4 4; }
   .course .future { fill: var(--paper-deep); }
@@ -2178,11 +2191,12 @@
     margin: 6px 0 0 46px; padding: 0; border: 0; }
   .vx-legend .legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .lg { display: inline-block; width: 18px; height: 0; flex: none; }
-  .lg-ind  { border-top: 2px solid var(--ink); }
-  .lg-pop  { border-top: 1.5px dashed var(--ink-faint); }
-  .lg-band { height: 10px; background: color-mix(in srgb, var(--ink) 11%, transparent); }
+  .lg-ind  { border-top: 2px solid var(--series-fit); }
+  .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
+  .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
   .lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
-  .lg-proj { border-top: 2px solid var(--terracotta); }
+  .lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--series-fit); box-sizing: border-box; }
+  .lg-proj { border-top: 2px solid var(--series-projection); }
   .vx-summary { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 10px 0 0 46px; max-width: 72ch; }
   .vx-proj { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 12px 0 0 46px;
     font-size: var(--fs-sm); color: var(--ink-soft); }
@@ -6526,7 +6540,7 @@ function renderResults(d) {
   if (d.levelFitted) legend.push({ cls: 'lg-lv', text: 'Measured level' });
   legend.push(band);
   const summary = `On ${fmtRegimen(vDose, d.tau)} the predicted steady-state peak is ${vPeak.toFixed(1)} mg/L and the trough ${vTrough.toFixed(1)} mg/L`
-    + (showOptDose ? `; the current ${fmtRegimen(d.dose, d.tau)} is drawn in ink` : '')
+    + (showOptDose ? `; the current ${fmtRegimen(d.dose, d.tau)} is drawn beside it for comparison` : '')
     + `. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.`;
   const figure = txCurveHTML({ id: 'pk-graph-ss', suffix: 'ss', legend, summary });
 
@@ -7079,8 +7093,8 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   // the current regimen in ink, the recommendation or a projection in
   // terracotta, the trough target as a faint ink band. Every colour a token.
   const cText = themeColor('--ink-muted', '#676b5e');
-  const cRec  = themeColor('--terracotta', '#cc785c');
-  const cCurve = opts.role === 'current' ? themeColor('--ink', '#2d3428') : cRec;
+  const cRec  = themeColor('--series-projection', '#cc785c');
+  const cCurve = opts.role === 'current' ? themeColor('--series-fit', '#6751a8') : cRec;   // the current regimen, fitted to the patient
   const FONT = "500 12px 'Outfit', sans-serif";
 
   // ─ Grid ─
@@ -8918,8 +8932,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const nHistoric  = doses.length - nProj;
   const tProjStart = nProj > 0 ? doses[nHistoric].timeH : Infinity;
 
-  // ── The 80% band (simulated), soft: ink over the fitted course, terracotta
-  //    over a projected regimen. Filled only — no outline, no hard edge.
+  // ── The 80% band (simulated), soft: the fit's own hue over the fitted
+  //    course, the projection's over a projected regimen. Filled only.
   if (band && ptsHi.length > 1) {
     const fillBand = (pred, color) => {
       const hi = ptsHi.filter(pred), lo = ptsLo.filter(pred);
@@ -8931,8 +8945,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
       ctx.closePath();
       ctx.fill();
     };
-    fillBand(p => p.t + tStart <= tProjStart, themeRGBA('--ink', 0.09, 'rgba(45,52,40,0.09)'));
-    if (nProj > 0) fillBand(p => p.t + tStart >= tProjStart, themeRGBA('--terracotta', 0.16, 'rgba(204,120,92,0.16)'));
+    fillBand(p => p.t + tStart <= tProjStart, themeRGBA('--series-fit', 0.16, 'rgba(103,81,168,0.16)'));
+    if (nProj > 0) fillBand(p => p.t + tStart >= tProjStart, themeRGBA('--series-projection', 0.16, 'rgba(204,120,92,0.16)'));
   }
 
   // ── "Now" line ──
@@ -8959,7 +8973,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     const isP = di >= nHistoric;
     const xD  = tx(d.timeH - tStart);
     const firstProjected = isP && di === nHistoric;
-    ctx.strokeStyle = isP ? themeRGBA('--terracotta', 0.8, 'rgba(204,120,92,0.8)')
+    ctx.strokeStyle = isP ? themeRGBA('--series-projection', 0.8, 'rgba(204,120,92,0.8)')
                           : themeRGBA('--ink', 0.55, 'rgba(45,52,40,0.55)');
     ctx.lineWidth   = 1;
     if (isP) ctx.setLineDash([3,3]);
@@ -8970,8 +8984,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     ctx.setLineDash([]);
   }
 
-  // ── Population curve (thin, dashed — the reference, clearly secondary) ──
-  ctx.strokeStyle = themeRGBA('--ink-faint', 0.9, 'rgba(138,142,128,0.9)');
+  // ── Population curve (thin, dashed, neutral — the reference, clearly secondary) ──
+  ctx.strokeStyle = themeColor('--ink-muted', '#676b5e');
   ctx.lineWidth   = 1.25;
   ctx.setLineDash([5,4]);
   ctx.beginPath();
@@ -8979,13 +8993,14 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // ── Individual curve: solid ink for the fitted past, dashed ink after now,
-  //    terracotta for a projected regimen (terracotta = the recommendation) ──
+  // ── Individual curve: the fit's hue, solid for the fitted past and dashed
+  //    after now; the projection's hue for a projected regimen. Measured data
+  //    stays ink, so model and measurement never share a colour. ──
   const pastPts    = ptsInd.filter(p => p.t+tStart <= tNow && p.t+tStart < tProjStart);
   const futPts     = ptsInd.filter(p => p.t+tStart >= tNow && p.t+tStart < tProjStart);
   const projPts    = nProj > 0 ? ptsInd.filter(p => p.t+tStart >= tProjStart) : [];
 
-  ctx.strokeStyle = themeColor('--ink', '#2d3428');
+  ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
   ctx.lineWidth   = 2;
   if (pastPts.length > 1) {
     ctx.beginPath();
@@ -8997,7 +9012,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     ctx.stroke();
   }
   if (futPts.length > 1) {
-    ctx.strokeStyle = themeRGBA('--ink', 0.7, 'rgba(45,52,40,0.7)');
+    ctx.strokeStyle = themeRGBA('--series-fit', 0.75, 'rgba(103,81,168,0.75)');
     ctx.setLineDash([7,4]);
     ctx.beginPath();
     if (pastPts.length) ctx.moveTo(tx(pastPts[pastPts.length-1].t), ty(pastPts[pastPts.length-1].c));
@@ -9006,7 +9021,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     ctx.setLineDash([]);
   }
   if (projPts.length > 1) {
-    ctx.strokeStyle = themeColor('--terracotta', '#cc785c');
+    ctx.strokeStyle = themeColor('--series-projection', '#cc785c');
     ctx.lineWidth   = 2;
     const bridgePts = ptsInd.filter(p => p.t+tStart >= (futPts.length ? futPts[futPts.length-1].t+tStart : tNow) && p.t+tStart <= tProjStart);
     ctx.beginPath();
@@ -9016,19 +9031,20 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
     ctx.stroke();
   }
 
-  // ── Measured levels: a filled dot with its value, and a small open ring at
-  //    what the fit predicts at that moment, so the residual is visible ──
+  // ── Measured levels: an ink dot with its value (data), and an open ring in
+  //    the fit's hue at what the fit predicts at that moment, so the residual
+  //    reads as the distance between measurement and model ──
   for (const lev of levels) {
     const relT = lev.timeH - tStart;
     if (relT < 0 || relT > tSpan) continue;
     const x = tx(relT), y = ty(lev.conc);
     const yp = ty(predInd(lev.timeH));
-    ctx.strokeStyle = themeColor('--ink-muted', '#676b5e');
-    ctx.lineWidth   = 1.25;
+    ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
+    ctx.lineWidth   = 1.5;
     ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = themeColor('--paper', '#faf5ed');
     ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = themeColor('--ink', '#2d3428');   // data ink: rose sat beside the alarm hue
+    ctx.fillStyle = themeColor('--ink', '#2d3428');   // data is ink: never the fit's hue, never rose (beside the alarm)
     ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
     ctx.font        = "600 11px 'Outfit', sans-serif";
     const lbl = `${+lev.conc.toFixed(1)}`;
@@ -9142,7 +9158,7 @@ function attachPlotCrosshair(canvas) {
     ctx.beginPath(); ctx.moveTo(x, P.pad.top); ctx.lineTo(x, P.pad.top + P.gH); ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = themeColor('--ink', '#2d3428'); ctx.fill();
+    ctx.fillStyle = themeColor('--series-fit', '#6751a8'); ctx.fill();
     ctx.strokeStyle = themeColor('--paper', '#faf5ed'); ctx.lineWidth = 1.5; ctx.stroke();
 
     // Month by name and ISMP doses, as everywhere else ("09/28" read either way).
@@ -10903,7 +10919,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <span class="legend-item"><i class="lg lg-ind"></i>Posterior prediction</span>
           <span class="legend-item"><i class="lg lg-band"></i>80% range (simulated)</span>
           <span class="legend-item"><i class="lg lg-pop"></i>Population prior</span>
-          <span class="legend-item"><i class="lg lg-lv"></i>Measured concentration</span>
+          ${nLev ? `<span class="legend-item"><i class="lg lg-lv"></i>Measured concentration</span>
+          <span class="legend-item"><i class="lg lg-ring"></i>Fit at each level</span>` : ''}
           <span class="legend-item" id="b-proj-legend" style="display:none"><i class="lg lg-proj"></i>Projected doses</span>
         </figcaption>
         <p class="vx-summary" id="b-summary">${escHtml(summary)}</p>
