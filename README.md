@@ -4,7 +4,8 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v2.2.** The canonical home is now
+**Status: Live · v3.0** — results redesigned 2026-09-29 (answer first, read off the patient's
+course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
 [/vancomycin/how-to](https://pharmacy.ainadara.com/vancomycin/how-to).
@@ -21,8 +22,9 @@ Audited against primary sources and externally reviewed in September 2026 — se
 [`docs/ui-and-graphics-audit-2026-09.md`](docs/ui-and-graphics-audit-2026-09.md).
 
 **Updating the deployed copy:** copy `index.html` into `pharmacy-ainadara/public/vancomycin/`,
-recompute the CSP script hash (the command is in that repo's `public/_headers`), rebuild, and
-re-run `npm run vanco-screenshots` if the UI changed.
+recompute the CSP script hash (the command is in that repo's `public/_headers`), rebuild, run
+`docs/audit/browser-flows.cjs` against the built `dist` under that CSP, and re-run
+`npm run vanco-screenshots` if the UI changed (the how-to guide is illustrated with them).
 
 > Advisory only — not a prescription. Every recommendation requires clinician review.
 
@@ -92,12 +94,14 @@ node phase2d_validation.cjs
 Each script extracts the math out of `index.html` in a Node `vm` sandbox, so it tests the
 shipped file rather than a copy.
 
-| Suite | Result (2026-09-05) |
+| Suite | Result (2026-09-29) |
 |---|---|
-| `phase2d_validation.cjs` | **134 / 134 pass** |
+| `phase2d_validation.cjs` | **318 / 318 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
-| `phase4_regimen_validation.cjs` | **40 / 40 pass** — regimen detection |
-| `phase2d_comprehensive_validation.cjs` | **6 thresholds fail** — its own verdict is "Share with caveats" |
+| `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
+| `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** — proves a presentation change left the engine untouched |
+| `docs/audit/browser-flows.cjs` | **46 / 46** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
