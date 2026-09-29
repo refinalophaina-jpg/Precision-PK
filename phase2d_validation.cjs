@@ -1175,7 +1175,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('Every dose boundary is an x-axis tick, for every realistic interval', ()=>{
     [4,6,8,10,12,18,24,36,48,72].forEach(tau => {
       const ops = draw(LIGHT, [1000, tau, 1, 0.0693, 60, {troughMin:10,troughMax:20}]);
-      const ticks = ops.texts.filter(t => /^[\d.]+h$/.test(t.t)).map(t => parseFloat(t.t));
+      // Re-pointed (design track D, 2026-09-28): tick labels now carry the house space before the unit ("12 h").
+      const ticks = ops.texts.filter(t => /^[\d.]+ h$/.test(t.t)).map(t => parseFloat(t.t));
       for (let i=0;i<=3;i++) {
         assert(ticks.some(v => Math.abs(v - i*tau) < 1e-6),
           `tau=${tau}: dose boundary ${i*tau}h is not a tick (ticks: ${ticks.join(',')})`);
@@ -1195,15 +1196,18 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(r.y >= 15.5, `band top ${r.y.toFixed(1)} is above the plot area`);
       assert(r.y + r.h <= 330 - 42 + 0.5, `band bottom ${(r.y+r.h).toFixed(1)} spills past the plot`);
     });
-    const label = ops.texts.find(t => /TARGET/.test(t.t));
-    assert(label && /10/.test(label.t) && /20/.test(label.t),
+    // Re-pointed (design track D, 2026-09-28): the all-caps "TARGET 10–20" kicker is now a
+    // sentence-case label naming what the band is. Tightened to the exact bounds and unit.
+    const label = ops.texts.find(t => /^Trough target /.test(t.t));
+    assert(label && /^Trough target 10–20 mg\/L$/.test(label.t),
       `target band must be labelled with the clinician's own bounds, got: ${label && label.t}`);
   });
 
   test('Target label reflects a non-default trough target', ()=>{
     const ops = draw(LIGHT, [1000, 12, 1, 0.0693, 60, {troughMin:15,troughMax:25}]);
-    const label = ops.texts.find(t => /TARGET/.test(t.t));
-    assert(label && /15/.test(label.t) && /25/.test(label.t),
+    // Re-pointed with the label above (design track D): sentence case, exact bounds.
+    const label = ops.texts.find(t => /^Trough target /.test(t.t));
+    assert(label && /^Trough target 15–25 mg\/L$/.test(label.t),
       `band must honour the entered target, got: ${label && label.t}`);
   });
 
@@ -2911,7 +2915,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/large Vd with slow clearance/.test(a.summary), a.summary);
   });
   test('optimizer out-of-band flag is rendered in all three Trough renderers', ()=>{
-    assert(/No dose at Q12H/.test(optFlagHTML('auc_supra', null, 12, 666, 23.8, 10)), 'message');
+    // Re-pointed (design track D, 2026-09-28): ISMP frequency "q12h", and the flag is now a caution
+    // note with a signal word and the drawn triangle, not an amber-tinted box.
+    const fl = optFlagHTML('auc_supra', null, 12, 666, 23.8, 10);
+    assert(/No dose at q12h/.test(fl), 'message');
+    assert(/class="note note-caution"/.test(fl) && /M8 1\.8 14\.8 13\.9H1\.2z/.test(fl), 'caution note with ICON.caution');
     assert(optFlagHTML(null) === '', 'no flag, no box');
     assert((script.match(/optFlagHTML\(d\.optFlag/g) || []).length === 4, 'four rec cards');
     assert(/optFlag: tlOpt\.flag/.test(script) && /optFlag: rlOpt\.flag/.test(script), 'two-level and random payloads');
@@ -3029,7 +3037,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert((code.match(/doseExplorerRows\(\{ tau: d\.(tau|tlTau|rlTau),/g) || []).length === 3, 'three renderers, one helper');
     assert(/new Set\(\[8, 12, 24, o\.tau\]\)/.test(code), 'own interval listed');
     const rows = sandbox.doseExplorerRows({ tau: 48, tinf: 1, kel: 0.03, vd: 60, clv: 1.8, mic: 1, troughMin: 10, troughMax: 20, optDose: 1000 });
-    assert(/★ 1000mg Q48H/.test(rows), 'a Q48H patient gets the star on their own interval');
+    // Re-pointed (design track D, 2026-09-28): rows show ISMP doses and frequencies, and the
+    // recommended row is marked in words and by class, not with a star glyph.
+    assert(/<tr class="is-rec">\s*<th scope="row">1 g q48h <span class="tx-rec-tag">recommended<\/span>/.test(rows),
+      'a Q48H patient gets the recommended mark on their own interval');
+    assert((rows.match(/class="is-rec"/g) || []).length === 1 && !/★/.test(rows), 'exactly one marked row, no star glyph');
   });
   test('the AUC band is one pair of constants, not 400/600 literals', ()=>{
     const hits = code.match(/\bauc(?:24)?\s*(?:>=|<=|>|<)\s*(?:400|600)\b/g) || [];
@@ -3738,6 +3750,126 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/\.course-table input[^{]*\{[^}]*font-size:var\(--fs-xs\)/.test(style), 'a 12px course input rule is back');
     assert(/\.course-table-wrap \{[^}]*overflow:visible[^}]*container-type:inline-size/.test(style), 'the course list must not clip');
     assert(/@container course/.test(style) && /\.course-table \.course-row \{[^}]*display: grid/.test(style), 'rows must be a reflowing grid');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 32 — design track D: Trough-module results in the course-timeline
+// grammar (2026-09-28). Drives the REAL renderers with fictional patients and
+// reads the markup they write: the verdict (the regimen, via fmtRegimen) comes
+// before any evidence section, and the Matzke 1984 loading-dose rate limit is
+// a caution note with its signal word and drawn icon — the audit found it
+// printed as grey prose under a loading dose that broke it.
+// ════════════════════════════════════════════════════════════════════
+{
+  const { renderResults, renderTwoLevels, renderRandomLevel, calcPeakTrough, calcAUC,
+          assessClinicalStatus, findOptimalDose, calcLoadingDose, calcLDLevelAtTime, fmtRegimen } = sandbox;
+  const CAUTION_PATH = 'M8 1.8 14.8 13.9H1.2z';          // ICON.caution (triangle)
+  const ALARM_PATH   = 'M5.2 1.5h5.6l3.7 3.7v5.6';      // ICON.alarm (octagon)
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 29 — Trough-module results: verdict first, notes with signal words');
+  console.log(`${'─'.repeat(60)}`);
+
+  // Render into a captured #results-content; everything else is a stub.
+  function renderInto(fn, d, calcMode) {
+    const rc = makeEl(), ph = makeEl();
+    const prevGet = sandbox.document.getElementById, prevST = sandbox.setTimeout;
+    sandbox.document.getElementById = (id) => id === 'results-content' ? rc : id === 'results-placeholder' ? ph : makeEl();
+    sandbox.setTimeout = () => 0;
+    vm.runInContext(`state.calcMode = ${JSON.stringify(calcMode || 'initial')}`, sandbox);
+    try { fn(d); } finally {
+      sandbox.document.getElementById = prevGet; sandbox.setTimeout = prevST;
+      vm.runInContext(`state.calcMode = 'initial'`, sandbox);
+    }
+    return rc.innerHTML;
+  }
+  const text = (h) => h.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+
+  // Fictional patient: 70 kg, CL 4.5 L/h, V 52 L, q12h, trough target 10–20.
+  const kel = 4.5 / 52, vd = 52, clv = 4.5, tau = 12, tinf = 1, tMin = 10, tMax = 20, mic = 1;
+  function initialPayload(withLD) {
+    const opt = findOptimalDose(tMin, tMax, tau, tinf, kel, vd, clv);
+    const pt = calcPeakTrough(opt.dose, tau, tinf, kel, vd), auc = calcAUC(opt.dose, tau, clv);
+    const ld = calcLoadingDose(clv, vd, 25);
+    return {
+      age: 58, sex: 'M', tbw: 70, ibw: 66, adjbw: 67.6, bmi: 22.9, ht: 175, scr: 1.0,
+      crcl: 78, crclWt: 70, dosingWt: 'auto', popClv: clv, adjClv: clv, vd, kel, popKel: kel,
+      t12: 0.693 / kel, popT12: 0.693 / kel, dose: opt.dose, tau, tinf,
+      peak: pt.peak, trough: pt.trough, popPeak: pt.peak, popTrough: pt.trough,
+      levelVal: 0, tDoseToLvl: 0, levelFitted: false, extrapolated: false, extrapDelta: 0, troughBasis: null,
+      auc24: auc, aucMIC: auc / mic, aucMethod: 'Population: VANCOPK CL · AUC = Daily Dose ÷ CLv',
+      aucLo: Math.round(auc * 0.7), aucHi: Math.round(auc * 1.3), aucUncertainty: 0.30,
+      troughMin: tMin, troughMax: tMax, troughStatus: 'ok', aucStatus: 'ok', mic,
+      assessment: assessClinicalStatus(auc, pt.trough, tMin, tMax),
+      optDose: opt.dose, optPT: pt, optAUC: opt.auc, optFlag: opt.flag, optFlagMsg: opt.flagMsg,
+      clModel: 'vancopk', vdModel: 'vancopk', hasLevel: false, hasLD: !!withLD,
+      ldData: withLD ? { ...ld, targetPeak: 25, deltaT: tau, levelAtMaint: calcLDLevelAtTime(ld.peak, ld.kelLD, ld.tinf, tau) } : null,
+    };
+  }
+
+  test('renderResults: the verdict (fmtRegimen) comes before any evidence section', ()=>{
+    const d = initialPayload(false);
+    const h = renderInto(renderResults, d, 'initial');
+    const m = h.match(/<h3 class="vx-regimen" id="tx-regimen">([\s\S]*?)<\/h3>/);
+    assert(m, 'no verdict heading in the Trough result');
+    assert(text(m[1]) === fmtRegimen(d.optDose, tau), `verdict reads "${text(m[1])}", want "${fmtRegimen(d.optDose, tau)}"`);
+    const firstEv = h.indexOf('<details class="ev"');
+    assert(firstEv > 0, 'the evidence is not in hairline disclosure sections');
+    assert(h.indexOf('id="tx-regimen"') < firstEv, 'evidence precedes the verdict');
+    assert(h.indexOf('approx. ±30% population estimate (not simulated)') < firstEv, 'the approximate band belongs to the verdict');
+    assert(!/result-tab|stat-card|rec-target-chip|★/.test(h), 'legacy tabs, stat cards, chips or star glyph are back');
+    assert(!/rgba\(/.test(h), 'a raw rgba literal is back in the Trough result markup');
+  });
+
+  test('loading-dose rate above Matzke 1984 is a caution note with ICON.caution, not grey prose', ()=>{
+    const d = initialPayload(true);
+    assert(d.ldData.rateAboveMatzke === true, `fixture must exceed 15 mg/min, got ${d.ldData.rateMgMin}`);
+    const h = renderInto(renderResults, d, 'initial');
+    const note = h.match(/<div class="note note-caution" role="note">\s*<div class="note-word">([\s\S]*?)<\/div>\s*<div class="note-body">([\s\S]*?)<\/div>\s*<\/div>/g) || [];
+    const rate = note.find(n => /Matzke 1984 recommends/.test(n));
+    assert(rate, 'the Matzke rate caution is not inside a caution note');
+    assert(/<span>Infusion rate<\/span>/.test(rate) && rate.includes(CAUTION_PATH), 'signal word "Infusion rate" with the drawn caution icon');
+    assert((h.match(/Matzke 1984 recommends/g) || []).length === 1, 'the rate caution must not also appear as prose');
+    assert(h.indexOf('Loading dose') < h.indexOf('<details class="ev"'), 'the loading dose sits in the verdict area');
+    assert(/<p class="tx-ld-dose">\d/.test(h) && /Infuse over [\d.]+ h · [\d.]+ mg\/min/.test(h), 'dose, infusion time and rate');
+  });
+
+  test('level mode: a reduction is said plainly, with the alarm icon, before the evidence', ()=>{
+    const d = initialPayload(false);
+    const dose = 1500, pt = calcPeakTrough(dose, tau, tinf, kel, vd), auc = calcAUC(dose, tau, clv);
+    Object.assign(d, { dose, peak: pt.peak, trough: pt.trough * 1.02, auc24: auc, aucMIC: auc,
+      levelFitted: true, levelVal: 26, tDoseToLvl: 10.5, extrapolated: true, extrapDelta: 1.5, troughBasis: 'extrapolated',
+      aucMethod: 'Ke 0.0865 hr⁻¹ fitted from 26 mg/L at 10.5h · trough extrapolated forward 1.5h',
+      aucUncertainty: 0.22, aucLo: Math.round(auc * 0.78), aucHi: Math.round(auc * 1.22), hasLevel: true });
+    d.assessment = assessClinicalStatus(d.auc24, d.trough, tMin, tMax);
+    assert(d.assessment.action === 'reduce', `fixture must reduce, got ${d.assessment.action}`);
+    const h = renderInto(renderResults, d, 'level');
+    const firstEv = h.indexOf('<details class="ev"');
+    const at = h.indexOf('Dose reduction indicated');
+    assert(at > 0 && at < firstEv, 'the reduction must be stated in the verdict');
+    assert(/tx-action-alarm/.test(h) && h.slice(h.indexOf('tx-action-alarm'), at).includes(ALARM_PATH), 'alarm tier carries the drawn octagon');
+    assert(text(h.match(/id="tx-regimen">([\s\S]*?)<\/h3>/)[1]) === fmtRegimen(d.optDose, tau), 'the verdict names the new regimen');
+    assert(h.includes(`Current ${fmtRegimen(dose, tau)}`), 'the current regimen is named beside it');
+    assert(/Extrapolated trough/.test(h), 'trough basis label kept');
+  });
+
+  test('Two-level and random-level results lead with the verdict too', ()=>{
+    const opt = findOptimalDose(tMin, tMax, tau, tinf, kel, vd, clv);
+    const pt = calcPeakTrough(opt.dose, tau, tinf, kel, vd);
+    const base = { age: 58, sex: 'M', tbw: 70, ibw: 66, adjbw: 67.6, bmi: 22.9, scr: 1.0, crcl: 78,
+      popClv: 5, popVd: 55, popKel: 5 / 55, troughMin: tMin, troughMax: tMax, mic,
+      optDose: opt.dose, optFlag: opt.flag, optFlagMsg: opt.flagMsg, optPT: pt, optAUC: calcAUC(opt.dose, tau, clv) };
+    const tl = renderInto(renderTwoLevels, { ...base, tlDose: 1000, tlTinf: tinf, tlTau: tau,
+      kel, vd, clv, t12: 0.693 / kel, peak: 28, c1: 24, t1: 3, c2: 12, t2: 11, basis: 'firstdose' });
+    const rl = renderInto(renderRandomLevel, { ...base, rlDose: 1000, rlTinf: tinf, rlTau: tau, rlC: 14, rlT: 8,
+      rlSubMode: 'firstdose', rlInterval: null, indKel: kel, indClv: clv, indT12: 0.693 / kel });
+    for (const [name, h] of [['two-level', tl], ['random-level', rl]]) {
+      const m = h.match(/id="tx-regimen">([\s\S]*?)<\/h3>/);
+      assert(m && text(m[1]) === fmtRegimen(opt.dose, tau), `${name}: verdict reads "${m && text(m[1])}"`);
+      assert(h.indexOf('id="tx-regimen"') < h.indexOf('<details class="ev"'), `${name}: evidence precedes the verdict`);
+      assert(!/result-tab|stat-card|★|rgba\(/.test(h), `${name}: legacy chrome is back`);
+    }
+    assert(/id="prn-redose-thresh"/.test(rl) && /<label for="prn-target-peak"/.test(rl), 'PRN inputs keep their ids and gain labels');
   });
 }
 

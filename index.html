@@ -464,8 +464,8 @@
     font-size:var(--fs-xs);
     font-weight: 500;
     color: var(--accent-amber);
-    background: rgba(191,133,48,0.08);
-    border: 1px solid rgba(191,133,48,0.25);
+    background: color-mix(in srgb, var(--amber) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--amber) 25%, transparent);
     border-radius: var(--radius-pill);
     padding: 3px 10px;
     letter-spacing: 0.04em;
@@ -524,18 +524,6 @@
     transform: translateY(-2px);
     border-color: var(--terracotta-q);
   }
-  .stat-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: var(--accent-color, var(--accent-terra));
-    border-radius: 3px 3px 0 0;
-  }
-  .stat-card.ok::before { --accent-color: var(--success); }
-  .stat-card.warn::before { --accent-color: var(--warning); }
-  .stat-card.danger::before { --accent-color: var(--danger); }
-  .stat-card.info::before { --accent-color: var(--accent-blue); }
 
   .stat-label {
     font-size:var(--fs-xs);
@@ -570,9 +558,9 @@
     padding: 3px 8px;
     border-radius: var(--radius-pill);
   }
-  .badge-ok { background: rgba(45,138,82,0.12); color: var(--success); border: 1px solid rgba(45,138,82,0.3); }
-  .badge-warn { background: rgba(184,125,48,0.12); color: var(--warning); border: 1px solid rgba(184,125,48,0.3); }
-  .badge-danger { background: rgba(184,59,59,0.12); color: var(--danger); border: 1px solid rgba(184,59,59,0.3); }
+  .badge-ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+  .badge-warn { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); }
+  .badge-danger { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); }
 
   /* ─── PK PARAMETER TABLE ─── */
   .pk-table {
@@ -599,7 +587,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     padding: 11px 18px;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
+    border-bottom: 1px solid var(--rule);
     transition: background 0.15s;
   }
   .pk-row:last-child { border-bottom: none; }
@@ -621,14 +609,6 @@
     padding: 22px 26px;
     position: relative;
     overflow: hidden;
-  }
-  .rec-box::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 4px;
-    background: var(--terracotta);
-    border-radius: 4px 0 0 4px;
   }
   .rec-title {
     font-size:var(--fs-xs);
@@ -748,15 +728,15 @@
   .explorer-table td {
     padding: 10px 14px;
     font-size:var(--fs-sm);
-    border-bottom: 1px solid rgba(0,0,0,0.05);
+    border-bottom: 1px solid var(--rule);
     font-family:var(--font-num);
   }
   .explorer-table tr:last-child td { border-bottom: none; }
   .explorer-table tr:hover td { background: var(--paper-deep); }
-  .explorer-table tr.recommended td { background: rgba(217,123,74,0.06); }
+  .explorer-table tr.recommended td { background: color-mix(in srgb, var(--terracotta) 6%, transparent); }
   .explorer-table tr.recommended td:first-child { color: var(--accent-terra); font-weight: 500; }
-  .in-range { color: var(--success); }
-  .out-range { color: var(--danger); }
+  .in-range { color: var(--ink); }
+  .out-range { color: var(--amber); }
   .border-range { color: var(--warning); }
 
   /* ─── TROUGH INTERPRETATION ─── */
@@ -792,7 +772,7 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: white;
+    background: var(--paper);
     border: 3px solid var(--accent-terra);
     transform: translateX(-50%);
     transition: left 0.6s cubic-bezier(0.34,1.56,0.64,1);
@@ -897,14 +877,6 @@
     position: relative;
     overflow: hidden;
   }
-  .prn-box::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 4px;
-    background: var(--accent-blue);
-    border-radius: 4px 0 0 4px;
-  }
   .prn-title {
     font-size:var(--fs-xs);
     font-weight: 600;
@@ -958,7 +930,7 @@
     flex-wrap: wrap;
     margin: 12px 0;
     padding: 12px 14px;
-    background: rgba(10,13,20,0.4);
+    background: var(--paper-deep);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
   }
@@ -985,8 +957,8 @@
   .prn-ctrl-input:focus { border-color: var(--accent-blue); }
   .prn-calc-btn {
     padding: 7px 14px;
-    background: rgba(83,136,204,0.15);
-    border: 1px solid rgba(83,136,204,0.4);
+    background: color-mix(in srgb, var(--purple) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--purple) 40%, transparent);
     border-radius: var(--radius-sm);
     color: var(--accent-blue);
     font-family: 'Outfit', sans-serif;
@@ -995,7 +967,7 @@
     cursor: pointer;
     transition: all 0.18s;
   }
-  .prn-calc-btn:hover { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+  .prn-calc-btn:hover { background: var(--accent-blue); color: var(--paper); border-color: var(--accent-blue); }
 
   /* ─── DOSE TINKERER ─── */
   .tinkerer-box {
@@ -1555,12 +1527,9 @@
 
   /* ── Confidence, AUC verdict, de-rated recommendation ─────────────────
      Tokens only; depth is a hairline and a background step, never a shadow. */
-  .conf { border:1px solid var(--border); border-left:3px solid var(--border);
+  .conf { border:1px solid var(--rule);
           border-radius:var(--radius-sm); background:var(--paper-deep);
           padding:11px 14px; margin:12px 0; }
-  .conf-ok     { border-left-color:var(--success); }
-  .conf-warn   { border-left-color:var(--accent-amber); }
-  .conf-danger { border-left-color:var(--danger); }
   .conf-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
   .conf-title { font-size:var(--fs-xs); font-weight:600; letter-spacing:0.1em;
                 text-transform:uppercase; color:var(--text-muted); }
@@ -1717,7 +1686,7 @@
   .amp-readout dt { color:var(--text-muted); }
   .amp-readout dd { margin:0; font-family:var(--font-num); color:var(--text-primary); }
   .amp-note {
-    margin-top:10px; padding:10px 12px; border-left:3px solid var(--accent-amber);
+    margin-top:10px; padding:10px 12px; border:1px solid var(--rule);
     background:var(--paper-deep); border-radius:var(--radius-sm);
     font-size:var(--fs-xs); line-height:1.55; color:var(--text-secondary); max-width:68ch;
   }
@@ -2512,6 +2481,114 @@
 
 
   /* ── design track D: Trough-module results — insert this track's CSS below this line ── */
+  /* Trough module results in the course-timeline grammar (2026-09-28). The
+     same vocabulary as the Bayesian panel: verdict first, hairlines between
+     evidence sections, terracotta only for the recommendation and its
+     projection, the alarm hue only beside a signal word and a drawn icon. */
+  #results-content { gap: 0 !important; scroll-margin-top: 96px; }
+  #results-content > * { max-width: 100%; }
+  .tx-result { animation: fadeIn .32s ease-out; }
+  .tx-top {
+    display: grid; column-gap: 32px; row-gap: 0; align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 330px);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "curve verdict" "ld verdict";
+    padding: 4px 0 20px; border-bottom: 1px solid var(--rule);
+  }
+  .tx-verdict { grid-area: verdict; min-width: 0; }
+  .tx-curve   { grid-area: curve; margin: 0; min-width: 0; }
+  .tx-ld      { grid-area: ld; min-width: 0; }
+  @container results (max-width: 760px) {
+    .tx-top { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "verdict" "ld" "curve"; }
+    .tx-verdict { padding: 0 0 18px; border-bottom: 1px solid var(--rule); margin-bottom: 14px; }
+    .tx-ld { margin: 0 0 14px; padding: 0 0 18px; border-top: 0; border-bottom: 1px solid var(--rule); }
+  }
+
+  .tx-verdict .vx-regimen { margin-top: 0; }
+  .tx-aucw  { display: block; font-size: var(--fs-base); color: var(--ink); }
+  .tx-band  { display: block; font-size: var(--fs-sm); color: var(--ink-muted); }
+  .tx-trough { margin-top: 10px; }
+  .tx-action { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--rule); }
+  .tx-action-head { display: flex; align-items: flex-start; gap: 8px; margin: 0;
+    font-size: var(--fs-sm); line-height: 1.5; color: var(--ink-soft); }
+  .tx-action-head .ic { margin-top: 2px; }
+  .tx-action-word { font-weight: 600; color: var(--ink); }
+  .tx-action-caution .tx-action-word, .tx-action-caution .ic { color: var(--amber); }
+  .tx-action-alarm .tx-action-word, .tx-action-alarm .ic { color: var(--alarm); }
+  .tx-action-body { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 6px 0 0; }
+  .tx-action-caution .tx-action-body, .tx-action-alarm .tx-action-body { padding-left: 24px; }
+  .tx-flags { display: grid; gap: 12px; margin-top: 14px; }
+  .tx-basis { font-size: var(--fs-sm); line-height: 1.5; color: var(--ink-muted); margin: 14px 0 8px; }
+  .tx-note-sub { margin: 8px 0 0; }
+
+  .tx-ld { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--rule); display: grid; gap: 8px; align-content: start; }
+  .tx-ld-h { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-lg); color: var(--ink); margin: 0; }
+  .tx-ld-dose { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-xl); line-height: 1.1; color: var(--ink); margin: 0; }
+  .tx-ld .vx-inf { margin: 0; }
+  .tx-ld .note, .tx-ld .ev-note { max-width: 78ch; }
+
+  .tx-curve canvas { display: block; width: 100%; aspect-ratio: 16 / 8; height: auto; min-height: 220px; max-height: 360px; }
+  .tx-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-xs); color: var(--ink-muted); margin: 6px 0 0 54px; }
+  .tx-legend .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .lg.tx-lg-peak   { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-muted); }
+  .lg.tx-lg-trough { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-muted); }
+  .lg.tx-lg-band   { height: 10px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+  .tx-summary { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 10px 0 0 54px; max-width: 72ch; }
+  @container results (max-width: 760px) { .tx-legend, .tx-summary { margin-left: 0; } }
+
+  .tx-notes { padding: 18px 0; }
+
+  svg.tx-scale { display: block; width: 100%; max-width: 420px; height: auto; }
+  .tx-scale .band { fill: color-mix(in srgb, var(--ink) 9%, transparent); }
+  .tx-scale .axis { stroke: var(--ink-faint); stroke-width: 1; }
+  .tx-scale .tick { stroke: var(--ink-faint); }
+  .tx-scale .ax   { font: 12px var(--font-body); font-variant-numeric: tabular-nums; fill: var(--ink-muted); text-anchor: middle; }
+  .tx-scale .val  { stroke: var(--ink); stroke-width: 1.5; }
+  .tx-scale .pt   { fill: var(--ink); }
+
+  .tx-scroll { overflow-x: auto; max-width: 100%; }
+  .tx-table td, .tx-explorer td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tx-explorer th[scope=row] { white-space: nowrap; }
+  .tx-explorer tr.is-rec th, .tx-explorer tr.is-rec td { background: color-mix(in srgb, var(--terracotta) 8%, transparent); }
+  .tx-explorer tr.is-rec th { color: var(--terracotta-ink); font-weight: 600; }
+  .tx-rec-tag { font-size: var(--fs-xs); font-weight: 500; color: var(--terracotta-ink); margin-left: 4px; }
+  @container results (max-width: 520px) {
+    .tx-explorer th, .tx-explorer td, .tx-table th, .tx-table td { padding-right: 8px; }
+    .tx-explorer thead th, .tx-table thead th { white-space: normal; }
+    .tx-table td { white-space: normal; }
+    .tx-rec-tag { display: block; margin-left: 0; }
+  }
+
+  /* The Dose Tinkerer and PRN tool inside an evidence section: no box, no kicker. */
+  #results-content .tinkerer-box { border: 0; background: none; padding: 0; margin: 0; border-radius: 0; }
+  #results-content .tinkerer-header { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-soft); margin-bottom: 8px; }
+  #results-content .tinkerer-header::before { content: none; }
+  #results-content .tinkerer-row { flex-wrap: wrap; gap: 8px 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
+  #results-content .tinkerer-input, #results-content .tinkerer-tau { font-size: var(--fs-md); min-height: 44px; }
+  #results-content .tinkerer-btn { min-height: 44px; font-size: var(--fs-sm); }
+  #results-content .tinkerer-btn:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  #results-content .tinkerer-result.visible { display: grid; gap: 10px; }
+  .tx-tink-head { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: var(--fs-sm); color: var(--ink-soft); }
+  .tx-tink-head .ic { margin-top: 2px; color: var(--amber); }
+  .tx-tink-caution strong { color: var(--ink); }
+  .tx-prn-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; }
+  .tx-prn-controls label { display: grid; gap: 4px; font-size: var(--fs-sm); color: var(--ink-soft); }
+  .tx-field { display: inline-flex; align-items: center; gap: 6px; }
+  #results-content .prn-ctrl-input { font-size: var(--fs-md); min-height: 44px; width: 5.5em; }
+  #results-content .prn-calc-btn { min-height: 44px; font-size: var(--fs-sm); background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  #results-content .prn-calc-btn:hover { background: var(--ink-soft); border-color: var(--ink-soft); color: var(--paper); }
+  .tx-prn-result { display: grid; gap: 10px; }
+  .tx-prn-dose { font-weight: 600; color: var(--terracotta-ink); }
+  @media (prefers-reduced-motion: reduce) { .tx-result { animation: none; } }
+  @media print {
+    .tx-result { animation: none; }
+    .tx-top { display: block; }
+    #print-report .tx-curve canvas, #print-report .tx-legend { display: none; }
+    #print-report .tx-summary { margin-left: 0; }
+    /* The copied result is taller than a page; kept whole it left page 1 blank. */
+    #print-report .pr-section:has(.tx-result) { break-inside: auto; page-break-inside: auto; }
+    #print-report details.ev, #print-report .tx-verdict, #print-report .tx-ld { break-inside: avoid; }
+  }
 
 
   /* ── design track E: polish & minor fixes — insert this track's CSS below this line ── */
@@ -5612,20 +5689,24 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
 // findOptimalDose's flag was computed and never rendered (audit 2026-09-28):
 // with low clearance on a short interval the card recommended 500 mg Q12H at
 // AUC 666 as "the" dose, while the explorer beside it listed in-band regimens.
+// Shown as a caution note with its signal word (design track D, 2026-09-28).
 function optFlagHTML(flag, flagMsg, tau, auc, trough, troughMin) {
   if (!flag) return '';
   let msg = flagMsg || '';
+  let word = flag === 'auc_therapeutic_trough_high' ? 'Trough above target'
+           : flag === 'auc_therapeutic_trough_low'  ? 'Trough below target' : 'Optimiser note';
   const inBand = auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX;
   if (flag === 'auc_supra' || flag === 'auc_sub' || (flag === 'auc_borderline' && !inBand)) {
-    msg = `No dose at Q${fmtTau(tau)}H on 250 mg steps reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L; `
+    msg = `No dose at ${fmtFreq(tau)} on 250 mg steps reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L; `
         + `this is the closest (AUC₂₄ ${auc.toFixed(0)}). Check the dose explorer for another interval.`;
+    word = 'Target not reachable at this interval';
   } else if (flag === 'auc_borderline') {
     msg = `AUC₂₄ ${auc.toFixed(0)} mg·h/L is in range, but the trough (${trough.toFixed(1)} mg/L) is well below the `
         + `${troughMin} mg/L trough target. AUC is the primary target; confirm with a level.`;
+    word = 'Trough below target';
   }
   if (!msg) return '';
-  return `<div class="model-info-box" style="margin-top:8px;background:rgba(191,133,48,0.05);border-color:rgba(191,133,48,0.25)">
-    <span style="color:var(--text-secondary)">${escHtml(msg)}</span></div>`;
+  return noteHTML({ tier: 'caution', word, html: escHtml(msg) });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -5647,8 +5728,9 @@ function doseExplorerRows(o) {
       const tCls  = (pt.trough < o.troughMin || pt.trough > o.troughMax) ? 'out-range' : 'in-range';
       const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';
       const isRec = dose === o.optDose && interval === o.tau;
-      html += `<tr class="${isRec ? 'recommended' : ''}">
-        <td>${isRec ? '★ ' : ''}${dose}mg Q${interval}H</td>
+      // ISMP dose and frequency; the recommended row is marked in words, not a star glyph.
+      html += `<tr${isRec ? ' class="is-rec"' : ''}>
+        <th scope="row">${fmtDose(dose)} ${fmtFreq(interval)}${isRec ? ` <span class="tx-rec-tag">${o.recLabel || 'recommended'}</span>` : ''}</th>
         <td class="${tCls}">${pt.trough.toFixed(1)}</td>
         <td>${pt.peak.toFixed(1)}</td>
         <td class="${aUCls}">${auc.toFixed(0)}</td>
@@ -6285,353 +6367,216 @@ function renderResults(d) {
   const rc = document.getElementById('results-content');
   rc.style.display = 'flex';
 
-  const gaugePos = Math.min(Math.max((d.trough / 30) * 100, 2), 98);
-  const troughBadge = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[d.troughStatus];
-  const troughText  = {ok:'Therapeutic', warn:'Review', danger:'Action Needed'}[d.troughStatus];
-  const aucBadge = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[d.aucStatus];
-  const aucText  = {ok:'In Range', warn:'Subtherapeutic', danger:'Supratherapeutic'}[d.aucStatus];
-
+  // The course-timeline grammar (design track D, 2026-09-28): the verdict
+  // first, then the curve, at most two notes, then the evidence in hairline
+  // disclosure sections. The two result tabs ("Initial Dosing" / "Steady
+  // State Trough") are now one page — they could name two different doses
+  // side by side. Every clinical sentence below is the one the tabbed layout
+  // printed; numbers come from the same fields.
   const clModelNames = {vancopk:'VancoPK',matzke:'Matzke',matzke_pooled:'Matzke',buelga:'Buelga',bauer:'Bauer'};
   const vdModelNames = {vancopk:'VancoPK',buelga:'Buelga',bauer:'Bauer',matzke:'Matzke (CrCl-split)',matzke_pooled:'Matzke (pooled)'};
+  const clName = escHtml(clModelNames[d.clModel] || d.clModel);
+  const modelsLine = `${clName} CL · ${escHtml(vdModelNames[d.vdModel] || d.vdModel)} Vd`;
 
-  // ── Recommendation logic ──
+  // ── Assessment, and the regimen the verdict names ──
   const a = d.assessment;
+  const isInitialMode = typeof state !== 'undefined' && !!state && state.calcMode === 'initial';
   const actionMap = {
-    continue:       { title:'Continue Current Regimen', badge:'badge-ok',    badgeText:'No Change' },
-    increase:       { title:'Dose Increase Indicated',  badge:'badge-warn',  badgeText:'Increase' },
-    reduce:         { title:'Dose Reduction Indicated', badge:'badge-danger', badgeText:'Reduce' },
-    consider_extend:{ title:'Consider Interval Extension', badge:'badge-warn', badgeText:'Adjust' },
-    monitor:        { title:'Continue — Monitor Closely', badge:'badge-warn', badgeText:'Monitor' },
-    review:         { title:'Review PK Data',            badge:'badge-warn',  badgeText:'Review' },
+    continue:        { title:'Continue current regimen',    tier:'ok' },
+    increase:        { title:'Dose increase indicated',     tier:'caution' },
+    reduce:          { title:'Dose reduction indicated',    tier:'alarm' },
+    consider_extend: { title:'Consider interval extension', tier:'caution' },
+    monitor:         { title:'Continue — monitor closely',  tier:'caution' },
+    review:          { title:'Review PK data',              tier:'caution' },
   };
   const recAction = actionMap[a.action] || actionMap['review'];
-
-  // Recommended regimen display
   const showOptDose = a.action !== 'continue' && d.optDose !== d.dose;
-  const recRegimen  = showOptDose ? `${d.optDose} mg Q${d.tau}H` : `${d.dose} mg Q${d.tau}H`;
+  const vDose   = showOptDose ? d.optDose       : d.dose;
+  const vAUC    = showOptDose ? d.optAUC        : d.auc24;
+  const vTrough = showOptDose ? d.optPT.trough  : d.trough;
+  const vPeak   = showOptDose ? d.optPT.peak    : d.peak;
+  const verdictIsOpt = vDose === d.optDose;
 
-  // Divergence alert — the clinically important case
-  // AUC confidence interval for divergence display
-  const aucCvPct = d.levelFitted ? 22 : 30;
-  const aucLoBound = Math.round(d.auc24 * (1 - aucCvPct/100));
-  const aucHiBound = Math.round(d.auc24 * (1 + aucCvPct/100));
-  const divergenceHTML = a.divergence ? `
-    <div style="margin-top:12px;padding:12px 16px;background:rgba(191,133,48,0.08);border:1px solid rgba(191,133,48,0.25);border-radius:4px;font-size:var(--fs-xs);line-height:1.7;color:var(--accent-amber)">
-      <div style="font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px">⚠ Trough–AUC Divergence Detected</div>
-      ${a.summary}
-      <div style="margin-top:10px;padding:10px 14px;background:var(--paper-deep);border-radius:4px;border-left:3px solid rgba(191,133,48,0.4)">
-        <div style="font-weight:600;margin-bottom:4px;color:var(--text-secondary)">⚠ AUC Estimation Uncertainty — Clinical Judgment Required</div>
-        <div style="color:var(--text-secondary);font-size:var(--fs-xs);line-height:1.6">
-          This AUC estimate (${d.auc24.toFixed(0)} mg·h/L) is derived from a single measured level using population PK — <strong style="color:var(--accent-amber)">not Bayesian</strong>. Non-Bayesian AUC from trough carries ≈±${aucCvPct}% CV, meaning the plausible range spans <strong style="color:var(--text-primary)">${aucLoBound}–${aucHiBound} mg·h/L</strong>.
-          The lower bound (${aucLoBound} mg·h/L) ${aucLoBound < 400 ? '<strong style="color:var(--warning)">would be subtherapeutic</strong>, supporting a dose increase' : 'remains therapeutic, supporting continuation'}.
-          The upper bound (${aucHiBound} mg·h/L) ${aucHiBound > 600 ? '<strong style="color:var(--danger)">approaches supratherapeutic range</strong>, arguing against dose escalation' : 'remains within range'}.
-          <br>A repeat level or Bayesian dosing software (e.g. DoseMeRx, Vancomycin Calculator) is recommended before making a definitive dose change.
-        </div>
-      </div>
-    </div>` : '';
-
-  const recRat = a.divergence ? '' :
-    showOptDose
-    ? `PK (CL ${d.adjClv.toFixed(2)} L/hr, Vd ${d.vd.toFixed(1)} L, t½ ${d.t12.toFixed(1)} hr) — adjusting to ${d.optDose} mg estimated to achieve trough ${d.optPT.trough.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.`
-    : a.summary;
-
-  // AUC uncertainty display
+  // AUC uncertainty display (approximate; see calculate()).
   const uncertaintyPct = Math.round(d.aucUncertainty * 100);
   const aucConfText = d.levelFitted
     ? `approx. ±${uncertaintyPct}%: ${d.aucLo}–${d.aucHi} mg·h/L (not simulated)`
     : `approx. ±${uncertaintyPct}% population estimate (not simulated)`;
+  const troughBasisWord = !d.levelFitted ? 'predicted'
+    : d.extrapolated ? 'extrapolated'
+    : d.troughBasis === 'model' ? 'model-predicted' : 'true trough';
 
-  // Dose explorer — fixed set of clinically relevant regimens using fitted PK
+  // Divergence — the clinically important case. AUC range for its display.
+  const aucCvPct = d.levelFitted ? 22 : 30;
+  const aucLoBound = Math.round(d.auc24 * (1 - aucCvPct/100));
+  const aucHiBound = Math.round(d.auc24 * (1 + aucCvPct/100));
+  const notes = [];
+  if (a.divergence) {
+    notes.push({ tier: 'caution', word: 'Trough–AUC divergence detected', html: `${escHtml(a.summary)}
+      <p class="tx-note-sub"><strong>AUC estimation uncertainty — clinical judgment required.</strong>
+      ${d.levelFitted
+        ? `This AUC estimate (${d.auc24.toFixed(0)} mg·h/L) is derived from a single measured level using population PK — <strong>not Bayesian</strong>. Non-Bayesian AUC from trough carries ≈±${aucCvPct}% CV`
+        : `This AUC estimate (${d.auc24.toFixed(0)} mg·h/L) is a population-PK prediction with no measured level — <strong>not Bayesian</strong>. It carries ≈±${aucCvPct}%`},
+      meaning the plausible range spans <strong>${aucLoBound}–${aucHiBound} mg·h/L</strong>.
+      The lower bound (${aucLoBound} mg·h/L) ${aucLoBound < AUC24_TARGET_MIN ? '<strong>would be subtherapeutic</strong>, supporting a dose increase' : 'remains therapeutic, supporting continuation'}.
+      The upper bound (${aucHiBound} mg·h/L) ${aucHiBound > AUC24_TARGET_MAX ? '<strong>approaches supratherapeutic range</strong>, arguing against dose escalation' : 'remains within range'}.
+      A repeat level or Bayesian dosing software (e.g. DoseMeRx, Vancomycin Calculator) is recommended before making a definitive dose change.</p>` });
+  }
+  // aucMethod carries a steady-state caution inside the basis string; it is a
+  // caution, so it is shown as one rather than as grey method text.
+  const [methodMain, ssCaution] = String(d.aucMethod || '').split(' · caution: ');
+  if (ssCaution) {
+    notes.push({ tier: 'caution', word: 'Steady state',
+      html: escHtml(ssCaution.charAt(0).toUpperCase() + ssCaution.slice(1)) + '.' });
+  }
+
+  const recRat = a.divergence ? '' :
+    showOptDose
+    ? `PK (CL ${d.adjClv.toFixed(2)} L/h, Vd ${d.vd.toFixed(1)} L, t½ ${d.t12.toFixed(1)} h) — adjusting to ${fmtDose(d.optDose)} estimated to achieve trough ${d.optPT.trough.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.`
+    : escHtml(a.summary);
+
+  // The action, said plainly. Initial dosing has no current regimen to
+  // continue or change, so it states the predicted exposure instead.
+  let actionBlock;
+  if (isInitialMode) {
+    const tier = a.status === 'danger' ? 'alarm' : a.status === 'warn' ? 'caution' : 'ok';
+    actionBlock = txActionHTML(tier, escHtml(a.primary), '', '');
+  } else {
+    const delta = showOptDose
+      ? `<p class="tx-action-body">Current ${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, trough ${d.trough.toFixed(1)} mg/L (${troughBasisWord}).</p>`
+      : '';
+    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(a.primary),
+      (recRat ? `<p class="tx-action-body">${recRat}</p>` : '') + delta);
+  }
+
+  const ldHTML = d.hasLD && d.ldData ? txLoadingDoseHTML(d.ldData, {
+    tbw: d.tbw, troughMin: d.troughMin, troughMax: d.troughMax,
+    firstMaint: fmtRegimen(d.optDose, d.tau),
+    firstMaintBasis: d.levelFitted ? 'from the level-fitted Ke' : 'pop-estimated optimal dose',
+  }) : '';
+
+  const verdict = txVerdictHTML({
+    dose: vDose, tau: d.tau, tinf: d.tinf,
+    auc: vAUC, aucBand: showOptDose ? `approx. ±${uncertaintyPct}% (not simulated)` : aucConfText,
+    trough: vTrough, troughWord: showOptDose ? 'predicted at steady state' : troughBasisWord,
+    troughMin: d.troughMin, troughMax: d.troughMax,
+    peak: vPeak, mic: d.mic,
+    action: actionBlock,
+    flags: (verdictIsOpt ? optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin) : '')
+         + troughRailHTML(vTrough, vAUC, d.troughMin),
+    basis: d.levelFitted ? `From your level — ${escHtml(methodMain)}` : `Population estimate — ${modelsLine}`,
+    next: d.levelFitted ? '' : 'Initial dose is population-estimated. Obtain a steady-state level (≥3 doses) to individualise PK and confirm AUC target is met.',
+  });
+
+  // ── The curve: current regimen in ink, the recommendation in terracotta ──
+  const band = { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` };
+  const legend = [];
+  if (showOptDose) {
+    legend.push({ cls: 'lg-ind', text: `Current ${fmtRegimen(d.dose, d.tau)}` });
+    legend.push({ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.tau)}` });
+  } else {
+    legend.push({ cls: 'lg-proj', text: `${isInitialMode ? 'Recommended' : 'Recommended (current)'} ${fmtRegimen(d.dose, d.tau)}` });
+  }
+  legend.push({ cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' });
+  if (d.levelFitted) legend.push({ cls: 'lg-lv', text: 'Measured level' });
+  legend.push(band);
+  const summary = `On ${fmtRegimen(vDose, d.tau)} the predicted steady-state peak is ${vPeak.toFixed(1)} mg/L and the trough ${vTrough.toFixed(1)} mg/L`
+    + (showOptDose ? `; the current ${fmtRegimen(d.dose, d.tau)} is drawn in ink` : '')
+    + `. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.`;
+  const figure = txCurveHTML({ id: 'pk-graph-ss', suffix: 'ss', legend, summary });
+
+  // ── Evidence ──
+  const tw = txTroughStatus(d.trough, d.troughMin, d.troughMax);
+  const aw = txAucStatus(d.auc24);
+  const troughDetail = d.levelFitted
+    ? (d.extrapolated
+        ? `<strong>Extrapolated trough</strong> — observed ${d.levelVal} mg/L at ${d.tDoseToLvl.toFixed(1)} h → true trough: <strong>${d.trough.toFixed(1)} mg/L</strong> (${d.extrapDelta>0?`${d.extrapDelta.toFixed(1)} h before next dose`:`${Math.abs(d.extrapDelta).toFixed(1)} h after due`})`
+        : d.troughBasis === 'model'
+          ? `<strong>Model-predicted trough</strong> — the level was drawn at ${d.tDoseToLvl.toFixed(1)} h (${d.tDoseToLvl <= d.tinf ? 'during the infusion' : 'before steady state'}), so the trough shown is the fitted steady-state projection, not a measurement`
+          : `<strong>True trough</strong> — level drawn at ${d.tDoseToLvl.toFixed(1)} h (end of dosing interval)`)
+    : `Population-estimated trough from ${clName} model · No measured level entered`;
+  const summaryElsewhere = a.divergence || (!isInitialMode && !showOptDose);
+  const exposureBody = `
+    <p class="ev-lead"><strong>${escHtml(a.primary)}.</strong>${a.secondary ? ` <span class="vx-muted">${escHtml(a.secondary)}</span>` : ''}</p>
+    ${summaryElsewhere ? '' : `<p class="ev-note">${escHtml(a.summary)}</p>`}
+    ${txTroughScaleSVG(d.trough, d.troughMin, d.troughMax)}
+    <p class="ev-note">${troughDetail}</p>
+    <dl class="ev-dl">
+      <div><dt>AUC₂₄ (primary target)</dt><dd><span class="${aw.cls}">${d.auc24.toFixed(0)} mg·h/L</span>
+        <span class="vx-muted">${aw.text} · ${aucConfText}</span></dd></div>
+      <div><dt>Trough (secondary)</dt><dd><span class="${tw.cls}">${d.trough.toFixed(1)} mg/L</span>
+        <span class="vx-muted">${d.extrapolated ? 'extrapolated · ' : ''}${tw.text}</span></dd></div>
+      <div><dt>Predicted peak</dt><dd>${d.peak.toFixed(1)} mg/L <span class="vx-muted">end of infusion</span></dd></div>
+      <div><dt>AUC:MIC ratio</dt><dd><span class="${d.aucMIC >= 400 ? '' : 'tone-caution'}">${d.aucMIC.toFixed(0)}</span>
+        <span class="vx-muted">target ≥ 400 (MIC ${d.mic} mg/L) · ${d.aucMIC >= 400 ? 'on target' : 'low'}</span></dd></div>
+    </dl>`;
+
+  const troughRowLabel = d.extrapolated ? 'Extrapolated trough' : d.troughBasis === 'model' ? 'Predicted trough' : 'True trough';
+  const pkHead = d.levelFitted ? ['Parameter', 'Individual (fitted)', 'Population', 'Units'] : ['Parameter', 'Population', 'Units'];
+  const pkRowOf = (label, ind, pop, unit) => d.levelFitted ? [label, ind, pop, unit] : [label, ind, unit];
+  const pkRows = [
+    pkRowOf('CrCl (CG)', d.crcl.toFixed(1), '—', 'mL/min'),
+    pkRowOf('CLv', d.adjClv.toFixed(2), d.popClv.toFixed(2), 'L/h'),
+    pkRowOf('Vd', `${d.vd.toFixed(1)} <span class="vx-muted">(${(d.vd/d.tbw).toFixed(2)} L/kg)</span>`, d.vd.toFixed(1), 'L'),
+    pkRowOf('Kel', d.kel.toFixed(4), d.popKel.toFixed(4), 'h⁻¹'),
+    pkRowOf('Half-life', d.t12.toFixed(1), d.popT12.toFixed(1), 'h'),
+  ];
+  if (d.levelFitted) {
+    pkRows.push(pkRowOf('Observed level', `${d.levelVal} <span class="vx-muted">at ${d.tDoseToLvl.toFixed(1)} h from dose</span>`, '—', 'mg/L'));
+    pkRows.push(pkRowOf(troughRowLabel, d.trough.toFixed(1), '—', 'mg/L'));
+  }
+  pkRows.push(pkRowOf('Pred. SS peak', d.peak.toFixed(1), d.popPeak.toFixed(1), 'mg/L'));
+  pkRows.push(pkRowOf('IBW / AdjBW', `${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}`, '—', 'kg'));
+  pkRows.push(pkRowOf('BMI', d.bmi.toFixed(1), '—', 'kg/m²'));
+  const pkBody = `
+    ${txTableHTML(pkHead, pkRows, d.levelFitted ? 'Fitted from the measured level, against the population values' : 'Population PK parameters')}
+    <p class="ev-note">Models: ${modelsLine}.</p>
+    <p class="ev-note vx-muted">${escHtml(methodMain)}</p>`;
+
   const explorerHTML = doseExplorerRows({ tau: d.tau, tinf: d.tinf, kel: d.kel, vd: d.vd, clv: d.adjClv,
-    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose,
+    recLabel: verdictIsOpt ? 'recommended' : 'optimiser\'s dose' });
+  const explorerBody = `
+    <p class="ev-lead">At ${fmtFreq(d.tau)} the optimiser's dose is <strong>${fmtRegimen(d.optDose, d.tau)}</strong>.</p>
+    <p class="ev-note">Based on ${d.levelFitted ? 'the level-fitted Ke (not population PK)' : 'population PK'} — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.</p>
+    ${!verdictIsOpt ? optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin) : ''}
+    ${txExplorerHTML(explorerHTML, 'Projected steady-state outcomes by dose and interval')}`;
 
-  // Build Initial Dosing tab HTML
-  const clModelNames2 = {vancopk:'VancoPK',matzke:'Matzke',matzke_pooled:'Matzke',buelga:'Buelga',bauer:'Bauer'};
-  const vdModelNames2 = {vancopk:'VancoPK',buelga:'Buelga',bauer:'Bauer',matzke:'Matzke'};
-  const popT12Fmt = d.popT12.toFixed(1);
-
-  const ldHTML = d.hasLD && d.ldData ? (() => {
-    const ld = d.ldData;
-    const levelColor = ld.levelAtMaint < d.troughMin ? 'var(--warning)' : ld.levelAtMaint > d.troughMax ? 'var(--danger)' : 'var(--success)';
-    return `
-    <div class="ld-card animate-in">
-      <div class="ld-card-title">Loading Dose Recommendation</div>
-      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-        <div>
-          <div class="ld-dose-display">${ld.dose} mg</div>
-          <div class="ld-dose-sub">over ${ld.tinf}h (${ld.rateMgMin.toFixed(1)} mg/min) · ${(ld.dose / d.tbw).toFixed(1)} mg/kg actual body weight · Vd = ${ld.vdLD.toFixed(1)} L · Kel = ${ld.kelLD.toFixed(4)} hr⁻¹</div>
-        </div>
-      </div>
-      <div class="ld-stat-row">
-        <div class="ld-stat">
-          <div class="ld-stat-label">Peak at end of infusion</div>
-          <div class="ld-stat-val">${ld.peak.toFixed(1)} mg/L</div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted)">target ${ld.targetPeak} mg/L</div>
-        </div>
-        <div class="ld-stat">
-          <div class="ld-stat-label">Level at start of maintenance</div>
-          <div class="ld-stat-val" style="color:${levelColor}">${ld.levelAtMaint.toFixed(1)} mg/L</div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted)">at ${ld.deltaT}h from LD start</div>
-        </div>
-        <div class="ld-stat">
-          <div class="ld-stat-label">First maintenance</div>
-          <div class="ld-stat-val">${d.optDose} mg Q${d.tau}H</div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted)">${d.levelFitted ? 'from the level-fitted Ke' : 'pop-estimated optimal dose'}</div>
-        </div>
-      </div>
-      <div style="font-size:var(--fs-xs);color:var(--text-muted);line-height:1.5;border-top:1px solid var(--border);padding-top:8px">
-        The loading dose uses the selected model's population volume and the institutional infusion time for its own size, not the maintenance infusion time.
-        ${ld.rateAboveMatzke ? `At ${ld.rateMgMin.toFixed(1)} mg/min this runs faster than the ${LD_MAX_RATE_MG_PER_MIN} mg/min Matzke 1984 recommends to avoid infusion reactions — consider a longer infusion. ` : ''}The level at the start of maintenance is a single-dose projection, not a steady-state trough. Adjust the maintenance regimen once a level is available.
-      </div>
-    </div>`;
-  })() : '';
-
-  const initialDosingTab = `
-    <div class="animate-in">
-      <p class="section-label">Population PK Parameters <span style="color:var(--text-muted);font-weight:400;font-size:var(--fs-xs);letter-spacing:0;text-transform:none">— ${clModelNames2[d.clModel]} CL · ${vdModelNames2[d.vdModel]} Vd</span></p>
-      <div class="pk-table">
-        <div class="pk-table-header">
-          <span class="pk-col-head">Parameter</span>
-          <span class="pk-col-head">Value</span>
-          <span class="pk-col-head">Units</span>
-        </div>
-        <div class="pk-row"><span class="pk-param">CrCl (CG)</span><span class="pk-val">${d.crcl.toFixed(1)}</span><span class="pk-unit">mL/min</span></div>
-        <div class="pk-row"><span class="pk-param">CLv</span><span class="pk-val">${d.popClv.toFixed(2)}</span><span class="pk-unit">L/hr</span></div>
-        <div class="pk-row"><span class="pk-param">Vd</span><span class="pk-val">${d.vd.toFixed(1)} <span style="font-size:var(--fs-xs);color:var(--text-muted)">(${(d.vd/d.tbw).toFixed(2)} L/kg)</span></span><span class="pk-unit">L</span></div>
-        <div class="pk-row"><span class="pk-param">Kel</span><span class="pk-val">${d.popKel.toFixed(4)}</span><span class="pk-unit">hr⁻¹</span></div>
-        <div class="pk-row"><span class="pk-param">Half-life</span><span class="pk-val">${popT12Fmt}</span><span class="pk-unit">hr</span></div>
-        <div class="pk-row"><span class="pk-param">IBW / AdjBW</span><span class="pk-val">${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}</span><span class="pk-unit">kg</span></div>
-        <div class="pk-row"><span class="pk-param">BMI</span><span class="pk-val">${d.bmi.toFixed(1)}</span><span class="pk-unit">kg/m²</span></div>
-      </div>
-    </div>
-    ${ldHTML}
-    <!-- PK Graph for Initial Dosing -->
-    <div class="pk-graph-box animate-in">
-      <div class="pk-graph-header">
-        <span class="pk-graph-title">Predicted SS Concentration-Time Profile</span>
-        <div class="pk-graph-legend">
-          <span><span class="leg-dot" style="background:var(--accent-amber)"></span> Peak</span>
-          <span><span class="leg-dot" style="background:var(--accent-blue)"></span> Trough</span>
-        </div>
-      </div>
-      <div class="pk-graph-canvas-wrap">
-        <canvas id="pk-graph-init"></canvas>
-      </div>
-    </div>
-    <div class="animate-in">
-      <p class="section-label">Maintenance Dose Recommendation</p>
-      <div class="rec-box" style="margin-top:0">
-        <div class="rec-dose">${d.optDose} mg <span>Q${d.tau}H</span></div>
-        ${optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin)}
-        <div class="rec-rationale">Based on ${d.levelFitted ? 'the level-fitted Ke (not population PK)' : 'population PK'} — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L</div>
-        <div class="rec-targets" style="margin-top:10px">
-          <div class="rec-target-chip"><span class="dot"></span>SS Trough: ${d.optPT.trough.toFixed(1)} mg/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>SS Peak: ${d.optPT.peak.toFixed(1)} mg/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>AUC₂₄: ${d.optAUC.toFixed(0)} mg·h/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>t½: ${popT12Fmt} hr</div>
-        </div>
-      </div>
-      ${troughRailHTML(d.optPT.trough, d.optAUC, d.troughMin)}
-      <p style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:8px;line-height:1.5">
-        Initial dose is population-estimated. Obtain a steady-state level (≥3 doses) to individualise PK and confirm AUC target is met.
-      </p>
-      ${tinkererHTML('init', d.tau)}
-    </div>`;
-
-  // Determine default active tab
-  const defaultTab = (d.hasLevel || d.hasLD) ? (d.hasLevel ? 'tab-level' : 'tab-initial') : 'tab-initial';
+  const sections = [
+    txEvHTML('tx-ev-exposure', isInitialMode ? 'Predicted exposure' : 'Current regimen',
+      `${fmtRegimen(d.dose, d.tau)} · AUC₂₄ ${d.auc24.toFixed(0)} · trough ${d.trough.toFixed(1)} mg/L${d.levelFitted ? ` (${troughBasisWord})` : ''}`,
+      exposureBody, false),
+    txEvHTML('tx-ev-pk', 'PK parameters',
+      `CL ${d.adjClv.toFixed(2)} L/h · Vd ${d.vd.toFixed(1)} L · t½ ${d.t12.toFixed(1)} h${d.levelFitted ? ' · fitted from measured level' : ''}`,
+      pkBody, false),
+    txEvHTML('tx-ev-explorer', 'Dose explorer', 'Alternative regimens on the same PK', explorerBody, false),
+    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak; redraws the curve',
+      tinkererHTML('ss', d.tau), false),
+    txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
+      txDisclaimerHTML('This tool is intended to support, not replace, clinical pharmacokinetic judgment. Dose recommendations should be verified against institutional protocols, patient-specific clinical context, and current guidelines (Rybak et al., ASHP/IDSA 2020). AinaDara v1.0 · Phase 1 (Trough-Based)'), false),
+  ];
 
   rc.innerHTML = `
-    <!-- Tab bar -->
-    <div class="result-tabs">
-      <button class="result-tab ${defaultTab==='tab-initial'?'active':''}" data-tab="tab-initial" data-onclick="k53">Initial Dosing</button>
-      <button class="result-tab ${defaultTab==='tab-level'?'active':''}" data-tab="tab-level" data-onclick="k54">Steady State Trough</button>
-    </div>
-
-    <!-- Initial Dosing tab -->
-    <div class="result-tab-panel ${defaultTab==='tab-initial'?'active':''}" id="tab-initial" style="gap:20px">
-      ${initialDosingTab}
-    </div>
-
-    <!-- Steady State Trough tab -->
-    <div class="result-tab-panel ${defaultTab==='tab-level'?'active':''}" id="tab-level" style="gap:20px">
-
-    <!-- Recommendation -->
-    <div class="rec-box animate-in">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div class="rec-title" style="margin-bottom:0">${recAction.title}</div>
-        <span class="stat-badge ${recAction.badge}" style="position:static">${recAction.badgeText}</span>
-        ${a.divergence ? `<span class="stat-badge badge-warn" style="position:static;background:rgba(184,125,48,0.15);color:var(--accent-amber);border-color:rgba(184,125,48,0.35)">Trough–AUC Divergence</span>` : ''}
-      </div>
-      <div class="rec-dose">${recRegimen.split(' ')[0]} <span>${recRegimen.split(' ').slice(1).join(' ')}</span></div>
-      ${showOptDose ? optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin) : ''}
-      ${recRat ? `<div class="rec-rationale">${recRat}</div>` : ''}
-      ${divergenceHTML}
-      <div class="rec-targets">
-        <div class="rec-target-chip"><span class="dot ${d.aucStatus!=='ok'?'warn':''}"></span>AUC₂₄: ${d.auc24.toFixed(0)} mg·h/L</div>
-        <div class="rec-target-chip"><span class="dot"></span>Peak: ${d.peak.toFixed(1)} mg/L</div>
-        <div class="rec-target-chip"><span class="dot"></span>T½: ${d.t12.toFixed(1)} hr</div>
-        <div class="rec-target-chip"><span class="dot ${d.aucMIC<400?'warn':''}"></span>AUC:MIC: ${d.aucMIC.toFixed(0)}</div>
-      </div>
-      ${troughRailHTML(d.trough, d.auc24, d.troughMin)}
-      ${tinkererHTML('ss', d.tau)}
-    </div>
-
-    <!-- Key Metrics Row -->
-    <div class="result-row animate-in">
-      <div class="stat-card ${d.aucStatus}">
-        <div class="stat-label">AUC₂₄ <span style="font-size:var(--fs-xs);letter-spacing:0;text-transform:none;color:var(--text-muted);font-weight:400">(primary target)</span></div>
-        <div class="stat-value">${d.auc24.toFixed(0)}</div>
-        <div class="stat-unit">mg·h/L · target 400–600</div>
-        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:4px;font-family:var(--font-num)">${aucConfText}</div>
-        <span class="stat-badge ${aucBadge}">${aucText}</span>
-      </div>
-      <div class="stat-card ${d.troughStatus}">
-        <div class="stat-label">Trough <span style="font-size:var(--fs-xs);letter-spacing:0;text-transform:none;color:var(--text-muted);font-weight:400">(secondary)</span></div>
-        <div class="stat-value">${d.trough.toFixed(1)}</div>
-        <div class="stat-unit">mg/L · target ${d.troughMin}–${d.troughMax}</div>
-        ${d.extrapolated ? `<div style="font-size:var(--fs-xs);color:var(--accent-amber);margin-top:4px">⟳ extrapolated</div>` : ''}
-        <span class="stat-badge ${troughBadge}">${troughText}</span>
-      </div>
-      <div class="stat-card info">
-        <div class="stat-label">Predicted Peak</div>
-        <div class="stat-value">${d.peak.toFixed(1)}</div>
-        <div class="stat-unit">mg/L · end of infusion</div>
-      </div>
-      <div class="stat-card info">
-        <div class="stat-label">AUC:MIC Ratio</div>
-        <div class="stat-value">${d.aucMIC.toFixed(0)}</div>
-        <div class="stat-unit">target ≥400 (MIC ${d.mic} mg/L)</div>
-        <span class="stat-badge ${d.aucMIC>=400?'badge-ok':'badge-warn'}">${d.aucMIC>=400?'On Target':'Low'}</span>
-      </div>
-    </div>
-
-    <!-- Trough Gauge -->
-    <div class="interp-bar animate-in">
-      <div class="interp-title">Trough Interpretation</div>
-      <div class="trough-gauge-wrap">
-        <div class="trough-gauge-track"></div>
-        <div class="trough-pointer" style="left:${gaugePos}%"></div>
-      </div>
-      <div class="gauge-labels">
-        <span class="gauge-label">0</span>
-        <span class="gauge-label">5</span>
-        <span class="gauge-label">10</span>
-        <span class="gauge-label">15</span>
-        <span class="gauge-label">20</span>
-        <span class="gauge-label">25</span>
-        <span class="gauge-label">30 mg/L</span>
-      </div>
-      <div class="interp-verdict" style="color:var(--${d.troughStatus==='ok'?'success':d.troughStatus==='warn'?'warning':'danger'})">${a.primary}</div>
-      ${d.levelFitted ? `
-      <div class="interp-detail" style="margin-top:8px">
-        ${d.extrapolated
-          ? `<span style="color:var(--accent-amber)">⟳ Extrapolated trough</span> — observed ${d.levelVal} mg/L at ${d.tDoseToLvl.toFixed(1)}h → true trough: <strong>${d.trough.toFixed(1)} mg/L</strong> (${d.extrapDelta>0?`${d.extrapDelta.toFixed(1)}h before next dose`:`${Math.abs(d.extrapDelta).toFixed(1)}h after due`})`
-          : d.troughBasis === 'model'
-            ? `<span style="color:var(--accent-amber)">Model-predicted trough</span> — the level was drawn at ${d.tDoseToLvl.toFixed(1)}h (${d.tDoseToLvl <= d.tinf ? 'during the infusion' : 'before steady state'}), so the trough shown is the fitted steady-state projection, not a measurement`
-            : `<span style="color:var(--success)">✓ True trough</span> — level drawn at ${d.tDoseToLvl.toFixed(1)}h (end of dosing interval)`
-        }
-      </div>` : `
-      <div class="interp-detail">Population-estimated trough from ${clModelNames[d.clModel]} model · No measured level entered</div>`}
-    </div>
-
-    <!-- PK Concentration-Time Graph -->
-    <div class="pk-graph-box animate-in">
-      <div class="pk-graph-header">
-        <span class="pk-graph-title">Predicted Concentration-Time Profile</span>
-        <div class="pk-graph-legend">
-          <span><span class="leg-dot" style="background:var(--accent-amber)"></span> Peak</span>
-          <span><span class="leg-dot" style="background:var(--accent-blue)"></span> Trough</span>
-          ${d.levelFitted ? `<span><span class="leg-dot" style="background:var(--accent-rose)"></span> Observed</span>` : ''}
-        </div>
-      </div>
-      <div class="pk-graph-canvas-wrap">
-        <canvas id="pk-graph-ss"></canvas>
-      </div>
-    </div>
-
-    <!-- PK Parameters -->
-    <div class="animate-in">
-      <p class="section-label">Pharmacokinetic Parameters ${d.levelFitted ? '<span style="color:var(--accent-amber);font-weight:400;font-size:var(--fs-xs);letter-spacing:0;text-transform:none">— fitted from measured level</span>' : ''}</p>
-      <div class="pk-table">
-        <div class="pk-table-header">
-          <span class="pk-col-head">Parameter</span>
-          <span class="pk-col-head">${d.levelFitted ? 'Individual (Fitted)' : 'Population'}</span>
-          <span class="pk-col-head">Units</span>
-        </div>
-        <div class="pk-row"><span class="pk-param">CrCl (CG)</span><span class="pk-val">${d.crcl.toFixed(1)}</span><span class="pk-unit">mL/min</span></div>
-        <div class="pk-row"><span class="pk-param">Vd</span><span class="pk-val">${d.vd.toFixed(1)} <span style="font-size:var(--fs-xs);color:var(--text-muted)">(${(d.vd/d.tbw).toFixed(2)} L/kg)</span></span><span class="pk-unit">L</span></div>
-        <div class="pk-row">
-          <span class="pk-param">CLv</span>
-          <span class="pk-val">${d.adjClv.toFixed(2)} ${d.levelFitted ? `<span style="font-size:var(--fs-xs);color:var(--text-muted)">(pop: ${d.popClv.toFixed(2)})</span>` : ''}</span>
-          <span class="pk-unit">L/hr</span>
-        </div>
-        <div class="pk-row">
-          <span class="pk-param">Kel</span>
-          <span class="pk-val">${d.kel.toFixed(4)} ${d.levelFitted ? `<span style="font-size:var(--fs-xs);color:var(--text-muted)">(pop: ${d.popKel.toFixed(4)})</span>` : ''}</span>
-          <span class="pk-unit">hr⁻¹</span>
-        </div>
-        <div class="pk-row">
-          <span class="pk-param">Half-life</span>
-          <span class="pk-val">${d.t12.toFixed(1)} ${d.levelFitted ? `<span style="font-size:var(--fs-xs);color:var(--text-muted)">(pop: ${d.popT12.toFixed(1)})</span>` : ''}</span>
-          <span class="pk-unit">hr</span>
-        </div>
-        ${d.levelFitted ? `
-        <div class="pk-row"><span class="pk-param">Observed level</span><span class="pk-val">${d.levelVal} <span style="font-size:var(--fs-xs);color:var(--text-muted)">at ${d.tDoseToLvl.toFixed(1)}h from dose</span></span><span class="pk-unit">mg/L</span></div>
-        <div class="pk-row"><span class="pk-param">${d.extrapolated ? 'Extrapolated trough' : d.troughBasis === 'model' ? 'Predicted trough' : 'True trough'}</span><span class="pk-val">${d.trough.toFixed(1)}</span><span class="pk-unit">mg/L</span></div>` : ''}
-        <div class="pk-row"><span class="pk-param">Pred. SS peak</span><span class="pk-val">${d.peak.toFixed(1)}</span><span class="pk-unit">mg/L</span></div>
-        <div class="pk-row"><span class="pk-param">IBW / AdjBW</span><span class="pk-val">${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}</span><span class="pk-unit">kg</span></div>
-        <div class="pk-row"><span class="pk-param">BMI</span><span class="pk-val">${d.bmi.toFixed(1)}</span><span class="pk-unit">kg/m²</span></div>
-        <div class="pk-row"><span class="pk-param">Models</span><span class="pk-val" style="font-size:var(--fs-xs);color:var(--text-secondary)">${clModelNames[d.clModel]} CL · ${vdModelNames[d.vdModel]} Vd</span><span class="pk-unit"></span></div>
-      </div>
-      <p class="auc-method-note">${d.aucMethod}</p>
-    </div>
-
-    <!-- Dose Explorer -->
-    <div class="animate-in">
-      <p class="section-label">Dose Explorer — Alternative Regimens</p>
-      <div class="explorer-box">
-        <div class="explorer-header">
-          <span class="explorer-title">Projected Outcomes by Dose & Interval</span>
-          <span class="model-pill">★ = Recommended</span>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="explorer-table">
-            <thead>
-              <tr>
-                <th>Regimen</th>
-                <th>Trough (mg/L)</th>
-                <th>Peak (mg/L)</th>
-                <th>AUC₂₄</th>
-                <th>AUC:MIC</th>
-              </tr>
-            </thead>
-            <tbody>${explorerHTML}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Footer note -->
-    <div style="font-size:var(--fs-xs);color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px;line-height:1.6">
-      <strong style="color:var(--text-secondary)">Clinical Disclaimer</strong> — This tool is intended to support, not replace, clinical pharmacokinetic judgment. Dose recommendations should be verified against institutional protocols, patient-specific clinical context, and current guidelines (Rybak et al., ASHP/IDSA 2020). AinaDara v1.0 · Phase 1 (Trough-Based)
-    </div>
-
-    </div>`; /* close Steady State Trough tab panel */
+    <div class="tx-result">
+      <h2 class="sr-only">Trough-based result</h2>
+      <div class="tx-top">${verdict}${ldHTML}${figure}</div>
+      ${txNotesHTML(notes)}
+      <div class="vx-evidence">${sections.join('')}</div>
+    </div>`;
 
   updateModelInfo();
   // Store global PK state for dose tinkerer
   _pk = { tau: d.tau, tinf: d.tinf, kel: d.kel, vd: d.vd, clv: d.adjClv,
           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
-  // Draw PK graphs after DOM insertion
+  announceResult(`Result: ${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
+  // Draw the PK graph after DOM insertion
   requestAnimationFrame(() => {
-    drawPKGraph('pk-graph-init', d.optDose || d.dose, d.tau, d.tinf, d.kel, d.vd, {
-      troughMin: d.troughMin, troughMax: d.troughMax
-    });
     drawPKGraph('pk-graph-ss', d.dose, d.tau, d.tinf, d.kel, d.vd, {
       troughMin: d.troughMin, troughMax: d.troughMax,
       obsLevel: d.levelFitted ? d.levelVal : null,
-      obsTime: d.levelFitted ? d.tDoseToLvl : null
+      obsTime: d.levelFitted ? d.tDoseToLvl : null,
+      role: showOptDose ? 'current' : 'rec',
+      overlay: showOptDose ? { dose: d.optDose } : null,
     });
   });
 }
@@ -6644,15 +6589,8 @@ function renderTwoLevels(d) {
   const rc = document.getElementById('results-content');
   rc.style.display = 'flex';
 
-  // AUC status
-  const aucStatus  = d.auc24 < AUC24_TARGET_MIN ? 'warn' : d.auc24 <= AUC24_TARGET_MAX ? 'ok' : 'danger';
-  const aucBadge   = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[aucStatus];
-  const aucText    = {ok:'In Range', warn:'Subtherapeutic', danger:'Supratherapeutic'}[aucStatus];
-
-  // Trough status for recommended dose
+  // Trough of the recommended dose
   const trough = d.optPT.trough;
-  const troughStatus = trough < d.troughMin * 0.8 ? 'danger' : trough < d.troughMin ? 'warn' : trough <= d.troughMax ? 'ok' : trough <= d.troughMax * 1.2 ? 'warn' : 'danger';
-  const troughBadge  = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[troughStatus];
 
   // PK comparison vs population
   const kelDiff   = ((d.kel - d.popKel) / d.popKel * 100).toFixed(0);
@@ -6660,194 +6598,75 @@ function renderTwoLevels(d) {
   const clvDiff   = ((d.clv - d.popClv) / d.popClv * 100).toFixed(0);
   const t12Ind    = (0.693 / d.kel).toFixed(1);
   const t12Pop    = (0.693 / d.popKel).toFixed(1);
-
-  const diffBadge = (pct) => {
-    const n = parseFloat(pct);
-    const sign = n > 0 ? '+' : '';
-    const color = Math.abs(n) > 30 ? 'var(--warning)' : Math.abs(n) > 15 ? 'var(--accent-amber)' : 'var(--text-muted)';
-    return `<span style="font-size:var(--fs-xs);color:${color};font-family:var(--font-num)">${sign}${pct}%</span>`;
-  };
+  const basisLabel = d.basis === 'steadystate' ? 'At Steady State' : 'First Dose';
 
   // Dose explorer using individual PK
   const explorerHTML = doseExplorerRows({ tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
     mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
 
+  const verdict = txVerdictHTML({
+    dose: d.optDose, tau: d.tlTau, tinf: d.tlTinf,
+    auc: d.optAUC, aucBand: '',
+    trough, troughWord: 'predicted at steady state', troughMin: d.troughMin, troughMax: d.troughMax,
+    peak: d.optPT.peak, mic: d.mic,
+    action: '',
+    flags: optFlagHTML(d.optFlag, d.optFlagMsg, d.tlTau, d.optAUC, d.optPT.trough, d.troughMin)
+         + troughRailHTML(trough, d.optAUC, d.troughMin),
+    basis: `Based on individual PK from two levels (${basisLabel.toLowerCase()}) — Kel ${d.kel.toFixed(4)} h⁻¹, Vd ${d.vd.toFixed(1)} L, t½ ${t12Ind} h`,
+    next: '',
+  });
+  const figure = txCurveHTML({ id: 'pk-graph-tl', suffix: 'tl',
+    legend: [{ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.tlTau)}` },
+             { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
+             { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` }],
+    summary: `Projected steady state on ${fmtRegimen(d.optDose, d.tlTau)}: peak ${d.optPT.peak.toFixed(1)} mg/L, trough ${trough.toFixed(1)} mg/L. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` });
+
+  const levelsBody = `
+    <dl class="ev-dl">
+      <div><dt>Level 1</dt><dd>${d.c1.toFixed(1)} mg/L <span class="vx-muted">${d.t1.toFixed(1)} h after dose start</span></dd></div>
+      <div><dt>Level 2</dt><dd>${d.c2.toFixed(1)} mg/L <span class="vx-muted">${d.t2.toFixed(1)} h after dose start · Δ ${(d.t2-d.t1).toFixed(1)} h interval</span></dd></div>
+      <div><dt>Dose</dt><dd>${fmtDose(d.tlDose)} <span class="vx-muted">over ${fmtHrs(d.tlTinf)}</span></dd></div>
+      <div><dt>Back-extrapolated peak</dt><dd>${d.peak.toFixed(1)} mg/L</dd></div>
+    </dl>
+    <p class="ev-note"><strong>Method:</strong> Kel derived from log-linear decay between levels.</p>`;
+
+  const diffPct = (pct) => {
+    const n = parseFloat(pct), sign = n > 0 ? '+' : '';
+    return `<span class="${Math.abs(n) > 15 ? 'tone-caution' : 'vx-muted'}">${sign}${pct}%</span>`;
+  };
+  const pkBody = `
+    ${txTableHTML(['Parameter', 'Individual', 'Population', 'Units'], [
+      ['CrCl (CG)', d.crcl.toFixed(1), '—', 'mL/min'],
+      ['Kel', `${d.kel.toFixed(4)} ${diffPct(kelDiff)}`, d.popKel.toFixed(4), 'h⁻¹'],
+      ['Half-life', t12Ind, t12Pop, 'h'],
+      ['Vd', `${d.vd.toFixed(1)} ${diffPct(vdDiff)}`, d.popVd.toFixed(1), 'L'],
+      ['CLv', `${d.clv.toFixed(2)} ${diffPct(clvDiff)}`, d.popClv.toFixed(2), 'L/h'],
+      ['IBW / AdjBW', `${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}`, '—', 'kg'],
+    ], 'Derived from the two-level fit, against the population values; the percentage is the difference from population')}
+    <p class="ev-note vx-muted">Kel = ln(C₁/C₂) / (t₂−t₁) · ${d.basis === 'steadystate' ? 'Vd from the steady-state peak equation (accumulation on the interval the levels were drawn on)' : 'Vd from single-dose peak equation'} · CLv = Kel × Vd</p>`;
+
+  const sections = [
+    txEvHTML('tx-ev-levels', 'Your levels', `Observed levels — ${basisLabel.toLowerCase()} · ${d.c1.toFixed(1)} and ${d.c2.toFixed(1)} mg/L`, levelsBody, false),
+    txEvHTML('tx-ev-pk', 'PK parameters', `Kel ${d.kel.toFixed(4)} h⁻¹ · Vd ${d.vd.toFixed(1)} L · t½ ${t12Ind} h`, pkBody, false),
+    txEvHTML('tx-ev-explorer', 'Dose explorer', 'Projected steady state using the fitted Kel and Vd',
+      txExplorerHTML(explorerHTML, 'Projected steady-state outcomes · using fitted Kel &amp; Vd'), false),
+    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak; redraws the curve',
+      tinkererHTML('tl', d.tlTau), false),
+    txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
+      txDisclaimerHTML(`Two-level PK estimation ${d.basis === 'steadystate' ? 'at steady state' : 'after the first dose'} assumes the levels are in the post-distribution phase. This approach is most reliable in patients with stable renal function. Verify recommended dose with a steady-state level once available. AinaDara v1.0 · Phase 2 (Two Levels${d.basis === 'steadystate' ? ' at Steady State' : ' After First Dose'})`), false),
+  ];
+
   rc.innerHTML = `
-    <!-- Tab bar -->
-    <div class="result-tabs">
-      <button class="result-tab active" data-tab="tab-twolevels" data-onclick="k55">Two Levels</button>
-    </div>
-
-    <!-- Two Levels tab -->
-    <div class="result-tab-panel active" id="tab-twolevels" style="gap:20px">
-
-    <!-- Observed Levels Summary -->
-    <div class="animate-in">
-      <p class="section-label">Observed Levels — ${d.basis === 'steadystate' ? 'At Steady State' : 'First Dose'}</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
-          <div style="font-size:var(--fs-xs);letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Level 1</div>
-          <div style="font-size:var(--fs-lg);font-family:var(--font-num);color:var(--text-primary)">${d.c1.toFixed(1)} <span style="font-size:var(--fs-xs);color:var(--text-secondary)">mg/L</span></div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:4px">${d.t1.toFixed(1)} hr after dose start</div>
-        </div>
-        <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
-          <div style="font-size:var(--fs-xs);letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Level 2</div>
-          <div style="font-size:var(--fs-lg);font-family:var(--font-num);color:var(--text-primary)">${d.c2.toFixed(1)} <span style="font-size:var(--fs-xs);color:var(--text-secondary)">mg/L</span></div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:4px">${d.t2.toFixed(1)} hr after dose start · Δ ${(d.t2-d.t1).toFixed(1)} hr interval</div>
-        </div>
-      </div>
-      <div style="margin-top:10px;font-size:var(--fs-xs);color:var(--text-muted);line-height:1.6;background:var(--bg-elevated);border-radius:var(--radius-sm);padding:10px 14px">
-        <strong style="color:var(--text-secondary)">Method:</strong> Kel derived from log-linear decay between levels.
-        Back-extrapolated peak: <span style="color:var(--text-primary);font-family:var(--font-num)">${d.peak.toFixed(1)} mg/L</span>
-        · Dose: <span style="color:var(--text-primary);font-family:var(--font-num)">${d.tlDose} mg</span>
-        over <span style="color:var(--text-primary);font-family:var(--font-num)">${d.tlTinf} h</span>
-      </div>
-    </div>
-
-    <!-- PK Parameters: Individual vs Population -->
-    <div class="animate-in">
-      <p class="section-label">Individual PK Parameters <span style="color:var(--accent-amber);font-weight:400;font-size:var(--fs-xs);letter-spacing:0;text-transform:none">— derived from two-level fit</span></p>
-      <div class="pk-table">
-        <div class="pk-table-header">
-          <span class="pk-col-head">Parameter</span>
-          <span class="pk-col-head">Individual</span>
-          <span class="pk-col-head">Population</span>
-          <span class="pk-col-head">Units</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">CrCl (CG)</span>
-          <span class="pk-val">${d.crcl.toFixed(1)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">—</span>
-          <span class="pk-unit">mL/min</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">Kel</span>
-          <span class="pk-val">${d.kel.toFixed(4)} ${diffBadge(kelDiff)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${d.popKel.toFixed(4)}</span>
-          <span class="pk-unit">hr⁻¹</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">Half-life</span>
-          <span class="pk-val">${t12Ind}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${t12Pop}</span>
-          <span class="pk-unit">hr</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">Vd</span>
-          <span class="pk-val">${d.vd.toFixed(1)} ${diffBadge(vdDiff)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${d.popVd.toFixed(1)}</span>
-          <span class="pk-unit">L</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">CLv</span>
-          <span class="pk-val">${d.clv.toFixed(2)} ${diffBadge(clvDiff)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${d.popClv.toFixed(2)}</span>
-          <span class="pk-unit">L/hr</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">IBW / AdjBW</span>
-          <span class="pk-val">${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">—</span>
-          <span class="pk-unit">kg</span>
-        </div>
-      </div>
-      <p class="auc-method-note">Kel = ln(C₁/C₂) / (t₂−t₁) · ${d.basis === 'steadystate' ? 'Vd from the steady-state peak equation (accumulation on the interval the levels were drawn on)' : 'Vd from single-dose peak equation'} · CLv = Kel × Vd</p>
-    </div>
-
-    <!-- Maintenance Dose Recommendation -->
-    <div class="animate-in">
-      <p class="section-label">Maintenance Dose Recommendation</p>
-      <div class="rec-box" style="margin-top:0">
-        <div class="rec-dose">${d.optDose} mg <span>Q${d.tlTau}H</span></div>
-        ${optFlagHTML(d.optFlag, d.optFlagMsg, d.tlTau, d.optAUC, d.optPT.trough, d.troughMin)}
-        <div class="rec-rationale">Based on individual PK — estimated SS trough ${trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L · t½ ${t12Ind} hr</div>
-        <div class="rec-targets" style="margin-top:10px">
-          <div class="rec-target-chip"><span class="dot ${aucStatus!=='ok'?'warn':''}"></span>AUC₂₄: ${d.optAUC.toFixed(0)} mg·h/L</div>
-          <div class="rec-target-chip"><span class="dot ${troughStatus!=='ok'?'warn':''}"></span>SS Trough: ${trough.toFixed(1)} mg/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>SS Peak: ${d.optPT.peak.toFixed(1)} mg/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>t½: ${t12Ind} hr</div>
-        </div>
-        ${troughRailHTML(trough, d.optAUC, d.troughMin)}
-        ${tinkererHTML('tl', d.tlTau)}
-      </div>
-    </div>
-
-    <!-- PK Concentration-Time Graph -->
-    <div class="pk-graph-box animate-in">
-      <div class="pk-graph-header">
-        <span class="pk-graph-title">Projected SS Concentration-Time Profile</span>
-        <div class="pk-graph-legend">
-          <span><span class="leg-dot" style="background:var(--accent-amber)"></span> Peak</span>
-          <span><span class="leg-dot" style="background:var(--accent-blue)"></span> Trough</span>
-        </div>
-      </div>
-      <div class="pk-graph-canvas-wrap">
-        <canvas id="pk-graph-tl"></canvas>
-      </div>
-    </div>
-
-    <!-- Projected SS at Recommended Dose -->
-    <div class="result-row animate-in">
-      <div class="stat-card ${aucStatus}">
-        <div class="stat-label">AUC₂₄ <span style="font-size:var(--fs-xs);letter-spacing:0;text-transform:none;color:var(--text-muted);font-weight:400">(primary target)</span></div>
-        <div class="stat-value">${d.optAUC.toFixed(0)}</div>
-        <div class="stat-unit">mg·h/L · target 400–600</div>
-        <span class="stat-badge ${aucBadge}">${aucText}</span>
-      </div>
-      <div class="stat-card ${troughStatus}">
-        <div class="stat-label">Proj. SS Trough</div>
-        <div class="stat-value">${trough.toFixed(1)}</div>
-        <div class="stat-unit">mg/L · target ${d.troughMin}–${d.troughMax}</div>
-        <span class="stat-badge ${troughBadge}">${{ok:'Therapeutic',warn:'Review',danger:'Action Needed'}[troughStatus]}</span>
-      </div>
-      <div class="stat-card info">
-        <div class="stat-label">Proj. SS Peak</div>
-        <div class="stat-value">${d.optPT.peak.toFixed(1)}</div>
-        <div class="stat-unit">mg/L</div>
-      </div>
-      <div class="stat-card info">
-        <div class="stat-label">AUC:MIC Ratio</div>
-        <div class="stat-value">${(d.optAUC/d.mic).toFixed(0)}</div>
-        <div class="stat-unit">MIC ${d.mic} mg/L</div>
-        <span class="stat-badge ${(d.optAUC/d.mic)>=400?'badge-ok':'badge-warn'}">${(d.optAUC/d.mic)>=400?'On Target':'Low'}</span>
-      </div>
-    </div>
-
-    <!-- Dose Explorer -->
-    <div class="animate-in">
-      <p class="section-label">Dose Explorer — Individual PK</p>
-      <div class="explorer-box">
-        <div class="explorer-header">
-          <span class="explorer-title">Projected SS Outcomes · Using Fitted Kel &amp; Vd</span>
-          <span class="model-pill">★ = Recommended</span>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="explorer-table">
-            <thead>
-              <tr>
-                <th>Regimen</th>
-                <th>Trough (mg/L)</th>
-                <th>Peak (mg/L)</th>
-                <th>AUC₂₄</th>
-                <th>AUC:MIC</th>
-              </tr>
-            </thead>
-            <tbody>${explorerHTML}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Footer note -->
-    <div style="font-size:var(--fs-xs);color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px;line-height:1.6">
-      <strong style="color:var(--text-secondary)">Clinical Disclaimer</strong> — Two-level PK estimation ${d.basis === 'steadystate' ? 'at steady state' : 'after the first dose'} assumes the levels are in the post-distribution phase. This approach is most reliable in patients with stable renal function. Verify recommended dose with a steady-state level once available. AinaDara v1.0 · Phase 2 (Two Levels${d.basis === 'steadystate' ? ' at Steady State' : ' After First Dose'})
-    </div>
-
-    </div>`; /* close Two Levels tab panel */
+    <div class="tx-result">
+      <h2 class="sr-only">Two-level result</h2>
+      <div class="tx-top">${verdict}${figure}</div>
+      <div class="vx-evidence">${sections.join('')}</div>
+    </div>`;
 
   updateModelInfo();
   _pk = { tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
+  announceResult(`Result: ${fmtRegimen(d.optDose, d.tlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-tl', d.optDose, d.tlTau, d.tlTinf, d.kel, d.vd, {
       troughMin: d.troughMin, troughMax: d.troughMax
@@ -6863,226 +6682,97 @@ function renderRandomLevel(d) {
   const rc = document.getElementById('results-content');
   rc.style.display = 'flex';
 
-  const aucStatus  = d.optAUC < 400 ? 'warn' : d.optAUC <= 600 ? 'ok' : 'danger';
-  const aucBadge   = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[aucStatus];
-  const aucText    = {ok:'In Range', warn:'Subtherapeutic', danger:'Supratherapeutic'}[aucStatus];
   const trough     = d.optPT.trough;
-  const troughStatus = trough < d.troughMin*0.8 ? 'danger' : trough < d.troughMin ? 'warn' : trough <= d.troughMax ? 'ok' : trough <= d.troughMax*1.2 ? 'warn' : 'danger';
-  const troughBadge  = {ok:'badge-ok', warn:'badge-warn', danger:'badge-danger'}[troughStatus];
-
   const kelPctDiff  = ((d.indKel  - d.popKel) / d.popKel  * 100).toFixed(0);
   const clvPctDiff  = ((d.indClv  - d.popClv) / d.popClv  * 100).toFixed(0);
   const t12Pop      = (0.693 / d.popKel).toFixed(1);
-  const diffBadge   = pct => {
+  const diffPct = (pct) => {
     const n = parseFloat(pct), sign = n > 0 ? '+' : '';
-    const color = Math.abs(n) > 30 ? 'var(--warning)' : Math.abs(n) > 15 ? 'var(--accent-amber)' : 'var(--text-muted)';
-    return `<span style="font-size:var(--fs-xs);color:${color};font-family:var(--font-num)">${sign}${pct}%</span>`;
+    return `<span class="${Math.abs(n) > 15 ? 'tone-caution' : 'vx-muted'}">${sign}${pct}%</span>`;
   };
 
-  const scenarioLabel = d.rlSubMode === 'firstdose' ? 'First Dose' : `Steady State (Q${d.rlInterval}H)`;
+  const scenarioLabel = d.rlSubMode === 'firstdose' ? 'First dose' : `Steady state (${fmtFreq(d.rlInterval)})`;
   const methodNote    = d.rlSubMode === 'firstdose'
     ? `Single-dose equation: C(t) = (Dose / (tinf·Kel·Vd_pop)) × (1−e<sup>−Kel·tinf</sup>) × e<sup>−Kel·(t−tinf)</sup>. Population Vd fixed; Kel solved by bisection.`
-    : `Steady-state equation: C(t) solved numerically at t=${d.rlT.toFixed(1)}h within Q${d.rlInterval}H dosing interval. Population Vd fixed; Kel fitted by bisection.`;
+    : `Steady-state equation: C(t) solved numerically at t = ${d.rlT.toFixed(1)} h within the ${fmtFreq(d.rlInterval)} dosing interval. Population Vd fixed; Kel fitted by bisection.`;
 
   // Dose explorer
   const explorerHTML = doseExplorerRows({ tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
     mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
 
+  const verdict = txVerdictHTML({
+    dose: d.optDose, tau: d.rlTau, tinf: d.rlTinf, kind: 'scheduled maintenance',
+    auc: d.optAUC, aucBand: '',
+    trough, troughWord: 'predicted at steady state', troughMin: d.troughMin, troughMax: d.troughMax,
+    peak: d.optPT.peak, mic: d.mic,
+    action: '',
+    flags: optFlagHTML(d.optFlag, d.optFlagMsg, d.rlTau, d.optAUC, d.optPT.trough, d.troughMin)
+         + troughRailHTML(trough, d.optAUC, d.troughMin),
+    basis: `Based on fitted Kel (Vd population) — Kel ${d.indKel.toFixed(4)} h⁻¹ from your level, Vd ${d.popVd.toFixed(1)} L fixed, t½ ${d.indT12.toFixed(1)} h`,
+    next: '',
+  });
+  const figure = txCurveHTML({ id: 'pk-graph-rl', suffix: 'rl',
+    legend: [{ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.rlTau)}` },
+             { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
+             { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` }],
+    summary: `Projected steady state on ${fmtRegimen(d.optDose, d.rlTau)}: peak ${d.optPT.peak.toFixed(1)} mg/L, trough ${trough.toFixed(1)} mg/L. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` });
+
+  const levelBody = `
+    <dl class="ev-dl">
+      <div><dt>Measured concentration</dt><dd>${d.rlC.toFixed(1)} mg/L <span class="vx-muted">${d.rlT.toFixed(1)} h after dose start</span></dd></div>
+      <div><dt>Dose given</dt><dd>${fmtDose(d.rlDose)} <span class="vx-muted">over ${fmtHrs(d.rlTinf)} · Vd fixed at ${d.popVd.toFixed(1)} L (population)</span></dd></div>
+    </dl>
+    <p class="ev-note"><strong>Method:</strong> ${methodNote}</p>`;
+
+  const pkBody = `
+    ${txTableHTML(['Parameter', 'Individual', 'Population', 'Units'], [
+      ['CrCl (CG)', d.crcl.toFixed(1), '—', 'mL/min'],
+      ['Kel', `${d.indKel.toFixed(4)} ${diffPct(kelPctDiff)}`, d.popKel.toFixed(4), 'h⁻¹'],
+      ['Half-life', d.indT12.toFixed(1), t12Pop, 'h'],
+      ['Vd', `${d.popVd.toFixed(1)} <span class="vx-muted">(pop fixed)</span>`, d.popVd.toFixed(1), 'L'],
+      ['CLv', `${d.indClv.toFixed(2)} ${diffPct(clvPctDiff)}`, d.popClv.toFixed(2), 'L/h'],
+      ['IBW / AdjBW', `${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}`, '—', 'kg'],
+    ], 'Vd from population, Kel from the level; the percentage is the difference from population')}
+    ${noteHTML({ tier: 'caution', word: 'Limit of a single level',
+      html: 'Vd is fixed at the population estimate. Kel accuracy depends on the level being drawn during the post-distribution phase (not during infusion). Two-level sampling (Phase 2) provides a more complete individual PK characterisation.' })}`;
+
+  // PRN / one-time dose (level-based dosing). Inputs keep their ids: calcPRNDose reads them.
+  const prnBody = `
+    <p class="ev-lead"><strong>Level-based / PRN dosing calculator.</strong></p>
+    <p class="ev-note">Use when scheduling a fixed regimen is not appropriate — e.g. AKI with fluctuating renal function. Calculates the dose needed to reach a target peak, given the patient's current level and the time it will take to reach the redosing threshold.</p>
+    <div class="tx-prn-controls">
+      <label for="prn-redose-thresh">Redose threshold
+        <span class="tx-field"><input type="number" class="prn-ctrl-input" id="prn-redose-thresh" value="${d.troughMin}" min="5" max="20" step="1" inputmode="decimal"> <span class="vx-muted">mg/L</span></span></label>
+      <label for="prn-target-peak">Target peak
+        <span class="tx-field"><input type="number" class="prn-ctrl-input" id="prn-target-peak" value="28" min="15" max="45" step="1" inputmode="decimal"> <span class="vx-muted">mg/L</span></span></label>
+      <label for="prn-tinf">Infusion over
+        <span class="tx-field"><input type="number" class="prn-ctrl-input" id="prn-tinf" value="${d.rlTinf}" min="0.5" max="4" step="0.5" inputmode="decimal"> <span class="vx-muted">h</span></span></label>
+      <button type="button" class="prn-calc-btn" data-onclick="k57">Calculate PRN dose</button>
+    </div>
+    <div id="prn-result" class="tx-prn-result" aria-live="polite">
+      <p class="ev-note">Current level: <strong>${d.rlC.toFixed(1)} mg/L</strong> at ${d.rlT.toFixed(1)} h after dose ·
+        t½ = <strong>${d.indT12.toFixed(1)} h</strong> ·
+        Press <em>Calculate PRN dose</em> to project timing and dose.</p>
+    </div>`;
+
+  const sections = [
+    txEvHTML('tx-ev-levels', 'Your level', `Observed level — ${scenarioLabel.toLowerCase()} · ${d.rlC.toFixed(1)} mg/L at ${d.rlT.toFixed(1)} h`, levelBody, false),
+    txEvHTML('tx-ev-pk', 'PK parameters', `Kel ${d.indKel.toFixed(4)} h⁻¹ · Vd ${d.popVd.toFixed(1)} L (population) · t½ ${d.indT12.toFixed(1)} h`, pkBody, false),
+    txEvHTML('tx-ev-prn', 'One-time PRN dose', 'For level-based dosing (AKI, unstable renal function)', prnBody, false),
+    txEvHTML('tx-ev-explorer', 'Dose explorer', 'Projected steady state with the fitted Kel and population Vd',
+      txExplorerHTML(explorerHTML, 'Projected steady-state outcomes · fitted Kel, population Vd'), false),
+    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak; redraws the curve',
+      tinkererHTML('rl', d.rlTau), false),
+    txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
+      txDisclaimerHTML('Random-level dosing uses a single concentration to estimate Kel with population Vd fixed. This approach is most accurate when the level is drawn well into the post-distribution phase (≥1h after end of infusion). For a more precise individual Vd estimate, use Two-Level sampling (Phase 2). AinaDara v1.0 · Phase 3 (Random Level)'), false),
+  ];
+
   rc.innerHTML = `
-    <div class="result-tabs">
-      <button class="result-tab active" data-tab="tab-randomlevel" data-onclick="k56">Random Level</button>
-    </div>
-
-    <div class="result-tab-panel active" id="tab-randomlevel" style="gap:20px">
-
-    <!-- Observed level summary -->
-    <div class="animate-in">
-      <p class="section-label">Observed Level — ${scenarioLabel}</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
-          <div style="font-size:var(--fs-xs);letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Measured Concentration</div>
-          <div style="font-size:var(--fs-lg);font-family:var(--font-num);color:var(--text-primary)">${d.rlC.toFixed(1)} <span style="font-size:var(--fs-xs);color:var(--text-secondary)">mg/L</span></div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:4px">${d.rlT.toFixed(1)} hr after dose start</div>
-        </div>
-        <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
-          <div style="font-size:var(--fs-xs);letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Dose Given</div>
-          <div style="font-size:var(--fs-lg);font-family:var(--font-num);color:var(--text-primary)">${d.rlDose} <span style="font-size:var(--fs-xs);color:var(--text-secondary)">mg</span></div>
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:4px">over ${d.rlTinf}h · Vd fixed at ${d.popVd.toFixed(1)} L (population)</div>
-        </div>
-      </div>
-      <div style="margin-top:10px;font-size:var(--fs-xs);color:var(--text-muted);line-height:1.6;background:var(--bg-elevated);border-radius:var(--radius-sm);padding:10px 14px">
-        <strong style="color:var(--text-secondary)">Method:</strong> ${methodNote}
-      </div>
-    </div>
-
-    <!-- Individual vs population PK -->
-    <div class="animate-in">
-      <p class="section-label">Fitted PK Parameters <span style="color:var(--accent-amber);font-weight:400;font-size:var(--fs-xs);letter-spacing:0;text-transform:none">— Vd from population, Kel from level</span></p>
-      <div class="pk-table">
-        <div class="pk-table-header" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-col-head">Parameter</span>
-          <span class="pk-col-head">Individual</span>
-          <span class="pk-col-head">Population</span>
-          <span class="pk-col-head">Units</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">CrCl (CG)</span>
-          <span class="pk-val">${d.crcl.toFixed(1)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">—</span>
-          <span class="pk-unit">mL/min</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">Kel</span>
-          <span class="pk-val">${d.indKel.toFixed(4)} ${diffBadge(kelPctDiff)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${d.popKel.toFixed(4)}</span>
-          <span class="pk-unit">hr⁻¹</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">Half-life</span>
-          <span class="pk-val">${d.indT12.toFixed(1)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${t12Pop}</span>
-          <span class="pk-unit">hr</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">Vd</span>
-          <span class="pk-val">${d.popVd.toFixed(1)} <span style="font-size:var(--fs-xs);color:var(--text-muted)">(pop fixed)</span></span>
-          <span class="pk-val" style="color:var(--text-muted)">${d.popVd.toFixed(1)}</span>
-          <span class="pk-unit">L</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">CLv</span>
-          <span class="pk-val">${d.indClv.toFixed(2)} ${diffBadge(clvPctDiff)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">${d.popClv.toFixed(2)}</span>
-          <span class="pk-unit">L/hr</span>
-        </div>
-        <div class="pk-row" style="grid-template-columns:1fr 1fr 1fr 0.7fr">
-          <span class="pk-param">IBW / AdjBW</span>
-          <span class="pk-val">${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}</span>
-          <span class="pk-val" style="color:var(--text-muted)">—</span>
-          <span class="pk-unit">kg</span>
-        </div>
-      </div>
-      <p class="auc-method-note" style="margin-top:8px">
-        ⚠ Vd is fixed at the population estimate. Kel accuracy depends on the level being drawn during the post-distribution phase (not during infusion). Two-level sampling (Phase 2) provides a more complete individual PK characterisation.
-      </p>
-    </div>
-
-    <!-- Recommendation -->
-    <div class="animate-in">
-      <p class="section-label">Scheduled Maintenance Dose Recommendation</p>
-      <div class="rec-box" style="margin-top:0">
-        <div class="rec-dose">${d.optDose} mg <span>Q${d.rlTau}H</span></div>
-        ${optFlagHTML(d.optFlag, d.optFlagMsg, d.rlTau, d.optAUC, d.optPT.trough, d.troughMin)}
-        <div class="rec-rationale">Based on fitted Kel (Vd population) — estimated SS trough ${trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L · t½ ${d.indT12.toFixed(1)} hr</div>
-        <div class="rec-targets" style="margin-top:10px">
-          <div class="rec-target-chip"><span class="dot ${aucStatus!=='ok'?'warn':''}"></span>AUC₂₄: ${d.optAUC.toFixed(0)} mg·h/L</div>
-          <div class="rec-target-chip"><span class="dot ${troughStatus!=='ok'?'warn':''}"></span>SS Trough: ${trough.toFixed(1)} mg/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>SS Peak: ${d.optPT.peak.toFixed(1)} mg/L</div>
-          <div class="rec-target-chip"><span class="dot"></span>t½: ${d.indT12.toFixed(1)} hr</div>
-        </div>
-        ${troughRailHTML(trough, d.optAUC, d.troughMin)}
-        ${tinkererHTML('rl', d.rlTau)}
-      </div>
-    </div>
-
-    <!-- PRN / One-Time Dose (Level-Based Dosing) -->
-    <div class="animate-in">
-      <p class="section-label">One-Time PRN Dose <span style="color:var(--text-muted);font-weight:400;font-size:var(--fs-xs);letter-spacing:0;text-transform:none">— for level-based dosing (AKI, unstable renal function)</span></p>
-      <div class="prn-box">
-        <div class="prn-title">Level-Based / PRN Dosing Calculator</div>
-        <div style="font-size:var(--fs-xs);color:var(--text-secondary);line-height:1.6;margin-bottom:12px">
-          Use when scheduling a fixed regimen is not appropriate — e.g. AKI with fluctuating renal function. Calculates the dose needed to reach a target peak, given the patient's current level and the time it will take to reach the redosing threshold.
-        </div>
-
-        <div class="prn-controls">
-          <label>Redose threshold:</label>
-          <input type="number" class="prn-ctrl-input" id="prn-redose-thresh" value="${d.troughMin}" min="5" max="20" step="1">
-          <span style="font-size:var(--fs-xs);color:var(--text-muted)">mg/L</span>
-          <label style="margin-left:8px">Target peak:</label>
-          <input type="number" class="prn-ctrl-input" id="prn-target-peak" value="28" min="15" max="45" step="1">
-          <span style="font-size:var(--fs-xs);color:var(--text-muted)">mg/L</span>
-          <label style="margin-left:8px">Infusion over:</label>
-          <input type="number" class="prn-ctrl-input" id="prn-tinf" value="${d.rlTinf}" min="0.5" max="4" step="0.5">
-          <span style="font-size:var(--fs-xs);color:var(--text-muted)">hr</span>
-          <button class="prn-calc-btn" data-onclick="k57">Calculate PRN Dose</button>
-        </div>
-
-        <div id="prn-result" style="margin-top:4px">
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);padding:8px 0">
-            Current level: <strong style="color:var(--text-primary);font-family:var(--font-num)">${d.rlC.toFixed(1)} mg/L</strong> at ${d.rlT.toFixed(1)}h after dose ·
-            t½ = <strong style="font-family:var(--font-num)">${d.indT12.toFixed(1)} hr</strong> ·
-            Press <em>Calculate PRN Dose</em> to project timing and dose.
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- PK Concentration-Time Graph -->
-    <div class="pk-graph-box animate-in">
-      <div class="pk-graph-header">
-        <span class="pk-graph-title">Projected SS Concentration-Time Profile</span>
-        <div class="pk-graph-legend">
-          <span><span class="leg-dot" style="background:var(--accent-amber)"></span> Peak</span>
-          <span><span class="leg-dot" style="background:var(--accent-blue)"></span> Trough</span>
-        </div>
-      </div>
-      <div class="pk-graph-canvas-wrap">
-        <canvas id="pk-graph-rl"></canvas>
-      </div>
-    </div>
-
-    <!-- Stat cards -->
-    <div class="result-row animate-in">
-      <div class="stat-card ${aucStatus}">
-        <div class="stat-label">AUC₂₄ <span style="font-size:var(--fs-xs);letter-spacing:0;text-transform:none;color:var(--text-muted);font-weight:400">(primary target)</span></div>
-        <div class="stat-value">${d.optAUC.toFixed(0)}</div>
-        <div class="stat-unit">mg·h/L · target 400–600</div>
-        <span class="stat-badge ${aucBadge}">${aucText}</span>
-      </div>
-      <div class="stat-card ${troughStatus}">
-        <div class="stat-label">Proj. SS Trough</div>
-        <div class="stat-value">${trough.toFixed(1)}</div>
-        <div class="stat-unit">mg/L · target ${d.troughMin}–${d.troughMax}</div>
-        <span class="stat-badge ${troughBadge}">${{ok:'Therapeutic',warn:'Review',danger:'Action Needed'}[troughStatus]}</span>
-      </div>
-      <div class="stat-card info">
-        <div class="stat-label">Proj. SS Peak</div>
-        <div class="stat-value">${d.optPT.peak.toFixed(1)}</div>
-        <div class="stat-unit">mg/L</div>
-      </div>
-      <div class="stat-card info">
-        <div class="stat-label">AUC:MIC Ratio</div>
-        <div class="stat-value">${(d.optAUC/d.mic).toFixed(0)}</div>
-        <div class="stat-unit">MIC ${d.mic} mg/L</div>
-        <span class="stat-badge ${(d.optAUC/d.mic)>=400?'badge-ok':'badge-warn'}">${(d.optAUC/d.mic)>=400?'On Target':'Low'}</span>
-      </div>
-    </div>
-
-    <!-- Dose Explorer -->
-    <div class="animate-in">
-      <p class="section-label">Dose Explorer — Individual PK</p>
-      <div class="explorer-box">
-        <div class="explorer-header">
-          <span class="explorer-title">Projected SS Outcomes · Fitted Kel, Population Vd</span>
-          <span class="model-pill">★ = Recommended</span>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="explorer-table">
-            <thead>
-              <tr><th>Regimen</th><th>Trough (mg/L)</th><th>Peak (mg/L)</th><th>AUC₂₄</th><th>AUC:MIC</th></tr>
-            </thead>
-            <tbody>${explorerHTML}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div style="font-size:var(--fs-xs);color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px;line-height:1.6">
-      <strong style="color:var(--text-secondary)">Clinical Disclaimer</strong> — Random-level dosing uses a single concentration to estimate Kel with population Vd fixed. This approach is most accurate when the level is drawn well into the post-distribution phase (≥1h after end of infusion). For a more precise individual Vd estimate, use Two-Level sampling (Phase 2). AinaDara v1.0 · Phase 3 (Random Level)
-    </div>
-
-    </div>`; /* close Random Level tab panel */
+    <div class="tx-result">
+      <h2 class="sr-only">Random-level result</h2>
+      <div class="tx-top">${verdict}${figure}</div>
+      <div class="vx-evidence">${sections.join('')}</div>
+    </div>`;
 
   updateModelInfo();
   _pk  = { tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
@@ -7090,6 +6780,7 @@ function renderRandomLevel(d) {
   _prn = { kel: d.indKel, vd: d.popVd, clv: d.indClv, tbw: d.tbw,
            rlC: d.rlC, rlT: d.rlT, rlTinf: d.rlTinf,
            troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
+  announceResult(`Result: ${fmtRegimen(d.optDose, d.rlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-rl', d.optDose, d.rlTau, d.rlTinf, d.indKel, d.popVd, {
       troughMin: d.troughMin, troughMax: d.troughMax
@@ -7160,10 +6851,7 @@ function calcPRNDose() {
 
   // If level is already at or above targetPeak — no dose yet
   if (rlC > targetPeak) {
-    document.getElementById('prn-result').innerHTML = `
-      <div style="color:var(--warning);font-size:var(--fs-sm);padding:10px 0">
-        ⚠ Current level (${rlC.toFixed(1)} mg/L) exceeds target peak (${targetPeak} mg/L). Hold dosing and recheck level.
-      </div>`;
+    document.getElementById('prn-result').innerHTML = txPrnHoldHTML(rlC, targetPeak);
     return;
   }
 
@@ -7191,38 +6879,8 @@ function calcPRNDose() {
     ? `Level will reach ${redoseThresh} mg/L in ~${hoursToRedose.toFixed(1)}h — dose soon.`
     : `Level will reach ${redoseThresh} mg/L in ~${hoursToRedose.toFixed(1)}h.`;
 
-  document.getElementById('prn-result').innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <div style="font-size:var(--fs-xs);color:var(--accent-blue);font-weight:600">${urgency}</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div class="tinkerer-chip" style="border-color:color-mix(in srgb, var(--purple) 35%, transparent)">
-          <span class="tinkerer-chip-label">Kinetic Dose</span>
-          <span class="tinkerer-chip-val" style="color:var(--accent-blue)">${roundedDose}</span>
-          <span class="tinkerer-chip-sub">mg over ${prnTinf}h</span>
-        </div>
-        <div class="tinkerer-chip">
-          <span class="tinkerer-chip-label">Expected Peak</span>
-          <span class="tinkerer-chip-val">${actualPeak.toFixed(1)}</span>
-          <span class="tinkerer-chip-sub">mg/L</span>
-        </div>
-        <div class="tinkerer-chip">
-          <span class="tinkerer-chip-label">Next redose ~</span>
-          <span class="tinkerer-chip-val">${totalTimeToTrough.toFixed(1)}</span>
-          <span class="tinkerer-chip-sub">hr after infusion</span>
-        </div>
-      </div>
-      ${wbDose ? `<div style="font-size:var(--fs-xs);color:var(--text-muted);padding:8px 12px;background:var(--paper-deep);border-radius:4px;border:1px solid var(--border)">
-        <span style="color:var(--text-secondary)">Weight-based reference — calculator heuristic, not a guideline (${mgKgRef} mg/kg × ${tbw.toFixed(0)} kg):</span>
-        <strong style="color:var(--text-primary);font-family:var(--font-num)"> ${wbDose} mg</strong>
-        ${Math.abs(wbDose - roundedDose) <= 250 ? '<span style="color:var(--success)"> ✓ Consistent with kinetic estimate</span>' :
-          `<span style="color:var(--accent-amber)"> · differs from kinetic estimate (${roundedDose} mg) — use kinetic if Kel is well-characterised</span>`}
-      </div>` : ''}
-      <div style="font-size:var(--fs-xs);color:var(--text-muted);line-height:1.6">
-        <strong style="color:var(--text-secondary)">Assumptions:</strong> Dose given when level = ${cAtRedose.toFixed(1)} mg/L (at redose threshold ${redoseThresh} mg/L) ·
-        t½ = ${t12.toFixed(1)} hr · Vd fixed at pop estimate ·
-        Next level check recommended when concentration is expected to approach ${troughMin} mg/L (~${totalTimeToTrough.toFixed(0)}h post-infusion).
-      </div>
-    </div>`;
+  document.getElementById('prn-result').innerHTML = txPrnResultHTML({ urgency, roundedDose, prnTinf, actualPeak,
+    totalTimeToTrough, wbDose, mgKgRef, tbw, cAtRedose, redoseThresh, t12, troughMin });
 }
 
 function tinkerDose(suffix) {
@@ -7243,34 +6901,9 @@ function tinkerDose(suffix) {
   const pt  = calcPeakTrough(d, tau, tinf, kel, vd);
   const auc = calcAUC(d, tau, clv);
   const aucMIC = mic ? auc / mic : null;
-  const toughCls = pt.trough < troughMin ? 'var(--danger)' : pt.trough > troughMax ? 'var(--warning)' : 'var(--success)';
-  const aucCls   = auc < AUC24_TARGET_MIN ? 'var(--warning)' : auc > AUC24_TARGET_MAX ? 'var(--danger)' : 'var(--success)';
-
   const res = document.getElementById('tinker-result-' + suffix);
-  res.innerHTML = `
-    <div class="tinkerer-chip">
-      <span class="tinkerer-chip-label">AUC₂₄</span>
-      <span class="tinkerer-chip-val" style="color:${aucCls}">${auc.toFixed(0)}</span>
-      <span class="tinkerer-chip-sub">mg·h/L</span>
-    </div>
-    <div class="tinkerer-chip">
-      <span class="tinkerer-chip-label">SS Trough</span>
-      <span class="tinkerer-chip-val" style="color:${toughCls}">${pt.trough.toFixed(1)}</span>
-      <span class="tinkerer-chip-sub">mg/L</span>
-    </div>
-    <div class="tinkerer-chip">
-      <span class="tinkerer-chip-label">SS Peak</span>
-      <span class="tinkerer-chip-val">${pt.peak.toFixed(1)}</span>
-      <span class="tinkerer-chip-sub">mg/L</span>
-    </div>
-    ${aucMIC !== null ? `<div class="tinkerer-chip">
-      <span class="tinkerer-chip-label">AUC:MIC</span>
-      <span class="tinkerer-chip-val" style="color:${aucMIC>=400?'var(--success)':'var(--warning)'}">${aucMIC.toFixed(0)}</span>
-      <span class="tinkerer-chip-sub">ratio</span>
-    </div>` : ''}
-    <div style="font-size:var(--fs-xs);color:var(--text-muted);align-self:flex-end;padding-bottom:4px">
-      ${d} mg Q${tau}H · ${auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX && pt.trough >= troughMin && pt.trough <= troughMax ? '✓ Both AUC and trough in range' : auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX ? '✓ AUC in range' + (pt.trough < troughMin ? ' · trough low (AUC primary)' : ' · trough elevated') : auc < AUC24_TARGET_MIN ? '⚠ AUC subtherapeutic' : '⚠ AUC supratherapeutic'}
-    </div>`;
+  res.innerHTML = txTinkerResultHTML({ dose: d, tau, pt, auc, aucMIC, troughMin, troughMax });
+  txTinkerLegend(suffix, d, tau, troughMin, troughMax);
   res.classList.add('visible');
 
   // Redraw PK graph with the tinkered dose + interval
@@ -7295,14 +6928,11 @@ const TROUGH_FLOOR_2009 = 10;   // mg/L — Rybak 2009 consensus, via Goti 2018 
 function troughRailHTML(trough, auc, troughMin) {
   if (trough >= TROUGH_FLOOR_2009) return '';
   if (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) return '';        // AUC already flagged separately
-  return `<div style="margin-top:10px;padding:9px 13px;border-radius:var(--radius-sm);
-      background:rgba(191,133,48,0.06);border:1px solid rgba(191,133,48,0.2);
-      font-size:var(--fs-xs);line-height:1.5;color:var(--text-secondary)">
-    <strong>Trough under 10 mg/L with AUC in range</strong> — predicted steady-state trough ${trough.toFixed(1)} mg/L
+  return noteHTML({ tier: 'info', word: 'Trough under 10 mg/L with AUC in range', html: `
+    Predicted steady-state trough ${trough.toFixed(1)} mg/L
     is below the ${TROUGH_FLOOR_2009} mg/L trough floor of the 2009 consensus guideline, while AUC₂₄ (${Math.round(auc)})
     is inside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}. This calculator treats AUC as the target; raising the dose on the
-    trough alone would push AUC up. Weigh it against the infection and the organism.
-  </div>`;
+    trough alone would push AUC up. Weigh it against the infection and the organism.` });
 }
 
 function tinkererHTML(suffix, tau) {
@@ -7366,23 +6996,32 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     tSet.push((i + 1) * tau);
   }
   tSet.sort((a, b) => a - b);
-  const points = [];
-  for (let i = 0; i < tSet.length; i++) {
-    const t = tSet[i];
-    if (i && Math.abs(t - tSet[i - 1]) < 1e-9) continue;               // dedupe
-    const cycleT = Math.min(t - Math.floor(t / tau + 1e-9) * tau, tau);
-    points.push({ t, c: calcCssAtTime(dose, tau, tinf, kel, vd, cycleT) });
-  }
+  const curveFor = (mg) => {
+    const out = [];
+    for (let i = 0; i < tSet.length; i++) {
+      const t = tSet[i];
+      if (i && Math.abs(t - tSet[i - 1]) < 1e-9) continue;               // dedupe
+      const cycleT = Math.min(t - Math.floor(t / tau + 1e-9) * tau, tau);
+      out.push({ t, c: calcCssAtTime(mg, tau, tinf, kel, vd, cycleT) });
+    }
+    return out;
+  };
+  const points = curveFor(dose);
 
   const pt = calcPeakTrough(dose, tau, tinf, kel, vd);
   const troughMin = opts.troughMin || 10;
   const troughMax = opts.troughMax || 20;
+  // A second regimen on the same PK and interval (the recommendation beside
+  // the current regimen). Presentation only: same equations, another dose.
+  const ovDose = opts.overlay && opts.overlay.dose > 0 && opts.overlay.dose !== dose ? opts.overlay.dose : null;
+  const ovPoints = ovDose ? curveFor(ovDose) : null;
+  const ovPT = ovDose ? calcPeakTrough(ovDose, tau, tinf, kel, vd) : null;
 
   // The axis must contain everything that gets drawn on it. Deriving the top
   // from the curve alone painted the target band off the top of the plot for
   // any regimen whose peak sat below troughMax — an open-topped green wash
   // reading "everything above 10 is on target".
-  const cPeakForAxis = Math.max(pt.peak, ...points.map(p => p.c));
+  const cPeakForAxis = Math.max(pt.peak, ...points.map(p => p.c), ovPT ? ovPT.peak : 0);
   const cRaw  = Math.max(cPeakForAxis, troughMax, opts.obsLevel || 0) * 1.15;
   const cStep = niceStep(cRaw, 6);
   const cMax  = Math.max(cStep, Math.ceil(cRaw / cStep) * cStep);
@@ -7391,7 +7030,13 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   const ty = c => pad.top + gH - (c / cMax) * gH;
   const clampY = y => Math.max(pad.top, Math.min(pad.top + gH, y));
 
-  const cFaint = themeColor('--ink-muted', '#676b5e');
+  // Course-timeline grammar (design track D, 2026-09-28): text in --ink-muted,
+  // the current regimen in ink, the recommendation or a projection in
+  // terracotta, the trough target as a faint ink band. Every colour a token.
+  const cText = themeColor('--ink-muted', '#676b5e');
+  const cRec  = themeColor('--terracotta', '#cc785c');
+  const cCurve = opts.role === 'current' ? themeColor('--ink', '#2d3428') : cRec;
+  const FONT = "500 12px 'Outfit', sans-serif";
 
   // ─ Grid ─
   ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
@@ -7408,15 +7053,15 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + gH); ctx.stroke();
   }
 
-  // ─ Target band, clipped to the plot ─
+  // ─ Trough target band (this module's own target), clipped to the plot ─
   const bandTop = clampY(ty(troughMax));
   const bandBot = clampY(ty(troughMin));
   if (bandBot > bandTop) {
-    ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
+    ctx.fillStyle = themeRGBA('--ink', 0.07, 'rgba(45,52,40,0.07)');
     ctx.fillRect(pad.left, bandTop, gW, bandBot - bandTop);
   }
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = themeRGBA('--moss', 0.42, 'rgba(74,92,40,0.42)');
+  ctx.strokeStyle = themeRGBA('--ink-faint', 0.7, 'rgba(138,142,128,0.7)');
   [troughMax, troughMin].forEach(v => {
     const y = ty(v);
     if (y >= pad.top && y <= pad.top + gH) {
@@ -7426,37 +7071,48 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   ctx.setLineDash([]);
 
   // ─ Dose boundaries ─ (the only mark showing where the next dose is given)
-  ctx.fillStyle = themeRGBA('--terracotta-q', 0.55, 'rgba(224,169,140,0.55)');
+  ctx.fillStyle = themeRGBA('--ink-faint', 0.45, 'rgba(138,142,128,0.45)');
   for (let i = 1; i < numCycles; i++) ctx.fillRect(Math.round(tx(tau * i)) - 0.5, pad.top, 1, gH);
 
-  // ─ Fill under the curve, then the curve ─
-  const cCurve = themeColor('--terracotta', '#cc785c');
-  const fillGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + gH);
-  fillGrad.addColorStop(0, themeRGBA('--terracotta', 0.14, 'rgba(204,120,92,0.14)'));
-  fillGrad.addColorStop(1, themeRGBA('--terracotta', 0.01, 'rgba(204,120,92,0.01)'));
-  ctx.fillStyle = fillGrad;
-  ctx.beginPath();
-  points.forEach((p, i) => { const x = tx(p.t), y = ty(p.c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-  ctx.lineTo(tx(tMax), ty(0)); ctx.lineTo(tx(0), ty(0)); ctx.closePath(); ctx.fill();
-
-  ctx.strokeStyle = cCurve;
-  ctx.lineWidth = 2.25;
-  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  ctx.beginPath();
-  points.forEach((p, i) => { const x = tx(p.t), y = ty(p.c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-  ctx.stroke();
+  // ─ Curves: the recommendation on top of the current regimen ─
+  const stroke = (pts, color, w) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = w;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    pts.forEach((p, i) => { const x = tx(p.t), y = ty(p.c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+  };
+  stroke(points, cCurve, 2.25);
+  if (ovPoints) stroke(ovPoints, cRec, 2.25);
 
   // ─ Peak / trough markers, on the curve rather than near it ─
+  // Peak filled, trough open: shape, not a second hue, tells them apart.
   const cRing = themeColor('--paper', '#faf5ed');
-  for (let i = 0; i < numCycles; i++) {
-    ctx.fillStyle = themeColor('--accent-amber', '#96631f');
-    ctx.strokeStyle = cRing; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(tx(i * tau + Math.min(tinf, tau)), ty(pt.peak), 3.5, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle = themeColor('--accent-blue', '#4a3d7a');
-    ctx.beginPath(); ctx.arc(tx((i + 1) * tau), ty(pt.trough), 3.5, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-  }
+  // Labels that cross a curve get a thin paper halo so they stay legible
+  // without hiding the line under them. (A recording context without
+  // strokeText, as in the test harness, just gets the fill.)
+  const haloText = (txt, x, y) => {
+    if (typeof ctx.strokeText === 'function') {
+      ctx.save(); ctx.strokeStyle = cRing; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      ctx.strokeText(txt, x, y); ctx.restore();
+    }
+    ctx.fillText(txt, x, y);
+  };
+  const markers = (p, color) => {
+    for (let i = 0; i < numCycles; i++) {
+      ctx.fillStyle = color;
+      ctx.strokeStyle = cRing; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(tx(i * tau + Math.min(tinf, tau)), ty(p.peak), 3.5, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = cRing;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.75;
+      ctx.beginPath(); ctx.arc(tx((i + 1) * tau), ty(p.trough), 3.5, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    }
+  };
+  markers(pt, cCurve);
+  if (ovPT) markers(ovPT, cRec);
 
   // ─ Observed level ─
   // Two narrow defects here, not the folding itself: tMax is 3*tau, so `t % tMax`
@@ -7472,17 +7128,17 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
       ctx.fillStyle = themeColor('--accent-rose', '#a8546a');
       ctx.strokeStyle = cRing; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(ox, oy, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = themeColor('--accent-rose', '#a8546a');
-      ctx.font = "600 10px 'Outfit', sans-serif";
+      ctx.fillStyle = themeColor('--ink', '#2d3428');
+      ctx.font = FONT;
       ctx.textAlign = ox > pad.left + gW - 44 ? 'right' : 'left';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(opts.obsLevel.toFixed(1), ox + (ctx.textAlign === 'right' ? -9 : 9), oy - 5);
+      haloText(opts.obsLevel.toFixed(1), ox + (ctx.textAlign === 'right' ? -9 : 9), oy - 5);
     }
   }
 
   // ─ Axis labels ─
-  ctx.fillStyle = cFaint;
-  ctx.font = "500 10px 'Outfit', sans-serif";
+  ctx.fillStyle = cText;
+  ctx.font = FONT;
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for (let c = 0; c <= cMax + 1e-9; c += cStep) {
     ctx.fillText(cStep < 1 ? c.toFixed(1) : c.toFixed(0), pad.left - 7, ty(c));
@@ -7490,27 +7146,27 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
   const tDec = Number.isInteger(xTickStep) ? 0 : 1;
   for (let t = 0; t <= tMax + 1e-9; t += xTickStep) {
-    ctx.fillText(t.toFixed(tDec) + 'h', tx(t), pad.top + gH + 7);
+    ctx.fillText(t.toFixed(tDec) + ' h', tx(t), pad.top + gH + 7);
   }
 
   // ─ Axis titles ─ (drawn on an explicit baseline; 'top' put these below the
   //   bottom edge of the bitmap, so the x axis was effectively unlabelled)
-  ctx.fillStyle = cFaint;
-  ctx.font = "500 10px 'Outfit', sans-serif";
+  ctx.fillStyle = cText;
+  ctx.font = FONT;
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Time (hours)', pad.left + gW / 2, H - 5);
+  ctx.fillText('Time at steady state (h)', pad.left + gW / 2, H - 5);
   ctx.save();
-  ctx.translate(13, pad.top + gH / 2);
+  ctx.translate(15, pad.top + gH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText('Conc (mg/L)', 0, 0);
+  ctx.fillText('Concentration (mg/L)', 0, 0);
   ctx.restore();
 
   // ─ Target label ─
   if (bandBot > bandTop) {
-    ctx.fillStyle = themeColor('--moss', '#4a5c28');
-    ctx.font = "600 10px 'Outfit', sans-serif";
+    ctx.fillStyle = cText;
+    ctx.font = FONT;
     ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-    ctx.fillText('TARGET ' + troughMin + '–' + troughMax, W - pad.right - 4, bandTop + 3);
+    haloText('Trough target ' + troughMin + '–' + troughMax + ' mg/L', W - pad.right - 4, bandTop + 3);
   }
 }
 
@@ -13503,6 +13159,214 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 
 
 // ── design track D: Trough-module results — insert this track's helpers below this line ──
+// Trough module results in the course-timeline grammar (design pass
+// 2026-09-28). The three Trough renderers (renderResults, renderTwoLevels,
+// renderRandomLevel) share these: the verdict first, the curve beside it,
+// then hairline evidence sections — the vocabulary renderBayesianResults set
+// (.vx-*, .note, details.ev). Presentation only: every number is passed in.
+
+// AUC status in words, against the sourced band (Rybak 2020).
+function txAucStatus(auc) {
+  if (auc < AUC24_TARGET_MIN) return { key: 'sub',   cls: 'tone-caution', text: `subtherapeutic, below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}` };
+  if (auc > AUC24_TARGET_MAX) return { key: 'supra', cls: 'tone-caution', text: `supratherapeutic, above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}` };
+  return { key: 'in', cls: '', text: `in range ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}` };
+}
+// Trough status in words against the clinician's own trough target. The
+// review / action-needed cuts are the module's existing ones (0.8x, 1.2x).
+function txTroughStatus(trough, min, max) {
+  const status = trough < min * 0.8 ? 'danger' : trough < min ? 'warn'
+               : trough <= max ? 'ok' : trough <= max * 1.2 ? 'warn' : 'danger';
+  const pos = trough < min ? 'below' : trough > max ? 'above' : 'within';
+  const flag = status === 'ok' ? '' : status === 'warn' ? ' · review' : ' · action needed';
+  return { status, cls: status === 'ok' ? '' : 'tone-caution', text: `${pos} the ${min}–${max} mg/L trough target${flag}` };
+}
+
+function txEvHTML(id, title, gist, body, open) {
+  return `
+    <details class="ev" id="${id}"${open ? ' open' : ''}>
+      <summary><h3 class="ev-title">${title}</h3><span class="ev-gist">${gist}</span></summary>
+      <div class="ev-body">${body}</div>
+    </details>`;
+}
+
+function txNotesHTML(notes) {
+  if (!notes || !notes.length) return '';
+  const sorted = notes.slice().sort((a, b) => NOTE_RANK[a.tier] - NOTE_RANK[b.tier]);
+  return `<div class="vx-notes tx-notes">${sorted.map(noteHTML).join('')}</div>`;
+}
+
+// The verdict's action line: a signal word, a drawn icon when it is not
+// routine, and the assessment in plain words. Tone is text colour, no card.
+function txActionHTML(tier, word, detail, body) {
+  const icon = tier === 'alarm' ? ICON.alarm : tier === 'caution' ? ICON.caution : '';
+  return `<div class="tx-action tx-action-${tier}">
+      <p class="tx-action-head">${icon}<span><strong class="tx-action-word">${word}</strong>${detail ? ` <span class="tx-action-detail">· ${detail}</span>` : ''}</span></p>
+      ${body || ''}
+    </div>`;
+}
+
+// The answer: the regimen in DM Serif with the frequency in terracotta ink,
+// its infusion, predicted exposure in numbers and words, and its basis.
+function txVerdictHTML(o) {
+  const aw = txAucStatus(o.auc);
+  const tw = txTroughStatus(o.trough, o.troughMin, o.troughMax);
+  const aucMic = o.auc / o.mic;
+  return `
+    <section class="tx-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen" id="tx-regimen"><span class="rec-dose">${fmtDose(o.dose)}</span> IV <span class="vx-freq">${fmtFreq(o.tau)}</span></h3>
+      <p class="vx-inf">Infuse over ${fmtHrs(o.tinf)}${o.kind ? ` · ${o.kind}` : ''}</p>
+      <p class="vx-auc-line"><span class="vx-k">AUC₂₄</span> <strong class="vx-auc-n">${o.auc.toFixed(0)}</strong> mg·h/L
+        <span class="tx-aucw ${aw.cls}">${aw.text}</span>
+        ${o.aucBand ? `<span class="tx-band">${o.aucBand}</span>` : ''}</p>
+      <p class="vx-sub tx-trough"><span class="vx-k">Trough</span> <span class="${tw.cls}">${o.trough.toFixed(1)} mg/L</span>
+        <span class="vx-muted">${o.troughWord ? `${o.troughWord} · ` : ''}${tw.text}</span></p>
+      <p class="vx-sub"><span class="vx-k">Peak</span> ${o.peak.toFixed(1)} mg/L · <span class="vx-k">AUC/MIC</span>
+        <span class="${aucMic >= 400 ? '' : 'tone-caution'}">${aucMic.toFixed(0)}</span></p>
+      ${o.action || ''}
+      ${o.flags ? `<div class="tx-flags">${o.flags}</div>` : ''}
+      <p class="tx-basis">${o.basis}</p>
+      ${o.next ? `<p class="vx-next"><span class="vx-k">Next</span> ${o.next}</p>` : ''}
+    </section>`;
+}
+
+// Loading dose, in the verdict block (its own grid area: under the curve on a
+// wide column, straight after the regimen on a phone). The Matzke 1984 rate limit is a caution note
+// with its signal word — the audit found it printed as grey prose under a
+// dose that exceeded it, the tool contradicting its own output.
+function txLoadingDoseHTML(ld, o) {
+  const lvl = ld.levelAtMaint;
+  const lvlPos = lvl < o.troughMin ? 'below' : lvl > o.troughMax ? 'above' : 'within';
+  return `
+    <section class="tx-ld" aria-labelledby="tx-ld-h">
+      <h4 class="tx-ld-h" id="tx-ld-h">Loading dose</h4>
+      <p class="tx-ld-dose">${fmtDose(ld.dose)} IV once</p>
+      <p class="vx-inf">Infuse over ${fmtHrs(ld.tinf)} · ${ld.rateMgMin.toFixed(1)} mg/min</p>
+      ${ld.rateAboveMatzke ? noteHTML({ tier: 'caution', word: 'Infusion rate', html:
+        `At ${ld.rateMgMin.toFixed(1)} mg/min this runs faster than the ${LD_MAX_RATE_MG_PER_MIN} mg/min Matzke 1984 recommends to avoid infusion reactions — consider a longer infusion.` }) : ''}
+      <dl class="ev-dl tx-ld-dl">
+        <div><dt>Peak at end of infusion</dt><dd>${ld.peak.toFixed(1)} mg/L <span class="vx-muted">target ${ld.targetPeak} mg/L</span></dd></div>
+        <div><dt>Level at start of maintenance</dt><dd><span class="${lvlPos === 'within' ? '' : 'tone-caution'}">${lvl.toFixed(1)} mg/L</span>
+          <span class="vx-muted">at ${fmtHrs(ld.deltaT)} from LD start · ${lvlPos} the ${o.troughMin}–${o.troughMax} mg/L trough target</span></dd></div>
+        <div><dt>First maintenance</dt><dd>${o.firstMaint} <span class="vx-muted">${o.firstMaintBasis}</span></dd></div>
+        <div><dt>Basis</dt><dd>${(ld.dose / o.tbw).toFixed(1)} mg/kg actual body weight · Vd ${ld.vdLD.toFixed(1)} L · Kel ${ld.kelLD.toFixed(4)} h⁻¹</dd></div>
+      </dl>
+      <p class="ev-note">The loading dose uses the selected model's population volume and the institutional infusion time for its own size, not the maintenance infusion time.
+        The level at the start of maintenance is a single-dose projection, not a steady-state trough. Adjust the maintenance regimen once a level is available.</p>
+    </section>`;
+}
+
+function txLegendHTML(items) {
+  return items.map(it => `<span class="legend-item"><i class="lg ${it.cls}"></i>${it.text}</span>`).join('');
+}
+function txCurveHTML(o) {
+  return `
+    <figure class="tx-curve">
+      <canvas id="${o.id}" role="img" aria-label="${escHtml('Predicted steady-state concentration–time profile. ' + o.summary)}"></canvas>
+      <figcaption class="tx-legend" id="tx-legend-${o.suffix}">${txLegendHTML(o.legend)}</figcaption>
+      <p class="tx-summary">${o.summary}</p>
+    </figure>`;
+}
+
+// Where a trough sits against the clinician's own target, on a hairline scale.
+// Replaces the traffic-light gauge, whose gradient was fixed at 10–20 mg/L.
+function txTroughScaleSVG(trough, min, max) {
+  const top = Math.max(30, Math.ceil(trough * 1.15 / 5) * 5, Math.ceil(max * 1.2 / 5) * 5);
+  const W = 360, L = 8, R = 16, x = v => L + Math.max(0, Math.min(1, v / top)) * (W - L - R);
+  const ticks = [];
+  for (let v = 0; v <= top + 1e-9; v += top > 40 ? 10 : 5) ticks.push(v);
+  const tx = x(trough);
+  const label = `Trough ${trough.toFixed(1)} mg/L on a 0 to ${top} mg/L scale; target ${min} to ${max} mg/L.`;
+  return `<svg class="tx-scale" viewBox="0 0 ${W} 48" role="img" aria-label="${escHtml(label)}">
+      <rect x="${x(min).toFixed(1)}" y="8" width="${(x(max) - x(min)).toFixed(1)}" height="16" class="band"/>
+      <line x1="${L}" x2="${W - R}" y1="24" y2="24" class="axis"/>
+      ${ticks.map(v => `<line x1="${x(v).toFixed(1)}" x2="${x(v).toFixed(1)}" y1="24" y2="28" class="tick"/><text x="${x(v).toFixed(1)}" y="42" class="ax">${v}</text>`).join('')}
+      <line x1="${tx.toFixed(1)}" x2="${tx.toFixed(1)}" y1="4" y2="24" class="val"/>
+      <circle cx="${tx.toFixed(1)}" cy="16" r="4.5" class="pt"/>
+    </svg>`;
+}
+
+function txTableHTML(head, rows, caption) {
+  return `<div class="tx-scroll"><table class="ev-table tx-table">
+      ${caption ? `<caption>${caption}</caption>` : ''}
+      <thead><tr>${head.map(h => `<th scope="col">${h}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr><th scope="row">${r[0]}</th>${r.slice(1).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+}
+
+function txExplorerHTML(rowsHTML, caption) {
+  return `<div class="tx-scroll"><table class="ev-table tx-explorer">
+      <caption>${caption}</caption>
+      <thead><tr><th scope="col">Regimen</th><th scope="col">Trough (mg/L)</th><th scope="col">Peak (mg/L)</th><th scope="col">AUC₂₄</th><th scope="col">AUC:MIC</th></tr></thead>
+      <tbody>${rowsHTML}</tbody>
+    </table></div>
+    <p class="ev-note vx-muted">Amber marks a trough outside the trough target or an AUC₂₄ outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L.</p>`;
+}
+
+function txDisclaimerHTML(text) {
+  return `<p class="ev-note"><strong>Clinical disclaimer</strong> — ${text}</p>`;
+}
+
+// Dose Tinkerer output (tinkerDose). Out-of-range values are amber with the
+// word beside them; the curve above is redrawn with the regimen as a projection.
+function txTinkerResultHTML(o) {
+  const aucIn = o.auc >= AUC24_TARGET_MIN && o.auc <= AUC24_TARGET_MAX;
+  const trIn  = o.pt.trough >= o.troughMin && o.pt.trough <= o.troughMax;
+  const words = aucIn && trIn ? 'Both AUC and trough in range'
+    : aucIn ? 'AUC in range' + (o.pt.trough < o.troughMin ? ' · trough low (AUC primary)' : ' · trough elevated')
+    : o.auc < AUC24_TARGET_MIN ? 'AUC subtherapeutic' : 'AUC supratherapeutic';
+  return `
+    <p class="tx-tink-head${aucIn ? '' : ' tx-tink-caution'}">${aucIn ? '' : ICON.caution}<span><strong>${fmtRegimen(o.dose, o.tau)}</strong> · ${words}</span></p>
+    <dl class="ev-dl tx-tink-dl">
+      <div><dt>AUC₂₄</dt><dd class="${aucIn ? '' : 'tone-caution'}">${o.auc.toFixed(0)} mg·h/L</dd></div>
+      <div><dt>SS trough</dt><dd class="${trIn ? '' : 'tone-caution'}">${o.pt.trough.toFixed(1)} mg/L</dd></div>
+      <div><dt>SS peak</dt><dd>${o.pt.peak.toFixed(1)} mg/L</dd></div>
+      ${o.aucMIC !== null ? `<div><dt>AUC:MIC</dt><dd class="${o.aucMIC >= 400 ? '' : 'tone-caution'}">${o.aucMIC.toFixed(0)}</dd></div>` : ''}
+    </dl>
+    <p class="ev-note vx-muted">The curve above now shows this regimen. Calculate again to restore the recommendation.</p>`;
+}
+function txTinkerLegend(suffix, dose, tau, troughMin, troughMax) {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('tx-legend-' + suffix);
+  if (!el) return;
+  el.innerHTML = txLegendHTML([
+    { cls: 'lg-proj', text: `Projected ${fmtRegimen(dose, tau)}` },
+    { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
+    { cls: 'tx-lg-band', text: `Trough target ${troughMin}–${troughMax} mg/L` },
+  ]);
+}
+
+// One-time / PRN dose output (calcPRNDose).
+function txPrnHoldHTML(rlC, targetPeak) {
+  return noteHTML({ tier: 'caution', word: 'Hold dosing', html:
+    `Current level (${rlC.toFixed(1)} mg/L) exceeds target peak (${escHtml(targetPeak)} mg/L). Hold dosing and recheck level.` });
+}
+function txPrnResultHTML(o) {
+  const doseTxt = o.roundedDose > 0 ? fmtDose(o.roundedDose) : '0 mg';
+  return `
+    <p class="ev-lead"><strong>${escHtml(o.urgency)}</strong></p>
+    <dl class="ev-dl tx-prn-dl">
+      <div><dt>Kinetic dose</dt><dd><strong class="tx-prn-dose">${doseTxt}</strong> <span class="vx-muted">over ${fmtHrs(o.prnTinf)}</span></dd></div>
+      <div><dt>Expected peak</dt><dd>${o.actualPeak.toFixed(1)} mg/L</dd></div>
+      <div><dt>Next redose</dt><dd>~${o.totalTimeToTrough.toFixed(1)} h <span class="vx-muted">after infusion</span></dd></div>
+    </dl>
+    ${o.wbDose ? `<p class="ev-note">Weight-based reference — calculator heuristic, not a guideline (${o.mgKgRef} mg/kg × ${o.tbw.toFixed(0)} kg):
+      <strong>${fmtDose(o.wbDose)}</strong> ${Math.abs(o.wbDose - o.roundedDose) <= 250
+        ? '· consistent with the kinetic estimate'
+        : `· differs from the kinetic estimate (${doseTxt}) — use kinetic if Kel is well-characterised`}</p>` : ''}
+    <p class="ev-note vx-muted"><strong>Assumptions:</strong> Dose given when level = ${o.cAtRedose.toFixed(1)} mg/L (at redose threshold ${escHtml(o.redoseThresh)} mg/L) ·
+      t½ = ${o.t12.toFixed(1)} h · Vd fixed at pop estimate ·
+      Next level check recommended when concentration is expected to approach ${o.troughMin} mg/L (~${o.totalTimeToTrough.toFixed(0)} h post-infusion).</p>`;
+}
+
+// The Trough print report copies the results markup; a closed <details> would
+// print as its summary line alone. Open the copies (never the page's own).
+// Registered after _buildPrintReport's listener, so the copies exist.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('beforeprint', () => {
+    const rpt = document.getElementById('print-report');
+    if (rpt && rpt.querySelectorAll) rpt.querySelectorAll('details').forEach(el => { el.open = true; });
+  });
+}
 
 
 // ── design track E: polish & minor fixes — insert this track's helpers below this line ──
