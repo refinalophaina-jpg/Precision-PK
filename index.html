@@ -103,31 +103,36 @@
     --glass-border:  var(--rule);
   }
 
-  /* Dark. Explicit choice wins; system preference is the default. */
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --paper:        #1c1815;
-    --paper-deep:   #252119;
-    --paper-edge:   #322d24;
-    --ink:          #ece4d2;
-    --ink-soft:     #b8af9d;
-    --ink-faint:    #7d7666;
-    --terracotta:   #d88a6e;
-    --terracotta-q: #b56e54;
-    --purple:       #a293d4;
-    --moss:         #9aad68;
-    --rule:         rgba(236, 228, 210, .1);
-    --card:         #221e18;
-    --input:        #2a251d;
-    --amber:        #d9a765;
-    --red:          #ef8fa8;
-    --rose:         #d08ba0;
-    --ink-muted:      #9a9282;
-    --terracotta-ink: #e39a7f;
-    --shadow-card:  none;
-    --glass-bg:     #1c1815;
+  /* Dark. Explicit choice wins; system preference is the default. Screen only:
+     paper always takes the light palette above (the guide rule), so a dark
+     theme can never print pale ink on white — every token resolves light in
+     print, whatever the theme or the system preference. */
+  @media screen {
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --paper:        #1c1815;
+      --paper-deep:   #252119;
+      --paper-edge:   #322d24;
+      --ink:          #ece4d2;
+      --ink-soft:     #b8af9d;
+      --ink-faint:    #7d7666;
+      --terracotta:   #d88a6e;
+      --terracotta-q: #b56e54;
+      --purple:       #a293d4;
+      --moss:         #9aad68;
+      --rule:         rgba(236, 228, 210, .1);
+      --card:         #221e18;
+      --input:        #2a251d;
+      --amber:        #d9a765;
+      --red:          #ef8fa8;
+      --rose:         #d08ba0;
+      --ink-muted:      #9a9282;
+      --terracotta-ink: #e39a7f;
+      --shadow-card:  none;
+      --glass-bg:     #1c1815;
+    }
   }
-  @media (prefers-color-scheme: dark) {
+  @media screen and (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
       --paper:        #1c1815;
@@ -848,8 +853,8 @@
   .guideline-rec-badge {
     font-size:var(--fs-xs); font-weight:600; letter-spacing:0.08em; text-transform:uppercase;
     padding:2px 8px; border-radius: var(--radius-pill);
-    background:rgba(99,99,102,0.08); color:var(--text-muted);
-    border:1px solid rgba(99,99,102,0.2);
+    background:color-mix(in srgb, var(--ink-faint) 8%, transparent); color:var(--text-muted);
+    border:1px solid color-mix(in srgb, var(--ink-faint) 20%, transparent);
   }
   .guideline-rec-body { padding:12px 14px; }
   .guideline-dose-hero {
@@ -1261,121 +1266,134 @@
       padding-right: max(12px, env(safe-area-inset-right));
     }
   }
-  /* ─── "Save PDF" button (screen only) ─── */
-  .pdf-save-btn-wrap {
-    display: flex; justify-content: flex-end; margin-bottom: -4px;
-  }
-  .pdf-save-btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px; border-radius: var(--radius-sm);
-    background: var(--bg-elevated); border: 1px solid var(--border);
-    color: var(--text-secondary); font-family: 'Outfit', sans-serif;
-    font-size:var(--fs-xs); font-weight: 600; letter-spacing: 0.04em;
-    cursor: pointer; transition: all 0.15s;
-  }
-  .pdf-save-btn:hover {
-    background: #fff; color: var(--accent-terra); border-color: var(--accent-terra);
-  }
-  /* Generated-at stamp: print only */
+  /* Generated-at stamp inside the Bayesian panel: never on screen. The old
+     "Save PDF" button rules that sat here are gone — nothing rendered it, and
+     its hover painted a white slab on dark paper. The one print action is the
+     button below. */
   .pdf-print-stamp { display: none; }
 
-  /* ═══ PHASE 3 — GLOBAL PRINT REPORT BUTTON ═══ */
+  /* ═══ PRINT ACTION — one per module, shown once that module has a result ═══
+     Quiet: paper, ink and a hairline, because terracotta belongs to the
+     recommendation and nothing may compete with it. On desktop it floats
+     bottom-right and the page gains room beneath it, so the last line can
+     always scroll clear; on a phone it joins the end of the page instead of
+     floating over the results. */
   .print-fab {
-    position: fixed; bottom: 22px; right: 22px; z-index: 9999;
-    display: none; align-items: center; gap: 7px;
-    padding: 11px 18px; border-radius: var(--radius-pill);
-    background: var(--terracotta); color: var(--paper);
-    border: 1px solid var(--terracotta);
-    font-family: 'Outfit', sans-serif; font-size:var(--fs-sm); font-weight: 600;
-    letter-spacing: 0.04em; cursor: pointer;
-    transition: transform .2s ease, background-color .2s ease;
+    position: fixed; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 50;
+    display: none; align-items: center; gap: 8px;
+    min-height: 40px; padding: 8px 16px 8px 13px; border-radius: var(--radius-pill);
+    background: var(--paper); color: var(--ink);
+    border: 1px solid var(--paper-edge);
+    font: 500 var(--fs-sm)/1.2 var(--font-body); letter-spacing: 0; cursor: pointer;
+    transition: transform .18s ease, background-color .18s ease, border-color .18s ease;
   }
-  .print-fab:hover { transform: translateY(-2px); background: var(--terracotta-q); }
-  .print-fab svg { width: 16px; height: 16px; }
+  .print-fab:hover { transform: translateY(-1px); background: var(--paper-deep); border-color: var(--ink-faint); }
+  .print-fab:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
+  .print-fab svg { width: 16px; height: 16px; flex: none; color: var(--ink-soft); }
   body.has-results .print-fab { display: inline-flex; }
+  body.has-results { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  @media (max-width: 768px) {
+    body.has-results { padding-bottom: 0; }
+    body.has-results .print-fab {
+      position: static; order: 99; align-self: center;
+      min-height: 44px; margin: 4px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+    .print-fab:hover { transform: none; }
+  }
 
   /* Print-only header/footer (hidden on screen) */
   .print-header, .print-footer { display: none; }
   #print-report { display: none; }
 
+  /* ═══ PRINT REPORT ═══════════════════════════════════════════════════════
+     Paper gets a dedicated report (#print-report, built on beforeprint), never
+     the screen. Always light on a white ground: the dark palette is screen-only
+     (see the token blocks), so every token below resolves to its light value.
+     Greyscale-safe: a tier is carried by its signal word and a drawn icon, the
+     regimen by its type size, never by colour alone. Hairlines, not boxes; no
+     side stripes; DM Serif for titles, Outfit for everything else. */
   @media print {
     @page { size: letter; margin: 0.5in; }
+    @page :first { margin-top: 0.45in; }
 
-    body { background: #fff !important; }
+    html, body { background: none !important; }
+    body { display: block; min-height: 0; padding: 0 !important; }
 
     /* Hide EVERYTHING except the print report */
     body > *:not(#print-report) { display: none !important; }
 
     #print-report {
       display: block !important;
-      font-family: 'Outfit', sans-serif;
-      color: #222;
-      font-size: 11px;
-      line-height: 1.5;
+      font-family: var(--font-body); font-size: var(--fs-xs); line-height: 1.45;
+      color: var(--ink); font-variant-numeric: tabular-nums lining-nums;
     }
     #print-report * { box-shadow: none !important; }
 
     .pr-header {
-      border-bottom: 2px solid var(--accent-terra, #C96B3C);
-      padding-bottom: 8px; margin-bottom: 14px;
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px;
+      border-bottom: 1px solid var(--ink); padding-bottom: 6px; margin-bottom: 12px;
     }
-    .pr-brand { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--accent-terra, #C96B3C); }
-    .pr-tag { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; }
-    .pr-meta { font-family:var(--font-num); font-size: 9px; color: #444; margin-top: 4px; }
+    .pr-brand { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-lg); color: var(--ink); }
+    .pr-tag   { font-size: var(--fs-xs); color: var(--ink-soft); }
+    .pr-meta  { flex-basis: 100%; font-size: var(--fs-xs); color: var(--ink-muted); }
 
-    .pr-section { margin-bottom: 12px; page-break-inside: avoid; }
-    .pr-section-title {
-      font-weight:600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--accent-terra, #C96B3C); border-bottom: 1px solid #ddd;
-      padding-bottom: 3px; margin-bottom: 6px;
+    /* The answer first: regimen, its numbers, the one-sentence summary,
+       confidence and the next step — across the full width. */
+    .pr-lead { margin: 0 0 12px; padding: 0 0 10px; border-bottom: 1px solid var(--rule); break-inside: avoid; }
+    .pr-lead > .note { margin-bottom: 10px; }
+    .pr-regimen {
+      font-family: var(--font-display); font-weight: 400; font-size: var(--fs-xl);
+      line-height: 1.1; color: var(--ink); margin: 2px 0 6px;
     }
+    .pr-regimen.pr-hold { font-size: var(--fs-lg); }
+    .pr-prov { font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600; margin-left: 8px; }
+    .pr-dl { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0 0 8px; }
+    .pr-dl dt { font-size: var(--fs-xs); color: var(--ink-muted); }
+    .pr-dl dd { margin: 0; font-size: var(--fs-sm); color: var(--ink); }
+    .pr-summary { font-size: var(--fs-sm); color: var(--ink); line-height: 1.5; margin: 6px 0 4px; max-width: 110ch; }
+    .pr-conf, .pr-next { font-size: var(--fs-xs); color: var(--ink-soft); line-height: 1.5; margin: 2px 0 0; max-width: 110ch; }
+    .pr-conf .conf-level, .pr-next strong { color: var(--ink); font-weight: 600; font-size: inherit; }
+    .pr-conf .vx-muted { color: var(--ink-muted); }
 
-    .pr-table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 6px; }
-    .pr-table th { text-align: left; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid #bbb; color: #444; }
-    .pr-table td { padding: 3px 6px; border-bottom: 1px solid #eee; }
-    .pr-table .pr-val { font-family:var(--font-num); }
-
-    .pr-highlight {
-      background: #f8f5f0; border: 1px solid #ddd; border-radius: var(--radius-sm);
-      padding: 8px 10px; margin-bottom: 8px;
-    }
-    .pr-dose-rec { font-family:var(--font-num); font-size: 13px; font-weight:600; color: var(--accent-terra, #C96B3C); }
-    .pr-metric { font-family:var(--font-num); font-size: 10px; }
-
-    .pr-graph img { width: 100%; max-height: 300px; object-fit: contain; margin: 6px 0; }
-    .pr-caption {
-      font-size: 8px; color: #777; line-height: 1.45; margin-top: 3px; font-style: italic;
-    }
-    .pr-note {
-      font-size: 9.5px; color: #444; line-height: 1.5; margin-top: 5px;
-      padding: 5px 8px; background: #faf8f4; border-left: 2px solid var(--accent-terra, #C96B3C);
-    }
     /* Two columns for the short reference tables, so the report stays to a page
        or two instead of a ribbon of half-empty rows. The graph and any wide
-       table opt back out with .pr-section-wide. */
-    .pr-body { column-count: 2; column-gap: 18px; }
-    .pr-section { break-inside: avoid; -webkit-column-break-inside: avoid; }
-    .pr-section-wide { column-span: all; break-inside: avoid; }
-    .pr-table th { font-size: 8.5px; line-height: 1.25; }
-    /* Header repeats on every page so a detached second sheet is still identifiable. */
-    .pr-runhead {
-      position: running(prhead);
-      font-size: 8px; color: #777;
+       block opt back out with .pr-section-wide. */
+    .pr-body { column-count: 2; column-gap: 20px; }
+    .pr-section { margin: 0 0 12px; break-inside: avoid; -webkit-column-break-inside: avoid; }
+    .pr-section-wide { column-span: all; break-inside: avoid; margin-top: 8px; }
+    .pr-section-title {
+      font-family: var(--font-display); font-weight: 400; font-size: var(--fs-base);
+      color: var(--ink); margin: 0 0 4px; padding-bottom: 2px; border-bottom: 1px solid var(--rule);
     }
-    @page { size: letter; margin: 0.5in; }
-    @page :first { margin-top: 0.45in; }
 
-    .pr-alert {
-      padding: 6px 8px; border-radius: 4px; font-size: 10px; margin-bottom: 6px;
-      border: 1px solid #ddd;
+    .pr-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); margin-bottom: 4px; }
+    .pr-table th {
+      text-align: left; font-weight: 500; color: var(--ink-muted); line-height: 1.25;
+      padding: 2px 6px 3px 0; border-bottom: 1px solid var(--rule); vertical-align: bottom;
     }
-    .pr-alert.warning { background: #fef9f0; border-color: #e0c080; }
-    .pr-alert.danger  { background: #fdf0f0; border-color: #d88; }
-    .pr-alert.info    { background: #f0f5fa; border-color: #99b8d8; }
+    .pr-table td { padding: 2px 6px 2px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+    .pr-val { font-variant-numeric: tabular-nums; }
+    .pr-metric { font-size: var(--fs-xs); color: var(--ink-soft); margin: 0 0 2px; }
+
+    .pr-graph img, img.pr-canvas { display: block; width: 100%; max-height: 300px; object-fit: contain; margin: 4px 0; }
+    .pr-caption { font-size: var(--fs-xs); color: var(--ink-muted); line-height: 1.45; margin-top: 3px; }
+    .pr-note { font-size: var(--fs-xs); color: var(--ink-soft); line-height: 1.5; margin-top: 5px; }
+    .pr-note strong { color: var(--ink); }
+
+    /* Tiered notes print in the screen's grammar: signal word + drawn icon. */
+    #print-report .note { font-size: var(--fs-xs); line-height: 1.5; color: var(--ink-soft); margin: 0 0 6px; break-inside: avoid; }
+    #print-report .note-word { gap: 6px; margin-bottom: 1px; }
+    #print-report .note-body { padding-left: 19px; max-width: none; }
+    #print-report .ic { width: 13px; height: 13px; }
+    .pr-empty { font-size: var(--fs-sm); color: var(--ink-soft); margin: 8px 0; }
+
+    /* Trough-Based prints its own panel as rendered: controls stripped, any
+       closed evidence opened, graphs carried as light images. */
+    .pr-clone { column-span: all; }
 
     .pr-footer {
-      margin-top: 16px; padding-top: 8px; border-top: 1px solid #bbb;
-      font-size: 8px; color: #666; text-align: center; line-height: 1.4;
+      margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--rule);
+      font-size: var(--fs-xs); color: var(--ink-muted); text-align: center; line-height: 1.4;
     }
   }
 
@@ -1623,12 +1641,12 @@
     text-transform:uppercase; color:var(--accent-blue);
   }
   .compare-clear-btn {
-    background:rgba(184,59,59,0.1); border:1px solid rgba(184,59,59,0.25);
-    color:var(--danger); padding:3px 10px; border-radius:var(--radius-sm);
+    background:none; border:1px solid var(--paper-edge);
+    color:var(--ink-soft); padding:3px 10px; border-radius:var(--radius-sm);
     font-size:var(--fs-xs); cursor:pointer; transition:background 0.15s;
     min-height:44px;
   }
-  .compare-clear-btn:hover { background:rgba(184,59,59,0.2); }
+  .compare-clear-btn:hover { background:var(--paper-deep); color:var(--ink); border-color:var(--ink-faint); }
   .compare-legend {
     display:flex; gap:12px; flex-wrap:wrap; padding:8px 16px 0;
     font-size:var(--fs-xs); color:var(--text-muted);
@@ -1650,7 +1668,7 @@
   .bayes-pk-col-head.pop { color:var(--text-muted); }
   .bayes-pk-row {
     display:grid; grid-template-columns:1.5fr 1fr 1fr; padding:10px 18px;
-    border-bottom:1px solid rgba(0,0,0,0.05);
+    border-bottom:1px solid var(--rule);
   }
   .bayes-pk-row:last-child { border-bottom:none; }
   .bayes-pk-row:hover { background:var(--paper-deep); }
@@ -1726,7 +1744,7 @@
   /* ─── Badges & alerts ─── */
   .diverge-warning {
     padding:10px 14px; border-radius:var(--radius-sm); font-size:var(--fs-xs); line-height:1.5;
-    background:rgba(191,133,48,0.08); border:1px solid rgba(191,133,48,0.25); color:var(--accent-amber);
+    background:color-mix(in srgb, var(--amber) 8%, transparent); border:1px solid color-mix(in srgb, var(--amber) 25%, transparent); color:var(--accent-amber);
   }
   .bayes-uncertainty-tag {
     display:inline-flex; align-items:center; gap:5px; font-size:var(--fs-xs); font-weight:500;
@@ -1776,24 +1794,24 @@
   }
   .profile-item-btn.load   { color:var(--accent-blue); border-color:color-mix(in srgb, var(--purple) 35%, transparent); }
   .profile-item-btn.load:hover   { background:color-mix(in srgb, var(--purple) 12%, transparent); }
-  .profile-item-btn.delete { color:var(--danger); border-color:rgba(184,59,59,0.35); }
-  .profile-item-btn.delete:hover { background:rgba(184,59,59,0.12); }
+  .profile-item-btn.delete { color:var(--ink-soft); border-color:var(--paper-edge); }
+  .profile-item-btn.delete:hover { background:var(--paper-deep); color:var(--ink); border-color:var(--ink-faint); }
   .profile-empty-msg { font-size:var(--fs-xs); color:var(--text-muted); font-style:italic; text-align:center; padding:10px 4px; }
   .profile-privacy-note {
     margin-top:8px; padding:7px 10px; border-radius: var(--radius-sm);
-    background:rgba(191,133,48,0.06); border:1px solid rgba(191,133,48,0.2);
+    background:color-mix(in srgb, var(--amber) 6%, transparent); border:1px solid color-mix(in srgb, var(--amber) 20%, transparent);
     font-size:var(--fs-xs); color:var(--accent-amber); line-height:1.4;
   }
   .profile-pk-tag {
     display:inline-block; font-family:var(--font-num); font-size:var(--fs-xs);
     padding:1px 6px; border-radius: var(--radius-pill); margin-left:4px;
-    background:rgba(61,142,95,0.12); color:var(--accent-sage); border:1px solid rgba(61,142,95,0.25);
+    background:color-mix(in srgb, var(--moss) 12%, transparent); color:var(--accent-sage); border:1px solid color-mix(in srgb, var(--moss) 25%, transparent);
   }
 
   /* ═══ PHASE 3 — ARC ADVISORY BANNER ═══ */
   .arc-advisory {
     margin:6px 0; padding:11px 14px; border-radius:var(--radius-sm);
-    background:rgba(191,133,48,0.08); border:1px solid rgba(191,133,48,0.30);
+    background:color-mix(in srgb, var(--amber) 8%, transparent); border:1px solid color-mix(in srgb, var(--amber) 30%, transparent);
     color:var(--accent-amber); font-size:var(--fs-xs); line-height:1.5;
   }
   .arc-advisory strong { color:var(--accent-amber); }
@@ -1804,8 +1822,8 @@
   .arc-crcl-tag {
     display:inline-block; font-family:var(--font-num); font-size:var(--fs-xs);
     padding:1px 8px; border-radius: var(--radius-pill);
-    background:rgba(191,133,48,0.18); color:var(--accent-amber); margin-left:4px;
-    border:1px solid rgba(191,133,48,0.35);
+    background:color-mix(in srgb, var(--amber) 18%, transparent); color:var(--accent-amber); margin-left:4px;
+    border:1px solid color-mix(in srgb, var(--amber) 35%, transparent);
   }
 
   /* The levels contradict the CrCl: this is the more urgent reading, so it
@@ -1824,7 +1842,7 @@
   /* ═══ PHASE 3 STEP 6 — VERY-LOW CrCl ADVISORY (non-dialysis) ═══ */
   .lowcrcl-advisory {
     margin:6px 0; padding:11px 14px; border-radius:var(--radius-sm);
-    background:rgba(176,78,96,0.08); border:1px solid rgba(176,78,96,0.30);
+    background:color-mix(in srgb, var(--rose) 8%, transparent); border:1px solid color-mix(in srgb, var(--rose) 30%, transparent);
     color:var(--accent-rose); font-size:var(--fs-xs); line-height:1.5;
   }
   .lowcrcl-advisory strong { color:var(--accent-rose); }
@@ -1835,17 +1853,17 @@
   .lowcrcl-tag {
     display:inline-block; font-family:var(--font-num); font-size:var(--fs-xs);
     padding:1px 8px; border-radius: var(--radius-pill);
-    background:rgba(176,78,96,0.18); color:var(--accent-rose); margin-left:4px;
-    border:1px solid rgba(176,78,96,0.35);
+    background:color-mix(in srgb, var(--rose) 18%, transparent); color:var(--accent-rose); margin-left:4px;
+    border:1px solid color-mix(in srgb, var(--rose) 35%, transparent);
   }
 
   /* ═══ PHASE 3 — CONTINUE COURSE TAB ═══ */
   .continue-banner {
     padding:12px 14px; border-radius:var(--radius-sm); font-size:var(--fs-xs); line-height:1.5;
-    background:rgba(61,142,95,0.08); border:1px solid rgba(61,142,95,0.25); color:var(--accent-sage);
+    background:color-mix(in srgb, var(--moss) 8%, transparent); border:1px solid color-mix(in srgb, var(--moss) 25%, transparent); color:var(--accent-sage);
   }
   .continue-banner.empty {
-    background:rgba(191,133,48,0.06); border-color:rgba(191,133,48,0.25); color:var(--accent-amber);
+    background:color-mix(in srgb, var(--amber) 6%, transparent); border-color:color-mix(in srgb, var(--amber) 25%, transparent); color:var(--accent-amber);
   }
   .continue-pk-card {
     background:var(--bg-elevated); border:1px solid var(--border);
@@ -1853,7 +1871,7 @@
   }
   .continue-pk-row {
     display:flex; justify-content:space-between; align-items:baseline;
-    padding:6px 0; font-size:var(--fs-sm); border-bottom:1px solid rgba(0,0,0,0.05);
+    padding:6px 0; font-size:var(--fs-sm); border-bottom:1px solid var(--rule);
   }
   .continue-pk-row:last-child { border-bottom:none; }
   .continue-pk-row .val {
@@ -1906,21 +1924,25 @@
   .brand-name { font-family:'DM Serif Display', Georgia, serif; letter-spacing:.01em; }
   .brand-name > span { color:var(--terracotta); }
 
-  /* The atmosphere wash from ainadara.com — three barely-there radials. */
+  /* The atmosphere wash from ainadara.com — three barely-there radials of the
+     terracotta, purple and moss tokens. Dark paper takes a slightly stronger
+     wash; only the strengths change, the hues follow the palette. */
   body {
+    --wash-terra: 5%; --wash-purple: 3%; --wash-moss: 2.5%;
     background-color: var(--paper);
     background-image:
-      radial-gradient(ellipse 1200px 800px at 15% 10%, rgba(204,120,92,.05), transparent 60%),
-      radial-gradient(ellipse 900px 700px at 85% 70%, rgba(74,61,122,.03), transparent 60%),
-      radial-gradient(ellipse 800px 600px at 50% 100%, rgba(74,92,40,.025), transparent 60%);
+      radial-gradient(ellipse 1200px 800px at 15% 10%, color-mix(in srgb, var(--terracotta) var(--wash-terra), transparent), transparent 60%),
+      radial-gradient(ellipse 900px 700px at 85% 70%, color-mix(in srgb, var(--purple) var(--wash-purple), transparent), transparent 60%),
+      radial-gradient(ellipse 800px 600px at 50% 100%, color-mix(in srgb, var(--moss) var(--wash-moss), transparent), transparent 60%);
     background-attachment: fixed;
   }
-  :root[data-theme="dark"] body,
-  :root:not([data-theme="light"]) body {
-    background-image:
-      radial-gradient(ellipse 1200px 800px at 15% 10%, rgba(204,120,92,.08), transparent 60%),
-      radial-gradient(ellipse 900px 700px at 85% 70%, rgba(74,61,122,.06), transparent 60%),
-      radial-gradient(ellipse 800px 600px at 50% 100%, rgba(74,92,40,.04), transparent 60%);
+  /* Scoped exactly as the dark tokens are: an explicit dark choice, or the
+     system preference when no choice was made. The second selector used to sit
+     outside the media query, so every light-system user who had never touched
+     the toggle got the dark wash on light paper. */
+  :root[data-theme="dark"] body { --wash-terra: 8%; --wash-purple: 6%; --wash-moss: 4%; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) body { --wash-terra: 8%; --wash-purple: 6%; --wash-moss: 4%; }
   }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
   @media print { body { background-image:none !important; } }
@@ -2592,20 +2614,48 @@
 
 
   /* ── design track E: polish & minor fixes — insert this track's CSS below this line ── */
+  /* Manual CrCl: off must look off. The input kept the live field's border and
+     ground while its checkbox was unticked, so it read as editable. The label
+     carries the state in a word (syncCrclOverrideState). */
+  #crcl-override-val:disabled {
+    background: var(--paper-deep);
+    border: 1px dashed var(--ink-faint);
+    color: var(--ink-muted);
+    cursor: not-allowed;
+    opacity: 1;
+  }
+  #crcl-override-val:disabled::placeholder { color: var(--ink-muted); opacity: 1; }
+  .crcl-ovr-state {
+    display: inline-flex; align-items: center; flex: none;
+    padding: 0 8px; border: 1px solid var(--rule); border-radius: var(--radius-pill);
+    font-size: var(--fs-xs); font-weight: 500; line-height: 1.6; color: var(--ink-muted);
+  }
+  .crcl-ovr-state.is-on { color: var(--ink); border-color: var(--ink-faint); }
+  /* The state word sits beside the label; the hint drops to its own line under
+     the label text instead of squeezing "Set CrCl manually" onto two. */
+  .crcl-ovr-label { flex-wrap: wrap; row-gap: 0; }
+  .crcl-ovr-label > .field-hint { flex-basis: 100%; padding-left: 25px; }
+  /* Its explanation is a hairline-separated line, not a callout with a
+     coloured side stripe (the stripe colour is set inline; its width is here). */
+  #crcl-override-note {
+    border: 0; border-top: 1px solid var(--rule); border-radius: 0;
+    background: none; padding: 8px 0 0; margin-top: 8px;
+  }
 
 </style>
 </head>
 <body>
 <div id="sr-announce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-<!-- ═══ PHASE 3 — PRINT REPORT ═══ -->
-<button class="print-fab" data-onclick="k0" title="Print or save this report as PDF">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<!-- ═══ PRINT — the one print action. Hidden until the module on screen has a
+     result (updatePrintFabVisibility); prints that module's report. ═══ -->
+<button type="button" class="print-fab" data-onclick="k0">
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="6 9 6 2 18 2 18 9"/>
     <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
     <rect x="6" y="14" width="12" height="8"/>
   </svg>
-  Print Report
+  <span>Print or save as PDF</span>
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
@@ -3905,9 +3955,11 @@ function switchModule(m) {
   tabs.forEach((t,i) => t.classList.toggle('active', order[i] === m));
   document.querySelector('.app-shell').style.display         = m === 'trough'   ? 'grid' : 'none';
   document.getElementById('app-shell-bayesian').style.display = m === 'auc'      ? 'grid' : 'none';
-
-
-
+  // Same patient in both modules: any shared demographic left empty here is
+  // carried over from the module just left, never over a typed value.
+  try { carryPatientDemographics(m); } catch (e) {}
+  // The print action belongs to the module on screen.
+  try { updatePrintFabVisibility(); } catch (e) {}
 }
 
 // ── Sex is ONE patient attribute, not one per module ────────────────────
@@ -12088,14 +12140,16 @@ function escHtml(s) {
 // ══════════════════════════════════════════
 //  PRINT REPORT — Dedicated Report Builder
 // ══════════════════════════════════════════
+// Only the module on screen counts. Both containers used to be checked, so a
+// Bayesian result kept the print action showing in Trough-Based (and the
+// reverse), offering to print a report of the module the user was not in.
 function _resultsHaveContent() {
-  const ids = ['results-content','b-results'];
-  return ids.some(id => {
-    const el = document.getElementById(id);
-    if (!el) return false;
-    const visible = (el.style.display && el.style.display !== 'none');
-    return visible && el.children.length > 0;
-  });
+  const bayesShell = document.getElementById('app-shell-bayesian');
+  const bayesActive = !!bayesShell && !!bayesShell.style && bayesShell.style.display !== 'none';
+  const el = document.getElementById(bayesActive ? 'b-results' : 'results-content');
+  if (!el) return false;
+  const visible = (el.style.display && el.style.display !== 'none');
+  return !!visible && el.children.length > 0;
 }
 
 function updatePrintFabVisibility() {
@@ -12141,7 +12195,7 @@ function _buildPrintGraph(r) {
                      gp.ind, gp.pop, r.nProj || 0);
     try { Object.defineProperty(window, 'devicePixelRatio', { value: prevDpr, configurable: true }); } catch (e) {}
     const url = off.toDataURL('image/png');
-    return `<div class="pr-section pr-section-wide"><div class="pr-section-title">Concentration–Time Profile</div>
+    return `<div class="pr-section pr-section-wide"><h2 class="pr-section-title">Concentration–time profile</h2>
       <div class="pr-graph"><img src="${url}" alt="Vancomycin concentration-time profile"></div>
       <div class="pr-caption">Solid line: individual (Bayesian) fit. Dashed: population prediction.
         Points: measured levels. Shaded band: trough target. Vertical marks: doses.</div></div>`;
@@ -12164,20 +12218,23 @@ function _prRegimenSection(r) {
   const lastLevelT = (r.levels && r.levels.length) ? r.levels[r.levels.length-1].timeH : null;
   let timing = null;
   try { timing = lastLevelT != null ? interpretLevelTiming(lastLevelT, r.doses, reg.intervalHours) : null; } catch (e) {}
+  // ISMP frequency form: the engine's "Q12H" label printed as "q12h". Only the
+  // case changes — the interval is the engine's own, never re-rounded here.
+  const freq = (label) => label ? String(label).toLowerCase() : label;
   const rows = [
     ['Detected regimen', reg.overrideActive
-        ? `${escHtml(reg.detectedFrequencyLabel || 'none')} (overridden)`
-        : escHtml(reg.frequencyLabel || 'no consistent schedule')],
-    ['Projecting on', escHtml(reg.frequencyLabel || '—')],
-    ['Maintenance dose', reg.maintenanceDoseMg != null ? `${reg.maintenanceDoseMg.toFixed(0)} mg` : '—'],
+        ? `${escHtml(freq(reg.detectedFrequencyLabel) || 'none')} (overridden)`
+        : escHtml(freq(reg.frequencyLabel) || 'no consistent schedule')],
+    ['Projecting on', escHtml(freq(reg.frequencyLabel) || '—')],
+    ['Maintenance dose', reg.maintenanceDoseMg != null ? fmtDose(reg.maintenanceDoseMg) : '—'],
     ['Confidence', escHtml(reg.overrideActive ? 'clinician override' : reg.confidence)],
   ];
   if (reg.transitionDetected && reg.priorIntervalHours != null)
-    rows.push(['Previous regimen', escHtml(frequencyLabel(reg.priorIntervalHours))]);
+    rows.push(['Previous regimen', escHtml(freq(frequencyLabel(reg.priorIntervalHours)))]);
   if (reg.loadingDoseDetected) rows.push(['Loading dose', 'detected, excluded from the interval read']);
   if (reg.supportingIntervals && reg.supportingIntervals.length)
-    rows.push(['Supporting intervals', reg.supportingIntervals.map(h => h.toFixed(2) + ' h').join(' · ')]);
-  let h = `<div class="pr-section"><div class="pr-section-title">Current Regimen</div><table class="pr-table"><tbody>`;
+    rows.push(['Supporting intervals', reg.supportingIntervals.map(fmtHrs).join(' · ')]);
+  let h = `<div class="pr-section"><h2 class="pr-section-title">Current regimen</h2><table class="pr-table"><tbody>`;
   for (const [k, v] of rows) h += `<tr><td>${k}</td><td class="pr-val">${v}</td></tr>`;
   h += `</tbody></table>`;
   try {
@@ -12189,7 +12246,7 @@ function _prRegimenSection(r) {
 }
 
 // Per-level timing, so a reader can see WHICH level each number is.
-function _prLevelRows(r, fmtAbsH, t0) {
+function _prLevelRows(r, fmtTime, t0) {
   let cur = null, tau = null;
   try {
     cur = inferCurrentRegimen(r.doses, r.CL_ind, r.V_ind,
@@ -12208,7 +12265,7 @@ function _prLevelRows(r, fmtAbsH, t0) {
     try {
       const t = interpretLevelTiming(lev.timeH, r.doses, tau);
       cls = LBL[t.classification] || t.classification;
-      if (t.hoursFromDoseStart != null) since = t.hoursFromDoseStart.toFixed(2) + ' h';
+      if (t.hoursFromDoseStart != null) since = fmtHrs(t.hoursFromDoseStart);
     } catch (e) {}
     try {
       const gi = gotiGraphParams(r).ind;
@@ -12218,7 +12275,7 @@ function _prLevelRows(r, fmtAbsH, t0) {
       if (Number.isFinite(p)) pred = p.toFixed(1);
     } catch (e) {}
     rows += `<tr><td class="pr-val">${lev.conc.toFixed(1)}</td><td class="pr-val">${pred}</td>`
-          + `<td class="pr-val">${fmtAbsH(lev.timeH)}</td><td class="pr-val">${(lev.timeH - t0).toFixed(1)} h</td>`
+          + `<td class="pr-val">${fmtTime(lev.timeH)}</td><td class="pr-val">${(lev.timeH - t0).toFixed(1)} h</td>`
           + `<td class="pr-val">${since}</td><td>${escHtml(cls)}</td></tr>`;
   }
   return rows;
@@ -12233,27 +12290,32 @@ function _buildPrintReport() {
   const bayesShell = document.getElementById('app-shell-bayesian');
   const bayesVisible = !!bayesShell && bayesShell.style.display !== 'none';
   const r = bayesVisible ? bState.result : null;
+  // Dates print with the month by name on a 24-hour clock (fmtClock), never
+  // as 09/10, which reads as two different days on either side of the Atlantic.
+  const now = _prStamp();
   if (!r) {
+    // The same rule in the other direction: with AUC Precision on screen and no
+    // fit yet, printing used to fall through to whatever the hidden Trough-Based
+    // panel last held. Only the module on screen prints.
+    if (bayesVisible) return null;
     const rc = document.getElementById('results-content');
     const visible = (rc && rc.style.display !== 'none' && rc.children.length > 0) ? rc : null;
     if (!visible) return null;
-    const now = (() => { const _d=new Date(), _p=(v)=>String(v).padStart(2,'0'); return `${_d.getFullYear()}-${_p(_d.getMonth()+1)}-${_p(_d.getDate())} ${_p(_d.getHours())}:${_p(_d.getMinutes())}`; })();
-    let h = `<div class="pr-header"><div class="pr-brand">AinaDara</div>
-      <div class="pr-tag">Vancomycin TDM Report &middot; Clinical Pharmacist Tool</div>
-      <div class="pr-meta">Generated ${now}</div></div>`;
-    h += '<div class="pr-section">' + visible.innerHTML + '</div>';
+    let h = _prHeader(now, '');
+    h += '<div class="pr-section pr-clone">' + _prTroughBody(visible) + '</div>';
     h += `<div class="pr-footer">AinaDara Vancomycin TDM Calculator &middot; Advisory only — not a prescription &middot; Clinician judgment required.</div>`;
     return h;
   }
-  const now = (() => { const _d=new Date(), _p=(v)=>String(v).padStart(2,'0'); return `${_d.getFullYear()}-${_p(_d.getMonth()+1)}-${_p(_d.getDate())} ${_p(_d.getHours())}:${_p(_d.getMinutes())}`; })();
   const modelName =
     r.model === 'hughes' ? 'Hughes 2024 (obese, 2-comp)' :
-    r.model === 'goti'   ? 'Goti 2018 (2-comp)' :
+    r.model === 'goti'   ? (r.dial ? 'Goti 2018 · haemodialysis (2-comp)' : 'Goti 2018 (2-comp)') :
                            'Buelga 2005 (1-comp)';
 
   const age = document.getElementById('b-age')?.value || document.getElementById('age')?.value || '—';
   const sex = (r.agCtx && r.agCtx.sex) || bState.sex || state?.sex || '—';   // the sex the fit used; the form's may since have been cleared
-  const tbw = document.getElementById('b-tbw')?.value || document.getElementById('weight')?.value || '—';
+  // The Trough-Based weight field is `tbw`; the fallback read `weight`, which
+  // has never existed, so an empty AUC weight printed "— kg".
+  const tbw = document.getElementById('b-tbw')?.value || document.getElementById('tbw')?.value || '—';
   const ht  = document.getElementById('b-height')?.value || document.getElementById('height')?.value || '—';
   // The SCr the fit USED (engine audit 2026-09-28). With serial SCr this is the
   // serial reading, not b-scr; the report used to print the baseline and derive
@@ -12269,19 +12331,22 @@ function _buildPrintReport() {
   let html = '';
 
   // Header
-  html += `<div class="pr-header">
-    <div class="pr-brand">AinaDara</div>
-    <div class="pr-tag">Vancomycin TDM Report &middot; Clinical Pharmacist Tool</div>
-    <div class="pr-meta">Generated ${now} &middot; Model: ${modelName}</div>
-  </div>`;
+  html += _prHeader(now, modelName);
+
+  // The answer first, as the screen gives it: the recommendation (or the
+  // refusal), the one-sentence summary, confidence and the next step — read
+  // from the panel the fit rendered, so paper and screen cannot disagree.
+  const screen = _prScreenState();
+  html += _prRecommendation(r, screen);
+
   html += `<div class="pr-body">`;
 
   // Demographics
   html += `<div class="pr-section">
-    <div class="pr-section-title">Patient Demographics</div>
+    <h2 class="pr-section-title">Patient demographics</h2>
     <table class="pr-table"><tbody>
-      <tr><td>Age</td><td class="pr-val">${age} yr</td><td>Sex</td><td class="pr-val">${sex}</td></tr>
-      <tr><td>Weight</td><td class="pr-val">${tbw} kg</td><td>Height</td><td class="pr-val">${ht} cm</td></tr>
+      <tr><td>Age</td><td class="pr-val">${escHtml(age)} yr</td><td>Sex</td><td class="pr-val">${escHtml(sex)}</td></tr>
+      <tr><td>Weight</td><td class="pr-val">${escHtml(tbw)} kg</td><td>Height</td><td class="pr-val">${escHtml(ht)} cm</td></tr>
       <tr><td>BMI</td><td class="pr-val">${bmi} kg/m²</td><td>SCr${scrSerial ? ' (serial, used for fit)' : ''}</td><td class="pr-val">${escHtml(scr)} mg/dL${scrSerial && r.agCtx.scrLabel ? ' · ' + escHtml(r.agCtx.scrLabel) : ''}</td></tr>
       ${r.crcl ? `<tr><td>CrCl (${escHtml((r.agCtx && r.agCtx.crclSource) || 'Cockcroft-Gault')})</td><td class="pr-val">${r.crcl.toFixed(0)} mL/min</td><td>Uncapped</td><td class="pr-val">${(() => { try { const u = getUncappedCrCl(fitScrN != null ? fitScrN : undefined); return u != null ? u.toFixed(0) + ' mL/min' : '—'; } catch (e) { return '—'; } })()}</td></tr>` : ''}
       ${(() => {
@@ -12310,23 +12375,14 @@ function _buildPrintReport() {
   // What regimen the calculator believes the patient is on, and why.
   html += _prRegimenSection(r);
 
-  // Helper: absolute hours → readable date/time (24h format)
-  const _fmtAbsH = (h) => {
-    const d = new Date(h * 3600000);
-    const mo = String(d.getMonth()+1).padStart(2,'0');
-    const dd = String(d.getDate()).padStart(2,'0');
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mm = String(d.getMinutes()).padStart(2,'0');
-    return `${mo}/${dd} ${hh}:${mm}`;
-  };
   const t0 = (r.doses && r.doses.length) ? r.doses[0].timeH : 0;
 
-  // Dose History
+  // Dose History — ISMP dose form ("750 mg", "1.25 g") and month-name times.
   if (r.doses && r.doses.length) {
-    html += `<div class="pr-section"><div class="pr-section-title">Dose History</div><table class="pr-table">
-      <thead><tr><th>Dose</th><th>Infusion</th><th>Date/Time</th><th>Hour</th></tr></thead><tbody>`;
+    html += `<div class="pr-section"><h2 class="pr-section-title">Dose history</h2><table class="pr-table">
+      <thead><tr><th>Dose</th><th>Infusion</th><th>Date/time</th><th>Hour</th></tr></thead><tbody>`;
     for (const d of r.doses) {
-      html += `<tr><td class="pr-val">${d.mg} mg</td><td class="pr-val">${d.tinfH.toFixed(1)} h</td><td class="pr-val">${_fmtAbsH(d.timeH)}</td><td class="pr-val">${(d.timeH - t0).toFixed(1)} h</td></tr>`;
+      html += `<tr><td class="pr-val">${fmtDose(d.mg)}</td><td class="pr-val">${fmtHrs(d.tinfH)}</td><td class="pr-val">${fmtClock(d.timeH)}</td><td class="pr-val">${(d.timeH - t0).toFixed(1)} h</td></tr>`;
     }
     html += '</tbody></table></div>';
   }
@@ -12334,9 +12390,9 @@ function _buildPrintReport() {
   // Observed levels, each with what it actually is — measured against fitted, and
   // where in the interval it was drawn. A bare number cannot be checked.
   if (r.levels && r.levels.length) {
-    html += `<div class="pr-section"><div class="pr-section-title">Observed Levels</div><table class="pr-table">
-      <thead><tr><th>Measured<br>mg/L</th><th>Fitted<br>mg/L</th><th>Date/Time</th><th>Hour of<br>course</th><th>After last<br>dose</th><th>Timing</th></tr></thead><tbody>`;
-    html += _prLevelRows(r, _fmtAbsH, t0);
+    html += `<div class="pr-section"><h2 class="pr-section-title">Observed levels</h2><table class="pr-table">
+      <thead><tr><th>Measured<br>mg/L</th><th>Fitted<br>mg/L</th><th>Date/time</th><th>Hour of<br>course</th><th>After last<br>dose</th><th>Timing</th></tr></thead><tbody>`;
+    html += _prLevelRows(r, fmtClock, t0);
     html += '</tbody></table>';
     html += `<div class="pr-caption">"Fitted" is this patient's individual model evaluated at the draw time —
       the gap between measured and fitted is the residual the Bayesian fit had to absorb.</div>`;
@@ -12344,7 +12400,7 @@ function _buildPrintReport() {
   }
 
   // PK Parameters
-  html += `<div class="pr-section"><div class="pr-section-title">Pharmacokinetic Parameters</div><table class="pr-table">
+  html += `<div class="pr-section"><h2 class="pr-section-title">Pharmacokinetic parameters</h2><table class="pr-table">
     <thead><tr><th>Parameter</th><th>Individual</th><th>Population</th><th>Unit</th></tr></thead><tbody>`;
   html += `<tr><td>CL</td><td class="pr-val">${r.CL_ind.toFixed(2)}</td><td class="pr-val">${r.CL_pop.toFixed(2)}</td><td>L/h</td></tr>`;
   if (r.goti) {
@@ -12359,28 +12415,8 @@ function _buildPrintReport() {
   html += `<tr><td>η_CL</td><td class="pr-val">${r.etaCL >= 0 ? '+' : ''}${r.etaCL.toFixed(3)}</td><td>0.000</td><td></td></tr>`;
   html += '</tbody></table></div>';
 
-  // AUC & Dose Recommendation — a refusal prints its reason, never
-  // "undefined mg QundefinedH".
-  if (r.rec && r.rec.noSolution) {
-    html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
-    html += `<div class="pr-metric"><strong>No regimen offered.</strong> ${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</div>`;
-    html += `<div class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</div></div>`;
-  } else if (r.rec && r.lowCrClHold) {
-    html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
-    html += `<div class="pr-metric"><strong>No empiric maintenance regimen.</strong> Very low CrCl without RRT and no measured level: one loading dose, then dose by levels.</div></div>`;
-  } else if (r.rec) {
-    const best = r.rec;
-    html += `<div class="pr-section"><div class="pr-section-title">Dose Recommendation</div>`;
-    html += `<div class="pr-highlight">`;
-    html += `<div class="pr-dose-rec">${best.dose} mg Q${best.tau}H</div>`;
-    html += `<div class="pr-metric">Infusion: ${best.tinfH ? best.tinfH.toFixed(1) : autoTinf(best.dose).toFixed(1)} h</div>`;
-    html += `<div class="pr-metric">Predicted AUC₂₄: ${best.auc24.toFixed(0)} mg·h/L</div>`;
-    if (best.Ctrough != null) html += `<div class="pr-metric">Predicted trough: ${best.Ctrough.toFixed(1)} mg/L</div>`;
-    if (best.Cpeak != null) html += `<div class="pr-metric">Predicted peak: ${best.Cpeak.toFixed(1)} mg/L</div>`;
-    html += `</div>`;
-    html += `<div class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</div>`;
-    html += '</div>';
-  }
+  // The dose recommendation (and a refusal's reason) now leads the report —
+  // see _prRecommendation above the columns.
 
   // Exposure achieved on the CURRENT regimen, plus how certain any of it is.
   html += (() => {
@@ -12396,7 +12432,7 @@ function _buildPrintReport() {
     const inBand = cur.auc24 >= AUC24_TARGET_MIN && cur.auc24 <= AUC24_TARGET_MAX;
     let unc = '';
     try { unc = aucUncertaintyText((r.levels || []).length, uncertaintyModelKey(r)); } catch (e) {}
-    return `<div class="pr-section"><div class="pr-section-title">Exposure on the Current Regimen</div>
+    return `<div class="pr-section"><h2 class="pr-section-title">Exposure on the current regimen</h2>
       <table class="pr-table"><tbody>
         <tr><td>Projected AUC₂₄</td><td class="pr-val">${cur.auc24.toFixed(0)} mg·h/L</td>
             <td>Guideline range</td><td class="pr-val">400–600</td></tr>
@@ -12411,6 +12447,9 @@ function _buildPrintReport() {
         from the fit of this patient${r.model === 'goti' && r.dial ? '; Goti-HD uses the Goti widths' : ''}.</div>` : ''}
     </div>`;
   })();
+
+  // The tiered notes exactly as the result panel showed them.
+  html += _prNotesSection(screen);
 
   // Advisories that changed the interpretation — recorded so the report stands alone.
   html += (() => {
@@ -12437,8 +12476,10 @@ function _buildPrintReport() {
           'This affects the Goti model input only, not the displayed CrCl.']);
     } catch (e) {}
     if (!items.length) return '';
-    return `<div class="pr-section"><div class="pr-section-title">Advisories</div>`
-      + items.map(([k, t]) => `<div class="pr-alert ${k}">${escHtml(t)}</div>`).join('')
+    // Printed in the screen's note grammar: a signal word and a drawn icon carry
+    // the tier, so it survives a greyscale printer (the pale tinted boxes did not).
+    return `<div class="pr-section"><h2 class="pr-section-title">Advisories</h2>`
+      + items.map(([k, t]) => _prAdvisoryNote(k, t)).join('')
       + `</div>`;
   })();
 
@@ -12463,8 +12504,10 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   window.addEventListener('beforeprint', () => {
     let rpt = document.getElementById('print-report');
     if (!rpt) { rpt = document.createElement('div'); rpt.id = 'print-report'; document.body.appendChild(rpt); }
-    const html = _buildPrintReport();
-    if (html) { rpt.innerHTML = html; rpt.style.display = 'none'; }
+    // With nothing to print in the module on screen, say so rather than send a
+    // blank sheet (every other element is hidden in print).
+    const html = _buildPrintReport() || _prEmptyReport();
+    rpt.innerHTML = html; rpt.style.display = 'none';
   });
   window.addEventListener('afterprint', () => {
     const rpt = document.getElementById('print-report');
@@ -12943,21 +12986,10 @@ function refreshStaleResult(scope) {
 })();
 
 // A printed handoff is read away from the screen, so a stale AUC fit says so on
-// paper too. Registered after the report's own beforeprint handler, so the
-// report exists. (The Trough report copies the results panel, stale line and all.)
-if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener('beforeprint', () => {
-    try {
-      const bShell = document.getElementById('app-shell-bayesian');
-      if (!bShell || bShell.style.display === 'none' || !resultIsStale('auc')) return;
-      const rpt = document.getElementById('print-report');
-      if (!rpt) return;
-      const html = `<div class="pr-alert warning"><strong>${STALE_MSG}</strong> — recalculate before relying on this report.</div>`;
-      const head = rpt.querySelector('.pr-header');
-      if (head) head.insertAdjacentHTML('afterend', html); else rpt.insertAdjacentHTML('afterbegin', html);
-    } catch (e) { /* printing must never be blocked by a warning */ }
-  });
-}
+// paper too: _prRecommendation prints that note itself (from bayesFitIsStale, the
+// same check resultIsStale('auc') makes), and the Trough report copies the
+// results panel, stale line and all. One statement per report — a second
+// beforeprint hook here would print it twice (merged 2026-09-28).
 
 
 // ── design track C: mobile & data entry — insert this track's helpers below this line ──
@@ -13370,6 +13402,237 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 
 
 // ── design track E: polish & minor fixes — insert this track's helpers below this line ──
+
+// ─── Print report pieces (see _buildPrintReport) ────────────────────────────
+// "Generated 28 Sep 2026 14:05": fmtClock's month-by-name, 24-hour form with the
+// year added, since a printed sheet outlives the course it describes.
+function _prStamp(d) {
+  d = d || new Date();
+  const c = fmtClock(d.getTime() / 3600000).split(' ');   // [day, month, HH:MM]
+  return `${c[0]} ${c[1]} ${d.getFullYear()} ${c[2]}`;
+}
+
+function _prHeader(now, modelName) {
+  return `<div class="pr-header">
+    <div class="pr-brand">AinaDara</div>
+    <div class="pr-tag">Vancomycin TDM Report &middot; Clinical Pharmacist Tool</div>
+    <div class="pr-meta">Generated ${escHtml(now)}${modelName ? ` &middot; Model: ${escHtml(modelName)}` : ''}</div>
+  </div>`;
+}
+
+function _prEmptyReport() {
+  return _prHeader(_prStamp(), '')
+    + '<p class="pr-empty">Nothing to print yet: the module on screen has no result. Calculate first, then print.</p>'
+    + `<div class="pr-footer">AinaDara Vancomycin TDM Calculator &middot; Advisory only — not a prescription &middot; Clinician judgment required.</div>`;
+}
+
+// What the rendered AUC Precision panel concluded, for the report to carry
+// verbatim: the one-sentence summary, the confidence line, the next step,
+// whether the dose is provisional, and every tiered note. Read only from a
+// completed render (#b-summary exists), so a panel showing the render-failure
+// alarm contributes nothing and no previous summary can reach paper.
+function _prScreenState() {
+  const out = { summary: '', confHTML: '', next: '', provisional: false, notes: [], stale: false };
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return out;
+  const panel = document.getElementById('b-results');
+  if (!panel || typeof panel.querySelector !== 'function') return out;
+  if (panel.querySelector('#b-summary')) out.summary = String((bState && bState.summaryText) || '').trim();
+  const conf = panel.querySelector('.vx-conf');
+  if (conf) out.confHTML = String(conf.innerHTML || '').trim();
+  const next = panel.querySelector('.vx-next');
+  if (next && next.cloneNode) {
+    const c = next.cloneNode(true);
+    const k = c.querySelector('.vx-k'); if (k) k.remove();
+    out.next = String(c.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+  out.provisional = !!panel.querySelector('.vx-prov');
+  out.notes = Array.from(panel.querySelectorAll('#ev-notes .note') || []).map(n => n.outerHTML);
+  try { out.stale = typeof bayesFitIsStale === 'function' && bayesFitIsStale(); } catch (e) {}
+  return out;
+}
+
+// The report's lead: the recommendation in ISMP form ("1.25 g IV q12h"), its
+// numbers, then the summary, confidence and next step. Under Low confidence the
+// dose still leads, marked provisional, as on screen (PRODUCT.md). A refusal
+// prints its reason, never "undefined mg QundefinedH".
+function _prRecommendation(r, screen) {
+  screen = screen || {};
+  let h = `<div class="pr-lead">`;
+  // A printed handoff must not pair a result with inputs it was not computed
+  // from: the demographics below are read from the form as it is now.
+  if (screen.stale) h += noteHTML({ tier: 'alarm', word: 'Inputs changed since the last calculation',
+    html: 'The values now entered are not the ones this result was calculated from. Recalculate before relying on this report.' });
+  h += `<h2 class="pr-section-title">Dose recommendation</h2>`;
+  if (r.rec && r.rec.noSolution) {
+    h += `<p class="pr-regimen pr-hold">No regimen offered.</p>`;
+    h += `<p class="pr-metric">${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</p>`;
+    h += `<p class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</p>`;
+  } else if (r.rec && r.lowCrClHold) {
+    h += `<p class="pr-regimen pr-hold">No empiric maintenance regimen.</p>`;
+    h += `<p class="pr-metric">Very low CrCl without RRT and no measured level: one loading dose, then dose by levels.</p>`;
+  } else if (r.rec) {
+    const best = r.rec;
+    const tinf = best.tinfH ? best.tinfH : autoTinf(best.dose);
+    h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? '<span class="pr-prov">provisional</span>' : ''}</p>`;
+    h += `<dl class="pr-dl">`
+      + `<div><dt>Infusion</dt><dd>${fmtHrs(tinf)}</dd></div>`
+      + `<div><dt>Predicted AUC₂₄</dt><dd>${best.auc24.toFixed(0)} mg·h/L</dd></div>`
+      + (best.Ctrough != null ? `<div><dt>Predicted trough</dt><dd>${best.Ctrough.toFixed(1)} mg/L</dd></div>` : '')
+      + (best.Cpeak != null ? `<div><dt>Predicted peak</dt><dd>${best.Cpeak.toFixed(1)} mg/L</dd></div>` : '')
+      + `<div><dt>Target AUC₂₄</dt><dd>${r.targetAUC} mg·h/L</dd></div>`
+      + `</dl>`;
+  }
+  if (screen.summary) h += `<p class="pr-summary">${escHtml(screen.summary)}</p>`;
+  if (screen.confHTML) h += `<p class="pr-conf">${screen.confHTML}</p>`;
+  if (screen.next) h += `<p class="pr-next"><strong>Next</strong> ${escHtml(screen.next)}</p>`;
+  h += `</div>`;
+  return h;
+}
+
+function _prNotesSection(screen) {
+  if (!screen || !screen.notes || !screen.notes.length) return '';
+  return `<div class="pr-section"><h2 class="pr-section-title">Notes</h2>${screen.notes.join('')}</div>`;
+}
+
+// A print advisory in the note grammar. The kinds are the report's own
+// ('danger' | 'warning' | 'info'); the signal words are the standard tier words,
+// so the tier still reads on a greyscale printer.
+function _prAdvisoryNote(kind, text) {
+  const tier = kind === 'danger' ? 'alarm' : kind === 'warning' ? 'caution' : 'info';
+  const word = tier === 'alarm' ? 'Warning' : tier === 'caution' ? 'Caution' : 'Note';
+  return noteHTML({ tier, word, html: escHtml(text) });
+}
+
+// Trough-Based prints its own panel as rendered. innerHTML carries neither a
+// canvas's pixels (the graphs printed as blank boxes) nor an input's current
+// value (only its default attribute), so: graphs become light images, controls
+// are dropped rather than printed with stale defaults, closed evidence opens,
+// and ids go, so the copy never shadows the live panel.
+function _prTroughBody(src) {
+  const box = document.createElement('div');
+  box.innerHTML = src.innerHTML;
+  const urls = _prLightCanvasImages(Array.from(src.querySelectorAll('canvas')));
+  Array.from(box.querySelectorAll('canvas')).forEach((c, i) => {
+    if (!urls[i]) { c.remove(); return; }
+    const img = document.createElement('img');
+    img.className = 'pr-canvas';
+    img.src = urls[i];
+    img.alt = c.getAttribute('aria-label') || 'Concentration–time graph';
+    c.replaceWith(img);
+  });
+  box.querySelectorAll('button, input, select, textarea').forEach(el => el.remove());
+  box.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
+  box.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  return box.innerHTML;
+}
+
+// Snapshot canvases for paper. A trough graph drawn on dark paper would print
+// as pale lines on white, so in dark mode each one drawPKGraph recorded is
+// repainted in the light palette, captured, and repainted back.
+function _prLightCanvasImages(canvases) {
+  const root = document.documentElement;
+  const dark = typeof currentTheme === 'function' && currentTheme() === 'dark';
+  const ids = dark ? canvases.map(c => c.id).filter(id => id && _pkGraphArgs[id]) : [];
+  const prev = root ? root.getAttribute('data-theme') : null;
+  const repaint = () => ids.forEach(id => { try { drawPKGraph.apply(null, _pkGraphArgs[id]); } catch (e) {} });
+  const out = [];
+  try {
+    if (ids.length) { root.setAttribute('data-theme', 'light'); repaint(); }
+    // A canvas in a closed result tab was never drawn (it has no box), and its
+    // panel stays hidden on paper too: nothing to carry.
+    canvases.forEach((c, i) => {
+      try { out[i] = (c.getClientRects().length && c.width > 0 && c.height > 0) ? c.toDataURL('image/png') : ''; } catch (e) { out[i] = ''; }
+    });
+  } finally {
+    if (ids.length) {
+      if (prev) root.setAttribute('data-theme', prev); else root.removeAttribute('data-theme');
+      repaint();
+    }
+  }
+  return out;
+}
+
+// ─── Same patient, both modules ────────────────────────────────────────────
+// A patient typed into Trough-Based had to be typed again in AUC Precision. On
+// a module switch, each shared demographic the arriving module has EMPTY is
+// copied from the module just left. A value typed there is never overwritten,
+// and nothing is repaired, rounded or converted on the way: the entry moves
+// verbatim and meets the arriving module's own validation. Sex is already one
+// attribute (setPatientSex). The field mapping is PATIENT_CORE_FIELDS — the one
+// saved profiles use (rule 2) — limited to the demographics.
+function carryPatientDemographics(to) {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return [];
+  const into = to === 'auc' ? 'bayes' : to === 'trough' ? 'trough' : null;
+  if (!into) return [];
+  const from = into === 'bayes' ? 'trough' : 'bayes';
+  const DEMOGRAPHICS = { age: 'age', tbw: 'weight', height: 'height', scr: 'SCr' };
+  const val = el => String(el && el.value != null ? el.value : '').trim();
+  const filled = [];
+  for (const f of PATIENT_CORE_FIELDS) {
+    if (!DEMOGRAPHICS[f.key] || !f[from] || !f[into]) continue;
+    const src = document.getElementById(f[from]), dst = document.getElementById(f[into]);
+    if (!src || !dst || val(src) === '' || val(dst) !== '') continue;
+    dst.value = src.value;
+    filled.push({ el: dst, key: f.key });
+  }
+  if (!filled.length) return [];
+  // Let each field's own handlers run (weights, CrCl, AKI), as typing would.
+  for (const { el } of filled) {
+    try { if (typeof Event === 'function' && el.dispatchEvent) el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+  try {
+    if (into === 'trough') { if (typeof autoWeights === 'function') autoWeights(); if (typeof updateCrCl === 'function') updateCrCl(); }
+    else if (typeof updateBayesCrCl === 'function') updateBayesCrCl();
+  } catch (e) {}
+  try {
+    announceResult(`Carried over from ${from === 'trough' ? 'Trough-Based' : 'AUC Precision'}: `
+      + filled.map(x => DEMOGRAPHICS[x.key]).join(', ') + '.');
+  } catch (e) {}
+  return filled.map(x => x.el.id);
+}
+
+// ─── Manual CrCl: the field says whether it is in use ──────────────────────
+// The override input looked editable while its checkbox was off. It now reads
+// as off (the :disabled rule in this track's CSS), and the label carries the
+// state in a word for whatever sets it — the checkbox, a loaded profile, or
+// setCrclOverride itself (observed through the input's disabled attribute).
+function syncCrclOverrideState() {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+  const cb = document.getElementById('crcl-override-on');
+  const inp = document.getElementById('crcl-override-val');
+  if (!cb || !inp) return;
+  const on = !!cb.checked;
+  const label = typeof cb.closest === 'function' ? cb.closest('label') : null;
+  if (label && typeof document.createElement === 'function') {
+    let tag = label.querySelector('.crcl-ovr-state');
+    if (!tag) {
+      tag = document.createElement('span');
+      tag.className = 'crcl-ovr-state';
+      tag.setAttribute('aria-hidden', 'true');   // the checkbox announces its own state
+      const after = cb.nextElementSibling;
+      if (after && after.after) after.after(tag); else label.appendChild(tag);
+      if (label.classList) label.classList.add('crcl-ovr-label');
+    }
+    tag.textContent = on ? 'On' : 'Off';
+    tag.classList.toggle('is-on', on);
+  }
+  if (inp.setAttribute) inp.setAttribute('aria-label', on ? 'Manual CrCl, mL/min' : 'Manual CrCl, mL/min (off)');
+}
+
+(function wireTrackE() {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+  try { syncCrclOverrideState(); } catch (e) {}
+  const cb = document.getElementById('crcl-override-on');
+  const inp = document.getElementById('crcl-override-val');
+  if (cb && typeof cb.addEventListener === 'function')
+    cb.addEventListener('change', () => { try { syncCrclOverrideState(); } catch (e) {} });
+  if (inp && typeof MutationObserver !== 'undefined') {
+    try {
+      new MutationObserver(() => { try { syncCrclOverrideState(); } catch (e) {} })
+        .observe(inp, { attributes: true, attributeFilter: ['disabled'] });
+    } catch (e) {}
+  }
+})();
 
 </script>
 
