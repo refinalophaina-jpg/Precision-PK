@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "tdm-static", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8731"], "port": 8731 }
+    { "name": "tdm-static", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8731"], "port": 8731 },
+    { "name": "tdm-csp", "runtimeExecutable": "python3", "runtimeArgs": ["docs/audit/serve-csp.py", "8777"], "port": 8777 }
   ]
 }

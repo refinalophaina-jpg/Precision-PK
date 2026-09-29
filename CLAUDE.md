@@ -14,7 +14,7 @@ consensus guideline. Built for a clinical pharmacist; used at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~7,900 lines / ~360 KB.
+~13,700 lines / ~740 KB (2026-09-29).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -27,9 +27,9 @@ git hash-object index.html
 
 | Range (approx) | Contents |
 |---|---|
-| 1–1,530 | CSS — `:root` tokens, cards, canvas, KDIGO badges, responsive, `@media print` |
-| 1,530–2,520 | Markup — print report, header, module tabs, the three module panels |
-| 2,520–end | One inline `<script>` — the whole engine and UI |
+| 1–2,660 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
+| 2,660–3,705 | Markup — print report, header, module tabs, the two module panels |
+| 3,706–end | One inline `<script>` — the whole engine and UI |
 
 **Two modules** (tabs, switched by `switchModule()`):
 
@@ -129,10 +129,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **269/269 pass** |
+| `phase2d_validation.cjs` | **318/318 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
+| `docs/audit/browser-flows.cjs` | **44/44** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 Syntax check after any edit:
 
@@ -159,10 +161,33 @@ build if an inline handler, a `javascript:` URL, or an `eval`-family call reappe
 
 **Verify UI changes with a real click, in a browser, under the production CSP** — not by
 calling the function from the console. Every check that missed the CSP failure above was
-programmatic. `scratchpad/csptest/serve.py` serves the file locally under the real policy.
+programmatic. `docs/audit/serve-csp.py` serves the file locally under the real policy, and
+`docs/audit/browser-flows.cjs` drives it the way a pharmacist does.
 
-Design language: warm off-white, `Outfit` body / `DM Serif Display` headings / `DM Mono`
-numbers, terracotta accent `--accent-terra: #C96B3C`. Full token set in `:root`.
+Design language: `DESIGN.md` (with `.impeccable/design.json`) records it; `PRODUCT.md` records
+who it is for and the decisions it rests on. Bone paper and ink; DM Serif Display for the
+regimen and section titles, Outfit with **tabular figures for every number — no monospace**.
+Terracotta marks only the recommendation, the selected cell and a projection; one muted alarm
+hue marks top-tier safety, always beside a signal word and a drawn icon. **Terracotta text uses
+`--terracotta-ink`** (5.9:1 on paper); raw `--terracotta` is 3.0:1 and fails as text. Full
+token set in `:root`.
+
+Rules the 2026-09 design pass learned the hard way:
+
+- **No glyph icons.** "⚠", "💡", "✓" render as colour emoji on some platforms. Use the drawn
+  `ICON` set (`alarm`, `caution`, `info`) — `noteHTML()` for results, `cautionHTML()` for an
+  input-panel warning.
+- **Doses print in ISMP form** through `fmtDose` / `fmtRegimen` ("1 g", "1.25 g IV q12h").
+  Strings the *engine* returns (`bayesDoseOptimizer().reason`, `frequencyLabel`) are engine
+  output: engine parity compares them, so they are not reformatted in place.
+- **Test an input formatter as a typed sequence**, not one event per value. `formatTime24Input`
+  passed every single-event test and still turned a typed "08:00" into "08::0".
+- **A label on a chart must avoid what is drawn**, markers included: the trough-band label
+  scans the band's edges for a clear place rather than trusting a corner.
+- **The course strip and the curve share one time axis** (`profileDomain` + `PROFILE_PAD`) and
+  one cursor (`canvas._pkCursor(t)`). Anything new drawn on either must use that axis.
+- **Screenshots:** `html` has `scroll-behavior: smooth`, so `scrollTo` animates; capture after
+  `scrollTo({ behavior: 'instant' })` or the sticky header lands mid-page in a full-page shot.
 
 **Shape and depth are mirrored from ainadara.com, and the site's vocabulary is small:**
 
@@ -172,7 +197,7 @@ numbers, terracotta accent `--accent-terra: #C96B3C`. Full token set in `:root`.
 | Pill | `999px` | `--radius-pill` — chips, badges, the switch, the print FAB |
 | Circle | `50%` | dots and the brand mark |
 | `box-shadow` | **none, anywhere** | focus rings only |
-| Gradients | none | one: the therapeutic-range gauge, which is data |
+| Gradients | the page atmosphere only: three faint radials of terracotta, purple and moss on the ground | the same wash on `body`, mirrored; on components, only the therapeutic-range gauge, which is data |
 
 Depth comes from a hairline (`--rule`), a background step (`--paper` → `--paper-deep`),
 and a small hover lift — never a shadow. Selection is a background step plus terracotta
@@ -224,6 +249,11 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 
 | Path | What |
 |---|---|
+| `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
+| `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
+| `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 44 real-input checks |
+| `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |
 | `docs/validation-threshold-decisions.md` | The accept/reject record for failing thresholds |

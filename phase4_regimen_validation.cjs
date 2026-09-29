@@ -164,7 +164,10 @@ console.log('\n=== DOSE CHANGE AT THE SAME INTERVAL (engine audit 2026-09-28) ==
   check('DC5 loading dose then titration: LD excluded, maintenance 1250', ld.loadingDoseDetected===true && ld.maintenanceDoseMg===1250 && ld.priorDoseMg===1000, JSON.stringify([ld.loadingDoseDetected, ld.maintenanceDoseMg, ld.priorDoseMg]));
   const steady = detectRegimen(q12([1000,1000,1000,1000]));
   check('DC6 no change: doseChangeDetected false', steady.doseChangeDetected===false && steady.priorDoseMg===null, steady.doseChangeDetected);
-  check('DC7 narrative states the dose change', /1000 mg to 1250 mg/.test(regimenNarrative(up)), regimenNarrative(up));
+  // Re-pointed 2026-09-29 (rule 9, reason recorded): the narrative prints doses in
+  // ISMP form — grams from 1,000 mg, the decision of 2026-09-28 — so the same
+  // change reads "1 g to 1.25 g". What is checked is unchanged: the change is stated.
+  check('DC7 narrative states the dose change', /1 g to 1\.25 g/.test(regimenNarrative(up)), regimenNarrative(up));
 }
 
 console.log('\n  passed '+pass+'  failed '+fail);

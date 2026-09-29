@@ -3710,6 +3710,22 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(f('08', 'deleteContentBackward') === '08', 'deleting past the colon must be possible');
     assert(f('0800', 'insertText') === '0800', 'a mistyped time is shown back, never repaired');
     assert(f('08:3a0', 'insertText') === '08:30', 'non-digits are dropped, as before');
+    // Typed key by key, as a clinician does, with the browser's maxlength="5".
+    // Each call above is one event; the defect was only visible as a sequence:
+    // "08:00" typed became "08::0" (the auto colon, then the typed one).
+    const typed = (keys) => {
+      const el = { value: '' };
+      for (const ch of keys) {
+        if (el.value.length >= 5) break;             // maxlength refuses the key
+        el.value += ch;
+        formatTime24Input(el, { inputType: 'insertText', data: ch });
+      }
+      return el.value;
+    };
+    assert(typed('08:00') === '08:00', `typing "08:00" gave "${typed('08:00')}"`);
+    assert(typed('0800') === '08:00', `typing "0800" gave "${typed('0800')}"`);
+    assert(typed('23:59') === '23:59', `typing "23:59" gave "${typed('23:59')}"`);
+    assert(f('08::00', 'insertFromPaste') === '08::0', 'a pasted value is shown back, not repaired (5-char cap only)');
   });
 
   test('read-back: dose gaps and level timing, to the minute, from the right dose', ()=>{

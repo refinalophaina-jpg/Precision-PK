@@ -389,6 +389,66 @@ correlation (ρ 0.23), and the two readings move AUC₂₄ by up to ~4% in oppos
 peak/trough designs. The prior stays diagonal and the omission is recorded beside the omegas —
 the one published Buelga parameter not in the model.
 
+## D12 — The results redesign: read the answer off the patient's course (2026-09-28/29)
+
+Presentation only. `docs/audit/engine-parity.cjs --ref 63063c8` (the last engine before the
+redesign): 225 calls, 0 differences. The decisions the user made are in `PRODUCT.md`: the dose
+stays the headline when confidence is Low, marked "provisional"; doses print in ISMP form, grams
+from 1,000 mg; the layout is "the course timeline" (`.impeccable/surfaces/index-html.md`).
+
+- **Answer first, on the patient's own timeline.** The Bayesian results open on a course strip
+  (dose bars as wide as each infusion, level dots, creatinine ticks, "now"), the verdict at its
+  end, and the concentration curve beneath on the same time axis. Evidence follows as hairline
+  sections. The Trough module's three renderers use the same grammar. It replaced a stack of stat
+  cards and striped alert boxes above a buried dose (critique score 17/40).
+- **One shared time cursor.** Pointing at the strip or the curve draws one rule on both at the
+  same instant, and reads the fitted concentration, the clock time and the time since the last
+  dose. The strip and the curve share `profileDomain` and `PROFILE_PAD`, so an instant has one x.
+- **A de-rated dose is marked, not faded.** An old `opacity: .72` on `.rec-box.rec-derated
+  .rec-dose` stacked on the verdict's own colours and left "1 g" the faintest part of
+  "1 g IV q12h". The word "provisional" carries the state; the dose stays at full ink.
+- **"Would add little" carries its own reason.** Read alone under a Low confidence word it looked
+  like a contradiction. The verdict now appends the clause `nextLevelValue` already states for
+  that branch — "the maintenance regimen lands in the same place either way" — verbatim.
+- **Terracotta text is `--terracotta-ink`.** Raw `--terracotta` (#cc785c) on paper is 3.0:1.
+  Fourteen text-colour rules moved to the ink token (5.9:1 on light paper, 7.7:1 in dark). A
+  rendered measurement of every visible text run, both themes, every evidence section open:
+  0 under WCAG AA. The detector's remaining "#ece4d2 on #ffffff" is the dark-theme ink read
+  against a white page that never renders.
+- **Drawn icons, not glyphs; status tints from tokens.** "⚠", "💡" and "✓" became the drawn
+  `ICON` set. 28 raw `rgba()` literals of the old palette became `color-mix()` over tokens, so
+  they follow the dark theme; the AKI box moved from terracotta to amber, the caution hue.
+- **What an independent finish review changed.** A fresh reviewer, judging the build against
+  its direction contract, found seven material gaps; all were fixed and are checked in
+  `docs/audit/browser-flows.cjs`. The educational disclaimer existed only in print and a
+  collapsed section, so it is now a visible line under every result (binding: `PRODUCT.md`).
+  After "now" is prediction, so the strip and the curve shade it and the record visibly ends
+  where the verdict stands. On a phone the verdict sits between strip and curve, so the strip
+  carries its own day axis and names "now". Measured levels were rose, a near-sibling of the
+  alarm red; they are now ink. "Low confidence" was alarm red beside an amber "provisional",
+  and one state is now said in one hue, amber. The purple save button is now an ink secondary
+  action, the nested privacy box is plain text under a hairline, and model selection is a
+  ground step rather than a terracotta border. Declined: graded 50/80% fan bands. The engine
+  simulates only the 80% range, and a 50% band would be a number with no simulation behind it
+  (rule 1).
+
+## D13 — Input defects that only real keystrokes and clicks found (2026-09-29)
+
+`docs/audit/browser-flows.cjs` drives the app under the production CSP with typed digits and
+clicked buttons, desktop and 375px, and fails on any console error. On its first run:
+
+- **A typed "08:00" became "08::0".** `formatTime24Input` adds the colon after two digits; the
+  clinician's own colon doubled it and `maxlength="5"` cut the last digit, so every dose and level
+  time entered the natural way was refused. The unit test called the formatter once per value; it
+  now also types key by key. A pasted value is still shown back, never repaired.
+- **Reset showed a sex nobody chose.** `resetBayesian` lit Male while `bState.sex` was null, and
+  reset the second `.toggle-group` — not the model picker since it became a `.model-grid` — so
+  the previous model stayed highlighted. `loadProfileIntoForm` had the same stale selector and
+  passed `setBModel` an undefined element: a loaded profile changed the model without moving
+  the highlight.
+- **Every phone button was forced to 16px.** A ≤600px rule meant to stop iOS zoom-on-focus —
+  which only form fields trigger — also hit buttons; the mode tabs grew until "RANDOM" clipped.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

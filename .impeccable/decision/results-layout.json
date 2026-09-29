@@ -1,0 +1,60 @@
+{
+  "title": "Choose the results layout",
+  "question": "Three structures for the Bayesian results panel, all in the AinaDara house style. Lock one, steer it, or re-roll.",
+  "options": [
+    {
+      "id": "timeline-first",
+      "label": "The course timeline",
+      "kicker": "THE ROLL",
+      "lineage": "medication administration record, read left to right",
+      "thesis": "Results open on the patient's course (doses, levels, SCr) with the verdict standing at the 'now' end of it.",
+      "palette": ["#faf5ed", "#2d3428", "#cc785c", "#4a5c28"],
+      "materials": ["bone paper", "hairline rules", "ink curve with graded bands"],
+      "viewport": "A full-width course strip (dose bars as wide as each infusion, level dots, SCr ticks), the verdict — 1 g IV q12h · AUC 434, likely 330 to 650 · confidence — anchored at its right edge; the fan-chart curve directly beneath on the same time axis; evidence below as hairline sections.",
+      "risk": "The verdict sits beside the timeline rather than above everything, so it must be set large enough to win the first glance.",
+      "wireframe": {"cols": 12, "rows": 10, "regions": [
+        {"label": "inputs", "x": 0, "y": 0, "w": 4, "h": 10},
+        {"label": "course timeline", "x": 4, "y": 0, "w": 6, "h": 2, "accent": true},
+        {"label": "verdict", "x": 10, "y": 0, "w": 2, "h": 2, "accent": true},
+        {"label": "fan-chart curve, same axis", "x": 4, "y": 2, "w": 8, "h": 3},
+        {"label": "evidence: models · fit · clearance · regimens", "x": 4, "y": 5, "w": 8, "h": 5}
+      ]}
+    },
+    {
+      "id": "verdict-tabs",
+      "label": "Verdict and evidence tabs",
+      "lineage": "instrument readout with a selector",
+      "thesis": "One verdict block on top; the evidence lives behind five tabs so only one question is on screen at a time.",
+      "palette": ["#faf5ed", "#2d3428", "#cc785c", "#4a5c28"],
+      "materials": ["bone paper", "hairline rules", "tracked tab labels"],
+      "viewport": "Verdict block across the full results width (order string in DM Serif, AUC as a lopsided bar with a 20-dot plot over the target band, confidence word and reason, next step); under it a tab row — Curve · Models · Fit · Regimens · Explore — and one panel.",
+      "risk": "Evidence behind tabs is evidence nobody opens; the verdict must carry every safety flag itself.",
+      "wireframe": {"cols": 12, "rows": 10, "regions": [
+        {"label": "inputs", "x": 0, "y": 0, "w": 4, "h": 10},
+        {"label": "verdict block", "x": 4, "y": 0, "w": 8, "h": 3, "accent": true},
+        {"label": "tabs: curve · models · fit · regimens · explore", "x": 4, "y": 3, "w": 8, "h": 1},
+        {"label": "one evidence panel", "x": 4, "y": 4, "w": 8, "h": 6}
+      ]}
+    },
+    {
+      "id": "matrix-answer",
+      "label": "The matrix is the answer",
+      "lineage": "dosing nomogram, individualised",
+      "thesis": "The dose × interval exposure matrix is the result; the recommended cell is the answer and any cell can be selected.",
+      "palette": ["#faf5ed", "#2d3428", "#cc785c", "#4a5c28"],
+      "materials": ["bone paper", "hairline grid", "graded band shading"],
+      "viewport": "A verdict strip on top naming the selected regimen; below it the matrix at full weight with the recommended cell outlined in terracotta, and beside it the fan-chart curve and trough for whichever cell is selected; models, fit and clearance follow as footnotes.",
+      "risk": "A grid of 32 regimens asks the reader to choose; the recommended cell must read as the answer, not one option among many.",
+      "wireframe": {"cols": 12, "rows": 10, "regions": [
+        {"label": "inputs", "x": 0, "y": 0, "w": 4, "h": 10},
+        {"label": "verdict strip (selected regimen)", "x": 4, "y": 0, "w": 8, "h": 2, "accent": true},
+        {"label": "exposure matrix", "x": 4, "y": 2, "w": 5, "h": 5, "accent": true},
+        {"label": "curve for selected cell", "x": 9, "y": 2, "w": 3, "h": 5},
+        {"label": "footnotes: models · fit · clearance", "x": 4, "y": 7, "w": 8, "h": 3}
+      ]}
+    }
+  ],
+  "reroll": true,
+  "steer": true,
+  "buildPath": {"value": "code"}
+}
