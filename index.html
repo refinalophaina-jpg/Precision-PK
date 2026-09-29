@@ -2308,6 +2308,55 @@
 
 
   /* ── design track B: validation & errors — insert this track's CSS below this line ── */
+  /* Refusals: one error summary at the top of the module's results, in the note
+     grammar — alarm icon, signal word, each message a link to its field. */
+  .form-errors { padding: 2px 0 18px; border-bottom: 1px solid var(--rule); }
+  /* Focus lands here only by script (tabindex=-1, never a tab stop), so no ring
+     that would read as a box; Tab goes on to the first link, which has one. */
+  .form-errors:focus, .form-errors:focus-visible { outline: none; }
+  .form-errors .note-body p { margin: 0 0 4px; }
+  .form-errors .fe-tail { margin: 8px 0 0; }
+  .form-errors .fe-list { margin: 6px 0 0; }
+  .form-errors .fe-list li { margin: 4px 0; }
+  .fe-link {
+    color: var(--ink); text-decoration: underline; text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--alarm) 55%, transparent);
+  }
+  .fe-link:hover { text-decoration-color: currentColor; }
+  .fe-profile { padding: 10px 0 0; border-bottom: 0; }
+  /* The fields a refusal names, until the next run. */
+  .app-shell :is(input, select, textarea)[aria-invalid="true"] { border-color: var(--alarm); }
+  .app-shell .toggle-group.fe-invalid { border-color: var(--alarm); }
+  /* The backstop: shown only if a calculation throws before it renders. */
+  .form-backstop { padding: 2px 0 18px; }
+  /* A caution that qualifies a result without blocking it. */
+  .form-cautions { display: grid; gap: 14px; padding: 0 0 18px; border-bottom: 1px solid var(--rule); }
+
+  /* Stale: the inputs changed after this result. A quiet caution line on top,
+     and the numbers step back to muted ink until the next run. */
+  .stale-line {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0 8px; margin: 0 0 14px;
+    padding: 0 0 4px; border-bottom: 1px solid var(--rule);
+    font-size: var(--fs-sm); line-height: 1.5; color: var(--amber);
+  }
+  .stale-line .ic { color: var(--amber); }
+  .stale-dash { color: var(--ink-muted); }
+  .stale-recalc {
+    font: 500 var(--fs-sm)/1.2 var(--font-body); color: var(--ink); background: none; border: 0;
+    border-radius: 0; padding: 0; min-height: 44px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 4px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  }
+  .stale-recalc:hover { text-decoration-color: currentColor; }
+  .is-stale :is(.vx-regimen, .vx-regimen *, .vx-auc-n, .vx-likely, .vx-conf .conf-level,
+                .rec-dose, .stat-value, .pk-val, .ld-dose-display, .ld-stat-val, .dose-value, .metric-value) {
+    color: var(--ink-muted) !important;   /* beats the inline colours in the Trough cards */
+  }
+  .is-stale :is(svg.course, svg.auc-range, canvas) { opacity: .45; }
+  @media print {
+    .stale-dash, .stale-recalc { display: none !important; }
+    .fe-link { color: inherit; text-decoration: none; }
+  }
 
 
   /* ── design track C: mobile & data entry — insert this track's CSS below this line ── */
@@ -3405,6 +3454,8 @@ const __ACT = {
   kA1: (el, ev, arg) => { ampJointKey(ev, arg); },   /* Enter / Space on an amputation joint */
 
   /* design track B keys (kB1, kB2, …) below */
+  kB1: (el, ev, arg) => { if (ev && ev.preventDefault) ev.preventDefault(); focusFormTarget(String(arg)); },   /* error summary link → focus its field */
+  kB2: (el, ev, arg) => { if (String(arg) === 'auc') runBayesian(); else calculate(); },   /* stale line → recalculate that module */
 
   /* design track C keys (kC1, kC2, …) below */
 
@@ -3614,7 +3665,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // ══════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════
-let state = { sex:'M', dosingWt:'auto', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose' };
+let state = { sex:null, dosingWt:'auto', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose' };
 
 // ══════════════════════════════════════════
 //  UI HELPERS
@@ -3639,7 +3690,10 @@ function switchModule(m) {
 // IBW, and the male Janmahasatian FFM on Hughes. Either button now sets both
 // states and both modules' toggles. Rule 2: one implementation per concept.
 function setPatientSex(val) {
-  const v = val === 'F' ? 'F' : 'M';
+  // Sex has no default (design track B, 2026-09-28): anything but 'M' or 'F'
+  // leaves it unset — both toggles off — and calculate()/runBayesian() refuse
+  // until it is chosen. It used to coerce every other value to 'M'.
+  const v = val === 'F' ? 'F' : val === 'M' ? 'M' : null;
   state.sex = v;
   if (typeof bState !== 'undefined') bState.sex = v;
   const tHidden = document.getElementById('sex');   if (tHidden) tHidden.value = v;
@@ -4837,14 +4891,15 @@ function checkField(id, key, labelOverride) {
   return checkValue(el ? el.value : '', key, labelOverride);
 }
 
-// specs: [[elementId, limitKey, optionalLabel], ...] -> {ok, values:{id:number}, errors:[str]}
+// specs: [[elementId, limitKey, optionalLabel], ...] -> {ok, values:{id:number}, errors:[str], ids:[str]}
+// ids[i] is the field errors[i] is about, so a refusal can point at it.
 function validateFields(specs) {
-  const values = {}, errors = [];
+  const values = {}, errors = [], ids = [];
   for (const [id, key, label] of specs) {
     const r = checkField(id, key, label);
-    if (r.ok) values[id] = r.value; else errors.push(r.message);
+    if (r.ok) values[id] = r.value; else { errors.push(r.message); ids.push(id); }
   }
-  return { ok: errors.length === 0, values, errors };
+  return { ok: errors.length === 0, values, errors, ids };
 }
 
 // Some fields are legitimately blank — serial SCr can stand in for the baseline
@@ -4859,17 +4914,23 @@ function checkOptionalField(id, key, labelOverride) {
 }
 
 function validateOptionalFields(specs) {
-  const errors = [];
+  const errors = [], ids = [];
   for (const [id, key, label] of specs) {
     const r = checkOptionalField(id, key, label);
-    if (!r.ok) errors.push(r.message);
+    if (!r.ok) { errors.push(r.message); ids.push(id); }
   }
-  return { ok: errors.length === 0, values: {}, errors };
+  return { ok: errors.length === 0, values: {}, errors, ids };
 }
 
+// A refusal is shown as plainly as an answer (PRODUCT.md principle 3): an error
+// summary at the top of the module's results, each message a link to its field.
+// It used to be a native alert() that left the previous result on screen behind
+// it. The run in progress (beginFormRun) says which module's results to use.
 function reportValidation(res) {
   if (res.ok) return true;
-  alert('Please correct the following before calculating:\n\n• ' + res.errors.join('\n• '));
+  const ids = res.ids || [];
+  const scope = formRunScope || (ids.some(id => /^b-/.test(String(id))) ? 'auc' : 'trough');
+  showFormErrors(scope, res.errors, ids);
   return false;
 }
 
@@ -5536,7 +5597,9 @@ function assessClinicalStatus(auc24, trough, troughMin, troughMax) {
 function autoWeights() {
   const tbw = v('tbw'), ht = v('height');
   if(!tbw || !ht) return;
-  const ibw = calcIBW(state.sex, ht);
+  // IBW depends on sex, which has no default: until it is chosen IBW and AdjBW
+  // are unknown and shown as "—", never computed on an assumed sex.
+  const ibw = (state.sex === 'M' || state.sex === 'F') ? calcIBW(state.sex, ht) : NaN;
   const bmi = tbw / ((ht/100)**2);
   // AUDIT A8: AdjBW is now always the real adjusted body weight, and is shown
   // whenever it is computable — not blanked to N/A for non-obese patients while
@@ -5544,8 +5607,8 @@ function autoWeights() {
   const adj = calcAdjBW(tbw, ibw);
   const pctOverIbw = ibw > 0 ? ((tbw - ibw) / ibw) * 100 : NaN;
 
-  document.getElementById('ibw-display').textContent = ibw.toFixed(1) + ' kg';
-  document.getElementById('adjbw-display').textContent = adj.toFixed(1) + ' kg';
+  document.getElementById('ibw-display').textContent = isFinite(ibw) ? ibw.toFixed(1) + ' kg' : '—';
+  document.getElementById('adjbw-display').textContent = isFinite(adj) ? adj.toFixed(1) + ' kg' : '—';
   document.getElementById('bmi-display').textContent = bmi.toFixed(1);
   document.getElementById('weight-display').style.display = 'block';
 
@@ -5565,7 +5628,7 @@ function autoWeights() {
   const ibwNote = document.getElementById('ibw-method-note');
   if (ibwNote) {
     let note = shortStature
-      ? `IBW by BMI method (target BMI ${IBW_TARGET_BMI[state.sex].toFixed(2)}, height <60 in). `
+      ? `IBW by BMI method (target BMI ${IBW_TARGET_BMI[state.sex] ? IBW_TARGET_BMI[state.sex].toFixed(2) : '—'}, height <60 in). `
         + 'Devine extrapolates below 60 in and understates IBW, so this CrCl will '
         + 'differ from calculators that apply Devine at every height.'
       : 'IBW by Devine (1974). Below 60 in a BMI-based method is used instead '
@@ -5591,6 +5654,7 @@ function updateCysC() {
   const age = v('age'), ht = v('height'), tbw = v('tbw'), scr = v('scr');
   const cysc = v('cysc');
   if (!cysc || !age || !scr || !ht || !tbw) { box.style.display = 'none'; return; }
+  if (state.sex !== 'M' && state.sex !== 'F') { box.style.display = 'none'; return; }   // no assumed sex
 
   const eGfrIndexed = ckdEpiCrCys(age, state.sex, scr, cysc);
   if (eGfrIndexed === null) { box.style.display = 'none'; return; }
@@ -5632,6 +5696,18 @@ function updateCysC() {
 function updateCrCl() {
   const age = v('age'), tbw = v('tbw'), ht = v('height'), scr = v('scr');
   if(!age || !tbw || !ht || !scr) { document.getElementById('crcl-result').style.display='none'; return; }
+  if (state.sex !== 'M' && state.sex !== 'F') {
+    // Cockcroft-Gault and IBW both depend on sex, which has no default: say
+    // what is missing rather than compute on an assumed sex.
+    const el0 = document.getElementById('crcl-result');
+    el0.textContent = "CrCl: —  •  choose the patient's sex";
+    el0.style.display = 'block';
+    const adv0 = document.getElementById('crcl-advisory');
+    if (adv0) { adv0.innerHTML = ''; adv0.style.display = 'none'; }
+    if (state.calcMode === 'initial') suggestInterval();
+    updateCysC();
+    return;
+  }
   const ibw = calcIBW(state.sex, ht);
   const { wt, basis } = pickCrClWeight(state.dosingWt, tbw, ibw);
   const crcl = calcCrCl(age, state.sex, scr, wt, SCR_POLICY.ACTUAL);
@@ -5704,13 +5780,15 @@ function calculate() {
   const isInitial     = state.calcMode === 'initial';
   const isTwoLevels   = state.calcMode === 'twolevels';
   const isRandomLevel = state.calcMode === 'randomlevel';
+  beginFormRun('trough');   // forget the last refusal; a throw below never leaves the old regimen up
 
   // AUDIT A3/A4: range-check the demographics before anything reaches the engine.
   // Blank fields previously read as 0 (CrCl -> Infinity, peak -> Infinity) and
   // nothing rejected an out-of-range value (age 200 -> negative CrCl).
-  if (!reportValidation(validateFields([
+  // Sex has no default and is refused with them when unset (design track B).
+  if (!reportValidation(withPatientSex(validateFields([
         ['age', 'age'], ['tbw', 'weight'], ['height', 'height'], ['scr', 'scr'],
-      ]))) return;
+      ]), state.sex, 'sex'))) return;
 
   // Regimen inputs and concentrations go through the same limits (engine audit
   // 2026-09-28). A blank infusion time used to be silently filled with 1 h in
@@ -5726,9 +5804,9 @@ function calculate() {
     const tinfId = isRandomLevel ? 'rl-tinf' : isTwoLevels ? 'tl-tinf' : isInitial ? 'init-tinf' : 'tinf';
     const tauId  = isRandomLevel ? 'rl-tau'  : isTwoLevels ? 'tl-tau'  : isInitial ? 'init-interval' : 'interval';
     const ti = v(tinfId), ta = v(tauId);
-    if (!(ta > 0)) { alert('Choose the dosing interval.'); return; }
+    if (!(ta > 0)) { showFormErrors('trough', 'Choose the dosing interval.', [tauId]); return; }
     if (ti >= ta) {
-      alert(`The infusion time (${ti} h) must be shorter than the dosing interval (${ta} h).\n\nContinuous or overlapping infusion is not supported by this calculator.`);
+      showFormErrors('trough', `The infusion time (${ti} h) must be shorter than the dosing interval (${ta} h). Continuous or overlapping infusion is not supported by this calculator.`, [[tinfId, tauId]]);
       return;
     }
   }
@@ -5740,9 +5818,9 @@ function calculate() {
     const rlTau  = v('rl-tau');
     calcRLDelta();
     const rlT = parseFloat(document.getElementById('rl-t-hours').value) || 0;
-    if (!rlDose)  { alert('Please enter the dose given.'); return; }
-    if (!rlC)     { alert('Please enter the measured level concentration.'); return; }
-    if (!rlT)     { alert('Please set the dose start time and draw time.'); return; }
+    if (!rlDose)  { showFormErrors('trough', 'Enter the dose given.', ['rl-dose']); return; }
+    if (!rlC)     { showFormErrors('trough', 'Enter the measured level concentration.', ['rl-c']); return; }
+    if (!rlT)     { showFormErrors('trough', 'Set the dose start time and draw time.', [['rl-dose-time', 'rl-draw-time']]); return; }
 
     const ibw   = calcIBW(state.sex, ht);
     const bmi   = tbw / ((ht/100)**2);
@@ -5761,7 +5839,7 @@ function calculate() {
       const fitted = fitKelFromLevel(rlC, rlT, rlDose, rlInterval, rlTinf, popVd);
       indKel = fitted ? fitted.kel : null;
     }
-    if (!indKel) { alert('Could not fit Kel — check that the level and timing are physiologically plausible (level may be too high or too low for the dose given).'); return; }
+    if (!indKel) { showFormErrors('trough', 'Could not fit Kel — check that the level and timing are physiologically plausible (level may be too high or too low for the dose given).', [['rl-c', 'rl-dose-time', 'rl-draw-time']]); return; }
 
     const indClv = indKel * popVd;
     const indT12 = 0.693 / indKel;
@@ -5787,13 +5865,13 @@ function calculate() {
     const tlC1   = v('tl-c1'),   tlT1   = parseFloat(document.getElementById('tl-t1-hours').value) || 0;
     const tlC2   = v('tl-c2'),   tlT2   = parseFloat(document.getElementById('tl-t2-hours').value) || 0;
     const tlTau  = v('tl-tau');
-    if (!tlDose)         { alert('Please enter the dose given.'); return; }
-    if (!tlC1 || !tlT1)  { alert('Please enter Level 1 concentration and draw time.'); return; }
-    if (!tlC2 || !tlT2)  { alert('Please enter Level 2 concentration and draw time.'); return; }
-    if (tlT2 <= tlT1)    { alert('Level 2 must be drawn after Level 1.'); return; }
-    if (tlT1 <= tlTinf)  { alert(`Level 1 must be drawn after end of infusion (${tlTinf}h). Currently at ${tlT1.toFixed(1)}h.`); return; }
-    if (tlT2 <= tlTinf)  { alert(`Level 2 must be drawn after end of infusion (${tlTinf}h). Currently at ${tlT2.toFixed(1)}h.`); return; }
-    if ((tlT2 - tlT1) < 2) { alert(`Levels are only ${(tlT2-tlT1).toFixed(1)}h apart — a minimum of 2h separation is recommended for reliable Kel estimation. Proceed with caution.`); }
+    if (!tlDose)         { showFormErrors('trough', 'Enter the dose given.', ['tl-dose']); return; }
+    if (!tlC1 || !tlT1)  { showFormErrors('trough', 'Enter Level 1 concentration and draw time.', [[!tlC1 && 'tl-c1', !tlT1 && 'tl-t1-time'].filter(Boolean)]); return; }
+    if (!tlC2 || !tlT2)  { showFormErrors('trough', 'Enter Level 2 concentration and draw time.', [[!tlC2 && 'tl-c2', !tlT2 && 'tl-t2-time'].filter(Boolean)]); return; }
+    if (tlT2 <= tlT1)    { showFormErrors('trough', 'Level 2 must be drawn after Level 1.', ['tl-t2-time']); return; }
+    if (tlT1 <= tlTinf)  { showFormErrors('trough', `Level 1 must be drawn after end of infusion (${tlTinf} h). Currently at ${tlT1.toFixed(1)} h.`, ['tl-t1-time']); return; }
+    if (tlT2 <= tlTinf)  { showFormErrors('trough', `Level 2 must be drawn after end of infusion (${tlTinf} h). Currently at ${tlT2.toFixed(1)} h.`, ['tl-t2-time']); return; }
+    if ((tlT2 - tlT1) < 2) { queueFormCaution('trough', 'Level timing', `Levels are only ${(tlT2-tlT1).toFixed(1)} h apart — a minimum of 2 h separation is recommended for reliable Kel estimation. Proceed with caution.`); }
 
     calcTLDeltas(); // ensure hidden fields refreshed
 
@@ -5817,12 +5895,12 @@ function calculate() {
     if (state.tlBasis === 'steadystate') {
       accumTau = parseFloat((document.getElementById('tl-cur-tau') || {}).value);
       if (!(accumTau > 0)) {
-        alert('These levels are marked as drawn at steady state.\n\nChoose the interval the patient was on when they were drawn — the volume depends on it.');
+        showFormErrors('trough', 'These levels are marked as drawn at steady state. Choose the interval the patient was on when they were drawn — the volume depends on it.', ['tl-cur-tau']);
         return;
       }
     }
     const tlPK = solveTwoLevelsPK(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, accumTau, state.tlBasis);
-    if (!tlPK) { alert('Could not solve PK — check that Level 2 is lower than Level 1 and both are post-infusion.'); return; }
+    if (!tlPK) { showFormErrors('trough', 'Could not solve PK — check that Level 2 is lower than Level 1 and both are post-infusion.', [['tl-c1', 'tl-c2', 'tl-t1-time', 'tl-t2-time']]); return; }
 
     // Find optimal maintenance dose using individual PK
     const tlOpt = findOptimalDose(troughMin, troughMax, tlTau, tlTinf, tlPK.kel, tlPK.vd, tlPK.clv);
@@ -5847,7 +5925,7 @@ function calculate() {
     dose = 0; // will be auto-solved below after computing population PK
   } else {
     dose = v('dose'); tau = v('interval'); tinf = v('tinf');
-    if(!dose || !tau) { alert('Please enter the current dose and interval.'); return; }
+    if(!dose || !tau) { showFormErrors('trough', 'Enter the current dose and interval.', [[!dose && 'dose', !tau && 'interval'].filter(Boolean)]); return; }
   }
 
   const ibw   = calcIBW(state.sex, ht);
@@ -5890,8 +5968,8 @@ function calculate() {
   // failure, moved from the arithmetic into a branch condition.
   if (hasLevel && !reportValidation(validateFields([['level-val', 'level', 'Measured level']]))) return;
   if (hasLevel && levelVal > 0 && !(tDoseToLvl > 0)) {
-    alert('A level is entered, but its draw time is missing or dated before the dose.\n\n'
-        + 'Fix the dose and draw dates, or switch the level off to dose from population values.');
+    showFormErrors('trough', 'A level is entered, but its draw time is missing or dated before the dose. '
+        + 'Fix the dose and draw dates, or switch the level off to dose from population values.', [['time-level-drawn', 'time-dose-given']]);
     return;
   }
 
@@ -5918,12 +5996,12 @@ function calculate() {
     if (earlyLevel) {
       const nSel = parseInt((document.getElementById('ss-dose-n') || {}).value, 10);
       if (!(nSel === 1 || nSel === 2)) {
-        alert('This level is marked as drawn before steady state.\n\nChoose whether it followed the 1st or the 2nd dose, so it can be fitted on the doses actually given.');
+        showFormErrors('trough', 'This level is marked as drawn before steady state. Choose whether it followed the 1st or the 2nd dose, so it can be fitted on the doses actually given.', ['ss-dose-n']);
         return;
       }
       fitted = fitKelFromEarlyLevel(levelVal, tDoseToLvl, nSel, dose, tau, tinf, vd);
       if (!fitted) {
-        alert('This level cannot be reproduced by the doses entered at any plausible clearance.\n\nCheck the dose, infusion time and draw time — or use AUC Precision, which fits the real dose history.');
+        showFormErrors('trough', 'This level cannot be reproduced by the doses entered at any plausible clearance. Check the dose, infusion time and draw time — or use AUC Precision, which fits the real dose history.', [['dose', 'tinf', 'time-level-drawn']]);
         return;
       }
     } else {
@@ -7313,6 +7391,7 @@ function resetForm() {
   document.getElementById('scr-baseline').value = '';
   document.getElementById('aki-manual').checked = false;
   document.getElementById('aki-banner').style.display = 'none';
+  setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -7322,7 +7401,7 @@ function resetForm() {
 // ══════════════════════════════════════════════════════════════
 
 // ─── State ───
-let bState = { sex:'M', result:null, tinkCompare:[], regimenOverrideH:null };
+let bState = { sex:null, result:null, tinkCompare:[], regimenOverrideH:null };
 let bDoseCount = 0;
 let bLevelCount = 0;
 
@@ -7341,6 +7420,7 @@ function readBayesPatient(scrOverride) {
   const ht  = parseFloat(document.getElementById('b-height').value);
   const sex = bState.sex;
   if (!(age > 0) || !(scr > 0) || !(tbw > 0) || !(ht > 0)) return null;
+  if (sex !== 'M' && sex !== 'F') return null;   // no default sex: unknown, never assumed
   const ibw = calcIBW(sex, ht);
   const { wt: dosingWt, basis } = pickCrClWeight('auto', tbw, ibw);
   return { age, scr, tbw, ht, sex, ibw, dosingWt, basis };
@@ -7402,7 +7482,13 @@ function updateBayesCrCl() {
       + (crclSourceLabel() === 'manual override'
           ? ' — set in the Trough-Based panel; Hughes uses its own FFM-based CrCl' : '');
   } else {
-    res.style.display = 'none';
+    // With everything else entered, say that sex is what is missing rather than
+    // hide the line (sex has no default; CrCl is never computed on an assumed one).
+    const num = id => parseFloat((document.getElementById(id) || {}).value);
+    const needsSex = bState.sex !== 'M' && bState.sex !== 'F'
+      && ['b-age', 'b-scr', 'b-tbw', 'b-height'].every(id => num(id) > 0);
+    res.style.display = needsSex ? 'block' : 'none';
+    if (needsSex) res.textContent = "CrCl ≈ — (choose the patient's sex)";
   }
   // Goti SCr floor note
   const noteEl = document.getElementById('b-goti-scr-note');
@@ -9445,19 +9531,21 @@ function computeGuidelineDose(tbw, crcl) {
 
 // ─── Main Bayesian runner ───
 function runBayesian() {
+  beginFormRun('auc');   // forget the last refusal and its field marks
   const { doses, levels, errors } = parseBayesCourse();
 
   // CODEX F-002. Refuse to fit a course that does not match what was entered.
   // Silently dropping an incomplete administration produced a fit on a history
   // the chart does not contain.
   if (errors && errors.length) {
-    alert('Some rows are incomplete and would be excluded from the fit.\n\n• '
-      + errors.join('\n• ')
-      + '\n\nComplete or delete these rows, then run again.');
+    showFormErrors('auc', errors, errors.map(m => courseErrorTarget(m)), {
+      lead: 'Some rows are incomplete and would be excluded from the fit.',
+      tail: 'Complete or delete these rows, then run again.' });
     return;
   }
   if (!doses.length) {
-    alert('Add at least one dose to the course history before running Bayesian analysis.');
+    showFormErrors('auc', 'Add at least one dose to the course history before running Bayesian analysis.',
+      [document.querySelector('[data-onclick="k43"]')]);
     return;
   }
 
@@ -9467,9 +9555,9 @@ function runBayesian() {
   const scrEl = parseFloat(document.getElementById('b-scr').value);
   const serialChk = readSerialScrChecked();
   if (serialChk.errors.length) {
-    alert('Some serial SCr rows cannot be used, so the fit was not run.\n\n• '
-      + serialChk.errors.join('\n• ')
-      + '\n\nCorrect or delete these rows, then run again.');
+    showFormErrors('auc', serialChk.errors, serialChk.errors.map(m => courseErrorTarget(m)), {
+      lead: 'Some serial SCr rows cannot be used, so the fit was not run.',
+      tail: 'Correct or delete these rows, then run again.' });
     return;
   }
   const serialScr = serialChk.readings;
@@ -9490,11 +9578,12 @@ function runBayesian() {
     ['b-scr',        'scr',    'Serum creatinine'],
     ['b-auc-target', 'auc',    'Target AUC24'],
   ]);
-  if (!reportValidation({ ok: bReq.ok && bOpt.ok,
-                          errors: bReq.errors.concat(bOpt.errors) })) return;
+  if (!reportValidation(withPatientSex({ ok: bReq.ok && bOpt.ok,
+                          errors: bReq.errors.concat(bOpt.errors),
+                          ids: bReq.ids.concat(bOpt.ids) }, bState.sex, 'b-sex'))) return;
 
   if (!scrEl && serialScr.length === 0) {
-    alert('SCr is required — enter a baseline SCr or add serial SCr readings.');
+    showFormErrors('auc', 'SCr is required — enter a baseline SCr or add serial SCr readings.', ['b-scr']);
     return;
   }
 
@@ -9504,7 +9593,7 @@ function runBayesian() {
   const effScr = scrSel ? scrSel.scr : scrEl;
 
   const crcl = getBayesCrCl(effScr);
-  if (!crcl) { alert('Could not calculate CrCl — check patient demographics.'); return; }
+  if (!crcl) { showFormErrors('auc', 'Could not calculate CrCl — check patient demographics.', [bayesDemographicGaps(effScr)]); return; }
 
   // Covariates for EVERY prior, computed once here where each model's own CrCl
   // helper is already in scope. modelAgreement needs Goti's truncated CrCl and
@@ -9576,7 +9665,7 @@ function runBayesian() {
   if (isGoti) {
     // ── Goti 2018 (2-Compartment) ──
     const crclGoti = getGotiCrCl(effScr);
-    if (!crclGoti) { alert('Could not calculate CrCl for Goti model.'); return; }
+    if (!crclGoti) { showFormErrors('auc', 'Could not calculate CrCl for Goti model.', [bayesDemographicGaps(effScr)]); return; }
     const pk = gotiPopPK(crclGoti, tbw, bState.dial);
     CL_pop = pk.TVCL;
     const Vc_pop = pk.TVVc;
@@ -9648,9 +9737,9 @@ function runBayesian() {
     // ── Hughes 2024 (2-Compartment, obese) ──
     const htCm = parseFloat(document.getElementById('b-height').value);
     const ffm  = computeFFM(tbw, htCm, bState.sex);
-    if (!ffm)  { alert('Hughes 2024 requires height to compute fat-free mass.'); return; }
+    if (!ffm)  { showFormErrors('auc', 'Hughes 2024 requires height to compute fat-free mass.', ['b-height']); return; }
     const crclFFM = getHughesCrCl(effScr);
-    if (!crclFFM) { alert('Could not calculate Hughes CrCl (FFM-based).'); return; }
+    if (!crclFFM) { showFormErrors('auc', 'Could not calculate Hughes CrCl (FFM-based).', [bayesDemographicGaps(effScr)]); return; }
     const pk = hughesPopPK(crclFFM, ffm);
     CL_pop = pk.TVCL;
     const Vc_pop = pk.TVVc;
@@ -11734,7 +11823,7 @@ function runBayesTinkerer() {
 
 // ─── Reset ───
 function resetBayesian() {
-  bState = { sex:'M', result:null, tinkCompare:[], model:'buelga', dial:false, regimenOverrideH:null };
+  bState = { sex:null, result:null, tinkCompare:[], model:'buelga', dial:false, regimenOverrideH:null };
   const _ro = document.getElementById('b-regimen-override');
   if (_ro) { _ro.value = 'auto'; }
   const _rw = document.getElementById('b-regimen-custom-wrap');
@@ -11779,7 +11868,7 @@ function resetBayesian() {
   if (dialCb) dialCb.checked = false;
   const gotiNote = document.getElementById('b-goti-scr-note');
   if (gotiNote) gotiNote.style.display = 'none';
-  bState.sex = 'M';
+  setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
 }
 
 // ══════════════════════════════════════════
@@ -11799,7 +11888,7 @@ function loadProfiles() {
 function persistProfiles(list) {
   try { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(list)); return true; }
   catch (e) {
-    alert('Unable to save profile — browser storage may be full or disabled.');
+    showFormErrors('profile', 'Unable to save profile — browser storage may be full or disabled.', []);
     return false;
   }
 }
@@ -11924,7 +12013,7 @@ function snapshotPatientCore() {
     // Prefer whichever module actually has a value, so saving from either works.
     core[f.key] = val(f.bayes) || val(f.trough) || '';
   }
-  core.sex       = state.sex === 'F' ? 'F' : 'M';   // one patient attribute — see setPatientSex
+  core.sex       = (state.sex === 'F' || state.sex === 'M') ? state.sex : null;   // one patient attribute — see setPatientSex; unset is saved unset, never as 'M'
   core.dosingWt  = state.dosingWt || 'auto';
   core.amputation = Object.assign({}, ampState);
   core.crcl      = (crclOverride.on && crclOverride.value > 0)
@@ -11945,7 +12034,7 @@ function applyPatientCore(core) {
   // Sex and dosing-weight basis are toggles, not inputs — drive them through
   // the same setters the buttons use so the active styling follows.
   try {
-    if (core.sex) setPatientSex(core.sex);   // one attribute, both modules
+    setPatientSex(core.sex || null);   // one attribute, both modules; unset stays unset, never the last patient's
     // The CrCl weight basis was saved but never restored, so a profile saved on
     // AdjBW reopened on whatever was selected (audit 2026-09-28).
     const dwKey = { auto:'k73', TBW:'k14', IBW:'k15', AdjBW:'k16' }[core.dosingWt];
@@ -11983,7 +12072,7 @@ function saveCurrentProfile() {
   const labelEls = [...document.querySelectorAll('.profile-label-input')];
   const labelEl  = labelEls.find(e => (e.value || '').trim()) || labelEls[0];
   const label    = (labelEl?.value || '').trim();
-  if (!label) { alert('Enter a label before saving.'); return; }
+  if (!label) { showFormErrors('profile', 'Enter a label before saving.', [labelEl]); return; }
   const snapshot = snapshotBayesForm();
   // The core is what makes a profile usable from either module.
   snapshot.core = snapshotPatientCore();
@@ -12320,7 +12409,7 @@ function _buildPrintReport() {
                            'Buelga 2005 (1-comp)';
 
   const age = document.getElementById('b-age')?.value || document.getElementById('age')?.value || '—';
-  const sex = bState.sex || state?.sex || '—';
+  const sex = (r.agCtx && r.agCtx.sex) || bState.sex || state?.sex || '—';   // the sex the fit used; the form's may since have been cleared
   const tbw = document.getElementById('b-tbw')?.value || document.getElementById('weight')?.value || '—';
   const ht  = document.getElementById('b-height')?.value || document.getElementById('height')?.value || '—';
   // The SCr the fit USED (engine audit 2026-09-28). With serial SCr this is the
@@ -12600,6 +12689,432 @@ a11yInitPressedSync();
 
 
 // ── design track B: validation & errors — insert this track's helpers below this line ──
+// ══════════════════════════════════════════════════════════════════════════
+//  REFUSALS, CAUTIONS AND STALE RESULTS  (design track B, 2026-09-28)
+// ══════════════════════════════════════════════════════════════════════════
+// A refusal used to be a native alert(): modal, unstyled, gone once dismissed —
+// and the previous run's regimen stayed on screen underneath it, so a refused
+// recalculation looked like a confirmed one. A refusal is now shown as plainly
+// as an answer (PRODUCT.md principle 3): one error summary at the top of that
+// module's results, the alarm icon and a signal word, each message a link to
+// its field. The fields carry aria-invalid until the next run, focus moves to
+// the summary, and the live region says what is wrong. The previous result is
+// cleared — on screen and in state — never left standing beside a refusal.
+// Every message keeps its meaning; only the "Please" and the line breaks went.
+//
+// A result whose inputs have changed since it was computed is marked stale —
+// a caution line and muted numbers — until the next successful run. AUC
+// Precision reuses bayesInputFingerprint(), so restoring the inputs clears it.
+const FORM_AREAS = {
+  trough: { results: 'results-content', placeholder: 'results-placeholder', display: 'flex'  },
+  auc:    { results: 'b-results',       placeholder: 'b-placeholder',       display: 'block' },
+};
+const formRuns = {};
+['trough', 'auc', 'profile'].forEach(k => {
+  formRuns[k] = { ok: false, errors: [], targets: [], invalid: [], cautions: [], fp: null, stale: false };
+});
+let formRunScope = null;   // the module whose calculation is in progress
+const SEX_REQUIRED_MSG = "Choose the patient's sex.";
+const STALE_MSG = 'Inputs changed since this result';
+
+// Presentation needs a real document. The test harness runs this script in a
+// Node vm whose stub document has no body: state is still recorded there, the
+// DOM work is skipped.
+function formDomReady() {
+  return typeof document !== 'undefined' && !!document && !!document.body
+    && typeof document.getElementById === 'function';
+}
+function formArea(scope) {
+  const a = FORM_AREAS[scope];
+  if (!a || !formDomReady()) return { el: null, ph: null };
+  return { el: document.getElementById(a.results), ph: document.getElementById(a.placeholder) };
+}
+function formReducedMotion() {
+  return typeof window !== 'undefined' && !!window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+// Bring el to the top of the viewport, below the sticky header — measured, not
+// assumed: on a phone the header wraps to about twice its desktop height.
+function formScrollTo(el) {
+  if (!el || typeof el.getBoundingClientRect !== 'function' || typeof window === 'undefined') return;
+  try {
+    const header = document.querySelector('.header');
+    const sticky = header && getComputedStyle(header).position === 'sticky';
+    const pad = (sticky ? header.getBoundingClientRect().height : 0) + 16;
+    const top = el.getBoundingClientRect().top + window.pageYOffset - pad;
+    window.scrollTo({ top: Math.max(0, top), behavior: formReducedMotion() ? 'auto' : 'smooth' });
+  } catch (e) { try { el.scrollIntoView(); } catch (e2) {} }
+}
+
+// Called first by calculate() and runBayesian(). Forgets the last run's refusal
+// and field marks. The Trough module's results are also cleared to a backstop —
+// the pattern renderBayesianResults uses — so a calculation that throws part-way
+// says so instead of leaving the previous regimen up as if it were current.
+function beginFormRun(scope) {
+  const run = formRuns[scope];
+  if (!run) return;
+  formRunScope = scope;
+  run.ok = true; run.errors = []; run.cautions = [];
+  if (scope === 'trough') run.fp = troughInputFingerprint();
+  if (!formDomReady()) return;
+  clearFormInvalid(scope);
+  if (scope === 'trough') {
+    const area = formArea('trough');
+    if (!area.el) return;
+    if (area.ph) area.ph.style.display = 'none';
+    area.el.classList.remove('is-stale');
+    area.el.style.display = FORM_AREAS.trough.display;
+    area.el.innerHTML = `<div class="note note-alarm form-backstop" role="alert"><div class="note-word">${ICON.alarm}<span>These results could not be displayed.</span></div>
+      <div class="note-body">The calculation did not finish. No recommendation is being shown
+      rather than a previous one. Please report the inputs used.</div></div>`;
+  }
+}
+
+// Sex has no default, so it is refused with the demographics when unset —
+// placed after Age, where it sits in both forms. res is validateFields' shape.
+function withPatientSex(res, sex, fieldId) {
+  if (sex === 'M' || sex === 'F') return res;
+  const errors = (res.errors || []).slice(), ids = (res.ids || []).slice();
+  const at = ids.findIndex(id => id === 'age' || id === 'b-age') + 1;
+  errors.splice(at, 0, SEX_REQUIRED_MSG);
+  ids.splice(at, 0, fieldId);
+  return Object.assign({}, res, { ok: false, errors, ids });
+}
+
+// The field a message is about. A hidden sex input stands for its Male/Female
+// toggle group: focus goes to the first button, the group carries the mark.
+function formControlFor(el) {
+  const tag = String(el.tagName || '').toUpperCase();
+  if (tag === 'INPUT' && el.type === 'hidden') {
+    const group = el.parentNode && el.parentNode.querySelector ? el.parentNode.querySelector('.toggle-group') : null;
+    const btn = group && group.querySelector ? group.querySelector('.toggle-opt') : null;
+    return { focus: btn || null, mark: group || null };
+  }
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return { focus: el, mark: el };
+  return { focus: el, mark: null };   // e.g. the Add Dose button: focusable, never "invalid"
+}
+// spec: an id, an element, an array of either, or null. The first is the link's target.
+function formTargets(spec) {
+  const list = (Array.isArray(spec) ? spec : [spec]).filter(Boolean);
+  const out = { focus: null, marks: [] };
+  list.forEach(s => {
+    const el = typeof s === 'string' ? document.getElementById(s) : s;
+    if (!el || typeof el !== 'object') return;
+    const c = formControlFor(el);
+    if (!out.focus && c.focus) out.focus = c.focus;
+    if (c.mark && out.marks.indexOf(c.mark) < 0) out.marks.push(c.mark);
+  });
+  return out;
+}
+function markFormInvalid(run, el, describedBy) {
+  if (!el || typeof el.setAttribute !== 'function') return;
+  const isGroup = !!(el.classList && el.classList.contains('toggle-group'));
+  let rec = run.invalid.find(r => r.el === el);
+  if (!rec) { rec = { el, prev: el.getAttribute('aria-describedby'), ids: [] }; run.invalid.push(rec); }
+  rec.ids.push(describedBy);
+  if (isGroup) { el.classList.add('fe-invalid'); return; }   // aria-invalid is not valid on a plain group
+  el.setAttribute('aria-invalid', 'true');
+  el.setAttribute('aria-describedby', [rec.prev].concat(rec.ids).filter(Boolean).join(' '));
+}
+function clearFormInvalid(scope) {
+  const run = formRuns[scope];
+  if (!run) return;
+  run.invalid.forEach(({ el, prev }) => {
+    try {
+      if (el.classList) el.classList.remove('fe-invalid');
+      if (typeof el.removeAttribute === 'function') el.removeAttribute('aria-invalid');
+      if (prev) el.setAttribute('aria-describedby', prev);
+      else if (typeof el.removeAttribute === 'function') el.removeAttribute('aria-describedby');
+    } catch (e) { /* a detached row is fine to forget */ }
+  });
+  run.invalid = []; run.targets = [];
+}
+
+// The one refusal presenter. scope: 'trough' | 'auc' | 'profile'. messages: a
+// string or an array. fieldIds[i]: what messages[i] is about (see formTargets).
+// opts.lead / opts.tail: a sentence before and after the list.
+function showFormErrors(scope, messages, fieldIds, opts) {
+  opts = opts || {};
+  if (!formRuns[scope]) scope = 'trough';
+  const run = formRuns[scope];
+  const msgs = (Array.isArray(messages) ? messages : [messages])
+    .map(m => (m == null ? '' : String(m).trim())).filter(Boolean);
+  const specs = Array.isArray(fieldIds) ? fieldIds : [];
+  if (scope !== 'profile') {
+    run.ok = false; run.cautions = []; run.stale = false;
+    // Cleared in state as well as on screen: a resize or theme redraw, the
+    // print report and a saved profile all read bState.result.
+    if (scope === 'auc' && typeof bState !== 'undefined' && bState) {
+      bState.result = null; bState.resultFingerprint = null;
+    }
+  }
+  run.errors = msgs.slice();
+  if (!formDomReady()) return false;
+  try {
+    clearFormInvalid(scope);
+    if (scope === 'profile') { showProfileError(run, msgs, specs); return false; }
+    const targets = msgs.map((m, i) => formTargets(specs[i]));
+    run.targets = targets.map(t => t.focus);
+    const items = msgs.map((m, i) => {
+      const liId = `fe-${scope}-${i}`;
+      targets[i].marks.forEach(el => markFormInvalid(run, el, liId));
+      const f = targets[i].focus;
+      if (!f) return `<li id="${liId}">${escHtml(m)}</li>`;
+      return `<li id="${liId}"><a class="fe-link" href="#${escHtml(f.id || '')}" data-onclick="kB1" data-arg="${scope}:${i}">${escHtml(m)}</a></li>`;
+    }).join('');
+    const area = formArea(scope);
+    if (!area.el) return false;
+    if (area.ph) area.ph.style.display = 'none';
+    area.el.classList.remove('is-stale');
+    area.el.style.display = FORM_AREAS[scope].display;
+    area.el.innerHTML = `<div class="form-errors note note-alarm" id="fe-${scope}" tabindex="-1" role="group" aria-labelledby="fe-${scope}-word">
+      <div class="note-word">${ICON.alarm}<span id="fe-${scope}-word">Check these inputs</span></div>
+      <div class="note-body">${opts.lead ? `<p class="fe-lead">${escHtml(opts.lead)}</p>` : ''}<ul class="note-list fe-list">${items}</ul>${opts.tail ? `<p class="fe-tail">${escHtml(opts.tail)}</p>` : ''}</div>
+    </div>`;
+    const box = document.getElementById(`fe-${scope}`);
+    if (box && typeof box.focus === 'function') {
+      try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
+      formScrollTo(box);
+    }
+    announceResult(msgs.length === 1 ? `Check these inputs. ${msgs[0]}`
+      : `Check these inputs, ${msgs.length} problems. ${msgs.join(' ')}`);
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('error summary failed', e);
+  }
+  return false;
+}
+
+// Saved-profile refusals sit under the save row of the module on screen, and
+// focus goes straight to the label field: there is one field and it is right there.
+function visibleProfileSection() {
+  const bShell = document.getElementById('app-shell-bayesian');
+  const inAuc = !!bShell && bShell.style.display !== 'none';
+  return inAuc ? bShell.querySelector('.profile-section')
+               : document.querySelector('.app-shell:not(#app-shell-bayesian) .profile-section');
+}
+function showProfileError(run, msgs, specs) {
+  document.querySelectorAll('.fe-profile').forEach(n => n.remove());
+  const section = visibleProfileSection();
+  if (!section) return;
+  let field = formTargets(specs[0]).focus;
+  // The label used may be the other module's (hidden) input; point at this one.
+  if (field && typeof section.contains === 'function' && !section.contains(field)) {
+    field = section.querySelector('.profile-label-input');
+  }
+  run.targets = [field];
+  if (field) markFormInvalid(run, field, 'fe-profile-0');
+  const row = section.querySelector('.profile-save-row');
+  const html = `<div class="form-errors fe-profile note note-alarm" role="group" aria-labelledby="fe-profile-word">
+    <div class="note-word">${ICON.alarm}<span id="fe-profile-word">Check these inputs</span></div>
+    <div class="note-body">${msgs.map((m, i) => `<p id="fe-profile-${i}">${escHtml(m)}</p>`).join('')}</div></div>`;
+  if (row) row.insertAdjacentHTML('afterend', html); else section.insertAdjacentHTML('afterbegin', html);
+  if (field && typeof field.focus === 'function') field.focus();
+  announceResult(`Check these inputs. ${msgs.join(' ')}`);
+}
+function clearFormErrors(scope) {
+  if (!formRuns[scope]) return;
+  formRuns[scope].errors = [];
+  if (!formDomReady()) return;
+  clearFormInvalid(scope);
+  if (scope === 'profile') document.querySelectorAll('.fe-profile').forEach(n => n.remove());
+}
+
+// The error summary's links: bring the field into view and put the cursor in it.
+function focusFormTarget(arg) {
+  const parts = String(arg || '').split(':');
+  const run = formRuns[parts[0]];
+  const el = run && run.targets[Number(parts[1])];
+  if (!el || typeof el.focus !== 'function') return;
+  try { el.scrollIntoView({ behavior: formReducedMotion() ? 'auto' : 'smooth', block: 'center' }); } catch (e) {}
+  try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+}
+
+// Last refusal recorded for a scope (read by the test harness).
+function lastFormErrors(scope) {
+  return formRuns[scope] ? formRuns[scope].errors.slice() : [];
+}
+
+// ─── Refusal targets the AUC module cannot name by id ─────────────────────
+// parseBayesCourse and readSerialScrChecked report by row ("Dose row 3: missing
+// or invalid time."). Point at the named row's fields; a message that names no
+// row (a duplicate or an overlap) gets no link rather than a guessed one.
+function courseErrorTarget(msg) {
+  if (!formDomReady()) return null;
+  const s = String(msg || '');
+  let m = /^Dose row (\d+): (.*)$/.exec(s);
+  if (m) {
+    const n = m[1], w = m[2], ids = [];
+    if (/\bdose\b/.test(w))           ids.push(`b-dose-mg-${n}`);
+    if (/infusion duration/.test(w))  ids.push(`b-dose-tinf-${n}`);
+    if (/\bdate\b/.test(w))           ids.push(`b-dose-date-${n}`);
+    if (/\btime\b/.test(w))           ids.push(`b-dose-time-${n}`);
+    return ids.length ? ids : [`b-dose-mg-${n}`];
+  }
+  m = /^Level row (\d+): (.*)$/.exec(s);
+  if (m) {
+    const n = m[1], w = m[2], ids = [];
+    if (/concentration/.test(w))      ids.push(`b-lvl-conc-${n}`);
+    if (/\bdate\b/.test(w))           ids.push(`b-lvl-date-${n}`);
+    if (/\btime\b/.test(w))           ids.push(`b-lvl-time-${n}`);
+    return ids.length ? ids : [`b-lvl-conc-${n}`];
+  }
+  m = /^Serial SCr row (\d+)(.*)$/.exec(s);
+  if (m) {
+    const row = document.querySelectorAll('[id^="b-scr-row-"]')[Number(m[1]) - 1];
+    if (!row) return null;
+    const w = m[2], cell = c => row.querySelector(c), out = [];
+    const missing = /\(([^)]*) missing\)/.exec(w);
+    const names = missing ? missing[1].split(/,\s*/)
+      : /HH:MM/.test(w) ? ['time']
+      : /could not be read/.test(w) ? ['date', 'time']
+      : ['value'];
+    names.forEach(k => { const el = cell({ value: '.b-scr-val', date: '.b-scr-date', time: '.b-scr-time' }[k] || '.b-scr-val'); if (el) out.push(el); });
+    return out;
+  }
+  return null;
+}
+// Which AUC Precision demographics a failed CrCl can be pinned on: blank or
+// non-positive ones. A serial SCr stands in for the baseline field.
+function bayesDemographicGaps(effScr) {
+  if (!formDomReady()) return [];
+  const num = id => parseFloat((document.getElementById(id) || {}).value);
+  const gaps = ['b-age', 'b-tbw', 'b-height'].filter(id => !(num(id) > 0));
+  if (!(effScr > 0)) gaps.push('b-scr');
+  if (bState.sex !== 'M' && bState.sex !== 'F') gaps.push('b-sex');
+  return gaps;
+}
+
+// ─── Informational, not blocking ───────────────────────────────────────────
+// A caution the old code raised with alert() and then carried on (two levels
+// under 2 h apart) is now a caution note beside the result it qualifies. It is
+// queued during the run and placed once the result has rendered.
+function queueFormCaution(scope, word, message) {
+  const run = formRuns[scope];
+  if (run) run.cautions.push({ word: String(word || 'Caution'), text: String(message) });
+}
+function flushFormCautions(scope) {
+  const run = formRuns[scope];
+  if (!run || !run.cautions.length || !formDomReady()) return;
+  if (!run.ok) { run.cautions = []; return; }
+  if (!formResultShown(scope)) return;
+  const area = formArea(scope);
+  const html = run.cautions.map(c => noteHTML({ tier: 'caution', word: c.word, html: escHtml(c.text) })).join('');
+  run.cautions = [];
+  const notes = area.el.querySelector('.vx-notes');
+  if (notes) { notes.insertAdjacentHTML('afterbegin', html); return; }
+  const stale = area.el.querySelector('.stale-line');
+  if (stale) stale.insertAdjacentHTML('afterend', `<div class="form-cautions">${html}</div>`);
+  else area.el.insertAdjacentHTML('afterbegin', `<div class="form-cautions">${html}</div>`);
+}
+
+// ─── Stale results ────────────────────────────────────────────────────────
+// Everything in the Trough input panel a result depends on. Hidden fields are
+// left out: calculate() re-derives them from the visible ones as it runs.
+function troughInputFingerprint() {
+  try {
+    const vals = [];
+    const panel = typeof document !== 'undefined' && document.querySelector
+      ? document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left') : null;
+    if (panel && panel.querySelectorAll) {
+      panel.querySelectorAll('input, select, textarea').forEach(el => {
+        if (el.type === 'hidden' || (el.closest && el.closest('.profile-section'))) return;
+        vals.push([el.id || el.name || '', (el.type === 'checkbox' || el.type === 'radio') ? !!el.checked : el.value]);
+      });
+    }
+    return JSON.stringify({ vals, sex: state.sex, dosingWt: state.dosingWt, isSS: state.isSS,
+      calcMode: state.calcMode, rlMode: state.rlMode, tlBasis: state.tlBasis,
+      crcl: [crclOverride.on, crclOverride.value], amp: ampState });
+  } catch (e) { return null; }
+}
+// A result is on screen — not a refusal, not the backstop, not the placeholder.
+function formResultShown(scope) {
+  const area = formArea(scope);
+  const el = area.el;
+  if (!el || el.style.display === 'none' || !String(el.innerHTML || '').trim()) return false;
+  if (el.querySelector('.form-errors, .form-backstop')) return false;
+  if (scope === 'auc') return !!(typeof bState !== 'undefined' && bState && bState.result);
+  return !!(formRuns.trough.ok && formRuns.trough.fp);
+}
+function resultIsStale(scope) {
+  if (!formResultShown(scope)) return false;
+  if (scope === 'auc') return typeof bayesFitIsStale === 'function' && bayesFitIsStale();
+  const fp = formRuns.trough.fp;
+  return !!fp && troughInputFingerprint() !== fp;
+}
+// The stale marker. Idempotent: called after every edit in an input panel and
+// after every re-render, it adds or removes the caution line and the muted
+// state to match the inputs. Returns whether the shown result is stale.
+function refreshStaleResult(scope) {
+  const run = formRuns[scope];
+  if (!run || !FORM_AREAS[scope]) return false;
+  const stale = resultIsStale(scope);
+  const area = formArea(scope);
+  if (area.el) {
+    const line = area.el.querySelector('.stale-line');
+    if (stale && !line) {
+      area.el.insertAdjacentHTML('afterbegin', `<p class="stale-line">${ICON.caution}<span>${STALE_MSG}</span>`
+        + `<span class="stale-dash" aria-hidden="true">—</span>`
+        + `<button type="button" class="stale-recalc" data-onclick="kB2" data-arg="${scope}">recalculate</button></p>`);
+    } else if (!stale && line) {
+      line.remove();
+    }
+    area.el.classList.toggle('is-stale', stale);
+    // Said once, and only for the module on screen (sex is shared, so an edit in
+    // one panel can stale the other module's result too).
+    if (stale && !run.stale && area.el.offsetParent !== null) announceResult(`${STALE_MSG} — recalculate.`);
+  }
+  run.stale = stale;
+  return stale;
+}
+
+(function watchFormEdits() {
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  // After the registry's own handler (registered earlier, so it runs first):
+  // an edit in either input panel re-checks both results — sex is shared, and
+  // the AUC fingerprint reads it. Typing a profile label changes no result, but
+  // loading a profile (a click) replaces the inputs.
+  const onEdit = (ev) => {
+    const t = ev.target;
+    if (!t || typeof t.closest !== 'function' || !t.closest('.panel-left')) return;
+    if (t.closest('.profile-section') && ev.type !== 'click') { clearFormErrors('profile'); return; }
+    refreshStaleResult('trough');
+    refreshStaleResult('auc');
+  };
+  ['input', 'change', 'click'].forEach(type => document.addEventListener(type, onEdit));
+  // Before the handler (capture): a new save attempt starts without the last refusal.
+  document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (t && typeof t.closest === 'function' && t.closest('.profile-save-btn')) clearFormErrors('profile');
+  }, true);
+  // Every re-render (a run, a resize or theme redraw) replaces the results;
+  // re-place the queued cautions and the stale line to match.
+  if (typeof MutationObserver === 'function') {
+    Object.keys(FORM_AREAS).forEach(scope => {
+      const el = document.getElementById(FORM_AREAS[scope].results);
+      if (el) new MutationObserver(() => { flushFormCautions(scope); refreshStaleResult(scope); })
+        .observe(el, { childList: true });
+    });
+  }
+  // The markup ships Male pressed; the state has no default. Make them agree.
+  try { setPatientSex(state.sex); } catch (e) {}
+})();
+
+// A printed handoff is read away from the screen, so a stale AUC fit says so on
+// paper too. Registered after the report's own beforeprint handler, so the
+// report exists. (The Trough report copies the results panel, stale line and all.)
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('beforeprint', () => {
+    try {
+      const bShell = document.getElementById('app-shell-bayesian');
+      if (!bShell || bShell.style.display === 'none' || !resultIsStale('auc')) return;
+      const rpt = document.getElementById('print-report');
+      if (!rpt) return;
+      const html = `<div class="pr-alert warning"><strong>${STALE_MSG}</strong> — recalculate before relying on this report.</div>`;
+      const head = rpt.querySelector('.pr-header');
+      if (head) head.insertAdjacentHTML('afterend', html); else rpt.insertAdjacentHTML('afterbegin', html);
+    } catch (e) { /* printing must never be blocked by a warning */ }
+  });
+}
 
 
 // ── design track C: mobile & data entry — insert this track's helpers below this line ──

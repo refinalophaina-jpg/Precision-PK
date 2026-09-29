@@ -3359,6 +3359,225 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 30 — design track B: refusals inline, sex without a default,
+// stale results (2026-09-28)
+//
+// Every refusal was a native alert() that left the previous run's regimen on
+// screen behind it. Refusals are now an error summary in the module's results
+// (fields marked aria-invalid, previous result cleared, in state too); sex has
+// no default and both modules refuse without it; and a result whose inputs
+// changed is marked stale until the next run.
+// ════════════════════════════════════════════════════════════════════
+{
+  const src    = fs.readFileSync(htmlPath, 'utf8');
+  const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log('  SUITE 30 — design track B: refusals, sex, stale results');
+  console.log(`${'─'.repeat(60)}`);
+  const inCtx = (code) => vm.runInContext(code, sandbox);
+
+  // A small fake DOM: enough for the presenter, the refusal paths and the
+  // stale marker. Elements are created on demand and remembered by id.
+  function fakeDom() {
+    const els = {};
+    function El(id, tag, type, value) {
+      this.id = id || ''; this.tagName = tag || 'DIV'; this.type = type || ''; this.value = value || '';
+      this.attrs = {}; this.style = { display: '' }; this.innerHTML = ''; this.textContent = '';
+      this.checked = false; this.parentNode = null; this.children = [];
+      const cls = this._cls = new Set();
+      this.classList = {
+        add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c),
+        toggle: (c, f) => { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
+      };
+    }
+    El.prototype.setAttribute = function (k, v) { this.attrs[k] = String(v); };
+    El.prototype.getAttribute = function (k) { return k in this.attrs ? this.attrs[k] : null; };
+    El.prototype.removeAttribute = function (k) { delete this.attrs[k]; };
+    El.prototype.focus = function () { dom.active = this; };
+    El.prototype.scrollIntoView = function () {};
+    El.prototype.closest = function () { return null; };
+    El.prototype.contains = function () { return false; };
+    El.prototype.querySelectorAll = function () { return []; };
+    El.prototype.insertAdjacentHTML = function (pos, html) {
+      this.innerHTML = pos === 'afterbegin' ? html + this.innerHTML : this.innerHTML + html;
+    };
+    El.prototype.querySelector = function (sel) {
+      const h = this.innerHTML, self = this;
+      if (sel === '.stale-line') return /<p class="stale-line">/.test(h)
+        ? { remove() { self.innerHTML = self.innerHTML.replace(/<p class="stale-line">[\s\S]*?<\/p>/, ''); },
+            insertAdjacentHTML() {} } : null;
+      if (sel === '.form-errors, .form-backstop') return /class="[^"]*\b(form-errors|form-backstop)\b/.test(h) ? {} : null;
+      if (sel === '.toggle-group') return this.children.find(c => c.classList.contains('toggle-group')) || null;
+      if (sel === '.toggle-opt') return this.children[0] || null;
+      return null;
+    };
+    const get = (id) => els[id] || (els[id] = new El(id, 'INPUT', 'number', ''));
+    // The sex fields: a hidden input beside a Male/Female toggle group.
+    ['sex', 'b-sex'].forEach(id => {
+      const field = new El('', 'DIV'), group = new El('', 'DIV'), male = new El('', 'BUTTON');
+      group.classList.add('toggle-group'); group.children.push(male);
+      field.children.push(group);
+      const hidden = new El(id, 'INPUT', 'hidden', '');
+      hidden.parentNode = field;
+      els[id] = hidden; els[id + '::group'] = group; els[id + '::male'] = male;
+    });
+    ['results-content', 'results-placeholder', 'b-results', 'b-placeholder', 'fe-trough', 'fe-auc', 'sr-announce']
+      .forEach(id => { els[id] = new El(id, 'DIV'); });
+    const panelInputs = ['age', 'tbw', 'height', 'scr'].map(get);
+    const panel = new El('', 'DIV');
+    panel.querySelectorAll = () => panelInputs;
+    const dom = {
+      els, active: null,
+      document: {
+        body: {}, getElementById: get,
+        querySelector: (sel) => sel === '.app-shell:not(#app-shell-bayesian) > .panel-left' ? panel : null,
+        querySelectorAll: () => [], createElement: () => new El(),
+      },
+    };
+    return dom;
+  }
+  function withDom(fn) {
+    const dom = fakeDom();
+    const prevDoc = sandbox.document, prevTimeout = sandbox.setTimeout;
+    sandbox.document = dom.document;
+    sandbox.setTimeout = (f) => f();
+    try { return fn(dom); }
+    finally { sandbox.document = prevDoc; sandbox.setTimeout = prevTimeout; inCtx('state.sex = null; bState.sex = null; bState.result = null;'); }
+  }
+  const setVals = (dom, vals) => Object.keys(vals).forEach(k => { dom.document.getElementById(k).value = vals[k]; });
+  const SEX = "Choose the patient's sex.";
+
+  test('no alert() is left in the script outside comments', ()=>{
+    const code = script.replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n').filter(l => !/^\s*\/\//.test(l)).map(l => l.replace(/\s\/\/ .*$/, '')).join('\n');
+    const n = (code.match(/(?<![\w.])alert\s*\(/g) || []).length;
+    assert(n === 0, `${n} alert() call(s) remain — refusals must use showFormErrors()`);
+    assert(typeof sandbox.showFormErrors === 'function', 'showFormErrors missing');
+  });
+
+  test('showFormErrors renders the summary, marks the field, and the next run clears the mark', ()=>{
+    withDom(dom => {
+      const { showFormErrors, beginFormRun, lastFormErrors } = sandbox;
+      const rc = dom.els['results-content'];
+      rc.innerHTML = '<div class="vx-top">1 g IV q12h</div>';   // a previous result
+      showFormErrors('trough', ['Age is required.'], ['age']);
+      assert(/Check these inputs/.test(rc.innerHTML) && /data-onclick="kB1"/.test(rc.innerHTML), 'summary with a link');
+      assert(!/1 g IV q12h/.test(rc.innerHTML), 'a refusal must clear the previous result');
+      assert(dom.els['results-placeholder'].style.display === 'none', 'placeholder hidden');
+      assert(dom.els.age.getAttribute('aria-invalid') === 'true', 'aria-invalid not set');
+      assert(dom.els.age.getAttribute('aria-describedby') === 'fe-trough-0', 'field not tied to its message');
+      assert(dom.active === dom.els['fe-trough'], 'focus must move to the summary');
+      assert(/Age is required/.test(dom.els['sr-announce'].textContent), 'refusal not announced');
+      assert(lastFormErrors('trough')[0] === 'Age is required.', 'refusal not recorded');
+      beginFormRun('trough');
+      assert(dom.els.age.getAttribute('aria-invalid') === null, 'aria-invalid must clear on the next run');
+      assert(dom.els.age.getAttribute('aria-describedby') === null, 'aria-describedby must be restored');
+    });
+  });
+
+  test('sex has no default; calculate() refuses without it and after it is chosen does not', ()=>{
+    assert(/let state = \{ sex:null,/.test(script), 'state.sex must default to null');
+    assert(/let bState = \{ sex:null,/.test(script), 'bState.sex must default to null');
+    assert(!/bState\.sex = 'M'/.test(script) && !/bState = \{ sex:'M'/.test(script), 'a reset must not restore a default sex');
+    withDom(dom => {
+      inCtx("state.calcMode = 'initial'");
+      sandbox.setPatientSex(null);
+      assert(inCtx('state.sex') === null && inCtx('bState.sex') === null, 'setPatientSex(null) must unset both');
+      setVals(dom, { age: '60', tbw: '80', height: '175', scr: '1', 'init-tinf': '1', 'init-interval': '12' });
+      sandbox.calculate();
+      const errs = sandbox.lastFormErrors('trough');
+      assert(errs.length === 1 && errs[0] === SEX, JSON.stringify(errs));
+      assert(dom.els['sex::group'].classList.contains('fe-invalid'), 'the sex toggle is not marked');
+      assert(/Check these inputs/.test(dom.els['results-content'].innerHTML), 'no summary');
+      // Chosen, sex is no longer refused (age blank so the run stops before the engine).
+      sandbox.setPatientSex('F');
+      assert(inCtx('state.sex') === 'F' && inCtx('bState.sex') === 'F', 'setPatientSex must still set both');
+      setVals(dom, { age: '' });
+      sandbox.calculate();
+      const errs2 = sandbox.lastFormErrors('trough');
+      assert(errs2.indexOf(SEX) < 0 && /Age is required/.test(errs2[0]), JSON.stringify(errs2));
+      assert(!dom.els['sex::group'].classList.contains('fe-invalid'), 'the old sex mark must clear');
+    });
+  });
+
+  test('runBayesian() refuses without sex and clears the previous fit in state', ()=>{
+    const realParse = sandbox.parseBayesCourse;
+    sandbox.parseBayesCourse = () => ({ doses: [{ mg: 1000, tinfH: 1, timeH: 0, label: '' }], levels: [], errors: [] });
+    try {
+      withDom(dom => {
+        sandbox.setPatientSex(null);
+        setVals(dom, { 'b-age': '60', 'b-tbw': '80', 'b-height': '175', 'b-scr': '1', 'b-auc-target': '500' });
+        inCtx('bState.result = { model: "buelga", stale: true }; bState.resultFingerprint = "x";');
+        dom.els['b-results'].innerHTML = '<div class="vx-top">1 g IV q12h</div>';
+        sandbox.runBayesian();
+        const errs = sandbox.lastFormErrors('auc');
+        assert(errs.length === 1 && errs[0] === SEX, JSON.stringify(errs));
+        assert(inCtx('bState.result') === null, 'a refusal must clear bState.result, or a redraw brings the old fit back');
+        assert(!/1 g IV q12h/.test(dom.els['b-results'].innerHTML), 'the previous fit is still on screen');
+        assert(dom.els['b-sex::group'].classList.contains('fe-invalid'), 'the sex toggle is not marked');
+      });
+    } finally { sandbox.parseBayesCourse = realParse; }
+  });
+
+  test('unset sex is safe in the CrCl displays and saved as unset', ()=>{
+    withDom(dom => {
+      sandbox.setPatientSex(null);
+      setVals(dom, { age: '60', tbw: '80', height: '175', scr: '1', 'b-age': '60', 'b-tbw': '80', 'b-height': '175', 'b-scr': '1' });
+      sandbox.autoWeights();
+      assert(dom.els['ibw-display'].textContent === '—', `IBW ${dom.els['ibw-display'].textContent}`);
+      assert(/CrCl: —/.test(dom.els['crcl-result'].textContent), dom.els['crcl-result'].textContent);
+      assert(sandbox.getBayesCrCl() === null, 'no CrCl on an assumed sex');
+      sandbox.updateBayesCrCl();
+      assert(/—/.test(dom.els['b-crcl-result'].textContent) && !/NaN/.test(dom.els['b-crcl-result'].textContent), 'AUC CrCl line');
+      assert(sandbox.snapshotPatientCore().sex === null, 'an unset sex must not be saved as M');
+      sandbox.setPatientSex('M');
+      assert(sandbox.getBayesCrCl() > 0 && sandbox.snapshotPatientCore().sex === 'M', 'chosen sex unchanged');
+    });
+  });
+
+  test('the stale marker follows the inputs and clears when they are restored', ()=>{
+    withDom(dom => {
+      const { beginFormRun, refreshStaleResult, bayesInputFingerprint } = sandbox;
+      assert(typeof refreshStaleResult === 'function', 'refreshStaleResult missing');
+      sandbox.setPatientSex('M');
+      setVals(dom, { age: '60', tbw: '80', height: '175', scr: '1' });
+      const rc = dom.els['results-content'];
+      beginFormRun('trough');
+      assert(/form-backstop/.test(rc.innerHTML), 'a run must start from the backstop, not the old result');
+      rc.innerHTML = '<div class="vx-top">1 g IV q12h</div>';      // what the render writes
+      assert(refreshStaleResult('trough') === false, 'fresh result marked stale');
+      setVals(dom, { age: '61' });
+      assert(refreshStaleResult('trough') === true, 'an edited input must mark the result stale');
+      assert(/Inputs changed since this result/.test(rc.innerHTML) && rc.classList.contains('is-stale'), 'no stale line');
+      setVals(dom, { age: '60' });
+      assert(refreshStaleResult('trough') === false && !/stale-line/.test(rc.innerHTML) && !rc.classList.contains('is-stale'),
+        'restoring the inputs must clear the stale mark');
+      // AUC Precision reuses bayesInputFingerprint.
+      const br = dom.els['b-results'];
+      setVals(dom, { 'b-age': '60', 'b-tbw': '80' });
+      inCtx('bState.result = { model: "buelga" }');
+      inCtx('bState.resultFingerprint = bayesInputFingerprint()');
+      br.style.display = 'block'; br.innerHTML = '<div class="vx-top">1 g IV q12h</div>';
+      assert(refreshStaleResult('auc') === false, 'fresh fit marked stale');
+      setVals(dom, { 'b-age': '70' });
+      assert(refreshStaleResult('auc') === true && br.classList.contains('is-stale'), 'edited AUC input not stale');
+      setVals(dom, { 'b-age': '60' });
+      assert(refreshStaleResult('auc') === false, 'restored AUC input still stale');
+      assert(typeof bayesInputFingerprint === 'function', 'fingerprint reused');
+    });
+  });
+
+  test('two levels under 2 h apart is a caution beside the result, not a refusal', ()=>{
+    const c = script.slice(script.indexOf('function calculate()'));
+    const body = c.slice(0, c.indexOf('\nfunction '));
+    assert(/\(tlT2 - tlT1\) < 2\) \{ queueFormCaution\('trough'/.test(body), 'the separation note must be queued, not block');
+    assert(/beginFormRun\('trough'\)/.test(body) && /withPatientSex\(validateFields/.test(body), 'run start and sex check');
+    const b = script.slice(script.indexOf('function runBayesian()'));
+    assert(/beginFormRun\('auc'\)/.test(b.slice(0, 300)), 'runBayesian must start a run');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
