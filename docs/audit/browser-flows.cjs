@@ -55,6 +55,25 @@ function watch(page, tag) {
 const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n);
   const p = (v) => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 const D1 = day(-2), D2 = day(-1);   // doses at D1 08:00, D1 20:00, D2 08:00, D2 20:00; the level at D2 19:30
+// On the production domain Cloudflare injects an inline bot-check script
+// (window.__CF$cv$params) that the hash-pinned CSP refuses — the policy working,
+// not the app failing. A refused inline script is attributed to it only when the
+// page actually carries that script, and only as many refusals as it has copies;
+// anything beyond that stays a problem. (The app's own script is hash-allowed:
+// if it were refused, nothing on the page would work and the checks would fail.)
+async function attributeInjected(page, problems) {
+  const n = await page.evaluate(() => [...document.scripts].filter(s => !s.src && /__CF\$cv\$params/.test(s.textContent)).length);
+  if (!n) return { kept: problems, injected: 0 };
+  const inline = /Executing inline script violates|Refused to execute inline script|CSP violation: script-src(-elem)? inline/;
+  let budget = { browser: n, listener: n };
+  const kept = problems.filter(p => {
+    if (!inline.test(p)) return true;
+    const k = /CSP violation:/.test(p) ? 'listener' : 'browser';
+    if (budget[k] > 0) { budget[k]--; return false; }
+    return true;
+  });
+  return { kept, injected: n };
+}
 async function enterCourse(page) {
   // Dose 1 set by hand; doses 2-4 must continue the course on their own.
   await page.locator('[data-onclick="k43"]').click();
@@ -285,7 +304,9 @@ async function enterCourse(page) {
   ok('Reset leaves sex unchosen in both modules', sexLit.every(x => !x), JSON.stringify(sexLit));
   const afterReset = await cards();
   ok('Reset returns the model card to Buelga', afterReset === 'buelga:true/true,goti:false/false,hughes:false/false,gotihd:false/false', afterReset);
-  results.problems.push(...dProblems);
+  const dAttr = await attributeInjected(page, dProblems);
+  results.cloudflareInjected = dAttr.injected;
+  results.problems.push(...dAttr.kept);
   await ctx.close();
 
   // ───────────── phone 375×812 ─────────────
@@ -322,13 +343,16 @@ async function enterCourse(page) {
   await m.screenshot({ path: path.join(OUT, 'mobile.png') });
   await m.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' })); await m.waitForTimeout(250);   // full page from the document top
   await m.screenshot({ path: path.join(OUT, 'mobile-full.png'), fullPage: true });
-  results.problems.push(...mProblems);
+  const mAttr = await attributeInjected(m, mProblems);
+  results.cloudflareInjected += mAttr.injected;
+  results.problems.push(...mAttr.kept);
   await mctx.close();
   await browser.close();
 
   results.checks = checks;
   const failed = checks.filter(c => !c.pass);
   console.log(JSON.stringify(results, null, 1));
-  console.log(`\n${checks.length - failed.length}/${checks.length} checks pass; ${results.problems.length} console problem(s); screenshots in ${OUT}`);
+  const cf = results.cloudflareInjected ? `; ${results.cloudflareInjected} Cloudflare-injected inline script(s) refused by the CSP, as designed` : '';
+  console.log(`\n${checks.length - failed.length}/${checks.length} checks pass; ${results.problems.length} console problem(s)${cf}; screenshots in ${OUT}`);
   process.exit(failed.length || results.problems.length ? 1 : 0);
 })().catch(e => { console.error('RUN FAILED:', e); process.exit(2); });
