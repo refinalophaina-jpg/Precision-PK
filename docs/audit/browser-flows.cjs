@@ -345,6 +345,25 @@ async function enterCourse(page) {
   const ssKey = await page.evaluate(() => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()));
   ok('Trough steady-state key: fit, recommendation, population estimate, level',
      ssKey.some(t => /^Current /.test(t)) && ssKey.some(t => /^Recommended /.test(t)) && ssKey.includes('Population estimate') && ssKey.includes('Measured level'), JSON.stringify(ssKey));
+  // "Try another regimen" on the same result: its own comparison in the Tinkerer's code —
+  // the tried regimen beside the fitted current regimen and the population estimate —
+  // while the result's chart and its key stay as they were (D14).
+  await page.evaluate(() => { const d = document.getElementById('tx-ev-tinker'); if (d) d.open = true; });
+  await typeInto(page, '#tinker-dose-ss', '1250');
+  await page.locator('#tinker-tau-ss').selectOption('8');
+  await page.locator('[data-onclick="k59"][data-arg="ss"]').click();
+  await page.waitForTimeout(400);
+  const txTink = await page.evaluate(() => ({
+    key: [...document.querySelectorAll('#tinker-result-ss .tink-legend .legend-item')].map(e => e.textContent.trim()),
+    main: [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()) }));
+  ok('Trough "Try another regimen" key: trying, current, population estimate, trough target',
+     /^Trying 1\.25 g IV q8h/.test(txTink.key[0] || '') && txTink.key.some(t => /^Current 1 g IV q12h/.test(t)) && txTink.key.includes('Population estimate') && txTink.key.some(t => /^Trough target/.test(t)), JSON.stringify(txTink.key));
+  ok('trying a regimen leaves the Trough chart and its key as they were', JSON.stringify(txTink.main) === JSON.stringify(ssKey), JSON.stringify(txTink.main));
+  const txInk = await canvasInk(page, '#tx-tink-canvas-ss');
+  ok('the Trough comparison is drawn', txInk.w > 0 && txInk.painted > 0, JSON.stringify(txInk));
+  await page.evaluate(() => { const el = document.getElementById('tinker-result-ss'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 80, behavior: 'instant' }); });
+  await page.waitForTimeout(200);
+  await page.locator('#tinker-result-ss').screenshot({ path: path.join(OUT, 'desktop-trough-tinker.png') });
   const dAttr = await attributeInjected(page, dProblems);
   results.cloudflareInjected = dAttr.injected;
   results.problems.push(...dAttr.kept);

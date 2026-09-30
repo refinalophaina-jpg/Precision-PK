@@ -499,6 +499,23 @@ measured and what the model fitted, rested on shape alone.
   way. It caps at six so that no style is reused. One renderer serves both charts, on true
   elapsed time (cycles repeated, never rescaled). The purple section box and button are gone,
   because on a chart purple is the fit, and the Tinkerer's tiles lost their tracked capitals.
+- **The Trough module's "Try another regimen" uses the same code (follow-up, same day).** It used
+  to redraw the result's own chart with the tried regimen alone, as a terracotta "Projected" curve,
+  and rewrite that chart's key. What the regimen was being compared with, and the fitted regimen
+  the chart had been showing, left the screen until the next Calculate. It now leaves the result
+  chart alone and draws a comparison of its own, below the tried regimen's numbers, with the
+  Tinkerer's renderer and code. The tried regimen is a projection. It is drawn beside the current
+  regimen as fitted (purple) once a level exists, or beside the recommendation (terracotta) in
+  initial dosing and the two- and random-level modes. There the tried regimen takes the
+  comparison's second style (`terracotta-ink`, dashed), because two projections share a hue. In
+  the level-based modes the population estimate for the tried regimen is the grey dash. A palette
+  change or a resize redraws it from what was predicted, never from inputs edited since, and print
+  repaints it in light like the result chart.
+- **The Tinkerer renderer no longer paints a background.** Its `--paper` fill (the fix for a
+  `fillRect` with no `fillStyle`, which painted black) drew a flat slab on the page's atmosphere.
+  That was visible once the chart sat under the Trough chart, which clears to transparent as the
+  profile chart does. It now clears too. The test that pinned the fill now pins the clear, and
+  still fails a background fill without a themed colour.
 - The Trough chart's summary, which is also its accessible name, said the current regimen "is
   drawn in ink". It now says the regimen is drawn beside the recommendation for comparison: a
   written summary never names a colour.

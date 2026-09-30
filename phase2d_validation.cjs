@@ -1268,6 +1268,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/drawPKGraph/.test(src), 'redrawAllCanvases does not replay the PK graphs');
     assert(!/catch\s*\(\s*e\s*\)\s*\{\s*\}/.test(src), 'redrawAllCanvases still swallows errors silently');
   });
+
+  test('"Try another regimen" draws its own comparison, repainted on a palette change and for print', ()=>{
+    // It used to redraw the result's chart with the tried regimen alone, in the
+    // projection's colour, so what it was being compared with left the screen (D14).
+    const tink = sandbox.tinkerDose.toString();
+    assert(!/drawPKGraph/.test(tink), 'tinkerDose must leave the result chart as it is');
+    assert(/COMPARE_STYLES/.test(tink), 'the tried regimen must take a comparison style');
+    assert(/drawTxTinkChart/.test(sandbox.redrawAllCanvases.toString()), 'a palette change must redraw the comparison');
+    assert(/txTinkSuffix/.test(sandbox._prLightCanvasImages.toString()), 'print must repaint the comparison in light');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -3183,10 +3193,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
     assert(/levelWarnings = Array\.isArray\(levelWarnings\) \? levelWarnings : \[\]/.test(render), 'a missing list must not throw');
   });
-  test('the Tinkerer steady-state canvas paints a background colour, not default black', ()=>{
+  test('the Tinkerer steady-state canvas never paints default black: it clears, like drawPKGraph', ()=>{
+    // A bare fillRect with no fillStyle painted a black slab (design audit 2026-09-28).
+    // The --paper fill that fixed it drew a flat slab on the page's atmosphere under the
+    // transparent Trough and profile charts, so the background is now cleared as theirs
+    // is. A background fill, if one ever returns, must still set a themed colour first.
     const b = bodyOf('drawSSTinkCanvas');
+    assert(/ctx\.clearRect\(0, 0, W, H\)/.test(b), 'the background must be cleared, as drawPKGraph clears its own');
     const i = b.indexOf('ctx.fillRect(0, 0, W, H)');
-    assert(i > 0 && /ctx\.fillStyle\s*=\s*themeColor\('--paper'/.test(b.slice(0, i)), 'fillStyle must be set before the background fill');
+    assert(i < 0 || /ctx\.fillStyle\s*=\s*themeColor\(/.test(b.slice(0, i)), 'fillStyle must be set before any background fill');
   });
 }
 

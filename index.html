@@ -1660,6 +1660,7 @@
     font-size: var(--fs-xs); color: var(--ink-muted);
   }
   .tink-legend .legend-item, .compare-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .tx-tink-fig { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--rule); }
   .lg-svg { width: 22px; height: 8px; flex: none; overflow: visible; }
   .compare-note { font-size: var(--fs-xs); color: var(--ink-muted); margin: 6px 0 0; }
   .compare-note:empty { display: none; }
@@ -5063,6 +5064,10 @@ function themeRGBA(name, alpha, fallback) {
 // the ReferenceError was swallowed and the trough-based canvases kept their
 // light-theme gridlines and dots on the dark page, at ~1.03:1 contrast.
 const _pkGraphArgs = {};
+// What each Trough "Try another regimen" comparison last drew, by module suffix.
+// A palette change or a resize redraws from here — never from the inputs, which
+// may have been edited since Predict was pressed.
+const _txTinkView = {};
 // Canvases size their backing store once, at draw time. Rotating a tablet or
 // dragging a window left the drawn curve stretched and the crosshair reporting
 // the wrong time and concentration. Debounced so a drag does not thrash.
@@ -5110,6 +5115,8 @@ function redrawAllCanvases() {
   try { if (bState && bState.result) renderBayesianResults(bState.result, bState.divergeMsg,
         bState.levelWarnings, bState.mic, bState.p2c); } catch (e) {
     if (typeof console !== 'undefined') console.warn('bayes redraw failed', e); }
+  try { Object.keys(_txTinkView).forEach(drawTxTinkChart); } catch (e) {
+    if (typeof console !== 'undefined') console.warn('trough tinker redraw failed', e); }
   try { if (typeof renderComparisonSection === 'function' && bState &&
             bState.tinkCompare && bState.tinkCompare.length) renderComparisonSection(); } catch (e) {
     if (typeof console !== 'undefined') console.warn('compare redraw failed', e); }
@@ -6604,7 +6611,7 @@ function renderResults(d) {
       `CL ${d.adjClv.toFixed(2)} L/h · Vd ${d.vd.toFixed(1)} L · t½ ${d.t12.toFixed(1)} h${d.levelFitted ? ' · fitted from measured level' : ''}`,
       pkBody, false),
     txEvHTML('tx-ev-explorer', 'Dose explorer', 'Alternative regimens on the same PK', explorerBody, false),
-    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak; redraws the curve',
+    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak, and compare the curves',
       tinkererHTML('ss', d.tau), false),
     txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
       txDisclaimerHTML('This tool is intended to support, not replace, clinical pharmacokinetic judgment. Dose recommendations should be verified against institutional protocols, patient-specific clinical context, and current guidelines (Rybak et al., ASHP/IDSA 2020). AinaDara v1.0 · Phase 1 (Trough-Based)'), false),
@@ -6621,7 +6628,11 @@ function renderResults(d) {
   updateModelInfo();
   // Store global PK state for dose tinkerer
   _pk = { tau: d.tau, tinf: d.tinf, kel: d.kel, vd: d.vd, clv: d.adjClv,
-          troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
+          troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
+          // "Try another regimen" compares against this (D14): the current regimen as
+          // fitted once a level exists, otherwise the recommendation.
+          base: d.levelFitted ? { role: 'current', dose: d.dose, tau: d.tau } : { role: 'rec', dose: vDose, tau: d.tau },
+          popKel: d.levelFitted ? d.popKel : null, popVd: d.levelFitted ? d.vd : null };
   announceResult(`Result: ${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
   // Draw the PK graph after DOM insertion
   requestAnimationFrame(() => {
@@ -6706,7 +6717,7 @@ function renderTwoLevels(d) {
     txEvHTML('tx-ev-pk', 'PK parameters', `Kel ${d.kel.toFixed(4)} h⁻¹ · Vd ${d.vd.toFixed(1)} L · t½ ${t12Ind} h`, pkBody, false),
     txEvHTML('tx-ev-explorer', 'Dose explorer', 'Projected steady state using the fitted Kel and Vd',
       txExplorerHTML(explorerHTML, 'Projected steady-state outcomes · using fitted Kel &amp; Vd'), false),
-    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak; redraws the curve',
+    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak, and compare the curves',
       tinkererHTML('tl', d.tlTau), false),
     txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
       txDisclaimerHTML(`Two-level PK estimation ${d.basis === 'steadystate' ? 'at steady state' : 'after the first dose'} assumes the levels are in the post-distribution phase. This approach is most reliable in patients with stable renal function. Verify recommended dose with a steady-state level once available. AinaDara v1.0 · Phase 2 (Two Levels${d.basis === 'steadystate' ? ' at Steady State' : ' After First Dose'})`), false),
@@ -6721,7 +6732,8 @@ function renderTwoLevels(d) {
 
   updateModelInfo();
   _pk = { tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
-          troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
+          troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
+          base: { role: 'rec', dose: d.optDose, tau: d.tlTau }, popKel: d.popKel, popVd: d.popVd };
   announceResult(`Result: ${fmtRegimen(d.optDose, d.tlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-tl', d.optDose, d.tlTau, d.tlTinf, d.kel, d.vd, {
@@ -6818,7 +6830,7 @@ function renderRandomLevel(d) {
     txEvHTML('tx-ev-prn', 'One-time PRN dose', 'For level-based dosing (AKI, unstable renal function)', prnBody, false),
     txEvHTML('tx-ev-explorer', 'Dose explorer', 'Projected steady state with the fitted Kel and population Vd',
       txExplorerHTML(explorerHTML, 'Projected steady-state outcomes · fitted Kel, population Vd'), false),
-    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak; redraws the curve',
+    txEvHTML('tx-ev-tinker', 'Try another regimen', 'Predict AUC₂₄, trough and peak, and compare the curves',
       tinkererHTML('rl', d.rlTau), false),
     txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
       txDisclaimerHTML('Random-level dosing uses a single concentration to estimate Kel with population Vd fixed. This approach is most accurate when the level is drawn well into the post-distribution phase (≥1h after end of infusion). For a more precise individual Vd estimate, use Two-Level sampling (Phase 2). AinaDara v1.0 · Phase 3 (Random Level)'), false),
@@ -6833,7 +6845,8 @@ function renderRandomLevel(d) {
 
   updateModelInfo();
   _pk  = { tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
-           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
+           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
+           base: { role: 'rec', dose: d.optDose, tau: d.rlTau }, popKel: d.popKel, popVd: d.popVd };
   _prn = { kel: d.indKel, vd: d.popVd, clv: d.indClv, tbw: d.tbw,
            rlC: d.rlC, rlT: d.rlT, rlTinf: d.rlTinf,
            troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
@@ -6959,18 +6972,62 @@ function tinkerDose(suffix) {
   const auc = calcAUC(d, tau, clv);
   const aucMIC = mic ? auc / mic : null;
   const res = document.getElementById('tinker-result-' + suffix);
-  res.innerHTML = txTinkerResultHTML({ dose: d, tau, pt, auc, aucMIC, troughMin, troughMax });
-  txTinkerLegend(suffix, d, tau, troughMin, troughMax);
+  // The comparison, in the Bayesian Tinkerer's colour code (D14): the regimen being
+  // tried beside what it is compared with — the current regimen as fitted (purple),
+  // or the recommendation — and, once a level has been fitted, the population
+  // estimate for the tried regimen (grey dash). Its own chart on true elapsed time,
+  // so a different interval is drawn honestly; the result's chart above is left as
+  // it is. When the base is the recommendation, a tried regimen is a second
+  // projection and takes the comparison's second style.
+  const base = _pk.base || null;
+  const sameAsBase = !!(base && base.dose === d && base.tau === tau);
+  const showBase = !!(base && !sameAsBase);
+  const baseIsCur = !!(base && base.role === 'current');
+  const pop = _pk.popKel > 0 && _pk.popVd > 0 ? { kel: _pk.popKel, vd: _pk.popVd } : null;
+  const tried = showBase && !baseIsCur ? COMPARE_STYLES[1] : COMPARE_STYLES[0];
+  const triedKey = tried.dash.length ? lineSwatchSVG({ token: tried.token, dash: tried.dash, width: 2.25 })
+                                     : '<i class="lg lg-proj"></i>';
+  const legend = [
+    `<span class="legend-item">${triedKey}Trying ${fmtRegimen(d, tau)}${sameAsBase ? (baseIsCur ? ' (the current regimen)' : ' (the recommendation)') : ''}</span>`,
+    showBase ? `<span class="legend-item"><i class="lg ${baseIsCur ? 'lg-ind' : 'lg-proj'}"></i>${baseIsCur ? 'Current' : 'Recommended'} ${fmtRegimen(base.dose, base.tau)}</span>` : '',
+    pop ? `<span class="legend-item"><i class="lg lg-pop"></i>Population estimate</span>` : '',
+    `<span class="legend-item"><i class="lg tx-lg-band"></i>Trough target ${troughMin}–${troughMax} mg/L</span>`,
+  ].join('');
+  const summary = `Steady state of ${fmtRegimen(d, tau)}`
+    + (showBase ? `, beside the ${baseIsCur ? 'current' : 'recommended'} ${fmtRegimen(base.dose, base.tau)}` : '')
+    + (pop ? ', with the population estimate for the tried regimen as a dashed line' : '')
+    + `; the band is the ${troughMin}–${troughMax} mg/L trough target.`;
+  res.innerHTML = txTinkerResultHTML({ dose: d, tau, pt, auc, aucMIC, troughMin, troughMax })
+    + `<figure class="tx-tink-fig">
+         <canvas id="tx-tink-canvas-${suffix}" role="img" aria-label="${escHtml(summary)}" style="width:100%;display:block"></canvas>
+         <figcaption class="tink-legend">${legend}</figcaption>
+       </figure>`;
   res.classList.add('visible');
-
-  // Redraw PK graph with the tinkered dose + interval
-  const graphId = 'pk-graph-' + suffix;
-  const canvas  = document.getElementById(graphId);
-  if (canvas) {
-    requestAnimationFrame(() => {
-      drawPKGraph(graphId, d, tau, tinf, kel, vd, { troughMin, troughMax });
-    });
-  }
+  _txTinkView[suffix] = { dose: d, tau, tinf, kel, vd, pop, tried,
+    base: showBase ? { dose: base.dose, tau: base.tau, token: baseIsCur ? '--series-fit' : '--series-projection' } : null,
+    band: { min: troughMin, max: troughMax } };
+  requestAnimationFrame(() => drawTxTinkChart(suffix));
+}
+// A comparison canvas's id → its module suffix, when that comparison is on record.
+function txTinkSuffix(canvasId) {
+  const sfx = typeof canvasId === 'string' && canvasId.indexOf('tx-tink-canvas-') === 0 ? canvasId.slice(15) : null;
+  return sfx && _txTinkView[sfx] ? sfx : null;
+}
+// Draws a Trough comparison from what tinkerDose recorded; replayed by
+// redrawAllCanvases, and repainted in light for print (_prLightCanvasImages).
+function drawTxTinkChart(suffix) {
+  const v = _txTinkView[suffix];
+  const canvas = document.getElementById('tx-tink-canvas-' + suffix);
+  if (!v || !canvas) return;
+  const curve = (mg, tau, kel, vd) => ssCurve(mg, tau, v.tinf, kel, vd, 200);
+  drawSSTinkCanvas(canvas, [
+    v.base && { pts: curve(v.base.dose, v.base.tau, v.kel, v.vd), tau: v.base.tau,
+                color: themeColor(v.base.token, '#6751a8'), width: 2 },
+    v.pop && { pts: curve(v.dose, v.tau, v.pop.kel, v.pop.vd), tau: v.tau,
+               color: themeColor('--ink-muted', '#676b5e'), width: 1.25, dash: [5, 4] },
+    { pts: curve(v.dose, v.tau, v.kel, v.vd), tau: v.tau,
+      color: themeColor(v.tried.token, '#cc785c'), width: 2.25, dash: v.tried.dash },
+  ], { band: v.band, height: 180 });
 }
 
 // Trough note when AUC is in range but the trough is under 10 mg/L.
@@ -11449,11 +11506,12 @@ function drawSSTinkCanvas(canvas, series, opts) {
   const tx = t => PAD.l + (t / span) * cW;
   const ty = c => PAD.t + cH - (c / maxC) * cH;
 
-  // Background. fillRect with no fillStyle paints the default BLACK — the
-  // Tinkerer's steady-state chart rendered as a black slab (design audit
-  // 2026-09-28). Paint the page surface explicitly.
-  ctx.fillStyle = themeColor('--paper', '#faf5ed');
-  ctx.fillRect(0, 0, W, H);
+  // Background: transparent, as drawPKGraph and the profile chart clear theirs, so
+  // this chart sits on the same ground as the charts beside it. It once called
+  // fillRect with no fillStyle and painted the default BLACK (design audit
+  // 2026-09-28); the --paper fill that fixed that drew a flat slab on the page's
+  // atmosphere, under a Trough chart that has none.
+  ctx.clearRect(0, 0, W, H);
 
   // Grid and concentration ticks (12px: the type floor)
   ctx.font = "500 12px 'Outfit', sans-serif";
@@ -13521,18 +13579,7 @@ function txTinkerResultHTML(o) {
       <div><dt>SS trough</dt><dd class="${trIn ? '' : 'tone-caution'}">${o.pt.trough.toFixed(1)} mg/L</dd></div>
       <div><dt>SS peak</dt><dd>${o.pt.peak.toFixed(1)} mg/L</dd></div>
       ${o.aucMIC !== null ? `<div><dt>AUC:MIC</dt><dd class="${o.aucMIC >= 400 ? '' : 'tone-caution'}">${o.aucMIC.toFixed(0)}</dd></div>` : ''}
-    </dl>
-    <p class="ev-note vx-muted">The curve above now shows this regimen. Calculate again to restore the recommendation.</p>`;
-}
-function txTinkerLegend(suffix, dose, tau, troughMin, troughMax) {
-  if (typeof document === 'undefined') return;
-  const el = document.getElementById('tx-legend-' + suffix);
-  if (!el) return;
-  el.innerHTML = txLegendHTML([
-    { cls: 'lg-proj', text: `Projected ${fmtRegimen(dose, tau)}` },
-    { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
-    { cls: 'tx-lg-band', text: `Trough target ${troughMin}–${troughMax} mg/L` },
-  ]);
+    </dl>`;
 }
 
 // One-time / PRN dose output (calcPRNDose).
@@ -13695,14 +13742,17 @@ function _prTroughBody(src) {
 }
 
 // Snapshot canvases for paper. A trough graph drawn on dark paper would print
-// as pale lines on white, so in dark mode each one drawPKGraph recorded is
-// repainted in the light palette, captured, and repainted back.
+// as pale lines on white, so in dark mode each one drawPKGraph recorded, and each
+// "Try another regimen" comparison, is repainted in the light palette, captured,
+// and repainted back.
 function _prLightCanvasImages(canvases) {
   const root = document.documentElement;
   const dark = typeof currentTheme === 'function' && currentTheme() === 'dark';
-  const ids = dark ? canvases.map(c => c.id).filter(id => id && _pkGraphArgs[id]) : [];
+  const ids = dark ? canvases.map(c => c.id).filter(id => id && (_pkGraphArgs[id] || txTinkSuffix(id))) : [];
   const prev = root ? root.getAttribute('data-theme') : null;
-  const repaint = () => ids.forEach(id => { try { drawPKGraph.apply(null, _pkGraphArgs[id]); } catch (e) {} });
+  const repaint = () => ids.forEach(id => { try {
+    if (_pkGraphArgs[id]) drawPKGraph.apply(null, _pkGraphArgs[id]); else drawTxTinkChart(txTinkSuffix(id));
+  } catch (e) {} });
   const out = [];
   try {
     if (ids.length) { root.setAttribute('data-theme', 'light'); repaint(); }
