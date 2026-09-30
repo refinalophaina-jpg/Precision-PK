@@ -3045,13 +3045,39 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/'border-range' : 'in-range'/.test(code), 'supratherapeutic must not be downplayed');
     // 2026-09-28 second pass: the three copies are one helper (rule 2), called by all three renderers.
     assert((code.match(/doseExplorerRows\(\{ tau: d\.(tau|tlTau|rlTau),/g) || []).length === 3, 'three renderers, one helper');
-    assert(/new Set\(\[8, 12, 24, o\.tau\]\)/.test(code), 'own interval listed');
-    const rows = sandbox.doseExplorerRows({ tau: 48, tinf: 1, kel: 0.03, vd: 60, clv: 1.8, mic: 1, troughMin: 10, troughMax: 20, optDose: 1000 });
+    assert(/new Set\(\[8, 12, 24, o\.tau, \.\.\.marks\.map\(m => m\.tau\)\]\)/.test(code), 'own interval listed');
+    const rows = sandbox.doseExplorerRows({ tau: 48, tinf: 1, kel: 0.03, vd: 60, clv: 1.8, mic: 1, troughMin: 10, troughMax: 20,
+      rec: { dose: 1000, tau: 48 } });
     // Re-pointed (design track D, 2026-09-28): rows show ISMP doses and frequencies, and the
-    // recommended row is marked in words and by class, not with a star glyph.
-    assert(/<tr class="is-rec">\s*<th scope="row">1 g q48h <span class="tx-rec-tag">recommended<\/span>/.test(rows),
+    // recommended row is marked in words and by class, not with a star glyph. Re-pointed again
+    // (D14, 2026-09-30): the word sits beside the chart legend's line for that regimen.
+    assert(/<tr class="is-rec">\s*<th scope="row">1 g q48h <span class="tx-row-tag"><i class="lg lg-proj" aria-hidden="true"><\/i>recommended<\/span>/.test(rows),
       'a Q48H patient gets the recommended mark on their own interval');
     assert((rows.match(/class="is-rec"/g) || []).length === 1 && !/★/.test(rows), 'exactly one marked row, no star glyph');
+  });
+  test('dose explorer: the rows the chart draws carry its key, and are always listed', ()=>{
+    // D14: the current regimen as fitted keys to the fit's line, the recommendation to the
+    // projection's; the optimiser's dose, which the chart does not draw, gets a word and no
+    // colour. Off-grid doses (1.1 g, 2.25 g) are listed once, in order.
+    const base = { tau: 12, tinf: 1, kel: 0.1, vd: 60, clv: 6, mic: 1, troughMin: 10, troughMax: 20 };
+    const both = sandbox.doseExplorerRows({ ...base, cur: { dose: 1100, tau: 12 }, rec: { dose: 2250, tau: 12 } });
+    assert(/<tr class="is-cur">\s*<th scope="row">1\.1 g q12h <span class="tx-row-tag"><i class="lg lg-ind" aria-hidden="true"><\/i>current<\/span>/.test(both),
+      'the current regimen carries the fit\'s line and the word');
+    assert(/<tr class="is-rec">\s*<th scope="row">2\.25 g q12h <span class="tx-row-tag"><i class="lg lg-proj"/.test(both),
+      'the recommendation carries the projection\'s line');
+    const q12 = [...both.matchAll(/<th scope="row">([\d.]+ (?:mg|g)) q12h/g)].map(x => x[1]);
+    assert(q12.filter(x => x === '1.1 g').length === 1 && q12.filter(x => x === '2.25 g').length === 1, 'each listed once');
+    assert(q12.indexOf('1 g') < q12.indexOf('1.1 g') && q12.indexOf('1.1 g') < q12.indexOf('1.25 g') &&
+           q12.indexOf('2 g') < q12.indexOf('2.25 g') && q12.indexOf('2.25 g') < q12.indexOf('2.5 g'), 'in dose order');
+    const cont = sandbox.doseExplorerRows({ ...base, rec: { dose: 1000, tau: 12, tag: 'recommended (current)' }, opt: { dose: 750, tau: 12 } });
+    assert(/<tr class="is-rec">\s*<th scope="row">1 g q12h <span class="tx-row-tag"><i class="lg lg-proj" aria-hidden="true"><\/i>recommended \(current\)/.test(cont),
+      'continuing: the current regimen is the recommendation, keyed as the chart keys it');
+    assert(/<tr class="is-opt">\s*<th scope="row">750 mg q12h <span class="tx-row-tag">optimiser's dose<\/span>/.test(cont),
+      'the optimiser\'s dose is named, with no line and no terracotta');
+    assert((cont.match(/class="is-rec"/g) || []).length === 1, 'terracotta marks the recommendation only');
+    // The Trough renderer passes what its chart draws.
+    assert(/cur: showOptDose \? \{ dose: d\.dose, tau: d\.tau \} : null/.test(code) &&
+           /rec: \{ dose: vDose, tau: d\.tau,/.test(code), 'steady-state explorer mirrors its chart');
   });
   test('the AUC band is one pair of constants, not 400/600 literals', ()=>{
     const hits = code.match(/\bauc(?:24)?\s*(?:>=|<=|>|<)\s*(?:400|600)\b/g) || [];

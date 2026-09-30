@@ -129,12 +129,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **319/319 pass** |
+| `phase2d_validation.cjs` | **320/320 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **53/53** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **54/54** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 Syntax check after any edit:
 
@@ -192,7 +192,9 @@ Rules the 2026-09 design pass learned the hard way:
   comparison they share the projection's hue family and differ by line pattern (`COMPARE_STYLES`,
   six at most — a style is never reused, never cycled). The Trough module's "Try another regimen"
   draws its own comparison with the same renderer and never redraws the result chart. It replays
-  from `_txTinkView` (what was predicted), not from the inputs.
+  from `_txTinkView` (what was predicted), not from the inputs. The Trough dose explorer keys
+  the rows its chart draws (`doseExplorerRows` `cur` / `rec` / `opt`): the chart legend's line
+  and word, text in text tokens, terracotta only on the recommendation.
 - **The course strip and the curve share one time axis** (`profileDomain` + `PROFILE_PAD`) and
   one cursor (`canvas._pkCursor(t)`). Anything new drawn on either must use that axis.
 - **Screenshots:** `html` has `scroll-behavior: smooth`, so `scrollTo` animates; capture after
@@ -261,7 +263,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 53 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 54 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |

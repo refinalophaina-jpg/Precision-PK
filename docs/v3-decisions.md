@@ -511,6 +511,17 @@ measured and what the model fitted, rested on shape alone.
   the level-based modes the population estimate for the tried regimen is the grey dash. A palette
   change or a resize redraws it from what was predicted, never from inputs edited since, and print
   repaints it in light like the result chart.
+- **The Trough dose explorer uses the same code (follow-up, 2026-09-30).** The table marked only
+  the recommendation, in terracotta. The current regimen, which the chart draws as the purple fit,
+  was an unmarked row among 27. The rows the chart draws now carry its legend's line and word.
+  The current regimen is on the fit's line ("current"), and the recommendation on the
+  projection's ("recommended", or "recommended (current)" when the advice is to continue). The
+  words stay in text colours; only the line carries the series colour. When the advice is to
+  continue, the table used to put terracotta on the optimiser's dose, which the chart does not
+  draw, while the chart's terracotta line was the current dose. That row now says "optimiser's
+  dose", with no line and no terracotta. A regimen the chart draws is always listed, even off the
+  250 mg grid (a 1.1 g current dose, a 2.25 g recommendation). Amber still marks out-of-range
+  values: that is a status, not a series.
 - **The Tinkerer renderer no longer paints a background.** Its `--paper` fill (the fix for a
   `fillRect` with no `fillStyle`, which painted black) drew a flat slab on the page's atmosphere.
   That was visible once the chart sat under the Trough chart, which clears to transparent as the

@@ -364,6 +364,14 @@ async function enterCourse(page) {
   await page.evaluate(() => { const el = document.getElementById('tinker-result-ss'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 80, behavior: 'instant' }); });
   await page.waitForTimeout(200);
   await page.locator('#tinker-result-ss').screenshot({ path: path.join(OUT, 'desktop-trough-tinker.png') });
+  // The dose explorer marks the rows the chart draws with the chart key's line and word (D14):
+  // the current regimen on the fit's line, the recommendation on the projection's.
+  const xRows = await page.evaluate(() => [...document.querySelectorAll('#tx-ev-explorer tbody tr[class]')].map(r => ({
+    cls: r.className, key: (r.querySelector('.tx-row-tag .lg') || {}).className || '',
+    text: r.querySelector('th').textContent.replace(/\s+/g, ' ').trim() })));
+  ok('dose explorer keys the chart\'s regimens: current on the fit\'s line, recommended on the projection\'s',
+     xRows.length === 2 && xRows.some(r => r.cls === 'is-cur' && /lg-ind/.test(r.key) && r.text === '1 g q12h current') &&
+     xRows.some(r => r.cls === 'is-rec' && /lg-proj/.test(r.key) && / recommended$/.test(r.text)), JSON.stringify(xRows));
   const dAttr = await attributeInjected(page, dProblems);
   results.cloudflareInjected = dAttr.injected;
   results.problems.push(...dAttr.kept);

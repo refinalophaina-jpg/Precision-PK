@@ -2598,12 +2598,18 @@
   .tx-explorer th[scope=row] { white-space: nowrap; }
   .tx-explorer tr.is-rec th, .tx-explorer tr.is-rec td { background: color-mix(in srgb, var(--terracotta) 8%, transparent); }
   .tx-explorer tr.is-rec th { color: var(--terracotta-ink); font-weight: 600; }
-  .tx-rec-tag { font-size: var(--fs-xs); font-weight: 500; color: var(--terracotta-ink); margin-left: 4px; }
+  .tx-explorer tr.is-cur th { font-weight: 600; }
+  /* A row the chart draws carries the chart legend's line and word (D14). The words are
+     text tokens; only the line carries the series colour. */
+  .tx-row-tag { display: inline-flex; align-items: baseline; gap: 6px; margin-left: 8px;
+    font-size: var(--fs-xs); font-weight: 500; color: var(--ink-muted); }
+  .tx-row-tag .lg { align-self: center; }   /* the words sit on the regimen's baseline */
+  .tx-explorer tr.is-rec .tx-row-tag { color: var(--terracotta-ink); }
   @container results (max-width: 520px) {
     .tx-explorer th, .tx-explorer td, .tx-table th, .tx-table td { padding-right: 8px; }
     .tx-explorer thead th, .tx-table thead th { white-space: normal; }
     .tx-table td { white-space: normal; }
-    .tx-rec-tag { display: block; margin-left: 0; }
+    .tx-row-tag { display: flex; margin: 2px 0 0; }
   }
 
   /* The Dose Tinkerer and PRN tool inside an evidence section: no box, no kicker. */
@@ -5774,20 +5780,35 @@ function optFlagHTML(flag, flagMsg, tau, auc, trough, troughMin) {
 // implementation now. The patient's own interval is always listed; both sides
 // of the AUC band are coloured alike; the trough column is coloured against the
 // module's own trough target, which is what this module is organised around.
+//
+// The rows the result's chart draws carry its key (D14): o.rec, the
+// recommendation, drawn as the projection; o.cur, the current regimen as fitted,
+// when the chart draws it apart from the recommendation; and o.opt, the
+// optimiser's dose when it is not the recommendation. The chart does not draw
+// that one, so it gets a word and no colour: terracotta means the recommendation.
+// Each is { dose, tau } and is always listed, on the 250 mg grid or not.
 const EXPLORER_DOSES = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500];
 function doseExplorerRows(o) {
-  const intervals = [...new Set([8, 12, 24, o.tau])].filter(x => x > 0).sort((a, b) => a - b);
+  const marks = [
+    o.cur && { dose: o.cur.dose, tau: o.cur.tau, cls: 'is-cur', key: 'lg-ind',  tag: 'current' },
+    o.rec && { dose: o.rec.dose, tau: o.rec.tau, cls: 'is-rec', key: 'lg-proj', tag: o.rec.tag || 'recommended' },
+    o.opt && { dose: o.opt.dose, tau: o.opt.tau, cls: 'is-opt', key: '',        tag: 'optimiser\'s dose' },
+  ].filter(m => m && m.dose > 0 && m.tau > 0);
+  const intervals = [...new Set([8, 12, 24, o.tau, ...marks.map(m => m.tau)])].filter(x => x > 0).sort((a, b) => a - b);
   let html = '';
   for (const interval of intervals) {
-    for (const dose of EXPLORER_DOSES) {
+    const doses = [...new Set([...EXPLORER_DOSES, ...marks.filter(m => m.tau === interval).map(m => m.dose)])]
+      .sort((a, b) => a - b);
+    for (const dose of doses) {
       const pt  = calcPeakTrough(dose, interval, o.tinf, o.kel, o.vd);
       const auc = calcAUC(dose, interval, o.clv);
       const tCls  = (pt.trough < o.troughMin || pt.trough > o.troughMax) ? 'out-range' : 'in-range';
       const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';
-      const isRec = dose === o.optDose && interval === o.tau;
-      // ISMP dose and frequency; the recommended row is marked in words, not a star glyph.
-      html += `<tr${isRec ? ' class="is-rec"' : ''}>
-        <th scope="row">${fmtDose(dose)} ${fmtFreq(interval)}${isRec ? ` <span class="tx-rec-tag">${o.recLabel || 'recommended'}</span>` : ''}</th>
+      const m = marks.find(x => x.dose === dose && x.tau === interval);
+      // ISMP dose and frequency; a marked row says what it is in words, beside the
+      // chart legend's line for it — never a star glyph, never colour alone.
+      html += `<tr${m ? ` class="${m.cls}"` : ''}>
+        <th scope="row">${fmtDose(dose)} ${fmtFreq(interval)}${m ? ` <span class="tx-row-tag">${m.key ? `<i class="lg ${m.key}" aria-hidden="true"></i>` : ''}${m.tag}</span>` : ''}</th>
         <td class="${tCls}">${pt.trough.toFixed(1)}</td>
         <td>${pt.peak.toFixed(1)}</td>
         <td class="${aUCls}">${auc.toFixed(0)}</td>
@@ -6595,8 +6616,13 @@ function renderResults(d) {
     <p class="ev-note vx-muted">${escHtml(methodMain)}</p>`;
 
   const explorerHTML = doseExplorerRows({ tau: d.tau, tinf: d.tinf, kel: d.kel, vd: d.vd, clv: d.adjClv,
-    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose,
-    recLabel: verdictIsOpt ? 'recommended' : 'optimiser\'s dose' });
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax,
+    // As the chart above draws them (its legend's words): the recommendation, the
+    // current regimen when it is drawn beside it, and the optimiser's dose when it
+    // is not the recommendation.
+    rec: { dose: vDose, tau: d.tau, tag: showOptDose || isInitialMode ? 'recommended' : 'recommended (current)' },
+    cur: showOptDose ? { dose: d.dose, tau: d.tau } : null,
+    opt: verdictIsOpt ? null : { dose: d.optDose, tau: d.tau } });
   const explorerBody = `
     <p class="ev-lead">At ${fmtFreq(d.tau)} the optimiser's dose is <strong>${fmtRegimen(d.optDose, d.tau)}</strong>.</p>
     <p class="ev-note">Based on ${d.levelFitted ? 'the level-fitted Ke (not population PK)' : 'population PK'} — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.</p>
@@ -6668,7 +6694,7 @@ function renderTwoLevels(d) {
 
   // Dose explorer using individual PK
   const explorerHTML = doseExplorerRows({ tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
-    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: { dose: d.optDose, tau: d.tlTau } });
 
   const verdict = txVerdictHTML({
     dose: d.optDose, tau: d.tlTau, tinf: d.tlTinf,
@@ -6766,7 +6792,7 @@ function renderRandomLevel(d) {
 
   // Dose explorer
   const explorerHTML = doseExplorerRows({ tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
-    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, optDose: d.optDose });
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: { dose: d.optDose, tau: d.rlTau } });
 
   const verdict = txVerdictHTML({
     dose: d.optDose, tau: d.rlTau, tinf: d.rlTinf, kind: 'scheduled maintenance',
@@ -13557,7 +13583,7 @@ function txExplorerHTML(rowsHTML, caption) {
       <thead><tr><th scope="col">Regimen</th><th scope="col">Trough (mg/L)</th><th scope="col">Peak (mg/L)</th><th scope="col">AUC₂₄</th><th scope="col">AUC:MIC</th></tr></thead>
       <tbody>${rowsHTML}</tbody>
     </table></div>
-    <p class="ev-note vx-muted">Amber marks a trough outside the trough target or an AUC₂₄ outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L.</p>`;
+    <p class="ev-note vx-muted">A line beside a regimen is its line on the chart above. Amber marks a trough outside the trough target or an AUC₂₄ outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L.</p>`;
 }
 
 function txDisclaimerHTML(text) {
@@ -13565,7 +13591,7 @@ function txDisclaimerHTML(text) {
 }
 
 // Dose Tinkerer output (tinkerDose). Out-of-range values are amber with the
-// word beside them; the curve above is redrawn with the regimen as a projection.
+// word beside them; tinkerDose draws the comparison chart beneath.
 function txTinkerResultHTML(o) {
   const aucIn = o.auc >= AUC24_TARGET_MIN && o.auc <= AUC24_TARGET_MAX;
   const trIn  = o.pt.trough >= o.troughMin && o.pt.trough <= o.troughMax;
