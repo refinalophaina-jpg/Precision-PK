@@ -225,6 +225,24 @@ async function enterCourse(page) {
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));
   ok('the privacy note is not a box inside the profiles box', look.noteBox === '0px', look.noteBox);
+  // The Dose Tinkerer in the profile chart's colour code (D14): trying a regimen other
+  // than the current one draws it beside the current regimen and the population
+  // estimate; the comparison leads with the current regimen. Run before the capitals
+  // check so the Tinkerer's result is covered by it too.
+  await page.evaluate(() => { const d = document.getElementById('ev-explore'); if (d) d.open = true; });
+  await typeInto(page, '#b-tink-dose', '1250');
+  await page.locator('#b-tink-int').selectOption('12');
+  await page.locator('[data-onclick="k66"]').click();
+  await page.waitForTimeout(400);
+  await page.locator('[data-onclick="k68"]').click();
+  await page.waitForTimeout(400);
+  const tink = await page.evaluate(() => ({
+    key: [...document.querySelectorAll('#b-tink-result .tink-legend .legend-item')].map(e => e.textContent.trim()),
+    cmp: [...document.querySelectorAll('#b-compare-section .compare-legend-item')].map(e => e.textContent.trim()) }));
+  ok('Tinkerer key: trying, current, population estimate, trough reference',
+     /^Trying /.test(tink.key[0] || '') && tink.key.some(t => /^Current /.test(t)) && tink.key.includes('Population estimate') && tink.key.some(t => /^Trough reference/.test(t)), JSON.stringify(tink.key));
+  ok('comparison leads with the current regimen, then the tried one', /^Current /.test(tink.cmp[0] || '') && /^1\.25 g IV q12h/.test(tink.cmp[1] || ''), JSON.stringify(tink.cmp));
+
   // House style: no eyebrows — nothing on screen is set in CSS capitals. Every
   // evidence section is opened for the check and restored after it.
   const caps = await page.evaluate(() => {

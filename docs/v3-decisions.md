@@ -489,6 +489,16 @@ measured and what the model fitted, rested on shape alone.
   "the level is plotted where it was drawn". It never was: that chart shows the recommended
   regimen at steady state, not the course the level came from. The hint now says the level is
   not drawn.
+- **The Dose Tinkerer uses the same code (follow-up, same day).** It used to draw one terracotta
+  curve on a green band, with 9–10px labels, no key, and purple box chrome. Its preview now draws
+  the regimen being tried (projection), the current regimen as fitted (purple) and the population
+  estimate for the tried regimen (grey dash) on the neutral trough-reference band, with a key.
+  The comparison had cycled a six-colour palette whose first two colours now mean projection and
+  fit. It now leads with the current regimen in purple and draws every tried regimen in the
+  projection's hue family, told apart by line pattern and shade, with swatches drawn the same
+  way. It caps at six so that no style is reused. One renderer serves both charts, on true
+  elapsed time (cycles repeated, never rescaled). The purple section box and button are gone,
+  because on a chart purple is the fit, and the Tinkerer's tiles lost their tracked capitals.
 - The Trough chart's summary, which is also its accessible name, said the current regimen "is
   drawn in ink". It now says the regimen is drawn beside the recommendation for comparison: a
   written summary never names a colour.

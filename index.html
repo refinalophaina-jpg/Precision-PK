@@ -1631,32 +1631,22 @@
   .legend-line-dashed { background:none; height:0; border-top:2px dashed currentColor; }
   .legend-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 
-  /* ─── Tinkerer SS canvas + comparison ─── */
-  .tink-ss-wrap {
-    margin-top:14px;
-    background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;
-  }
+  /* ─── Tinkerer steady state + comparison: the profile chart's colour code (D14).
+         Hairlines, not boxes; no purple chrome, because on a chart purple is the fit. ─── */
+  .tink-ss-wrap { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
   .tink-ss-header {
-    display:flex; align-items:center; justify-content:space-between;
-    padding:8px 14px; border-bottom:1px solid var(--border);
-    font-size:var(--fs-xs); font-weight:500; color:var(--text-muted);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    font-size: var(--fs-sm); font-weight: 500; color: var(--ink-soft); margin-bottom: 6px;
   }
   .tink-add-btn {
-    background:color-mix(in srgb, var(--purple) 10%, transparent); border:1px solid color-mix(in srgb, var(--purple) 30%, transparent);
-    color:var(--accent-blue); padding:3px 10px; border-radius:var(--radius-sm);
-    font-size:var(--fs-xs); font-weight:600; cursor:pointer; letter-spacing:0.05em;
-    transition:background 0.15s;
-    min-height:44px;
+    background: var(--paper); border: 1px solid var(--border); color: var(--ink);
+    padding: 6px 14px; border-radius: var(--radius-sm); font-family: var(--font-body);
+    font-size: var(--fs-xs); font-weight: 600; cursor: pointer; min-height: 44px;
+    transition: background-color .15s, border-color .15s;
   }
-  .tink-add-btn:hover { background:color-mix(in srgb, var(--purple) 20%, transparent); }
-  .compare-section {
-    margin-top:16px; border:1px solid color-mix(in srgb, var(--purple) 20%, transparent); border-radius:var(--radius-md);
-    background:color-mix(in srgb, var(--purple) 4%, transparent); overflow:hidden;
-  }
-  .compare-header {
-    display:flex; align-items:center; justify-content:space-between;
-    padding:10px 16px; border-bottom:1px solid color-mix(in srgb, var(--purple) 15%, transparent);
-  }
+  .tink-add-btn:hover { background: var(--paper-deep); border-color: var(--ink-faint); }
+  .compare-section { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--rule); }
+  .compare-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .compare-title { font-size:var(--fs-sm); font-weight:500; color:var(--ink-soft); }
   .compare-clear-btn {
     background:none; border:1px solid var(--paper-edge);
@@ -1665,12 +1655,14 @@
     min-height:44px;
   }
   .compare-clear-btn:hover { background:var(--paper-deep); color:var(--ink); border-color:var(--ink-faint); }
-  .compare-legend {
-    display:flex; gap:12px; flex-wrap:wrap; padding:8px 16px 0;
-    font-size:var(--fs-xs); color:var(--text-muted);
+  .tink-legend, .compare-legend {
+    display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0;
+    font-size: var(--fs-xs); color: var(--ink-muted);
   }
-  .compare-legend-item { display:flex; align-items:center; gap:5px; }
-  .compare-legend-swatch { width:20px; height:2px; border-radius:1px; flex-shrink:0; }
+  .tink-legend .legend-item, .compare-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .lg-svg { width: 22px; height: 8px; flex: none; overflow: visible; }
+  .compare-note { font-size: var(--fs-xs); color: var(--ink-muted); margin: 6px 0 0; }
+  .compare-note:empty { display: none; }
 
   /* ─── Bayesian PK comparison table ─── */
   .bayes-pk-wrap {
@@ -10637,6 +10629,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Current regimen inference ──
   const cur = inferCurrentRegimen(doses, CL_ind, V_ind, isGotiRes && r.goti ? r.goti : null);
+  // The Tinkerer draws this regimen, as fitted, beside whatever is being tried.
+  bState.curRegimen = cur && cur.dose > 0 && cur.tau > 0 && cur.tinfH > 0 ? { dose: cur.dose, tau: cur.tau, tinfH: cur.tinfH } : null;
   // One reading of the detected regimen, shared by both diagnostic panels.
   const cur2 = inferCurrentRegimen(doses, CL_ind, V_ind, r.goti || null);
 
@@ -11315,7 +11309,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <button type="button" class="compare-clear-btn" data-onclick="k67">Clear all</button>
       </div>
       <div class="compare-legend"></div>
-      <div style="padding:4px 0 10px"><canvas id="b-compare-canvas" style="width:100%;display:block"></canvas></div>
+      <p class="compare-note" aria-live="polite"></p>
+      <div style="padding:6px 0 10px"><canvas id="b-compare-canvas" role="img" aria-label="Steady-state concentration of each regimen in the comparison, on true elapsed time" style="width:100%;display:block"></canvas></div>
     </div>`, false);
 
   // Parameters — posterior against prior, with the symbols glossed
@@ -11423,25 +11418,36 @@ function ssCurve(dose, tau, tinfH, kel, vd, nPts) {
 }
 
 // ─── Draw a single SS profile on a canvas ───
-function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedPts) {
-  const pts = precomputedPts || ssCurve(dose, tau, tinfH, kel, vd, 200);
-  if (!pts.length) return;
+// The Tinkerer's steady-state charts — the preview and the comparison — in the
+// profile chart's colour code (D14). Each series is one interval of steady state
+// ({t, c} over [0, tau]) drawn on TRUE elapsed time: the window is the longest
+// interval shown and every regimen's cycle repeats across it, never rescaled
+// onto another's axis (CLAUDE.md). Series draw in the order given, the first
+// underneath. opts.band is the trough reference, neutral as on the Trough chart.
+function drawSSTinkCanvas(canvas, series, opts) {
+  series = (series || []).filter(sr => sr && sr.pts && sr.pts.length && sr.tau > 0);
+  if (!series.length) return;
+  opts = opts || {};
   const DPR = window.devicePixelRatio || 1;
   const W   = canvas.clientWidth || 480;
-  const H   = 120;
+  const H   = opts.height || 180;
   canvas.width  = W * DPR;
   canvas.height = H * DPR;
   canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
   ctx.scale(DPR, DPR);
 
-  const PAD = { t:10, r:14, b:28, l:42 };
-  const cW  = W - PAD.l - PAD.r;
-  const cH  = H - PAD.t - PAD.b;
-
-  const maxC  = Math.max(...pts.map(p => p.c)) * 1.15 || 20;
-  const tx    = t => PAD.l + (t / tau) * cW;
-  const ty    = c => PAD.t + cH - (c / maxC) * cH;
+  const PAD  = { t: 10, r: 14, b: 30, l: 46 };
+  const cW   = W - PAD.l - PAD.r;
+  const cH   = H - PAD.t - PAD.b;
+  const span = Math.max(...series.map(sr => sr.tau));
+  const band = opts.band && opts.band.max > opts.band.min ? opts.band : null;
+  // The axis contains everything drawn on it, the band included.
+  const top  = Math.max(...series.flatMap(sr => sr.pts.map(p => p.c)), band ? band.max : 0) * 1.12 || 20;
+  const step = niceStep(top, 5);
+  const maxC = Math.max(step, Math.ceil(top / step) * step);
+  const tx = t => PAD.l + (t / span) * cW;
+  const ty = c => PAD.t + cH - (c / maxC) * cH;
 
   // Background. fillRect with no fillStyle paints the default BLACK — the
   // Tinkerer's steady-state chart rendered as a black slab (design audit
@@ -11449,145 +11455,137 @@ function drawSSTinkCanvas(canvas, dose, tau, tinfH, kel, vd, color, precomputedP
   ctx.fillStyle = themeColor('--paper', '#faf5ed');
   ctx.fillRect(0, 0, W, H);
 
-  // Grid lines
-  ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
-  ctx.lineWidth   = 0.5;
-  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
-    const y = ty(maxC * f);
+  // Grid and concentration ticks (12px: the type floor)
+  ctx.font = "500 12px 'Outfit', sans-serif";
+  ctx.lineWidth = 1;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let c = 0; c <= maxC + 1e-9; c += step) {
+    const y = Math.round(ty(c)) + 0.5;
+    ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
     ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke();
-    if (f > 0) {
-      ctx.fillStyle   = themeColor('--ink-muted', '#676b5e');
-      ctx.font        = `${9 * DPR / DPR}px 'Outfit', sans-serif`;
-      ctx.textAlign   = 'right';
-      ctx.fillText((maxC * f).toFixed(1), PAD.l - 4, y + 3);
-    }
-  });
-
-  // Target band 10–20 mg/L
-  ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
-  const tk = troughTarget();
-  const y10 = ty(tk.min), y20 = ty(tk.max);
-  if (y10 > PAD.t && y20 < PAD.t + cH) {
-    ctx.fillRect(PAD.l, Math.max(PAD.t, y20), cW, Math.min(y10, PAD.t + cH) - Math.max(PAD.t, y20));
+    ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
+    ctx.fillText(step < 1 ? c.toFixed(1) : c.toFixed(0), PAD.l - 6, y);
   }
 
-  // X-axis ticks
-  ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
-  ctx.font      = `10px 'Outfit', sans-serif`;
-  ctx.textAlign = 'center';
-  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
-    const x = tx(tau * f);
-    ctx.beginPath(); ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)'); ctx.lineWidth = 0.5;
-    ctx.moveTo(x, PAD.t + cH); ctx.lineTo(x, PAD.t + cH + 4); ctx.stroke();
-    ctx.fillText((tau * f).toFixed(0) + 'h', x, H - 5);
-  });
-
-  // Curve
-  ctx.beginPath();
-  ctx.strokeStyle = color || themeRGBA('--terracotta', 0.95, 'rgba(204,120,92,0.95)');
-  ctx.lineWidth   = 2;
-  pts.forEach((p, i) => {
-    const x = tx(p.t), y = ty(p.c);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Axis label
-  ctx.save();
-  ctx.translate(11, PAD.t + cH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle   = themeColor('--ink-muted', '#676b5e');
-  ctx.font        = '10px "Outfit", sans-serif';
-  ctx.textAlign   = 'center';
-  ctx.fillText('mg/L', 0, 0);
-  ctx.restore();
-}
-
-// ─── Draw comparison canvas with multiple SS profiles overlaid ───
-// Series colours come from the palette so they re-theme; the order is chosen so
-// adjacent regimens are far apart in hue in BOTH themes. Resolved per draw, not
-// frozen at load, because the palette changes under the theme toggle.
-const COMPARE_TOKENS = ['--terracotta', '--accent-blue', '--moss', '--accent-rose',
-                        '--accent-amber', '--ink-soft'];
-const COMPARE_FALLBACK = ['rgba(204,120,92,0.9)','rgba(74,61,122,0.9)','rgba(74,92,40,0.9)',
-                          'rgba(168,84,106,0.9)','rgba(150,99,31,0.9)','rgba(90,97,81,0.9)'];
-function compareColor(i) {
-  const k = i % COMPARE_TOKENS.length;
-  return themeRGBA(COMPARE_TOKENS[k], 0.9, COMPARE_FALLBACK[k]);
-}
-
-function drawCompareCanvas(canvas, items) {
-  if (!items.length) return;
-  const DPR = window.devicePixelRatio || 1;
-  const W   = canvas.clientWidth || 620;
-  const H   = 160;
-  canvas.width  = W * DPR;
-  canvas.height = H * DPR;
-  canvas.style.height = H + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(DPR, DPR);
-
-  const PAD  = { t:10, r:14, b:30, l:44 };
-  const cW   = W - PAD.l - PAD.r;
-  const cH   = H - PAD.t - PAD.b;
-  const maxTau = Math.max(...items.map(it => it.tau));
-  const allPts = items.flatMap(it => it.pts);
-  const maxC   = Math.max(...allPts.map(p => p.c)) * 1.12 || 20;
-
-  const tx = t => PAD.l + (t / maxTau) * cW;
-  const ty = c => PAD.t + cH - (c / maxC) * cH;
-
-  // Grid
-  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
-    const y = ty(maxC * f);
-    ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)'); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke();
-    if (f > 0) {
-      ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
-      ctx.font = '10px "Outfit", sans-serif'; ctx.textAlign = 'right';
-      ctx.fillText((maxC * f).toFixed(0), PAD.l - 4, y + 3);
+  // Trough reference: the neutral band with dashed edges, as on the Trough chart
+  if (band) {
+    const yHi = Math.max(PAD.t, ty(band.max)), yLo = Math.min(PAD.t + cH, ty(band.min));
+    if (yLo > yHi) {
+      ctx.fillStyle = themeRGBA('--ink', 0.07, 'rgba(45,52,40,0.07)');
+      ctx.fillRect(PAD.l, yHi, cW, yLo - yHi);
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = themeRGBA('--ink-faint', 0.7, 'rgba(138,142,128,0.7)');
+      [yHi, yLo].forEach(y => { ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke(); });
+      ctx.setLineDash([]);
     }
-  });
-
-  // Target band — the clinician's own bounds, not a hard-coded 10-20.
-  const { min: tgtMin, max: tgtMax } = troughTarget();
-  ctx.fillStyle = themeRGBA('--moss', 0.10, 'rgba(74,92,40,0.10)');
-  const yLo = ty(tgtMin), yHi = ty(tgtMax);
-  ctx.fillRect(PAD.l, Math.max(PAD.t, yHi), cW, Math.max(0, Math.min(yLo, PAD.t + cH) - Math.max(PAD.t, yHi)));
-
-  // X ticks (use maxTau)
-  ctx.fillStyle = themeColor('--ink-muted', '#676b5e'); ctx.font = '10px "Outfit", sans-serif';
-  const cmpStep = niceTimeStep(maxTau, 4);
-  ctx.textAlign = 'center';
-  for (let t = 0; t <= maxTau + 1e-9; t += cmpStep) {
-    ctx.fillText(t.toFixed(Number.isInteger(cmpStep) ? 0 : 1) + 'h', tx(t), H - 6);
   }
 
-  // Each regimen on TRUE elapsed time, its cycle repeated across the window.
-  items.forEach((it, idx) => {
+  // Time ticks on the window's own step
+  const tStep = niceTimeStep(span, 4);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  for (let t = 0; t <= span + 1e-9; t += tStep) {
+    const x = tx(t);
+    ctx.strokeStyle = themeRGBA('--ink-faint', 0.4, 'rgba(138,142,128,0.4)');
+    ctx.beginPath(); ctx.moveTo(x, PAD.t + cH); ctx.lineTo(x, PAD.t + cH + 4); ctx.stroke();
+    ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
+    // A label on the last tick is pulled in to stay whole, as on the profile chart.
+    const lbl = (Number.isInteger(tStep) ? t.toFixed(0) : t.toFixed(1)) + ' h';
+    const half = ctx.measureText(lbl).width / 2;
+    if (x + half > W - 2) { ctx.textAlign = 'right'; ctx.fillText(lbl, W - 2, H - 9); ctx.textAlign = 'center'; }
+    else ctx.fillText(lbl, x, H - 9);
+  }
+
+  // Curves: each regimen's cycle repeated across the window
+  series.forEach(sr => {
+    ctx.strokeStyle = sr.color;
+    ctx.lineWidth   = sr.width || 2;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.setLineDash(sr.dash || []);
     ctx.beginPath();
-    ctx.strokeStyle = compareColor(idx);
-    ctx.lineWidth = 2; ctx.lineJoin = 'round';
     let started = false;
-    const reps = Math.max(1, Math.ceil(maxTau / it.tau));
+    const reps = Math.max(1, Math.ceil(span / sr.tau - 1e-9));
     for (let rep = 0; rep < reps; rep++) {
-      for (let i = 0; i < it.pts.length; i++) {
-        const t = rep * it.tau + it.pts[i].t;
-        if (t > maxTau + 1e-9) break;
-        const x = tx(t), y = ty(it.pts[i].c);
+      for (const p of sr.pts) {
+        const t = rep * sr.tau + p.t;
+        if (t > span + 1e-9) break;
+        const x = tx(t), y = ty(p.c);
         started ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), started = true);
       }
     }
     ctx.stroke();
   });
+  ctx.setLineDash([]);
 
-  // Axis label
+  // Axis title
   ctx.save();
   ctx.translate(12, PAD.t + cH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = themeColor('--ink-muted', '#676b5e'); ctx.font = '10px "Outfit", sans-serif';
-  ctx.textAlign = 'center'; ctx.fillText('mg/L', 0, 0);
+  ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
+  ctx.font = "500 12px 'Outfit', sans-serif";
+  ctx.textAlign = 'center';
+  ctx.fillText('mg/L', 0, 0);
   ctx.restore();
+}
+
+// ─── Regimen comparison ───
+// Every tried regimen is a projection, so they share the projection's hue
+// family (D14) and are told apart by line pattern and shade as well, each named
+// in the key beside a swatch drawn the same way. The patient's current regimen,
+// as fitted, leads in --series-fit. Six at most: a seventh would reuse a style,
+// and a style is never reused (the old palette cycled with a modulo).
+const COMPARE_STYLES = [
+  { token: '--series-projection', dash: [] },
+  { token: '--terracotta-ink',    dash: [7, 4] },
+  { token: '--series-projection', dash: [2, 3] },
+  { token: '--terracotta-ink',    dash: [9, 3, 2, 3] },
+  { token: '--series-projection', dash: [13, 4] },
+  { token: '--terracotta-ink',    dash: [1.5, 3] },
+];
+
+// One interval of steady state for a regimen on this result's PK — the fit's or
+// the population's — in the model's own compartments.
+function tinkSSPoints(r, dose, tau, tinfH, basis) {
+  if (!r || !(dose > 0) || !(tau > 0) || !(tinfH > 0)) return null;
+  const pop = basis === 'population';
+  const CL = pop ? r.CL_pop : r.CL_ind;
+  if (!(CL > 0)) return null;
+  if ((r.model === 'goti' || r.model === 'hughes') && r.goti) {
+    const g = r.goti, Q = g.Q != null ? g.Q : Q_GOTI;
+    const Vc = pop ? g.Vc_pop : g.Vc_ind, Vp = pop ? g.Vp_pop : g.Vp_ind;
+    return Vc > 0 && Vp > 0 ? ssCurve2comp(dose, tau, tinfH, CL, Vc, Vp, null, 200, Q) : null;
+  }
+  const V = pop ? r.V_pop : r.V_ind;
+  return V > 0 ? ssCurve(dose, tau, tinfH, CL / V, V, 200) : null;
+}
+
+// The comparison's series: the current regimen first (unless it is one of the
+// tried ones, which then says so), then each tried regimen in its style.
+function comparisonSeries() {
+  const r = bState.result, items = bState.tinkCompare || [];
+  const cur = bState.curRegimen;
+  const out = [];
+  const curTried = cur ? items.findIndex(it => it.dose === cur.dose && it.tau === cur.tau) : -1;
+  if (cur && r && curTried < 0) {
+    const pts = tinkSSPoints(r, cur.dose, cur.tau, cur.tinfH, 'individual');
+    if (pts) out.push({ label: `Current ${fmtRegimen(cur.dose, cur.tau)} (AUC ${(cur.dose * (24 / cur.tau) / r.CL_ind).toFixed(0)})`,
+                        pts, tau: cur.tau, token: '--series-fit', dash: [], width: 2 });
+  }
+  items.forEach((it, i) => {
+    const st = COMPARE_STYLES[i];
+    if (st) out.push({ label: it.label + (i === curTried ? ' — current' : ''), pts: it.pts, tau: it.tau,
+                       token: st.token, dash: st.dash, width: 2.25 });
+  });
+  return out;
+}
+
+// A key swatch drawn the way its line is drawn: colour token and dash pattern.
+function lineSwatchSVG(sr) {
+  return `<svg class="lg-svg" viewBox="0 0 22 8" aria-hidden="true" focusable="false"><line x1="1" y1="4" x2="21" y2="4" style="stroke:var(${sr.token})" stroke-width="${sr.width || 2}" stroke-linecap="round"${sr.dash && sr.dash.length ? ` stroke-dasharray="${sr.dash.join(' ')}"` : ''}/></svg>`;
+}
+
+function drawCompareCanvas(canvas, series) {
+  drawSSTinkCanvas(canvas, series.map(sr => ({ pts: sr.pts, tau: sr.tau, width: sr.width, dash: sr.dash,
+    color: themeColor(sr.token, '#cc785c') })), { band: troughTarget(), height: 200 });
 }
 
 // ─── Refresh dosing profile graph (with optional projected doses) ───
@@ -11658,11 +11656,12 @@ function addToComparison() {
   }
 
   if (!bState.tinkCompare) bState.tinkCompare = [];
+  if (bState.tinkCompare.length >= COMPARE_STYLES.length) { renderComparisonSection(); return; }   // the note says why
   // Avoid duplicate
   const exists = bState.tinkCompare.some(x => x.dose === dose && x.tau === tau);
   if (exists) return;
 
-  const label  = `${fmtDose(dose)} ${fmtFreq(tau)} (AUC ${auc24.toFixed(0)})`;
+  const label  = `${fmtRegimen(dose, tau)} (AUC ${auc24.toFixed(0)})`;   // one regimen format in every key
   bState.tinkCompare.push({ dose, tau, tinfH, auc24, pts, label });
   renderComparisonSection();
 }
@@ -11683,22 +11682,19 @@ function renderComparisonSection() {
   if (!items.length) { sec.style.display = 'none'; return; }
   sec.style.display = 'block';
 
-  // Legend
+  const series = comparisonSeries();
   const legendEl = sec.querySelector('.compare-legend');
   if (legendEl) {
-    legendEl.innerHTML = items.map((it, idx) => {
-      const col = compareColor(idx);
-      return `<div class="compare-legend-item">
-        <div class="compare-legend-swatch" style="background:${col}"></div>
-        <span>${it.label}</span>
-      </div>`;
-    }).join('');
+    legendEl.innerHTML = series.map(sr => `<span class="compare-legend-item">${lineSwatchSVG(sr)}<span>${escHtml(sr.label)}</span></span>`).join('')
+      + `<span class="compare-legend-item"><i class="lg tx-lg-band"></i><span>Trough reference ${troughTarget().min}–${troughTarget().max} mg/L</span></span>`;
   }
+  const note = sec.querySelector('.compare-note');
+  if (note) note.textContent = items.length >= COMPARE_STYLES.length
+    ? `Six regimens at most, so each keeps its own line. Clear the comparison to start another.` : '';
 
-  // Redraw canvas
   requestAnimationFrame(() => {
     const canvas = sec.querySelector('#b-compare-canvas');
-    if (canvas) drawCompareCanvas(canvas, items);
+    if (canvas) drawCompareCanvas(canvas, series);
   });
 }
 
@@ -11821,6 +11817,19 @@ function runBayesTinkerer() {
     ssProfilePts = null;  // ssCurve() will compute below
   }
   const aucMIC    = (auc24 / mic).toFixed(0);
+  // The chart's other two series, in the profile chart's colour code (D14): the
+  // patient's current regimen as fitted, and the population estimate for the
+  // regimen being tried.
+  const tinkR     = bState.result;
+  const tinkCur   = bState.curRegimen;
+  const sameAsCur = !!(tinkCur && tinkCur.dose === dose && tinkCur.tau === tau);
+  const curPts    = tinkCur && !sameAsCur ? tinkSSPoints(tinkR, tinkCur.dose, tinkCur.tau, tinkCur.tinfH, 'individual') : null;
+  const popPts    = tinkSSPoints(tinkR, dose, tau, tinfH, 'population');
+  const tinkBand  = troughTarget();
+  const tinkSummary = `Steady state of ${fmtRegimen(dose, tau)} on this patient's fit`
+    + (curPts ? `, beside the current ${fmtRegimen(tinkCur.dose, tinkCur.tau)}` : '')
+    + (popPts ? `, with the population model's estimate for the same regimen as a dashed line` : '')
+    + `; the band is the ${tinkBand.min}–${tinkBand.max} mg/L trough reference.`;
   // Same verdicts as the recommendation card: this is the same patient and the
   // same numbers, so it must not speak with a different voice. Replaces an
   // unsourced "under 350 is danger" and a hard-coded 10-20 trough band.
@@ -11836,22 +11845,22 @@ function runBayesTinkerer() {
   res.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:10px 12px;border:1px solid var(--border)">
-        <div style="font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">AUC₂₄</div>
+        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:3px">AUC₂₄</div>
         <div style="font-family:var(--font-num);font-size:var(--fs-md);color:${colAUC};font-weight:500">${auc24.toFixed(0)}</div>
         <div style="font-size:var(--fs-xs);color:var(--text-muted)">mg·h/L</div>
       </div>
       <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:10px 12px;border:1px solid var(--border)">
-        <div style="font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Trough SS</div>
+        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:3px">Trough SS</div>
         <div style="font-family:var(--font-num);font-size:var(--fs-md);color:${colTr};font-weight:500">${Ctrough.toFixed(1)}</div>
         <div style="font-size:var(--fs-xs);color:var(--text-muted)">mg/L</div>
       </div>
       <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:10px 12px;border:1px solid var(--border)">
-        <div style="font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">Peak SS</div>
+        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:3px">Peak SS</div>
         <div style="font-family:var(--font-num);font-size:var(--fs-md);color:var(--text-primary);font-weight:500">${Cpeak_ss.toFixed(1)}</div>
         <div style="font-size:var(--fs-xs);color:var(--text-muted)">mg/L</div>
       </div>
       <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:10px 12px;border:1px solid var(--border)">
-        <div style="font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:3px">AUC/MIC</div>
+        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:3px">AUC/MIC</div>
         <div style="font-family:var(--font-num);font-size:var(--fs-md);color:${colAMIC};font-weight:500">${aucMIC}</div>
         <div style="font-size:var(--fs-xs);color:var(--text-muted)">ratio</div>
       </div>
@@ -11863,19 +11872,29 @@ function runBayesTinkerer() {
     </div>
     <div class="tink-ss-wrap">
       <div class="tink-ss-header">
-        <span>Steady-state profile — ${fmtDose(dose)} ${fmtFreq(tau)}</span>
+        <span>Steady state on this patient's fit — ${fmtRegimen(dose, tau)}</span>
         <button class="tink-add-btn" data-onclick="k68">+ Add to comparison</button>
       </div>
-      <canvas id="b-tink-ss-canvas" style="width:100%;display:block"></canvas>
+      <canvas id="b-tink-ss-canvas" role="img" aria-label="${escHtml(tinkSummary)}" style="width:100%;display:block"></canvas>
+      <div class="tink-legend">
+        <span class="legend-item"><i class="lg lg-proj"></i>Trying ${fmtRegimen(dose, tau)}${sameAsCur ? ' (the current regimen)' : ''}</span>
+        ${curPts ? `<span class="legend-item"><i class="lg lg-ind"></i>Current ${fmtRegimen(tinkCur.dose, tinkCur.tau)}</span>` : ''}
+        ${popPts ? `<span class="legend-item"><i class="lg lg-pop"></i>Population estimate</span>` : ''}
+        <span class="legend-item"><i class="lg tx-lg-band"></i>Trough reference ${tinkBand.min}–${tinkBand.max} mg/L</span>
+      </div>
     </div>`;
 
   // Draw the SS profile canvas
   requestAnimationFrame(() => {
     const ssCanvas = document.getElementById('b-tink-ss-canvas');
     if (ssCanvas) {
-      // For Goti, pass pre-computed 2-comp pts; for Buelga, compute from 1-comp ssCurve
-      drawSSTinkCanvas(ssCanvas, dose, tau, tinfH, CL_ind/V_ind, V_ind,
-        themeRGBA('--terracotta', 0.95, 'rgba(204,120,92,0.95)'), ssProfilePts || null);
+      // For Goti, pre-computed 2-comp pts; for Buelga, the 1-comp ssCurve
+      const triedPts = ssProfilePts || ssCurve(dose, tau, tinfH, CL_ind / V_ind, V_ind, 200);
+      drawSSTinkCanvas(ssCanvas, [
+        curPts && { pts: curPts, tau: tinkCur.tau, color: themeColor('--series-fit', '#6751a8'), width: 2 },
+        popPts && { pts: popPts, tau, color: themeColor('--ink-muted', '#676b5e'), width: 1.25, dash: [5, 4] },
+        { pts: triedPts, tau, color: themeColor('--series-projection', '#cc785c'), width: 2.25 },
+      ], { band: tinkBand, height: 180 });
     }
   });
 }
