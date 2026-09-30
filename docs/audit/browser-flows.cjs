@@ -309,6 +309,24 @@ async function enterCourse(page) {
   ok('Reset leaves sex unchosen in both modules', sexLit.every(x => !x), JSON.stringify(sexLit));
   const afterReset = await cards();
   ok('Reset returns the model card to Buelga', afterReset === 'buelga:true/true,goti:false/false,hughes:false/false,gotihd:false/false', afterReset);
+
+  // Trough chart, steady-state trough with a measured level: the profile chart's colour code
+  // (D14) — the fitted current regimen, the recommendation, the population estimate as the
+  // grey dash, and the level. The key names each.
+  await page.locator('[data-onclick="k1"]').click();
+  await page.locator('[data-onclick="k9"]').first().click();
+  await page.locator('#mode-btn-level').click();
+  await typeInto(page, '#dose', '1000');
+  await page.locator('#interval').selectOption('12');
+  await page.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+  await typeInto(page, '#level-val', '24');
+  await page.locator('#time-dose-given').fill(`${D2}T08:00`);
+  await page.locator('#time-level-drawn').fill(`${D2}T19:30`);
+  await page.locator('[data-onclick="k31"]').click();
+  await page.waitForTimeout(600);
+  const ssKey = await page.evaluate(() => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()));
+  ok('Trough steady-state key: fit, recommendation, population estimate, level',
+     ssKey.some(t => /^Current /.test(t)) && ssKey.some(t => /^Recommended /.test(t)) && ssKey.includes('Population estimate') && ssKey.includes('Measured level'), JSON.stringify(ssKey));
   const dAttr = await attributeInjected(page, dProblems);
   results.cloudflareInjected = dAttr.injected;
   results.problems.push(...dAttr.kept);

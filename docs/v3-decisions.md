@@ -479,6 +479,16 @@ measured and what the model fitted, rested on shape alone.
 - **Rejected: a colour for the measured dots.** Amber is the caution status, rose sits beside the
   alarm crimson, and terracotta means "this one". Ink data against a coloured fit is also the
   convention of pharmacokinetic plots.
+- **The Trough chart uses the same code (follow-up, same day).** In the three level-based modes
+  it now draws the population estimate for the regimen shown as the thin grey dash. On the
+  profile chart that line is "what the population model predicted before the levels", and here
+  too the gap between it and the fitted regimen is what the level bought. The key gains
+  "Population estimate" and the summary says what the dash is. Initial dosing draws no dash,
+  because its one curve already is the population prediction. The band label also looks just
+  outside the band's edges before settling for a crossed spot. The Random-level hint claimed
+  "the level is plotted where it was drawn". It never was: that chart shows the recommended
+  regimen at steady state, not the course the level came from. The hint now says the level is
+  not drawn.
 - The Trough chart's summary, which is also its accessible name, said the current regimen "is
   drawn in ink". It now says the regimen is drawn beside the recommendation for comparison: a
   written summary never names a colour.

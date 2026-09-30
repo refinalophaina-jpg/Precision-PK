@@ -4123,7 +4123,7 @@ function setCalcMode(mode) {
     initial:      'Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady-state trough</strong> once a steady-state level is available.',
     level:        'Enter the current dose, interval, and a measured steady-state level to fit individual PK and adjust the regimen.',
     twolevels:    'Two post-infusion levels from the <strong>first dose</strong> determine individual Kel &amp; Vd directly — useful when Cockcroft-Gault CrCl is unreliable (bedbound, AKI, obesity).',
-    randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-muted)">On the graph the level is plotted where it was drawn, but the curve shown is the predicted steady state — so the point will not sit on the line. Read the fitted parameters, not the visual fit.</span>'
+    randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-muted)">The graph shows the recommended regimen at steady state, not the course your level came from, so the level itself is not drawn on it. Read the fitted parameters, not the curve.</span>'
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
   document.getElementById('results-placeholder').style.display = 'flex';
@@ -6527,7 +6527,8 @@ function renderResults(d) {
     next: d.levelFitted ? '' : 'Initial dose is population-estimated. Obtain a steady-state level (≥3 doses) to individualise PK and confirm AUC target is met.',
   });
 
-  // ── The curve: current regimen in ink, the recommendation in terracotta ──
+  // ── The curve: the current regimen as fitted, the recommendation, and — once a
+  //    level has been fitted — the population estimate for the same regimen ──
   const band = { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` };
   const legend = [];
   if (showOptDose) {
@@ -6536,11 +6537,13 @@ function renderResults(d) {
   } else {
     legend.push({ cls: 'lg-proj', text: `${isInitialMode ? 'Recommended' : 'Recommended (current)'} ${fmtRegimen(d.dose, d.tau)}` });
   }
+  if (d.levelFitted) legend.push({ cls: 'lg-pop', text: 'Population estimate' });
   legend.push({ cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' });
   if (d.levelFitted) legend.push({ cls: 'lg-lv', text: 'Measured level' });
   legend.push(band);
   const summary = `On ${fmtRegimen(vDose, d.tau)} the predicted steady-state peak is ${vPeak.toFixed(1)} mg/L and the trough ${vTrough.toFixed(1)} mg/L`
     + (showOptDose ? `; the current ${fmtRegimen(d.dose, d.tau)} is drawn beside it for comparison` : '')
+    + (d.levelFitted ? `; the dashed line is what the population model predicts for ${showOptDose ? 'the current regimen' : 'it'} before your level` : '')
     + `. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.`;
   const figure = txCurveHTML({ id: 'pk-graph-ss', suffix: 'ss', legend, summary });
 
@@ -6636,6 +6639,7 @@ function renderResults(d) {
       obsTime: d.levelFitted ? d.tDoseToLvl : null,
       role: showOptDose ? 'current' : 'rec',
       overlay: showOptDose ? { dose: d.optDose } : null,
+      prior: d.levelFitted ? { kel: d.popKel, vd: d.vd } : null,
     });
   });
 }
@@ -6676,9 +6680,10 @@ function renderTwoLevels(d) {
   });
   const figure = txCurveHTML({ id: 'pk-graph-tl', suffix: 'tl',
     legend: [{ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.tlTau)}` },
+             { cls: 'lg-pop', text: 'Population estimate' },
              { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
              { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` }],
-    summary: `Projected steady state on ${fmtRegimen(d.optDose, d.tlTau)}: peak ${d.optPT.peak.toFixed(1)} mg/L, trough ${trough.toFixed(1)} mg/L. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` });
+    summary: `Projected steady state on ${fmtRegimen(d.optDose, d.tlTau)}: peak ${d.optPT.peak.toFixed(1)} mg/L, trough ${trough.toFixed(1)} mg/L; the dashed line is what the population model predicts for it before your levels. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` });
 
   const levelsBody = `
     <dl class="ev-dl">
@@ -6728,7 +6733,7 @@ function renderTwoLevels(d) {
   announceResult(`Result: ${fmtRegimen(d.optDose, d.tlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-tl', d.optDose, d.tlTau, d.tlTinf, d.kel, d.vd, {
-      troughMin: d.troughMin, troughMax: d.troughMax
+      troughMin: d.troughMin, troughMax: d.troughMax, prior: { kel: d.popKel, vd: d.popVd }
     });
   });
 }
@@ -6772,9 +6777,10 @@ function renderRandomLevel(d) {
   });
   const figure = txCurveHTML({ id: 'pk-graph-rl', suffix: 'rl',
     legend: [{ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.rlTau)}` },
+             { cls: 'lg-pop', text: 'Population estimate' },
              { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
              { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` }],
-    summary: `Projected steady state on ${fmtRegimen(d.optDose, d.rlTau)}: peak ${d.optPT.peak.toFixed(1)} mg/L, trough ${trough.toFixed(1)} mg/L. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` });
+    summary: `Projected steady state on ${fmtRegimen(d.optDose, d.rlTau)}: peak ${d.optPT.peak.toFixed(1)} mg/L, trough ${trough.toFixed(1)} mg/L; the dashed line is what the population model predicts for it before your level. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` });
 
   const levelBody = `
     <dl class="ev-dl">
@@ -6842,7 +6848,7 @@ function renderRandomLevel(d) {
   announceResult(`Result: ${fmtRegimen(d.optDose, d.rlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-rl', d.optDose, d.rlTau, d.rlTinf, d.indKel, d.popVd, {
-      troughMin: d.troughMin, troughMax: d.troughMax
+      troughMin: d.troughMin, troughMax: d.troughMax, prior: { kel: d.popKel, vd: d.popVd }
     });
   });
 }
@@ -7055,13 +7061,13 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     tSet.push((i + 1) * tau);
   }
   tSet.sort((a, b) => a - b);
-  const curveFor = (mg) => {
+  const curveFor = (mg, k = kel, v = vd) => {
     const out = [];
     for (let i = 0; i < tSet.length; i++) {
       const t = tSet[i];
       if (i && Math.abs(t - tSet[i - 1]) < 1e-9) continue;               // dedupe
       const cycleT = Math.min(t - Math.floor(t / tau + 1e-9) * tau, tau);
-      out.push({ t, c: calcCssAtTime(mg, tau, tinf, kel, vd, cycleT) });
+      out.push({ t, c: calcCssAtTime(mg, tau, tinf, k, v, cycleT) });
     }
     return out;
   };
@@ -7075,12 +7081,18 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   const ovDose = opts.overlay && opts.overlay.dose > 0 && opts.overlay.dose !== dose ? opts.overlay.dose : null;
   const ovPoints = ovDose ? curveFor(ovDose) : null;
   const ovPT = ovDose ? calcPeakTrough(ovDose, tau, tinf, kel, vd) : null;
+  // What the population model predicts for the same regimen, before the
+  // level(s): the profile chart's "population prior", in its grey dash, so the
+  // two charts share one colour code (D14). Presentation only.
+  const prior = opts.prior && opts.prior.kel > 0 && opts.prior.vd > 0 ? opts.prior : null;
+  const priorPoints = prior ? curveFor(dose, prior.kel, prior.vd) : null;
 
   // The axis must contain everything that gets drawn on it. Deriving the top
   // from the curve alone painted the target band off the top of the plot for
   // any regimen whose peak sat below troughMax — an open-topped green wash
   // reading "everything above 10 is on target".
-  const cPeakForAxis = Math.max(pt.peak, ...points.map(p => p.c), ovPT ? ovPT.peak : 0);
+  const cPeakForAxis = Math.max(pt.peak, ...points.map(p => p.c), ovPT ? ovPT.peak : 0,
+                                ...(priorPoints ? priorPoints.map(p => p.c) : []));
   const cRaw  = Math.max(cPeakForAxis, troughMax, opts.obsLevel || 0) * 1.15;
   const cStep = niceStep(cRaw, 6);
   const cMax  = Math.max(cStep, Math.ceil(cRaw / cStep) * cStep);
@@ -7089,9 +7101,10 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   const ty = c => pad.top + gH - (c / cMax) * gH;
   const clampY = y => Math.max(pad.top, Math.min(pad.top + gH, y));
 
-  // Course-timeline grammar (design track D, 2026-09-28): text in --ink-muted,
-  // the current regimen in ink, the recommendation or a projection in
-  // terracotta, the trough target as a faint ink band. Every colour a token.
+  // The profile chart's colour code (D14): the current regimen, fitted to the
+  // patient, in --series-fit; the recommendation or a projection in
+  // --series-projection; the population estimate as a thin --ink-muted dash;
+  // a measured level in ink; the trough target as a faint ink band.
   const cText = themeColor('--ink-muted', '#676b5e');
   const cRec  = themeColor('--series-projection', '#cc785c');
   const cCurve = opts.role === 'current' ? themeColor('--series-fit', '#6751a8') : cRec;   // the current regimen, fitted to the patient
@@ -7142,6 +7155,11 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     pts.forEach((p, i) => { const x = tx(p.t), y = ty(p.c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
     ctx.stroke();
   };
+  if (priorPoints) {           // behind the regimens: the reference, clearly secondary
+    ctx.save(); ctx.setLineDash([5, 4]);
+    stroke(priorPoints, themeColor('--ink-muted', '#676b5e'), 1.25);
+    ctx.restore();
+  }
   stroke(points, cCurve, 2.25);
   if (ovPoints) stroke(ovPoints, cRec, 2.25);
 
@@ -7237,7 +7255,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     const w = typeof ctx.measureText === 'function' ? ctx.measureText(txt).width : txt.length * 6.5;
     const h = 13;
     const yT = bandTop + 3, yB = Math.max(yT, bandBot - 3 - h);
-    const drawn = (ovPoints ? points.concat(ovPoints) : points).map(p => [tx(p.t), ty(p.c)]);
+    const drawn = [points, ovPoints, priorPoints].filter(Boolean).flat().map(p => [tx(p.t), ty(p.c)]);
     const marks = [];
     [pt, ovPT].filter(Boolean).forEach(p => { for (let i = 0; i < numCycles; i++) {
       marks.push([tx(i * tau + Math.min(tinf, tau)), ty(p.peak)], [tx((i + 1) * tau), ty(p.trough)]); } });
@@ -7250,8 +7268,12 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
       return n;
     };
     const xMax = W - pad.right - 4, xMin = pad.left + 4 + w;
+    // Inside the band first; then just outside its edges, still beside it —
+    // with a population curve as well as one or two regimens there may be no
+    // clear run inside a narrow band.
+    const yBelow = Math.min(pad.top + gH - h - 2, bandBot + 3), yAbove = Math.max(pad.top + 1, bandTop - 3 - h);
     let best = { x: xMax, y: yT }, fewest = Infinity;
-    scan: for (const y of [yB, yT]) {
+    scan: for (const y of [yB, yT, yBelow, yAbove]) {
       for (let xr = xMax; xr >= xMin; xr -= 4) {
         const n = crossings(xr, y);
         if (n < fewest) { best = { x: xr, y }; fewest = n; }
