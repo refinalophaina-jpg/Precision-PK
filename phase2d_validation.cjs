@@ -4541,6 +4541,70 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(rec.mg === best.mg, `scheduled pick ${rec.mg} is the in-range step nearest 17.5 (${best.mg})`);
     assert(/hdPickDose\(/.test(bodyOf37('hdNextDose')) && /hdUpcomingSessions\(/.test(bodyOf37('hdNextDose')), 'hdNextDose uses the shared helpers');
   });
+  const pk37 = sandbox.gotiPopPK(10, 70, true);
+  const hd37 = (extra) => Object.assign({ model: 'goti', dial: true, CL_ind: pk37.TVCL, V_ind: pk37.TVVc, tbw: 70,
+    goti: { Vc_ind: pk37.TVVc, Vp_ind: pk37.TVVp, Q: pk37.Q }, levels: [{ conc: 12, timeH: 19 }],
+    doses: [{ mg: 1750, tinfH: 2, timeH: 0 }], hdSessions: [{ n: 1, startH: 4, endH: 8 }], fitNowH: 20 }, extra || {});
+  test('37.5 no session ahead: the one-time dose is given now and read the assumed gap later', () => {
+    const v = sandbox.hdViewFor(hd37(), 48);
+    assert(v.rec.oneTime && v.rec.after === null && v.rec.doseAtH === 20 && v.rec.readAtH === 68 && v.rec.gapH === 48, JSON.stringify(v.rec).slice(0, 300));
+  });
+  test('37.6 one session ahead: the dose follows it; two ahead keep the scheduled answer', () => {
+    const one = sandbox.hdViewFor(hd37({ hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 52, endH: 56 }] }), 48).rec;
+    assert(one.oneTime && one.after === 2 && one.doseAtH === 56 && one.readAtH === 104, JSON.stringify(one).slice(0, 300));
+    const two = sandbox.hdViewFor(hd37({ hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 52, endH: 56 }, { n: 3, startH: 100, endH: 104 }] }), 48).rec;
+    assert(!two.oneTime && two.session === 2 && two.sizing === 3, 'two upcoming sessions: the scheduled answer');
+  });
+  test('37.7 each gap sizes at its own point; an unknown gap falls back to 48 h', () => {
+    for (const g of [24, 48, 72]) {
+      const rec = sandbox.hdOneTimeDose(hd37(), 20, g);
+      assert(rec.gapH === g && rec.readAtH === 20 + g, `gap ${g}`);
+      const check = sandbox.predictFittedAt(rec.rr || sandbox.hdWithDose(hd37(), rec.mg, rec.doseAtH), rec.readAtH);
+      assert(Math.abs(check - rec.pre) < 1e-9, `pre is the fitted level at the read point (gap ${g})`);
+      if (rec.kind === 'dose') assert(rec.pre >= 15 && rec.pre <= 20, `in range at gap ${g}`);
+    }
+    assert(sandbox.hdOneTimeDose(hd37(), 20, 30).gapH === 48 && sandbox.hdOneTimeDose(hd37(), 20, undefined).gapH === 48, 'fallback');
+  });
+  test('37.8 a planned dose inside the window is read, not replaced', () => {
+    const rec = sandbox.hdOneTimeDose(hd37({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 750, tinfH: 1, timeH: 30 }] }), 20, 48);
+    assert(rec.kind === 'planned' && rec.plannedInWindow.length === 1 && rec.plannedCount === 1 && rec.mg === 0, JSON.stringify(rec).slice(0, 300));
+  });
+  test('37.9 a finished session with no dose after it is flagged — only the latest, never the one the dose follows', () => {
+    assert(sandbox.hdOneTimeDose(hd37(), 20, 48).missed.n === 1, 'session 1 ended at 8 h; the only dose was at 0 h');
+    assert(sandbox.hdOneTimeDose(hd37({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 9 }] }), 20, 48).missed === null, 'a dose after it clears the flag');
+    const two = sandbox.hdOneTimeDose(hd37({ hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 28, endH: 32 }],
+      doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 9 }] }), 40, 48);
+    assert(two.missed && two.missed.n === 2, 'the latest finished session');
+    const justEnded = sandbox.hdOneTimeDose(hd37({ hdSessions: [{ n: 1, startH: 16, endH: 19 }] }), 20, 48);
+    assert(justEnded.after === 1 && justEnded.missed === null, 'a session that ended 1 h ago takes the dose; it is not "missed"');
+  });
+  test('37.10 no sessions logged at all: still a one-time answer, nothing flagged', () => {
+    const rec = sandbox.hdViewFor(hd37({ hdSessions: [] }), 48).rec;
+    assert(rec.oneTime && rec.after === null && rec.missed === null && ['dose', 'hold', 'closest'].includes(rec.kind), JSON.stringify(rec).slice(0, 200));
+  });
+  test('37.11 the table runs from no dose to the first step above 20 at every gap, and holds the pick', () => {
+    const rec = sandbox.hdOneTimeDose(hd37(), 20, 48);
+    const t = rec.table;
+    assert(t[0].mg === 0 && t.every((row, i) => row.mg === i * 250 && row.at.length === 3), 'consecutive 250 mg rows from 0');
+    const last = t[t.length - 1];
+    assert(last.at.every(c => c > 20) || last.mg === 2000, 'stops at the first all-above row (or the ceiling)');
+    assert(t.slice(0, -1).every(row => !row.at.every(c => c > 20)), 'no earlier row is all-above');
+    assert(t.some(row => row.mg === rec.mg), 'the chosen dose is a row');
+    assert(t.every(row => row.at[0] >= row.at[1] && row.at[1] >= row.at[2]), 'later gaps read lower');
+  });
+  test('37.12 the handoff case (fictional): 1 g, HD 13:42–17:45, 10.3 mg/L at 05:42 next day — a one-time dose, the missed dose flagged', () => {
+    const pk = sandbox.gotiPopPK(10, 70, true);
+    const doses = [{ mg: 1000, tinfH: sandbox.autoTinf(1000), timeH: 9.3 }];
+    const levels = [{ conc: 10.3, timeH: 29.7 }];
+    const mf = sandbox.mapFit((a, b, c) => sandbox.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels), 3, K37.OMEGA2_CL_GOTI, K37.OMEGA2_VC_GOTI, 400);
+    const [eCL, eVc, eVp] = mf.eta;
+    const r = { model: 'goti', dial: true, CL_ind: pk.TVCL * Math.exp(eCL), V_ind: pk.TVVc * Math.exp(eVc), tbw: 70,
+      goti: { Vc_ind: pk.TVVc * Math.exp(eVc), Vp_ind: pk.TVVp * Math.exp(eVp), Q: pk.Q }, levels, doses,
+      hdSessions: [{ n: 1, startH: 13.7, endH: 17.75 }], fitNowH: 30 };
+    const rec = sandbox.hdViewFor(r, 48).rec;
+    assert(rec.oneTime && rec.after === null && rec.missed && rec.missed.n === 1, JSON.stringify(rec).slice(0, 300));
+    assert(['dose', 'closest'].includes(rec.kind) && rec.mg >= 250, `a dose is advised: ${rec.kind} ${rec.mg}`);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

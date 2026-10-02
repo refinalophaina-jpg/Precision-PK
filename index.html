@@ -8100,13 +8100,56 @@ function hdNextDose(r, nowH) {
     auc24: fittedAUC(rr, sizing.startH - 24, sizing.startH),
     peak: pk.mg ? predictFittedAt(rr, doseAtH + tinfH) : null, repeat });
 }
+// One-time HD dose (D17): fewer than two upcoming sessions are logged, so the
+// session to size at is unknown. The dose follows the one session still ahead, if
+// any, else it is given now; it is sized at an ASSUMED gap after the dose, stated
+// in the answer. Same rule as the scheduled answer (hdPickDose). A planned dose in
+// the window is read, not replaced. The latest finished session with no dose
+// entered after it — other than the one the dose follows — is reported as missed.
+// PREFERENCE (rule 8): the gaps offered and the default. 48 h is the shorter
+// thrice-weekly gap (VancoPK's HD calculator also defaults to 2 days); 72 h is the
+// longest gap before a recheck. They choose where the dose is read; the rule is Rybak's.
+const HD_ONE_TIME_GAPS_H = [24, 48, 72];
+const HD_ONE_TIME_GAP_DEFAULT_H = 48;
+function hdOneTimeDose(r, nowH, gapH) {
+  const gap = HD_ONE_TIME_GAPS_H.includes(gapH) ? gapH : HD_ONE_TIME_GAP_DEFAULT_H;
+  const upcoming = hdUpcomingSessions(r, nowH);
+  const follow = upcoming.length ? upcoming[0] : null;
+  const doseAtH = follow ? Math.max(follow.endH, nowH) : nowH;
+  const readAtH = doseAtH + gap;
+  const ended = (r.hdSessions || []).filter(x => x.endH <= nowH && x !== follow).sort((a, b) => a.endH - b.endH);
+  const last = ended[ended.length - 1];
+  const missed = last && !r.doses.some(d => d.timeH >= last.endH && d.timeH <= nowH) ? { n: last.n, endH: last.endH } : null;
+  const future = r.doses.filter(d => d.timeH > nowH);
+  const winStart = follow ? Math.min(follow.startH, doseAtH) : nowH;
+  const plannedInWindow = r.doses.filter(d => d.timeH >= winStart && d.timeH < readAtH && d.timeH > nowH - 1e-9);
+  const base = { oneTime: true, doseAtH, after: follow ? follow.n : null, gapH: gap, readAtH,
+    plannedCount: future.length, plannedInWindow, missed };
+  if (plannedInWindow.length) {
+    return Object.assign(base, { kind: 'planned', reason: '', mg: 0, tinfH: 0, pre: predictFittedAt(r, readAtH),
+      auc24: fittedAUC(r, readAtH - 24, readAtH), peak: null, table: [] });
+  }
+  const pk = hdPickDose(r, doseAtH, readAtH);
+  const table = [];
+  for (let mg = 0; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) {
+    const rx = hdWithDose(r, mg, doseAtH);
+    const at = HD_ONE_TIME_GAPS_H.map(g => predictFittedAt(rx, doseAtH + g));
+    table.push({ mg, at });
+    if (at.every(c => c > HD_PREDIALYSIS_MAX)) break;
+  }
+  return Object.assign(base, { kind: pk.kind, reason: pk.reason, mg: pk.mg, tinfH: pk.tinfH, pre: pk.pre,
+    auc24: fittedAUC(pk.rr, readAtH - 24, readAtH),
+    peak: pk.mg ? predictFittedAt(pk.rr, doseAtH + pk.tinfH) : null, table });
+}
 // The HD answer for a result, read once at fit time (r.fitNowH) so a redraw or a
-// print can never show a different one (D16).
-function hdViewFor(r) {
+// print can never show a different one (D16). gapH: the assumed gap for a one-time
+// answer (D17), from bState.hdGapH; anything else means the 48 h default.
+function hdViewFor(r, gapH) {
   if (!(r && r.model === 'goti' && r.dial)) return null;
   const nowH = r.fitNowH != null ? r.fitNowH : Date.now() / 3600000;
   if (!(r.levels || []).length) { const rows = hdEmpiricDoses(r.tbw); return rows ? { nowH, empiric: rows } : null; }
-  return { nowH, rec: hdNextDose(r, nowH) };
+  const rec = hdNextDose(r, nowH);
+  return { nowH, rec: rec.need ? hdOneTimeDose(r, nowH, gapH) : rec };
 }
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
