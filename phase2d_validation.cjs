@@ -4258,7 +4258,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const auc = sandbox.fittedAUC(hdR(), 0, 24), coarse = sandbox.fittedAUC(hdR(), 0, 24, 48);
     assert(Math.abs(auc - coarse) / auc < 0.01, 'the integral is converged');
     const withPlan = sandbox.hdNextDose(hdR({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 60 }] }), 20);
-    assert(withPlan.plannedAfter === 1, 'a planned dose after the dose time is counted, and said');
+    assert(withPlan.plannedCount === 1 && withPlan.kind === 'planned', 'a planned dose before the sizing session is read and counted');
   });
   test('35.8b the HD verdicts say a post-HD dose, a hold, or what is missing — never a q-interval regimen', () => {
     const dose = sandbox.hdNextDoseHTML(sandbox.hdNextDose(hdR(), 20));
@@ -4269,7 +4269,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const emp = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78);
     assert(/High permeability/.test(emp) && /Low permeability/.test(emp) && /2 g · 750 mg/.test(emp) && /Rec 14/.test(emp), emp.slice(0, 300));
     const src35b = fs.readFileSync(htmlPath, 'utf8');
-    assert(/isHD && nLev === 0[\s\S]{0,200}hdEmpiricHTML/.test(src35b) && /hdRec = hdNextDose\(r, /.test(src35b), 'the renderer uses both for Goti-HD');
+    assert(/hdView && hdView\.empiric[\s\S]{0,120}hdEmpiricHTML\(hdView\.empiric/.test(src35b) && /hdRec = hdView\.rec/.test(src35b), 'the renderer uses both for Goti-HD, from the frozen view');
   });
   test('35.8c HD headings are neutral, and no note speaks for the hidden steady-state regimen', () => {
     const emp = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78);
@@ -4277,6 +4277,74 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/vx-regimen-hold/.test(emp) && !/vx-regimen-hold/.test(ask), 'not the alarm-tinted hold heading');
     assert(/r\.rec && !r\.rec\.noSolution && r\.rec\.flags && r\.rec\.flags\.length && !\(r\.model === 'goti' && r\.dial\)/.test(code35),
       'the steady-state regimen\'s flags are not shown for Goti-HD, where that regimen is not the answer');
+  });
+  // ── Final-review fix pass (D16) ──
+  test('35.12 a planned dose around the next session is read, not overridden; hold wording never says "without a dose" when doses are planned', () => {
+    const base = hdR();
+    const p = sandbox.hdNextDose(Object.assign(hdR(), { doses: base.doses.concat([{ mg: 250, tinfH: 0.5, timeH: 56 }]) }), 20);
+    assert(p.kind === 'planned' && p.plannedInWindow.length === 1 && p.plannedCount === 1, JSON.stringify(p));
+    const html = sandbox.hdNextDoseHTML(p, false);
+    assert(/planned/i.test(html) && !/Without a dose/.test(html), html.slice(0, 240));
+    const early = sandbox.hdNextDose(Object.assign(hdR(), { doses: base.doses.concat([{ mg: 2000, tinfH: 2, timeH: 30 }, { mg: 2000, tinfH: 2, timeH: 40 }]) }), 25);
+    assert(early.plannedCount === 2, 'planned doses before the dose time are counted');
+    if (early.kind === 'hold') assert(!/Without a dose/.test(sandbox.hdNextDoseHTML(early, false)) && /2 planned doses/.test(sandbox.hdNextDoseHTML(early, false)), 'hold says the planned doses');
+  });
+  test('35.13 a session that has just ended still takes the dose (now), unless a dose was already given after it', () => {
+    const rec = sandbox.hdNextDose(hdR(), 57);
+    assert(rec.session === 2 && Math.abs(rec.doseAtH - 57) < 1e-9 && rec.sizing === 3, JSON.stringify(rec));
+    const given = sandbox.hdNextDose(hdR({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 56.5 }] }), 57);
+    assert(given.session === 3, 'a dose after session 2 ends means the next dose follows session 3');
+    const late = sandbox.hdNextDose(hdR(), 70);
+    assert(late.session === 3, 'beyond the window the next session takes the dose');
+  });
+  test('35.14 the closest answer may be no dose; the hold says "above 20" when it is', () => {
+    // Small volumes: no dose reads 14.1 (just under 15), the smallest step reads ~37.8 — no dose is closer.
+    const tiny = hdR({ V_ind: 3, CL_ind: 0.065, goti: { Vc_ind: 3, Vp_ind: 4, Q: 6.5 }, doses: [{ mg: 250, tinfH: 0.5, timeH: 0 }] });
+    const rec = sandbox.hdNextDose(tiny, 20);
+    assert(rec.kind === 'hold' && rec.reason === 'overshoot' && rec.mg === 0, JSON.stringify(rec));
+    assert(/every 250 mg step overshoots 20/.test(sandbox.hdNextDoseHTML(rec, false)), 'the overshoot is said');
+    const hi = sandbox.hdNextDoseHTML({ kind: 'hold', mg: 0, session: 2, sizing: 3, pre: 40, plannedCount: 0, doseAtH: 56, repeat: [], tinfH: 0 }, false);
+    assert(/above 15–20/.test(hi) && !/at or above 15/.test(hi), hi.slice(0, 220));
+  });
+  test('35.15 a provisional fit marks the HD dose provisional; sessions wording says upcoming', () => {
+    const html = sandbox.hdNextDoseHTML(sandbox.hdNextDose(hdR(), 20), true);
+    assert(/rec-derated/.test(html) && /provisional/.test(html), 'derated');
+    assert(/none are upcoming/.test(sandbox.hdNextDoseHTML({ need: 'sessions', planned: 0 }, false)), 'upcoming');
+  });
+  test('35.16 a dose whose infusion runs into a session is flagged', () => {
+    const pk = sandbox.gotiPopPK(10, 70, true);
+    const r = { model: 'goti', dial: true, CL_ind: pk.TVCL, V_ind: pk.TVVc, tbw: 70, goti: { Vc_ind: pk.TVVc, Vp_ind: pk.TVVp, Q: pk.Q },
+      levels: [], hdSessions: [{ n: 1, startH: 100, endH: 104 }], doses: [{ mg: 1000, tinfH: 2, timeH: 99.5 }] };
+    assert(sandbox.hdSessionSummary(r, 110).dosesDuringHD.length === 1, 'overlap, not start time');
+  });
+  test('35.17 the empiric table acknowledges doses already given', () => {
+    const html = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78, [{ mg: 2000, tinfH: 2, timeH: 0 }]);
+    assert(/1 dose already entered/.test(html) && /loading dose may already have been given/.test(html), html.slice(-300));
+  });
+  test('35.18 one frozen HD view feeds the screen, the redraw and the print', () => {
+    const r = Object.assign(hdR(), { levels: [{ conc: 12, timeH: 30 }], fitNowH: 20, targetAUC: 450,
+      rec: { dose: 750, tau: 24, auc24: 450, Ctrough: 15, Cpeak: 30, tinfH: 1 } });
+    const v = sandbox.hdViewFor(r);
+    assert(v && v.nowH === 20 && v.rec && v.rec.session === 2, JSON.stringify(v && v.rec));
+    const pr = sandbox._prRecommendation(r, {});
+    assert(/after HD|No dose after|No further dose|Planned dose|Add the next sessions/.test(pr) && !/\bq\d+h\b/.test(pr), pr.slice(0, 300));
+    const emp = sandbox._prRecommendation(Object.assign({}, r, { levels: [] }), {});
+    assert(/Empiric haemodialysis dosing/.test(emp) && !/\bq\d+h\b/.test(emp), emp.slice(0, 200));
+    const rb = bodyOf35('renderBayesianResults');
+    assert(!/hdNextDose\(r, Date\.now\(\)/.test(rb) && /hdViewFor\(r\)/.test(rb), 'the render reads the frozen view');
+    assert(/as of/.test(sandbox.hdNextDoseHTML(v.rec, false, v.nowH)), 'the verdict says when it was read');
+  });
+  test('35.19 for HD nothing else calls the steady-state regimen "recommended"; the math explains the HD rule', () => {
+    const rb = bodyOf35('renderBayesianResults');
+    assert(/const isHD = r\.model === 'goti' && !!r\.dial;/.test(rb.slice(0, 2500)), 'isHD is known before any section is built');
+    assert(/recTDD = !isHD && rec && !rec\.noSolution/.test(rb), 'no steady-state exposure table for HD');
+    assert(/recDose = !isHD && rec && !rec\.noSolution \? rec\.dose : null/.test(rb), 'no recommended cell in the matrix for HD');
+    assert(/HD rule\./.test(rb), 'Show the math states the HD rule');
+  });
+  test('35.20 the Trough guard shows its notice (form run begun); a schedule start time must be a real clock time', () => {
+    const calc = bodyOf35('calculate'), g = calc.indexOf("document.getElementById('t-hd')");
+    assert(/beginFormRun\('trough'\)/.test(calc.slice(g, g + 400)), 'the guard begins the form run, which shows the area');
+    assert(sandbox.isClock24('13:00') && sandbox.isClock24('00:00') && !sandbox.isClock24('29:99') && !sandbox.isClock24('24:00'), 'clock');
   });
   test('35.9 MWF / TuThSa from any start date, across a month end', () => {
     assert(sandbox.hdScheduleDates('2026-09-29', 'MWF', 0, 4).join() === '2026-09-30,2026-10-02,2026-10-05,2026-10-07', 'Tue start → Wed first');

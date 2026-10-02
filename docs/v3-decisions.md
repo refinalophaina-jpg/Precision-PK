@@ -609,7 +609,7 @@ the tool could label HD but not dose it. Goti-HD's verdict was a steady-state re
 **Built:**
 - **Post-HD dose on the fitted curve.** The dose goes at the end of the next planned session (one
   in progress counts) and is sized at the start of the session after it, on the averaged
-  Goti-HD fit with every entered dose. This is the shape of DoseMeRx's "Calculate Next Dose".
+  Goti-HD fit with every entered dose. This is the same shape as DoseMeRx's "Calculate Next Dose" on its Goti HD model; no paired comparison has been captured yet.
   The rule:
   - **hold** when no dose already reads at least 15 mg/L;
   - else the **smallest 250 mg step** that lands in 15–20;
@@ -640,8 +640,34 @@ the tool could label HD but not dose it. Goti-HD's verdict was a steady-state re
 **Checks:**
 - Engine parity against 95e3e90: 225 calls, 0 differences (fits untouched).
 - SUITE 35 holds 13 tests.
-- **Not clinically validated** on local HD patients. The averaged model's pre-HD predictions are
-  what DoseMeRx's Goti HD model also produces, not a measured accuracy.
+- **Not clinically validated** on local HD patients. The averaged model's pre-HD predictions
+  carry no measured accuracy here; a DoseMeRx capture-sheet pairing is still to be done.
+
+**Final-review fix pass (fresh reviewer, same day).** Three defects reached the pharmacist and
+were fixed with a failing test first (SUITE 35.12–35.20, browser flows):
+- **The print lead printed the steady-state regimen.** One frozen HD view (`hdViewFor`, read at
+  fit time `r.fitNowH`) now feeds the screen, every redraw and the print. The verdict says when
+  it was read.
+- **A planned dose made the tool say "No dose".** When a planned dose is entered, it said "No
+  dose… without a dose" even though that dose was what kept the level in range. A planned dose
+  around the session is now read (kind `planned`), and every hold names the planned doses it
+  includes.
+- **The Trough refusal was invisible on first use.** The guard now begins the form run, and the
+  browser check asserts the notice is visible, not merely in the DOM.
+
+Also fixed:
+- A session that ended under 6 h ago with no dose since still takes the dose, given now. The
+  6 h window is a preference (rule 8).
+- Every future dose is counted and named.
+- "Closest" may be no dose, when every step overshoots.
+- A hold above 20 says so.
+- A low-confidence fit marks the HD dose provisional.
+- The intradialytic flag uses overlap with the infusion.
+- The empiric table acknowledges doses already given.
+- For HD, no other section calls the steady-state regimen "recommended", and "Show the math"
+  states the HD rule.
+- The schedule rejects a time that is not a clock time.
+
 
 ## Known gaps
 

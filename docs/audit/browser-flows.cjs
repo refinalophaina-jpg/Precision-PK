@@ -446,15 +446,27 @@ async function enterCourse(page) {
   await m.waitForSelector('#b-results #vx-regimen', { timeout: 20000 }); await m.waitForTimeout(400);
   const hdVerdict = await m.evaluate(() => document.getElementById('vx-regimen').textContent.replace(/\s+/g, ' ').trim());
   ok('HD schedule adds 3 sessions; the verdict is a post-HD dose, a hold, or asks for sessions — never q-interval',
-     nSess === 5 && /IV after HD|No dose after session|Add the next sessions/.test(hdVerdict) && !/\bq\d+h\b/.test(hdVerdict), `${nSess} · ${hdVerdict}`);
+     nSess === 5 && /IV after HD|No dose after session|Planned:/.test(hdVerdict) && !/\bq\d+h\b/.test(hdVerdict), `${nSess} · ${hdVerdict}`);
   await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
   await m.waitForTimeout(250);
   await m.screenshot({ path: path.join(OUT, 'mobile-hd-dose.png') });
+  // No level yet: the empiric table (Rybak 2020 Rec 13), acknowledging the doses already given, inside 375 px.
+  await m.locator('[data-onclick="k62"][data-arg="1"]').tap();
+  await m.locator('[data-onclick="k47"]').tap();
+  await m.waitForFunction(() => /Empiric haemodialysis dosing/.test((document.getElementById('vx-regimen') || {}).textContent || ''), null, { timeout: 20000 });
+  const emp = await m.evaluate(() => { const t = document.querySelector('.vx-hd-empiric'); const r = t.getBoundingClientRect();
+    return { visible: !!t.offsetParent, right: r.right, iw: innerWidth, sw: document.documentElement.scrollWidth,
+      given: /already entered/.test(document.querySelector('.vx-verdict').textContent) }; });
+  ok('Goti-HD with no level shows the empiric table, says doses were given, and fits 375 px',
+     emp.visible && emp.given && emp.sw <= emp.iw, JSON.stringify(emp));
   await m.locator('[data-onclick="k1"]').tap();
   await m.evaluate(() => { const c = document.getElementById('t-hd'); if (c && !c.checked) c.click(); });
   await m.locator('[data-onclick="k31"]').tap(); await m.waitForTimeout(300);
-  const guardTxt = await m.evaluate(() => (document.getElementById('results-content') || {}).textContent || '');
-  ok('Trough module refuses an HD patient and points to Goti-HD', /use AUC Precision/.test(guardTxt) && !/mg IV q\d+h/.test(guardTxt), guardTxt.slice(0, 160));
+  const guard = await m.evaluate(() => { const rc = document.getElementById('results-content'); const n = rc && rc.querySelector('.note');
+    const b = rc && rc.querySelector('[data-onclick="k77"]');
+    return { text: (n && n.innerText) || '', visible: !!(n && n.offsetParent), button: !!(b && b.offsetParent) }; });
+  ok('Trough module visibly refuses an HD patient and offers Goti-HD',
+     guard.visible && guard.button && /use AUC Precision/.test(guard.text) && !/mg IV q\d+h/.test(guard.text), JSON.stringify(guard).slice(0, 200));
   const mAttr = await attributeInjected(m, mProblems);
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);
