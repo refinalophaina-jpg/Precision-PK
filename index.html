@@ -8274,8 +8274,8 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
       }).join('')}</tr>`).join('')}</tbody></table>` : '';
   if (rec.kind === 'planned') return missed + `
     <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
-      <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">Planned: ${rec.plannedInWindow.map(d => fmtDose(d.mg)).join(' + ')} · one-time</h3>
-      <p class="vx-inf">${rec.plannedInWindow.map(d => `${fmtDose(d.mg)} at ${fmtClock(d.timeH)}`).join(' · ')}${prov}</p>
+      <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">Planned: ${rec.plannedInWindow.map(d => fmtDose(d.mg)).join(' + ')}</h3>
+      <p class="vx-inf"><strong>One-time</strong> · ${rec.plannedInWindow.map(d => `${fmtDose(d.mg)} at ${fmtClock(d.timeH)}`).join(' · ')}${prov}</p>
       <p class="vx-sub">With the ${ks} entered, the fitted level if the next HD starts ${rec.gapH} h after ${from} is <strong>${rec.pre.toFixed(1)} mg/L</strong> — ${where(rec.pre)} mg/L.</p>
       ${gapRow}
       <p class="vx-delta">Edit the planned dose row to test another dose.</p>
@@ -8291,8 +8291,8 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
       ${gapRow}` + table + caution + basis;
   }
   return missed + `<div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
-      <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${rec.after != null ? 'after HD' : 'now'} · one-time</span></h3>
-      <p class="vx-inf">${rec.after != null ? `After session ${rec.after} ends · ` : ''}${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
+      <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${rec.after != null ? 'after HD' : 'now'}</span></h3>
+      <p class="vx-inf"><strong>One-time</strong> · ${rec.after != null ? `after session ${rec.after} ends · ` : ''}${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
       <p class="vx-sub">Sized for a pre-HD level of <strong>${rec.pre.toFixed(1)} mg/L</strong> if the next HD starts <strong>${rec.gapH} h</strong> after this dose${rec.kind === 'closest' ? ` — no 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : ''}.</p>
       ${gapRow}
       <p class="vx-sub"><span class="vx-k">AUC₂₄</span> ${rec.auc24.toFixed(0)} mg·h/L <span class="vx-muted">over the 24 h before it</span>

@@ -4611,7 +4611,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
             { mg: 750, at: [22.8, 17.2, 15.9] }, { mg: 1000, at: [26.7, 21.4, 20.3] }] }, over || {});
   test('37.13 the one-time verdict: dose now, assumed gap stated, three gap buttons, the table, the caution', () => {
     const h = sandbox.hdNextDoseHTML(ot(), false, 20);
-    assert(/<span class="rec-dose">750 mg<\/span> IV <span class="vx-freq">now · one-time<\/span>/.test(h), h.slice(0, 300));
+    assert(/<span class="rec-dose">750 mg<\/span> IV <span class="vx-freq">now<\/span><\/h3>/.test(h) && /<p class="vx-inf"><strong>One-time<\/strong> · /.test(h), h.slice(0, 300));
     assert(/Sized for a pre-HD level of <strong>17\.2 mg\/L<\/strong> if the next HD starts <strong>48 h<\/strong> after this dose/.test(h), 'sized-for line');
     const btns = h.match(/<button[^>]*data-onclick="k78"[^>]*>/g) || [];
     assert(btns.length === 3 && btns.every(b => /type="button"/.test(b)), `three gap buttons: ${btns.length}`);
@@ -4634,7 +4634,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const now = sandbox.hdNextDoseHTML(ot({ kind: 'hold', reason: 'in', mg: 0, tinfH: 0, pre: 17.6, peak: null }), false, 20);
     assert(/>No dose now</.test(now) && /vx-regimen-hd/.test(now) && !/vx-regimen-hold/.test(now), now.slice(0, 300));
     const after = sandbox.hdNextDoseHTML(ot({ after: 2, doseAtH: 56 }), false, 20);
-    assert(/<span class="vx-freq">after HD · one-time<\/span>/.test(after) && /After session 2 ends/.test(after), after.slice(0, 300));
+    assert(/<span class="vx-freq">after HD<\/span>/.test(after) && /One-time<\/strong> · after session 2 ends/.test(after), after.slice(0, 300));
     const holdAfter = sandbox.hdNextDoseHTML(ot({ after: 2, kind: 'hold', reason: 'above', mg: 0, pre: 23, peak: null }), false, 20);
     assert(/>No dose after session 2</.test(holdAfter), holdAfter.slice(0, 200));
     const prov = sandbox.hdNextDoseHTML(ot(), true, 20);
