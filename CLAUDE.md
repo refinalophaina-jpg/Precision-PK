@@ -74,7 +74,13 @@ modules** — a profile carries a `core` (`PATIENT_CORE_FIELDS`) mapping the fie
 modules mean the same thing by, so saving from either and loading fills both. Older
 profiles without a `core` fall back to their Bayesian demographics.
 
-**Not implemented — do not imply otherwise in the UI:** CRRT, paediatrics, neonates,
+**Haemodialysis (D15):** IHD sessions can be logged in AUC Precision. They label each level
+(during, early post-HD, pre-HD, interdialytic), band the chart and give a pre-HD reading. They
+**never enter the fit**: Goti-HD averages dialysis. No session-clearance model is shipped; an
+exact event engine is parked off `main`. Never correct a level for rebound or back-calculate it.
+
+**Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling, a
+session-timed (post-HD) dose recommendation, CRRT, paediatrics, neonates,
 continuous infusion.
 
 ## Rules that are not negotiable
@@ -129,12 +135,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **320/320 pass** |
+| `phase2d_validation.cjs` | **326/326 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **54/54** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **56/56** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 Syntax check after any edit:
 
@@ -263,7 +269,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 54 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 56 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |

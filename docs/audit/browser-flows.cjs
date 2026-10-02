@@ -411,6 +411,29 @@ async function enterCourse(page) {
   await m.screenshot({ path: path.join(OUT, 'mobile.png') });
   await m.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' })); await m.waitForTimeout(250);   // full page from the document top
   await m.screenshot({ path: path.join(OUT, 'mobile-full.png'), fullPage: true });
+  // Haemodialysis sessions (D15), typed on the phone: Goti-HD shows the session rows; a
+  // level reads against the session; the result labels it, reads the pre-HD level at the
+  // planned session with its assumption, and bands both sessions on the strip.
+  await m.locator('#b-model-btn-gotihd').tap();
+  const hdShown = await m.locator('#b-hd-wrap').isVisible();
+  await m.locator('[data-onclick="k74"]').tap();
+  await m.locator('#b-hd-date-1').fill(D2); await typeInto(m, '#b-hd-time-1', '13:00'); await typeInto(m, '#b-hd-hours-1', '4');
+  await m.locator('[data-onclick="k74"]').tap();
+  await m.locator('#b-hd-date-2').fill(day(1)); await typeInto(m, '#b-hd-time-2', '13:00'); await typeInto(m, '#b-hd-hours-2', '4');
+  await m.waitForTimeout(250);
+  const hdRb = await m.evaluate(() => [...document.querySelectorAll('[id^="course-rb-level-"]')].map(e => e.textContent));
+  await m.locator('[data-onclick="k47"]').tap();
+  await m.waitForSelector('#b-results .vx-hd', { timeout: 20000 });
+  await m.waitForTimeout(500);
+  const hdRes = await m.evaluate(() => ({ pre: document.querySelector('#b-results .vx-hd').textContent.replace(/\s+/g, ' ').trim(),
+    bands: document.querySelectorAll('#b-course-strip rect.hd').length, section: !!document.getElementById('ev-hd'),
+    sw: document.documentElement.scrollWidth, iw: innerWidth }));
+  ok('HD sessions: shown for Goti-HD; a level reads against the session as typed', hdShown && hdRb.some(t => /after HD session 1 ended/.test(t)), JSON.stringify(hdRb));
+  ok('HD sessions: pre-HD read at the planned session, assumption stated; both sessions banded; no overflow',
+     /Pre-HD Session 2, .*fitted [\d.]+ mg\/L if no further dose is given/.test(hdRes.pre) && hdRes.bands === 2 && hdRes.section && hdRes.sw <= hdRes.iw, JSON.stringify(hdRes));
+  await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
+  await m.waitForTimeout(250);
+  await m.screenshot({ path: path.join(OUT, 'mobile-hd.png') });
   const mAttr = await attributeInjected(m, mProblems);
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);

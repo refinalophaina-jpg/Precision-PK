@@ -531,6 +531,63 @@ measured and what the model fitted, rested on shape alone.
   drawn in ink". It now says the regimen is drawn beside the recommendation for comparison: a
   written summary never names a colour.
 
+## D15 — Haemodialysis sessions label the fit; they do not change it (2026-10-02)
+
+Asked for: "hemodialysis-aware vancomycin PK". The handoff described a dose at 09:18, high-flux
+IHD 13:42–17:45, and a level of 10.3 mg/L the next morning at 05:42, which the calculator could
+not place against dialysis.
+
+**Rejected: correcting the level.** The handoff proposed two adjustments before fitting:
+- multiplying an immediately post-HD level by a 1.15 "rebound factor";
+- back-calculating a pre-HD value as post ÷ (1 − 0.40).
+
+Either one invents an observation, and neither constant has a source (rule 1). On the handoff's
+own example it would also have been wrong. The 05:42 level was drawn about 12 h after the
+session, which is interdialytic and past redistribution. Back-calculating it gives "17.2 pre-HD",
+70% more drug than was measured. Levels are fitted exactly as measured.
+
+**Evaluated and not offered: a session-clearance model.** Hui et al. (J Antimicrob Chemother
+2019;74:130) adds a clearance only while a session runs, so rebound comes from the
+two-compartment structure rather than a factor. An exact event-stepping engine was built and
+tested against an independent RK4, with mass balance holding to 1e-7. It is not shipped, for two
+reasons:
+- the final model's lean-body-weight covariate (LBW/65 on CLNHD, V1 and V2) has no published
+  form or exponents, so only the covariate-free base model in its Supplementary Table S1 is
+  fully sourced;
+- the clinical owner's institution does not approve that model for dosing.
+
+The engine is kept outside `main` for a future model.
+
+**Built: a labelling layer on the approved Goti-HD fit.** Goti 2018 carries dialysis as a
+yes/no covariate (CL ×0.7, Vc ×0.5) because its authors had no session times, so the sessions
+cannot honestly enter that fit. They do four things.
+1. **Logged as start and length.** Using a length rather than an end clock time avoids the
+   midnight wrap SUITE 19 forbids. Sessions are validated like doses, and saved with profiles.
+2. **Each level is placed against the sessions:** during, early post-HD, pre-HD, or
+   interdialytic.
+   - A level drawn during a session, or soon after one, carries a caution. The averaged model
+     cannot see the session or the redistribution that follows it.
+   - "Soon" is three distribution half-lives (3·ln2/α) of the patient's own fitted model. For
+     a one-compartment fit it comes from Goti-HD's population model at the patient's
+     covariates.
+   - "Pre-HD" means within 12 h before a session. Both thresholds are preferences (rule 8):
+     they choose a label and change no number.
+3. **The fitted curve is read at the start of the next planned session.** The reading says what
+   it assumes: no further dose, or the planned dose rows entered. It is compared with 15–20 mg/L
+   (Hui 2019, Introduction, its refs 9–11; Instructions §4.4). A post-HD dose can be tried by
+   adding a dose row, but no new dose recommendation is made.
+4. **Sessions are banded on the strip, the curve and the printed chart.** The bands are a
+   neutral ink tint, not a series colour (D14).
+
+Also fixed: switching Goti-HD → Goti left the dialysis box ticked while `bState.dial` went false.
+
+Engine parity against 51b7eaf: 225 calls, 0 differences, so the fit is untouched. SUITE 34
+covers parsing, the night session with no wrap, timing classes, the window as 3 distribution
+half-lives, the pre-HD reading, and that sessions never reach an objective.
+
+**Not clinically validated.** The layer reads the fit; it does not make the fit more right for
+a dialysis patient.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

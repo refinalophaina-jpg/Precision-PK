@@ -2124,6 +2124,7 @@
   .course .scrv { font-size: 12px; fill: var(--ink-muted); }
   .course .now  { stroke: var(--ink-faint); stroke-dasharray: 4 4; }
   .course .future { fill: var(--paper-deep); }
+  .course .hd { fill: color-mix(in srgb, var(--ink) 8%, transparent); }   /* haemodialysis session (D15) */
   .course .tick { stroke: var(--ink-faint); stroke-width: 1; }
   .course .axl  { font-size: 11px; fill: var(--ink-muted); }
   .course .nowl { font-size: 11px; font-weight: 500; fill: var(--ink-soft); }
@@ -2187,6 +2188,7 @@
   .lg-ind  { border-top: 2px solid var(--series-fit); }
   .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
   .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
+  .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
   .lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
   .lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--series-fit); box-sizing: border-box; }
   .lg-proj { border-top: 2px solid var(--series-projection); }
@@ -3655,6 +3657,20 @@
         <button class="course-add-btn" data-onclick="k46">+ Add Level</button>
         <p class="field-hint" style="margin-top:6px">Levels can be drawn at any time point (not restricted to trough). More levels → narrower AUC uncertainty.</p>
       </div>
+
+      <!-- Haemodialysis sessions (D15): shown for Goti-HD, or whenever a session row exists -->
+      <div id="b-hd-wrap" hidden>
+        <h3 class="form-h3">Haemodialysis sessions</h3>
+        <div class="course-table-wrap">
+          <table class="course-table">
+            <tbody id="b-hd-tbody">
+              <tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <button class="course-add-btn" data-onclick="k74">+ Add HD session</button>
+        <p class="field-hint" style="margin-top:6px">Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.</p>
+      </div>
     </div>
 
     <hr class="section-divider">
@@ -3792,7 +3808,7 @@ const __ACT = {
   k38: (el, ev, arg) => { updateBayesCrCl() },   /* updateBayesCrCl() */
   k39: (el, ev, arg) => { setBSex(el,'M') },   /* setBSex(this,'M') */
   k40: (el, ev, arg) => { setBSex(el,'F') },   /* setBSex(this,'F') */
-  k41: (el, ev, arg) => { bState.dial=el.checked;updateBayesCrCl() },   /* bState.dial=this.checked;updateBayesCrCl() */
+  k41: (el, ev, arg) => { bState.dial=el.checked;syncHdSection();updateBayesCrCl() },   /* bState.dial=this.checked;updateBayesCrCl() */
   k42: (el, ev, arg) => { addScrRow() },   /* addScrRow() */
   k43: (el, ev, arg) => { addBayesDose() },   /* addBayesDose() */
   k44: (el, ev, arg) => { setRegimenOverride(el.value) },   /* setRegimenOverride(this.value) */
@@ -3822,6 +3838,8 @@ const __ACT = {
   k71: (el, ev, arg) => { pickMatrixCell(String(arg)) },   /* pickMatrixCell('dose|tau') */
   k72: (el, ev, arg) => { matrixKeyNav(el, ev) },   /* arrow-key grid navigation */
   k73: (el, ev, arg) => { setDosingWt(el,'auto') },   /* setDosingWt(this,'auto') */
+  k74: (el, ev, arg) => { addBayesSession() },   /* + Add HD session (D15) */
+  k75: (el, ev, arg) => { removeBayesSession(Number(arg)) },   /* remove HD session row */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -5155,6 +5173,8 @@ const INPUT_LIMITS = {
   tau:    { min: 4,    max: 72,   label: 'Dosing interval',      unit: 'h' },
   tinf:   { min: 0.25, max: 24,   label: 'Infusion duration',    unit: 'h' },
   level:  { min: 0.1,  max: 200,  label: 'Concentration',        unit: 'mg/L' },
+  // UI plausibility limit for a haemodialysis session's length, not a clinical constant.
+  hdHours: { min: 0.5, max: 12,   label: 'Session length',       unit: 'h' },
   auc:    { min: 200,  max: 1200, label: 'Target AUC24',         unit: 'mg·h/L' },
   // UI plausibility limit (the field's own min/max), not a clinical constant.
   crclOverride: { min: 1, max: 250, label: 'CrCl override',      unit: 'mL/min' },
@@ -7626,6 +7646,55 @@ function removeBayesLevel(id) {
   }
 }
 
+// ─── Haemodialysis session rows (D15) ───
+// Start date, start time (24-hour text, as doses and levels) and a length in
+// hours. Nothing is pre-filled: a guessed session time is worse than a blank.
+let bHdCount = 0;
+function addBayesSession() {
+  const id    = ++bHdCount;
+  const tbody = document.getElementById('b-hd-tbody');
+  if (!tbody) return;
+  const empty = tbody.querySelector('tr');
+  if (empty && empty.querySelector('.course-empty-msg')) empty.remove();
+  const rb = `course-rb-hd-${id}`;
+  const tr = document.createElement('tr');
+  tr.id = `b-hd-row-${id}`;
+  tr.className = 'course-row';
+  tr.innerHTML = `
+    <td class="course-head"><span class="course-n">HD ${id}</span> <span class="course-readback" id="${rb}"></span></td>
+    <td class="course-what">
+      <span class="course-field"><input type="number" id="b-hd-hours-${id}" inputmode="decimal" min="0.5" max="12" step="0.25" placeholder="4"
+         aria-label="HD session ${id} length (hours)"><span class="course-unit" aria-hidden="true">h</span></span>
+    </td>
+    <td class="course-when">
+      <input type="date" id="b-hd-date-${id}" aria-label="HD session ${id} start date" aria-describedby="${rb}">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="b-hd-time-${id}" aria-label="HD session ${id} start time (24-hour)" aria-describedby="${rb}">
+    </td>
+    <td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k75" data-arg="${id}" aria-label="Remove HD session ${id}">${courseRemoveIcon()}</button></td>`;
+  tbody.appendChild(tr);
+  syncHdSection();
+  scheduleCourseReadback();
+}
+function removeBayesSession(id) {
+  const row = document.getElementById(`b-hd-row-${id}`);
+  if (row) row.remove();
+  const tbody = document.getElementById('b-hd-tbody');
+  if (tbody && !tbody.querySelector('tr')) {
+    tbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>';
+  }
+  syncHdSection();
+  scheduleCourseReadback();
+}
+// The section shows for the dialysis model, and whenever a session row exists —
+// entered data is never hidden by a model switch.
+function syncHdSection() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const wrap = document.getElementById('b-hd-wrap');
+  if (!wrap) return;
+  const hasRows = !!document.querySelector('[id^="b-hd-row-"]');
+  wrap.hidden = !((bState && bState.model === 'goti' && bState.dial) || hasRows);
+}
+
 // ─── Parse course data from DOM ───
 // CODEX F-002. This dropped any row that failed its truthiness test and said
 // nothing. A dose row with a blank infusion duration simply vanished from the
@@ -7691,6 +7760,38 @@ function parseBayesCourse() {
     levels.push({ conc: cChk.value, timeH: tMs / 3600000, label: `${dateS} ${timeS}` });
   });
 
+  // Haemodialysis sessions (D15): start date and time plus a length in hours.
+  // A length, not an end time, because an end typed as a clock time before the
+  // start would need the "+24 h" wrap this file forbids (SUITE 19).
+  const sessions = [];
+  document.querySelectorAll('[id^="b-hd-row-"]').forEach(row => {
+    const id    = row.id.replace('b-hd-row-','');
+    const dateS = (document.getElementById(`b-hd-date-${id}`) || {}).value;
+    const timeS = ((document.getElementById(`b-hd-time-${id}`) || {}).value || '').trim();
+    const hRaw  = (document.getElementById(`b-hd-hours-${id}`) || {}).value;
+    const anything = [dateS, timeS, hRaw].some(v => v !== undefined && String(v).trim() !== '');
+    if (!anything) return;
+    const miss = [];
+    const hChk = checkValue(hRaw, 'hdHours');
+    if (!dateS)      miss.push('date');
+    if (!/^\d{2}:\d{2}$/.test(timeS)) miss.push(timeS ? `start time "${timeS}" (use HH:MM)` : 'start time');
+    if (!hChk.ok)    miss.push(hRaw ? `session length (${hChk.message})` : 'session length');
+    const tMs = dateS && timeS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
+    if (dateS && timeS && !Number.isFinite(tMs)) miss.push('a valid date/time');
+    if (miss.length) {
+      errors.push(`HD session row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
+      return;
+    }
+    sessions.push({ startH: tMs / 3600000, endH: tMs / 3600000 + hChk.value, hours: hChk.value, label: `${dateS} ${timeS}` });
+  });
+  sessions.sort((a, b) => a.startH - b.startH);
+  sessions.forEach((x, i) => { x.n = i + 1; });
+  for (let i = 1; i < sessions.length; i++) {
+    if (sessions[i].startH < sessions[i - 1].endH - 1e-9) {
+      errors.push(`The HD session at ${sessions[i].label} starts before the ${sessions[i - 1].label} session ends — check the times.`);
+    }
+  }
+
   doses.sort((a,b) => a.timeH - b.timeH);
   levels.sort((a,b) => a.timeH - b.timeH);
   // Same-minute duplicates and overlapping infusions: a dose started before the
@@ -7709,7 +7810,112 @@ function parseBayesCourse() {
       errors.push(`Two levels are entered at ${levels[i].label} — keep one.`);
     }
   }
-  return { doses, levels, errors };
+  return { doses, levels, sessions, errors };
+}
+
+// ══════════════════════════════════════════════════════════════
+// HAEMODIALYSIS SESSIONS — a labelling layer on the fit (D15)
+// ══════════════════════════════════════════════════════════════
+// Sessions do NOT enter the fit. Goti-HD (Goti 2018, DIAL covariate) averages
+// dialysis over the whole course — its authors had no session times — and that
+// is the model in use. What the session times can do honestly is say WHEN each
+// level was drawn relative to dialysis, warn when that timing is one the model
+// cannot see, and read the fitted curve at the start of the next session.
+// Levels are never altered: no rebound factor, no back-calculation.
+//
+// Pre-dialysis range: 15–20 mg/L. Hui K et al., J Antimicrob Chemother
+// 2019;74:130, Introduction ("target pre-haemodialysis concentrations often
+// between 15 and 20 mg/L", its refs 9–11); and this project's clinical source,
+// Vancomycin_TDM_Software_Instructions.md §4.4.
+const HD_PREDIALYSIS_MIN = 15;  // mg/L
+const HD_PREDIALYSIS_MAX = 20;  // mg/L
+// PREFERENCE (rule 8) — these two only choose a label or a caution; neither
+// changes a fit or a dose.
+// A level drawn within this many hours before a session reads as "pre-HD".
+const HD_PRE_LABEL_H = 12;
+// "Soon after a session" = within this many distribution half-lives (ln2/α) of
+// the model's own distribution phase: drug is still returning from the tissues.
+const HD_POSTSESSION_HALF_LIVES = 3;
+
+// Where a level sits relative to the sessions. Pure.
+//   kind: 'during' | 'post' (inside the redistribution window) | 'pre' |
+//         'interdialytic' | 'none' (no sessions)
+function hdLevelTiming(tH, sessions, windowH) {
+  const S = (sessions || []).slice().sort((a, b) => a.startH - b.startH);
+  if (!S.length) return { kind: 'none' };
+  const during = S.find(x => tH >= x.startH && tH < x.endH);
+  if (during) return { kind: 'during', n: during.n, intoH: tH - during.startH };
+  const prev = S.filter(x => x.endH <= tH).pop() || null;
+  const next = S.find(x => x.startH > tH) || null;
+  const sinceH = prev ? tH - prev.endH : null, toH = next ? next.startH - tH : null;
+  if (prev && windowH > 0 && sinceH < windowH) return { kind: 'post', n: prev.n, sinceH, next: next && next.n, toH };
+  if (next && toH <= HD_PRE_LABEL_H) return { kind: 'pre', n: next.n, toH, prev: prev && prev.n, sinceH };
+  return { kind: 'interdialytic', prev: prev && prev.n, sinceH, next: next && next.n, toH };
+}
+function hdTimingText(t) {
+  switch (t.kind) {
+    case 'during': return `during HD session ${t.n}`;
+    case 'post':   return `${fmtGapHM(t.sinceH)} after HD session ${t.n} ended`;
+    case 'pre':    return `pre-HD, ${fmtGapHM(t.toH)} before session ${t.n}`;
+    case 'interdialytic':
+      return 'interdialytic' + (t.prev ? `, ${fmtGapHM(t.sinceH)} after session ${t.prev}` : t.next ? `, ${fmtGapHM(t.toH)} before session ${t.next}` : '');
+    default: return '';
+  }
+}
+// The bare fact, for the live read-back, which has no fit and so no window:
+// it never says "interdialytic" about a level drawn minutes after a session.
+function hdTimingFact(t) {
+  if (t.kind === 'none') return '';
+  if (t.kind === 'during') return `during HD session ${t.n}`;
+  const prev = t.kind === 'post' ? t.n : t.prev, next = t.kind === 'pre' ? t.n : t.next;
+  if (prev) return `${fmtGapHM(t.sinceH)} after HD session ${prev} ended`;
+  if (next) return `${fmtGapHM(t.toH)} before HD session ${next}`;
+  return '';
+}
+// The redistribution window, in hours, from a two-compartment model's fast
+// eigenvalue α: HD_POSTSESSION_HALF_LIVES × ln2/α.
+function hdRedistributionWindowH(k10, k12, k21) {
+  if (!(k12 > 0 && k21 > 0 && k10 >= 0)) return 0;
+  const s = k10 + k12 + k21, disc = Math.sqrt((k10 + k12 - k21) ** 2 + 4 * k12 * k21);
+  const alpha = 0.5 * (s + disc);
+  return HD_POSTSESSION_HALF_LIVES * Math.LN2 / alpha;
+}
+// The fitted (individual) concentration at t, from whichever model was fitted.
+function predictFittedAt(r, tH) {
+  const g = gotiGraphParams(r).ind;
+  return g ? predictConc2comp(r.doses, tH, g.k10, g.k12, g.k21, g.Vc)
+           : predictConc1comp(r.doses, tH, r.CL_ind / r.V_ind, r.V_ind);
+}
+// Everything the results say about dialysis, from a result and its sessions.
+// nowH is passed in (not read) so this stays pure and testable.
+function hdSessionSummary(r, nowH) {
+  const sessions = (r && r.hdSessions) || [];
+  if (!sessions.length) return null;
+  // The redistribution window comes from the model's own distribution phase:
+  // the fitted one for a 2-compartment fit, else Goti-HD's population at this
+  // patient's covariates (a 1-compartment model has no distribution phase to read).
+  let win = 0;
+  const g = gotiGraphParams(r).ind;
+  if (g) win = hdRedistributionWindowH(g.k10, g.k12, g.k21);
+  else if (r.agCtx && r.agCtx.crclGoti > 0 && r.tbw > 0) {
+    const pk = gotiPopPK(r.agCtx.crclGoti, r.tbw, true);
+    win = hdRedistributionWindowH(pk.TVCL / pk.TVVc, pk.Q / pk.TVVc, pk.Q / pk.TVVp);
+  }
+  const levels = (r.levels || []).map(l => {
+    const t = hdLevelTiming(l.timeH, sessions, win);
+    const inRange = t.kind === 'pre' ? (l.conc >= HD_PREDIALYSIS_MIN && l.conc <= HD_PREDIALYSIS_MAX) : null;
+    return { conc: l.conc, timeH: l.timeH, timing: t, text: hdTimingText(t), caution: t.kind === 'during' || t.kind === 'post', inRange };
+  });
+  const next = sessions.find(x => x.startH > nowH) || null;
+  const nextPre = next ? predictFittedAt(r, next.startH) : null;
+  // What the reading assumes: only the doses entered. Planned (future) dose rows
+  // before the session are counted, so the line can say which case it is.
+  const plannedBefore = next ? (r.doses || []).filter(d => d.timeH > nowH && d.timeH < next.startH).length : 0;
+  return {
+    sessions, windowH: win, levels, next, plannedBefore,
+    nextPre, nextPreInRange: nextPre == null ? null : nextPre >= HD_PREDIALYSIS_MIN && nextPre <= HD_PREDIALYSIS_MAX,
+    modelIsHD: r.model === 'goti' && !!r.dial,
+  };
 }
 
 // ─── 1-compartment superposition ───
@@ -8270,12 +8476,17 @@ function setBModel(el, m) {
     if (dialCb) dialCb.checked = true;
   } else if (m === 'goti') {
     if (dialWrap) dialWrap.style.display = 'flex';
+    // Goti-HD → Goti left this ticked while bState.dial went false, so the
+    // very-low-CrCl advisory and a saved profile read dialysis that the fit
+    // did not use. The box follows the state.
+    if (dialCb) dialCb.checked = false;
   } else {
     if (dialWrap) dialWrap.style.display = 'none';
     if (dialCb) dialCb.checked = false;
   }
   const gotiNote = document.getElementById('b-goti-scr-note');
   if (gotiNote && effectiveModel !== 'goti') gotiNote.style.display = 'none';
+  syncHdSection();
   updateBayesCrCl();
 }
 
@@ -8916,7 +9127,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const kelPop = CLpop / Vpop;
   // Same domain and side padding as the course strip above, so the two share
   // one time axis at every width.
-  const { tStart, tEnd } = profileDomain(doses, kelInd);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions);
   const tNow   = Date.now() / 3600000;
 
   // Dispatch to 1-comp or 2-comp based on gotiInd presence
@@ -8995,6 +9206,18 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
       ctx.fillStyle = themeColor('--paper-deep', '#f2ecdf');
       ctx.fillRect(xf, pad.top, pad.left + gW - xf, gH);
     }
+  }
+  // ── Haemodialysis sessions (D15): a neutral band each, labelled, behind the
+  //    curves. Not a series colour — a session is an event, not a model.
+  for (const x of (opts.sessions || [])) {
+    const a = Math.max(0, x.startH - tStart), b = Math.min(tSpan, x.endH - tStart);
+    if (b <= 0 || a >= tSpan) continue;
+    ctx.fillStyle = themeRGBA('--ink', 0.08, 'rgba(40,36,30,0.08)');
+    ctx.fillRect(tx(a), pad.top, Math.max(1, tx(b) - tx(a)), gH);
+    ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
+    ctx.font = "500 12px 'Outfit', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.fillText('HD', (tx(a) + tx(b)) / 2, pad.top - 8);
   }
 
   // ── Horizontal concentration grid ──
@@ -9599,7 +9822,7 @@ function computeGuidelineDose(tbw, crcl) {
 // ─── Main Bayesian runner ───
 function runBayesian() {
   beginFormRun('auc');   // forget the last refusal and its field marks
-  const { doses, levels, errors } = parseBayesCourse();
+  const { doses, levels, sessions, errors } = parseBayesCourse();
 
   // CODEX F-002. Refuse to fit a course that does not match what was entered.
   // Silently dropping an incomplete administration produced a fit on a history
@@ -9793,7 +10016,7 @@ function runBayesian() {
       model:'goti', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
       etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
-      levels:filteredLevels, objFinal, goti: gotiResult
+      levels:filteredLevels, hdSessions: sessions || [], objFinal, goti: gotiResult
     };
     // CODEX F-003: bind this fit to the inputs it came from.
   try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -9868,7 +10091,7 @@ function runBayesian() {
       model:'hughes', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
       etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
-      levels:filteredLevels, objFinal, goti: hughesResult
+      levels:filteredLevels, hdSessions: sessions || [], objFinal, goti: hughesResult
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
@@ -9910,7 +10133,7 @@ function runBayesian() {
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
       etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
-      levels:filteredLevels, objFinal
+      levels:filteredLevels, hdSessions: sessions || [], objFinal
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
@@ -10537,23 +10760,29 @@ function forestPlotSVG(ag, nLev, bandMin, bandMax) {
 // The shared time domain of the course strip and the concentration curve, so
 // the two read on one axis at every width.
 const PROFILE_PAD = { top: 24, right: 16, bottom: 34, left: 46 };
-function profileDomain(doses, kelInd) {
+function profileDomain(doses, kelInd, sessions) {
   const tStart = doses[0].timeH;
   const lastD = doses[doses.length - 1];
   const span = lastD.timeH - tStart;
   // Enough tail to show the terminal decay without letting it dominate: about
   // three half-lives, at least 12 h, never more than 48 h.
   const tail = Math.min(48, Math.max(12, span * 0.5, (kelInd > 0 ? 3 * Math.LN2 / kelInd : 24)));
-  return { tStart, tEnd: lastD.timeH + lastD.tinfH + tail };
+  let tEnd = lastD.timeH + lastD.tinfH + tail;
+  // Reach a planned haemodialysis session (D15) so its start — the pre-HD
+  // reading — is on the axis; layout only, at most 72 h further.
+  for (const x of (sessions || [])) {
+    if (x.startH > tEnd && x.startH <= tEnd + 72) tEnd = Math.max(tEnd, x.startH + 2);
+  }
+  return { tStart, tEnd };
 }
 
 // The course strip: what was given (bars as wide as each infusion), what was
 // measured (dots with values), creatinine (ticks), and "now" — on the same time
 // axis as the curve beneath it. Drawn as SVG so it reflows and prints crisply.
-function drawCourseStrip(el, doses, nProj, levels, scr, kelInd) {
+function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions) {
   if (!el || !doses.length) return;
   const W = Math.max(280, el.clientWidth || 600), H = 76;
-  const { tStart, tEnd } = profileDomain(doses, kelInd);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions);
   const P = PROFILE_PAD, gW = W - P.left - P.right, span = tEnd - tStart;
   const x = t => P.left + (t - tStart) / span * gW;
   const nHist = doses.length - (nProj || 0);
@@ -10620,6 +10849,17 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd) {
       lastX = xt;
     }
     if (inNow) s += `<text x="${xn.toFixed(1)}" y="${yAxis}" class="nowl" text-anchor="middle">now</text>`;
+  }
+  // Haemodialysis sessions (D15): a neutral full-height band each, behind
+  // everything, titled with its times — the same band the curve draws.
+  {
+    let bands = '';
+    (sessions || []).forEach(xs => {
+      const a = Math.max(tStart, xs.startH), b = Math.min(tEnd, xs.endH);
+      if (b <= a) return;
+      bands += `<rect class="hd" x="${x(a).toFixed(1)}" y="0" width="${Math.max(1, x(b) - x(a)).toFixed(1)}" height="${hScr}"><title>Haemodialysis ${xs.n}: ${fmtClock(xs.startH)} to ${fmtClock(xs.endH)}</title></rect>`;
+    });
+    s = bands + s;
   }
   if (inNow) {
     // After "now" is prediction, not record: a faint field, behind everything,
@@ -10913,6 +11153,20 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         Check the draw times; a further level drawn at a different point in the interval separates them.` });
   }
 
+  // ── Haemodialysis sessions (D15): a labelling layer, never the fit ──
+  const hd = hdSessionSummary(r, Date.now() / 3600000);
+  if (hd) {
+    const flagged = hd.levels.filter(l => l.caution);
+    if (flagged.length) notes.push({ tier: 'caution', word: 'Level timing against dialysis', html:
+      `${flagged.map(l => `${l.conc.toFixed(1)} mg/L ${escHtml(l.text)}`).join('; ')}.
+       ${hd.modelIsHD ? 'Goti-HD averages dialysis over the whole course' : 'This model does not model dialysis'}, so it
+       cannot see the session or the drug returning from the tissues after it, and fits
+       ${flagged.length === 1 ? 'this level' : 'these levels'} as if clearance were constant. A pre-HD level avoids this.` });
+    if (!hd.modelIsHD) notes.push({ tier: 'caution', word: 'Sessions entered, dialysis not modelled', html:
+      `${escHtml(modelLabel)} does not model dialysis: the sessions only label the levels and the chart.
+       For a patient on intermittent haemodialysis, Goti-HD is the dialysis model.` });
+  }
+
   // ── Population-only advisory ──
   if (nLev === 0) {
     notes.push({ tier: 'info', word: 'Population estimate only', html: `No observed levels provided.
@@ -10990,6 +11244,15 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <span class="vx-muted">${escHtml(modelLabel)}</span>
     </p>`;
   const nextBlock = nextStep ? `<p class="vx-next"><span class="vx-k">Next</span> ${escHtml(nextStep)}</p>` : '';
+  // The fitted curve read at the start of the next planned session (D15). It
+  // includes any planned dose rows, so a post-HD dose can be tried by hand.
+  const hdBlock = !hd ? '' : hd.next
+    ? `<p class="vx-next vx-hd"><span class="vx-k">Pre-HD</span> Session ${hd.next.n}, ${fmtClock(hd.next.startH)}:
+        fitted <strong>${hd.nextPre.toFixed(1)} mg/L</strong> ${hd.plannedBefore ? `with the ${hd.plannedBefore} planned dose${hd.plannedBefore === 1 ? '' : 's'} entered` : 'if no further dose is given'},
+        ${hd.nextPreInRange ? 'within' : hd.nextPre < HD_PREDIALYSIS_MIN ? 'below' : 'above'}
+        ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L${hd.modelIsHD ? ' <span class="vx-muted">· dialysis averaged over the course</span>' : ''}.
+        <span class="vx-muted">Add a dose row to try a post-HD dose.</span></p>`
+    : `<p class="vx-next vx-hd"><span class="vx-k">Pre-HD</span> <span class="vx-muted">Add the next planned session to read the pre-HD level.</span></p>`;
 
   // ── The first viewport: course strip + verdict + curve ─────────────────────
   const projDefaultDose = (rec && !rec.noSolution) ? rec.dose : 1000;
@@ -11006,6 +11269,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ${verdict}
         ${confBlock}
         ${nextBlock}
+        ${hdBlock}
         <div class="vx-actions">
           <a class="vx-act" href="#ev-why" data-onclick="k80" data-arg="ev-why">Why this dose</a>
           <a class="vx-act" href="#ev-math" data-onclick="k80" data-arg="ev-math">Show the math</a>
@@ -11021,6 +11285,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           ${nLev ? `<span class="legend-item"><i class="lg lg-lv"></i>Measured concentration</span>
           <span class="legend-item"><i class="lg lg-ring"></i>Fit at each level</span>` : ''}
           <span class="legend-item" id="b-proj-legend" style="display:none"><i class="lg lg-proj"></i>Projected doses</span>
+          ${hd ? '<span class="legend-item"><i class="lg lg-hd"></i>Haemodialysis session</span>' : ''}
         </figcaption>
         <p class="vx-summary" id="b-summary">${escHtml(summary)}</p>
         <div class="vx-proj">
@@ -11371,6 +11636,28 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     html += ev('ev-regimens', 'Regimens', gist, body, true);
   }
 
+  // Haemodialysis — the sessions and where each level sits against them (D15)
+  if (hd) {
+    const sRows = hd.sessions.map(x => `<tr><th scope="row">${x.n}</th><td>${fmtClock(x.startH)}</td><td>${fmtClock(x.endH)}</td><td>${fmtHrs(x.hours)}</td></tr>`).join('');
+    const lRows = hd.levels.map(l => `<tr><th scope="row">${l.conc.toFixed(1)} mg/L</th><td>${fmtClock(l.timeH)}</td>
+      <td>${escHtml(l.text)}${l.inRange === true ? ` · within ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}` : l.inRange === false ? ` · outside ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}` : ''}${l.caution ? ' · <span class="tone-caution">timing the model cannot see</span>' : ''}</td></tr>`).join('');
+    const g2 = gotiGraphParams(r).ind;
+    const gist = `${hd.sessions.length} session${hd.sessions.length === 1 ? '' : 's'}${hd.next ? ` · next ${fmtClock(hd.next.startH)}` : ''}`;
+    html += ev('ev-hd', 'Haemodialysis', gist, `
+      <table class="ev-table"><caption>Sessions</caption>
+        <thead><tr><th scope="col">#</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th></tr></thead>
+        <tbody>${sRows}</tbody></table>
+      ${lRows ? `<table class="ev-table"><caption>Each level against the sessions</caption>
+        <thead><tr><th scope="col">Level</th><th scope="col">Drawn</th><th scope="col">Timing</th></tr></thead>
+        <tbody>${lRows}</tbody></table>` : ''}
+      <p class="ev-note">The sessions do not enter the fit. ${hd.modelIsHD ? 'Goti-HD (Goti 2018) carries dialysis as a yes/no covariate — clearance ×0.7 and central volume ×0.5 for the whole course — because its authors had no session times.' : `${escHtml(modelLabel)} does not model dialysis.`}
+        Levels are fitted exactly as measured; nothing is scaled for rebound or back-calculated.</p>
+      <p class="ev-note vx-muted">"Soon after a session" means within ${hd.windowH.toFixed(1)} h of its end: three distribution
+        half-lives of the ${g2 ? 'fitted' : 'Goti-HD population'} model, while drug is still returning from the tissues (a labelling
+        choice; it changes no number). A level is "pre-HD" within ${HD_PRE_LABEL_H} h before a session. The ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L
+        pre-dialysis range: Hui et al., J Antimicrob Chemother 2019;74:130, and the project's clinical instructions §4.4.</p>`, false);
+  }
+
   // Explore — the Dose Tinkerer and the regimen comparison
   html += ev('ev-explore', 'Explore a regimen', 'Dose Tinkerer — individual PK', `
     <div class="tinkerer-box">
@@ -11709,11 +11996,11 @@ function refreshProfileGraph() {
     const gp = gotiGraphParams(r);
     const row = aucUncertaintyRow((r.levels || []).length, uncertaintyModelKey(r));
     drawProfileGraph(canvas, allDoses, r.levels, r.CL_ind, r.V_ind, r.CL_pop, r.V_pop, gp.ind, gp.pop, projDoses.length,
-                     { band: { lo: row.lo, hi: row.hi } });
+                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [] });
     let scr = [];
     try { scr = readSerialScr(); } catch (e) {}
     drawCourseStrip(document.getElementById('b-course-strip'), allDoses, projDoses.length, r.levels, scr,
-                    r.CL_ind / r.V_ind);
+                    r.CL_ind / r.V_ind, r.hdSessions || []);
   });
 }
 
@@ -11993,6 +12280,9 @@ function resetBayesian() {
   bDoseCount  = 0;
   bLevelCount = 0;
   bScrCount   = 0;
+  bHdCount    = 0;
+  const hdTbody = document.getElementById('b-hd-tbody');
+  if (hdTbody) hdTbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>';
   document.getElementById('b-dose-tbody').innerHTML  = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add Dose</td></tr>';
   document.getElementById('b-level-tbody').innerHTML = '<tr><td colspan="3" class="course-empty-msg">No levels — press + Add Level</td></tr>';
   // Clear serial SCr table
@@ -12027,6 +12317,7 @@ function resetBayesian() {
   if (dialWrap) { dialWrap.style.display = 'none'; }
   const dialCb = document.getElementById('b-dial');
   if (dialCb) dialCb.checked = false;
+  syncHdSection();
   const gotiNote = document.getElementById('b-goti-scr-note');
   if (gotiNote) gotiNote.style.display = 'none';
   setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
@@ -12063,7 +12354,7 @@ function persistProfiles(list) {
 function bayesInputFingerprint() {
   try {
     const g = (id) => (document.getElementById(id) || {}).value || '';
-    const { doses, levels } = parseBayesCourse();
+    const { doses, levels, sessions } = parseBayesCourse();
     return JSON.stringify({
       age: g('b-age'), tbw: g('b-tbw'), ht: g('b-height'), scr: g('b-scr'),
       cysc: g('cysc'), sex: bState.sex, model: bState.model, dial: !!bState.dial,
@@ -12076,6 +12367,7 @@ function bayesInputFingerprint() {
       regimenOverrideH: bState.regimenOverrideH,
       doses: doses.map(d => [d.mg, d.tinfH, +d.timeH.toFixed(4)]),
       levels: levels.map(l => [l.conc, +l.timeH.toFixed(4)]),
+      hd: (sessions || []).map(x => [+x.startH.toFixed(4), x.hours]),
     });
   } catch (e) { return null; }
 }
@@ -12105,6 +12397,11 @@ function snapshotBayesForm() {
       date: val(`b-lvl-date-${id}`),
       time: val(`b-lvl-time-${id}`)
     });
+  });
+  const hdSessions = [];
+  document.querySelectorAll('[id^="b-hd-row-"]').forEach(row => {
+    const id = row.id.replace('b-hd-row-','');
+    hdSessions.push({ date: val(`b-hd-date-${id}`), time: val(`b-hd-time-${id}`), hours: val(`b-hd-hours-${id}`) });
   });
   const scrRows = [];
   document.querySelectorAll('[id^="b-scr-row-"]').forEach(row => {
@@ -12145,7 +12442,7 @@ function snapshotBayesForm() {
                     dial: document.getElementById('b-dial')?.checked || false },
     model:   bState.model || 'buelga',
     target:  { auc: val('b-auc-target'), mic: val('b-mic') },
-    doses, levels, scrRows,
+    doses, levels, scrRows, hdSessions,
     fit: fitStale ? null : fit,
     staleFit: fitStale ? fit : undefined,
     dirty: fitStale
@@ -12327,6 +12624,15 @@ function loadProfileIntoForm(id) {
     set2(`b-lvl-date-${id}`, l.date);
     set2(`b-lvl-time-${id}`, l.time);
   });
+  // Older profiles carry no sessions: an absent array loads as none (D15).
+  (s.hdSessions || []).forEach(x => {
+    addBayesSession();
+    const id = bHdCount;
+    const set2 = (k, v) => { const el = document.getElementById(k); if (el) el.value = v; };
+    set2(`b-hd-date-${id}`, x.date);
+    set2(`b-hd-time-${id}`, x.time);
+    set2(`b-hd-hours-${id}`, x.hours);
+  });
   (s.scrRows || []).forEach(r => {
     addScrRow();
     const row = document.getElementById(`b-scr-row-${bScrCount}`);
@@ -12449,7 +12755,7 @@ function _buildPrintGraph(r) {
     // passing it straight through drew NaN. gotiGraphParams maps them.
     const gp = gotiGraphParams(r);
     drawProfileGraph(off, r.doses, r.levels || [], r.CL_ind, r.V_ind, r.CL_pop, r.V_pop,
-                     gp.ind, gp.pop, r.nProj || 0);
+                     gp.ind, gp.pop, r.nProj || 0, { sessions: r.hdSessions || [] });
     try { Object.defineProperty(window, 'devicePixelRatio', { value: prevDpr, configurable: true }); } catch (e) {}
     const url = off.toDataURL('image/png');
     return `<div class="pr-section pr-section-wide"><h2 class="pr-section-title">Concentration–time profile</h2>
@@ -12654,6 +12960,27 @@ function _buildPrintReport() {
     html += `<div class="pr-caption">"Fitted" is this patient's individual model evaluated at the draw time —
       the gap between measured and fitted is the residual the Bayesian fit had to absorb.</div>`;
     html += '</div>';
+  }
+
+  // Haemodialysis sessions (D15): what was logged, where each level sat against
+  // it, and the pre-HD reading with its assumption — the same words as on screen.
+  {
+    const hd = hdSessionSummary(r, Date.now() / 3600000);
+    if (hd) {
+      html += `<div class="pr-section"><h2 class="pr-section-title">Haemodialysis sessions</h2><table class="pr-table">
+        <thead><tr><th>#</th><th>Start</th><th>End</th><th>Length</th></tr></thead><tbody>`;
+      for (const x of hd.sessions) html += `<tr><td class="pr-val">${x.n}</td><td class="pr-val">${fmtClock(x.startH)}</td><td class="pr-val">${fmtClock(x.endH)}</td><td class="pr-val">${fmtHrs(x.hours)}</td></tr>`;
+      html += '</tbody></table>';
+      if (hd.levels.length) {
+        html += `<table class="pr-table"><thead><tr><th>Level</th><th>Drawn</th><th>Against the sessions</th></tr></thead><tbody>`;
+        for (const l of hd.levels) html += `<tr><td class="pr-val">${l.conc.toFixed(1)} mg/L</td><td class="pr-val">${fmtClock(l.timeH)}</td><td>${escHtml(l.text)}${l.caution ? ' — timing the model cannot see' : ''}</td></tr>`;
+        html += '</tbody></table>';
+      }
+      html += `<div class="pr-caption">${hd.next
+        ? `Pre-HD, session ${hd.next.n} (${fmtClock(hd.next.startH)}): fitted ${hd.nextPre.toFixed(1)} mg/L ${hd.plannedBefore ? `with the ${hd.plannedBefore} planned dose${hd.plannedBefore === 1 ? '' : 's'} entered` : 'if no further dose is given'}, against a pre-dialysis range of ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L. `
+        : ''}The sessions do not enter the fit${hd.modelIsHD ? ': Goti-HD averages dialysis over the whole course' : ''}; levels are fitted as measured.</div>`;
+      html += '</div>';
+    }
   }
 
   // PK Parameters
@@ -13089,6 +13416,14 @@ function courseErrorTarget(msg) {
     if (/\btime\b/.test(w))           ids.push(`b-lvl-time-${n}`);
     return ids.length ? ids : [`b-lvl-conc-${n}`];
   }
+  m = /^HD session row (\d+): (.*)$/.exec(s);
+  if (m) {
+    const n = m[1], w = m[2], ids = [];
+    if (/\bdate\b/.test(w))           ids.push(`b-hd-date-${n}`);
+    if (/start time/.test(w))         ids.push(`b-hd-time-${n}`);
+    if (/session length/.test(w))     ids.push(`b-hd-hours-${n}`);
+    return ids.length ? ids : [`b-hd-date-${n}`];
+  }
   m = /^Serial SCr row (\d+)(.*)$/.exec(s);
   if (m) {
     const row = document.querySelectorAll('[id^="b-scr-row-"]')[Number(m[1]) - 1];
@@ -13310,13 +13645,18 @@ function fmtGapHM(h) {
 // incomplete row reads nothing. Intervals come from elapsedHours, the one
 // elapsed-time helper. Sampling time is the riskiest input; this shows the
 // clinician how the tool read it while they type.
-function courseReadback(doses, levels, nowMs) {
+function courseReadback(doses, levels, nowMs, sessions) {
   const stamp = (x) => Object.assign({}, x, { dt: `${x.date}T${String(x.time || '').trim()}`, ms: courseRowMs(x.date, x.time) });
   const D = (doses || []).map(stamp);
   const L = (levels || []).map(stamp);
   const dated = D.filter(d => Number.isFinite(d.ms)).sort((a, b) => a.ms - b.ms);
   const future = (ms) => Number.isFinite(nowMs) && ms > nowMs ? ' · in the future' : '';
-  const out = { dose: {}, level: {} };
+  const out = { dose: {}, level: {}, hd: {} };
+  // Haemodialysis sessions (D15): complete ones, as hours, numbered by start.
+  // row = the input row's id; n = the session's number in time order.
+  const H = (sessions || []).map(x => ({ row: x.n, date: x.date, time: x.time, ms: courseRowMs(x.date, x.time), len: parseFloat(x.hours) }))
+    .filter(x => Number.isFinite(x.ms) && x.len > 0).sort((a, b) => a.ms - b.ms)
+    .map((x, i) => Object.assign(x, { startH: x.ms / 3600000, endH: x.ms / 3600000 + x.len, n: i + 1 }));
 
   D.forEach(d => {
     let text = '';
@@ -13351,9 +13691,25 @@ function courseReadback(doses, levels, nowMs) {
           if (Number.isFinite(tinf) && tinf > 0 && g.hours < tinf) text += ', during its infusion';
         }
       }
+      if (text && H.length) { const ht = hdTimingFact(hdLevelTiming(l.ms / 3600000, H, 0)); if (ht) text += ` · ${ht}`; }
       if (text) text += future(l.ms);
     }
     out.level[l.n] = text;
+  });
+
+  // A session reads its start against the doses and says when it ends — the
+  // end is computed from the length, so a night session is shown, not wrapped.
+  (sessions || []).forEach(x => {
+    const h = H.find(y => y.row === x.n);
+    let text = '';
+    if (h) {
+      const prev = dated.filter(d => d.ms <= h.ms).pop();
+      text = prev ? (() => { const g = elapsedHours(prev.dt, `${h.date}T${String(h.time).trim()}`); return g.ok ? `${fmtGapHM(g.hours)} after dose ${prev.n} started` : ''; })()
+                  : (dated.length ? 'before the first dose' : '');
+      text = (text ? text + ' · ' : '') + `ends ${fmtClock(h.endH)}`;
+      text += future(h.ms);
+    }
+    out.hd[x.n] = text;
   });
   return out;
 }
@@ -13367,10 +13723,13 @@ function refreshCourseReadback() {
     ({ n, date: val(`b-dose-date-${n}`), time: val(`b-dose-time-${n}`), tinf: val(`b-dose-tinf-${n}`) }));
   const levels = ids('[id^="b-level-row-"]', 'b-level-row-').map(n =>
     ({ n, date: val(`b-lvl-date-${n}`), time: val(`b-lvl-time-${n}`) }));
-  const rb = courseReadback(doses, levels, Date.now());
+  const sessions = ids('[id^="b-hd-row-"]', 'b-hd-row-').map(n =>
+    ({ n, date: val(`b-hd-date-${n}`), time: val(`b-hd-time-${n}`), hours: val(`b-hd-hours-${n}`) }));
+  const rb = courseReadback(doses, levels, Date.now(), sessions);
   const put = (id, text) => { const el = document.getElementById(id); if (el && el.textContent !== text) el.textContent = text; };
   doses.forEach(d  => put(`course-rb-dose-${d.n}`,  rb.dose[d.n]  || ''));
   levels.forEach(l => put(`course-rb-level-${l.n}`, rb.level[l.n] || ''));
+  sessions.forEach(x => put(`course-rb-hd-${x.n}`, rb.hd[x.n] || ''));
 }
 
 // Once per tick, after the current handler: a profile load adds a row and then

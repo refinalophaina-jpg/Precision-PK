@@ -2036,7 +2036,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // three course fields must actually be found.
     const clockOnly = [...body.matchAll(/<input[^>]*(?:placeholder="HH:MM"|pattern="\[0-2\]\[0-9\]:\[0-5\]\[0-9\]"|data-time24)[^>]*>/g)].map(m => m[0]);
     assert(clockOnly.length >= 3, `expected the dose, level and SCr time fields, found ${clockOnly.length}`);
-    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"/;
+    // The HD session start time (D15) sits beside its own date input too.
+    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-/;
+    assert(/id="b-hd-date-\$\{id\}"[^>]*>\s*<input[^>]*id="b-hd-time-\$\{id\}"/.test(body), 'the HD start time is paired with its date');
     const orphans = clockOnly.filter(t => !paired.test(t));
     assert(orphans.length === 0,
       `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
@@ -4084,6 +4086,97 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       cb.checked = true; inp.disabled = false; sandbox.syncCrclOverrideState();
       assert(tag.textContent === 'On' && tag.cls.has('is-on') && !/off/.test(inp.attrs['aria-label']), 'on state');
     } finally { sandbox.document.getElementById = prevGet; sandbox.document.createElement = prevCreate; }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 34 — haemodialysis sessions: a labelling layer on the fit (D15)
+//
+// Sessions are logged and read against the levels; they never enter the fit
+// (Goti-HD averages dialysis, as its authors had to) and never alter a level.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 34 — haemodialysis sessions (labelling layer)');
+  console.log(`${'─'.repeat(60)}`);
+  const src34 = fs.readFileSync(htmlPath, 'utf8');
+  const script34 = src34.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code34 = script34.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf34 = (name) => { const c = code34.slice(code34.indexOf('function ' + name + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  const { parseBayesCourse, hdLevelTiming, hdTimingText, hdRedistributionWindowH, hdSessionSummary, gotiPopPK: gpk, predictConc2comp: p2c } = sandbox;
+  const withCourse34 = (doseRows, lvlRows, hdRows, fn) => {
+    const prevQ = sandbox.document.querySelectorAll, prevG = sandbox.document.getElementById;
+    const f = {};
+    doseRows.forEach(([mg, ti, d, tm], i) => Object.assign(f, { [`b-dose-mg-${i}`]: mg, [`b-dose-tinf-${i}`]: ti, [`b-dose-date-${i}`]: d, [`b-dose-time-${i}`]: tm }));
+    lvlRows.forEach(([c, d, tm], i) => Object.assign(f, { [`b-lvl-conc-${i}`]: c, [`b-lvl-date-${i}`]: d, [`b-lvl-time-${i}`]: tm }));
+    hdRows.forEach(([d, tm, h], i) => Object.assign(f, { [`b-hd-date-${i}`]: d, [`b-hd-time-${i}`]: tm, [`b-hd-hours-${i}`]: h }));
+    sandbox.document.querySelectorAll = (sel) => /dose-row/.test(sel) ? doseRows.map((_, i) => ({ id: `b-dose-row-${i}` }))
+      : /level-row/.test(sel) ? lvlRows.map((_, i) => ({ id: `b-level-row-${i}` }))
+      : /hd-row/.test(sel) ? hdRows.map((_, i) => ({ id: `b-hd-row-${i}` })) : [];
+    sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
+    try { return fn(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+  };
+  const D = [['1500', '1.5', '2026-09-01', '09:18']];
+
+  test('34.1 sessions parse from start + length, sorted and numbered; a night session needs no wrap', () => {
+    const r = withCourse34(D, [], [['2026-09-03', '22:00', '4'], ['2026-09-01', '13:42', '4.05']], parseBayesCourse);
+    assert(!r.errors.length, r.errors.join('; '));
+    assert(r.sessions.length === 2 && r.sessions[0].n === 1 && r.sessions[0].label === '2026-09-01 13:42', 'sorted by start, numbered');
+    assertClose(r.sessions[0].endH - r.sessions[0].startH, 4.05, 1e-9, 'length');
+    assertClose(r.sessions[1].endH - r.sessions[1].startH, 4, 1e-9, '22:00 + 4 h ends the next day by arithmetic, not a wrap');
+  });
+  test('34.2 an incomplete, implausible or overlapping session is an error naming it', () => {
+    const inc = withCourse34(D, [], [['2026-09-01', '', '4']], parseBayesCourse);
+    assert(inc.errors.some(e => /^HD session row 0: .*start time/.test(e)), inc.errors.join('; '));
+    const big = withCourse34(D, [], [['2026-09-01', '13:00', '30']], parseBayesCourse);
+    assert(big.errors.some(e => /^HD session row 0: .*session length/.test(e)), big.errors.join('; '));
+    const ovl = withCourse34(D, [], [['2026-09-01', '13:00', '4'], ['2026-09-01', '15:00', '3']], parseBayesCourse);
+    assert(ovl.errors.some(e => /starts before the .* session ends/.test(e)), ovl.errors.join('; '));
+    const none = withCourse34(D, [], [['', '', '']], parseBayesCourse);
+    assert(!none.errors.length && none.sessions.length === 0, 'an empty row is ignored, like any spare row');
+  });
+  const S = [{ n: 1, startH: 100, endH: 104 }, { n: 2, startH: 148, endH: 152 }];
+  test('34.3 each level is placed against the sessions', () => {
+    assert(hdLevelTiming(102, S, 6).kind === 'during', 'during');
+    const post = hdLevelTiming(105, S, 6); assert(post.kind === 'post' && post.n === 1 && Math.abs(post.sinceH - 1) < 1e-9, 'post');
+    const pre = hdLevelTiming(140, S, 6); assert(pre.kind === 'pre' && pre.n === 2 && Math.abs(pre.toH - 8) < 1e-9, 'pre');
+    const inter = hdLevelTiming(120, S, 6); assert(inter.kind === 'interdialytic' && inter.prev === 1, 'interdialytic');
+    assert(hdLevelTiming(105, S, 0).kind === 'interdialytic', 'no window, no "post" caution');
+    assert(hdLevelTiming(105, [], 6).kind === 'none', 'no sessions');
+    assert(hdTimingText(pre) === 'pre-HD, 8 h before session 2' && hdTimingText(post) === '1 h after HD session 1 ended', hdTimingText(pre));
+  });
+  test('34.4 the redistribution window is 3 distribution half-lives of the model itself', () => {
+    const pk = gpk(10, 70, true);
+    const k10 = pk.TVCL / pk.TVVc, k12 = pk.Q / pk.TVVc, k21 = pk.Q / pk.TVVp;
+    const s0 = k10 + k12 + k21, alpha = 0.5 * (s0 + Math.sqrt(s0 * s0 - 4 * k10 * k21));
+    assertClose(hdRedistributionWindowH(k10, k12, k21), 3 * Math.LN2 / alpha, 1e-9, 'window');
+    assert(hdRedistributionWindowH(0.1, 0, 0) === 0, 'a 1-compartment model has no distribution phase');
+  });
+  test('34.5 the summary reads the fitted curve at the next session and flags only what the model cannot see', () => {
+    const pk = gpk(10, 70, true);
+    const doses = [{ mg: 1500, tinfH: 1.5, timeH: 90 }];
+    const r = { model: 'goti', dial: true, CL_ind: pk.TVCL, V_ind: pk.TVVc, tbw: 70, doses,
+      goti: { Vc_ind: pk.TVVc, Vp_ind: pk.TVVp, Q: pk.Q },
+      levels: [{ conc: 25, timeH: 102 }, { conc: 14, timeH: 105 }, { conc: 17, timeH: 140 }],
+      hdSessions: S };
+    const sm = hdSessionSummary(r, 130);
+    assert(sm.next.n === 2, 'the next session is the first after now');
+    assertClose(sm.nextPre, p2c(doses, 148, pk.TVCL / pk.TVVc, pk.Q / pk.TVVc, pk.Q / pk.TVVp, pk.TVVc), 1e-9, 'pre-HD = fitted curve at its start');
+    assert(sm.levels[0].caution && sm.levels[1].caution && !sm.levels[2].caution, 'during and early-post flagged; pre-HD not');
+    assert(sm.levels[2].inRange === true && sm.levels[0].inRange === null, 'only a pre-HD level is read against 15–20');
+    assert(sm.levels.map(l => l.conc).join() === '25,14,17', 'levels are never altered');
+    assert(sm.modelIsHD, 'Goti with dialysis is the dialysis model');
+    assert(sm.plannedBefore === 0, 'no planned dose: the reading assumes none');
+    const withPlan = hdSessionSummary(Object.assign({}, r, { doses: doses.concat([{ mg: 750, tinfH: 1, timeH: 135 }]) }), 130);
+    assert(withPlan.plannedBefore === 1 && withPlan.nextPre > sm.nextPre, 'a planned dose row is counted and raises the reading');
+    assert(hdSessionSummary(Object.assign({}, r, { hdSessions: [] }), 130) === null, 'no sessions, no summary');
+  });
+  test('34.6 sessions never reach the fit; constants carry their provenance', () => {
+    for (const fn of ['burtonObjective', 'burtonObj3D', 'burtonObj3D_hughes', 'mapFit'])
+      assert(!/session|hdSessions/i.test(bodyOf34(fn)), `${fn} must not see sessions`);
+    assert(/const HD_PREDIALYSIS_MIN = 15;/.test(script34) && /const HD_PREDIALYSIS_MAX = 20;/.test(script34), '15–20');
+    assert(/Hui K et al\., J Antimicrob Chemother\s*\n?\/\/?\s*2019/.test(script34) || /J Antimicrob Chemother[\s\S]{0,40}2019;74:130/.test(script34), 'pre-dialysis range is cited');
+    assert(/PREFERENCE \(rule 8\)[\s\S]{0,400}HD_PRE_LABEL_H[\s\S]{0,300}HD_POSTSESSION_HALF_LIVES/.test(script34), 'label and window constants are marked preference');
   });
 }
 
