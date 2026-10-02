@@ -167,6 +167,21 @@ Called by `hdViewFor` when `hdNextDose` returns `need`.
 - no horizontal scroll;
 - no console or CSP errors.
 
+**Independent anchor (private, not committed).** The user's institution publishes its own
+level-based table for unscheduled HD. It is weight-tiered, with re-dose and hold thresholds, and a
+72 h recheck that agrees with the longest gap offered here.
+- **Use:** fictional patients across weights and pre-HD levels are run through `hdOneTimeDose` and
+  compared, dose for dose, against that table.
+- **Location:** the comparison lives outside the repo, beside the institutional source. No
+  institutional content enters the public repo or the calculator.
+- **Disagreements** are explained in the D17 record in general terms ("the model doses higher for
+  low weights because…"), not tuned away.
+
+**A level-only table the user once used** (<10 → 1000 mg; 10–25 → 500–750 mg; >25 → none) was
+considered and **not adopted**:
+- it has no traceable source;
+- its 15–25-era thresholds contradict Rybak 2020 Recommendation 14 (pre-HD 15–20).
+
 **Then:** the parity run, the full suites, rendered contrast in both themes, and the records:
 D17 in `docs/v3-decisions.md`, CLAUDE.md, DESIGN.md, the hub how-to and build log, the hub PR,
 the user's merge, and production verification.
