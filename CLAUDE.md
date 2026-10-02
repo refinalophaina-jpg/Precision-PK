@@ -86,7 +86,8 @@ intradialytic-dose caution, and a Trough-module refusal for HD patients.
 
 **One-time HD dose (D17):** with fewer than two upcoming sessions the answer is a one-time dose
 sized at an assumed 24/48/72 h gap (default 48, `bState.hdGapH`, `k78`), with a missed post-HD
-dose flagged. A measured pre-HD level above 20 with no dose since means no dose now and a recheck.
+dose flagged. A measured pre-HD level above 20 with no dose since means no dose now and a recheck,
+for the dose after the session it preceded only; the scheduled answer shows it as a caution.
 Both HD answers pick the in-range 250 mg step closest to 17.5 mg/L (`hdPickDose`).
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
@@ -145,7 +146,7 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **374/374 pass** |
+| `phase2d_validation.cjs` | **378/378 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |

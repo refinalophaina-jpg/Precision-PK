@@ -4663,6 +4663,37 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const planned = sandbox.hdOneTimeDose(hd37({ levels: [{ conc: 23, timeH: 3 }], doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 30 }] }), 20, 48);
     assert(planned.kind === 'planned', 'a planned dose entered is still read, not replaced');
   });
+  // ── Final-review fix pass (D17) ──
+  test('37.19 the above-20 hold applies only to the dose after the session that level preceded; a held session is named, not "missed"', () => {
+    // Monday's pre-HD 23 (before session 1) was held; session 2 ended 1 h ago; no new level.
+    const r = hd37({ levels: [{ conc: 23, timeH: 3 }], hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 52, endH: 56 }] });
+    const rec = sandbox.hdOneTimeDose(r, 57, 48);
+    assert(rec.after === 2 && rec.reason !== 'pre-above', `the hold must not carry to session 2: ${JSON.stringify(rec).slice(0, 240)}`);
+    assert(rec.missed && rec.missed.n === 1 && rec.missed.held === 23, JSON.stringify(rec.missed));
+    const html = sandbox.hdNextDoseHTML(rec, false, 57);
+    assert(/its pre-HD level was 23\.0 mg\/L/.test(html) && !/this answer assumes it was not/.test(html), html.slice(0, 400));
+    const same = sandbox.hdOneTimeDose(hd37({ levels: [{ conc: 23, timeH: 3 }] }), 20, 48);
+    assert(same.reason === 'pre-above' && !/No dose entered after session 1/.test(sandbox.hdNextDoseHTML(same, false, 20)), 'the hold itself says it; no second note');
+  });
+  test('37.20 the missed flag is cleared by a dose during the session or one entered after it (given or planned)', () => {
+    const intra = sandbox.hdOneTimeDose(hd37({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 7 }] }), 20, 48);
+    assert(intra.missed === null, 'a dose given during session 1 is not a missed post-HD dose');
+    const planned = sandbox.hdOneTimeDose(hd37({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 750, tinfH: 1, timeH: 21 }] }), 20, 48);
+    assert(planned.kind === 'planned' && planned.missed === null, `a planned dose after the session clears the flag: ${JSON.stringify(planned.missed)}`);
+  });
+  test('37.21 the scheduled answer stays predictive but cautions when the pre-HD level before its session is above 20 (the user\'s decision)', () => {
+    const r = hd37({ levels: [{ conc: 23, timeH: 50 }], hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 52, endH: 56 }, { n: 3, startH: 100, endH: 104 }] });
+    const rec = sandbox.hdNextDose(r, 51);
+    assert(!rec.oneTime && rec.session === 2 && rec.preAbove && rec.preAbove.conc === 23 && rec.reason !== 'pre-above', JSON.stringify(rec).slice(0, 260));
+    const html = sandbox.hdNextDoseHTML(rec, false, 51);
+    assert(/note-caution/.test(html) && /before session 2 was 23\.0 mg\/L/.test(html) && /Recheck before dosing/.test(html), html.slice(0, 400));
+    const plain = sandbox.hdNextDose(hd37({ levels: [{ conc: 18, timeH: 50 }], hdSessions: r.hdSessions }), 51);
+    assert(!plain.preAbove && !/Recheck before dosing/.test(sandbox.hdNextDoseHTML(plain, false, 51)), 'no caution in range');
+  });
+  test('37.22 the pre-HD label window says it now gates a dose decision (rule 8)', () => {
+    const c = script37.slice(script37.indexOf('const HD_PREDIALYSIS_MAX'), script37.indexOf('const HD_PRE_LABEL_H'));
+    assert(!/neither\s+changes a fit or a dose/.test(c) && /one-time hold/.test(c), c);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

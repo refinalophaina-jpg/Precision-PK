@@ -770,11 +770,38 @@ missed dose flagged on session 1):
   and a terracotta-ink row head.
 
 **Tests and gates.**
-- **phase2d 374/374:** SUITE 37, 37.2–37.18; SUITE 36 pins the version.
+- **phase2d 378/378:** SUITE 37, 37.2–37.22; SUITE 36 pins the version.
 - **Browser flows 61/61:** the one-time answer and the missed flag on a phone; the 72 h button by
   keyboard, with focus kept.
 - Engine parity 0 differences; phase3 21/21; phase4 49/49; rendered contrast 0 AA failures in
   light, dark and phone.
+
+**Final review** (a fresh reviewer on the whole branch): one Critical and three Important
+findings, each fixed with a test that failed first (37.19–37.22, suite 378/378).
+- **C1, Critical: the above-20 hold never expired.** A Monday pre-HD level of 23 still held the
+  dose after Wednesday's session while the fit read about 11. The hold now applies only to the
+  dose after the session that level preceded. That session is then named "No dose after
+  session N; its pre-HD level was X", not "missed".
+- **I1, Important: logging a second session flipped hold into dose.** Your decision: the
+  scheduled answer stays predictive, since scheduled HD is model-based in your practice, but
+  shows a caution when the pre-HD level before its session is above 20.
+- **I2, Important: the missed flag ignored some doses.** A dose given during the session, or one
+  entered after it (given or planned), now clears it.
+- **I3, Important: the pre-HD label window now gates a dose decision.** `HD_PRE_LABEL_H` (12 h,
+  PREFERENCE) now says so. The trigger stays the session layer's label, as you chose.
+
+**Deferred minors:**
+- the D15 "add the next planned session" line beside a one-time answer;
+- a planned dose shown without the above-20 level;
+- a gap tap scrolls the page;
+- `plannedCount` vs `plannedInWindow` at exactly "now";
+- the unreachable `need` branches and stale "request for sessions" wording;
+- SUITE 37 hand-codes 15/20/17.5;
+- the test-only `HD_PREDIALYSIS_MID_FOR_TEST`;
+- 35.6's old title;
+- the browser fixture's normal renal function;
+- quantifying the scheduled path's midpoint shift. The reviewer's 165-case sweep found the pick
+  changed in 85 cases, hold → dose in 18, and repeat projections above 20 rose from 20 to 44.
 
 **Not clinically validated on local HD patients.**
 

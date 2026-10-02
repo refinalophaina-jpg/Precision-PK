@@ -7905,8 +7905,10 @@ function parseBayesCourse() {
 // Vancomycin_TDM_Software_Instructions.md §4.4.
 const HD_PREDIALYSIS_MIN = 15;  // mg/L
 const HD_PREDIALYSIS_MAX = 20;  // mg/L
-// PREFERENCE (rule 8) — these two only choose a label or a caution; neither
-// changes a fit or a dose.
+// PREFERENCE (rule 8) — label and caution windows; never a fit. Since D17 the
+// "pre-HD" label also gates the one-time hold (pre-HD > 20: no dose, recheck)
+// and the scheduled caution: 23 mg/L drawn 11.9 h before a session holds, 12.1 h
+// before stays predictive (docs/v3-decisions.md D17).
 // A level drawn within this many hours before a session reads as "pre-HD".
 const HD_PRE_LABEL_H = 12;
 // "Soon after a session" = within this many distribution half-lives (ln2/α) of
@@ -8087,6 +8089,17 @@ function hdPickDose(r, doseAtH, readAtH) {
   }
   return { kind, reason, mg: pick.mg, tinfH: pick.mg ? autoTinf(pick.mg) : 0, pre: pick.pre, rr: hdWithDose(r, pick.mg, doseAtH) };
 }
+// The latest measured level, if it is a pre-HD level above 20 with no dose entered
+// after it (D17): { conc, n, timeH }, n being the session it preceded. "Pre-HD" is
+// the session layer's own label (hdLevelTiming, HD_PRE_LABEL_H).
+function hdPreAboveLevel(r, nowH) {
+  const lastLev = (r.levels || []).filter(l => l.timeH <= nowH).sort((a, b) => a.timeH - b.timeH).pop();
+  if (!lastLev || !(lastLev.conc > HD_PREDIALYSIS_MAX)) return null;
+  const g = gotiGraphParams(r).ind;
+  const t = hdLevelTiming(lastLev.timeH, r.hdSessions, g ? hdRedistributionWindowH(g.k10, g.k12, g.k21) : 0);
+  if (t.kind !== 'pre' || r.doses.some(d => d.timeH > lastLev.timeH && d.timeH <= nowH)) return null;
+  return { conc: lastLev.conc, n: t.n, timeH: lastLev.timeH };
+}
 function hdNextDose(r, nowH) {
   const upcoming = hdUpcomingSessions(r, nowH);
   if (upcoming.length < 2) return { need: 'sessions', planned: upcoming.length };
@@ -8094,7 +8107,9 @@ function hdNextDose(r, nowH) {
   const doseAtH = Math.max(first.endH, nowH);
   const future = r.doses.filter(d => d.timeH > nowH);
   const plannedInWindow = r.doses.filter(d => d.timeH >= Math.min(first.startH, doseAtH) && d.timeH < sizing.startH && d.timeH > nowH - 1e-9);
-  const base = { doseAtH, session: first.n, sizing: sizing.n, plannedCount: future.length, plannedInWindow };
+  const pa = hdPreAboveLevel(r, nowH);
+  const base = { doseAtH, session: first.n, sizing: sizing.n, plannedCount: future.length, plannedInWindow,
+    preAbove: pa && pa.n === first.n ? pa : null };   // a caution only: the scheduled answer stays predictive (the user's decision)
   if (plannedInWindow.length) {
     const pre = predictFittedAt(r, sizing.startH);
     return Object.assign(base, { kind: 'planned', mg: 0, tinfH: 0, pre, auc24: fittedAUC(r, sizing.startH - 24, sizing.startH), peak: null, repeat: [] });
@@ -8130,18 +8145,23 @@ function hdOneTimeDose(r, nowH, gapH) {
   const readAtH = doseAtH + gap;
   const ended = (r.hdSessions || []).filter(x => x.endH <= nowH && x !== follow).sort((a, b) => a.endH - b.endH);
   const last = ended[ended.length - 1];
-  const missed = last && !r.doses.some(d => d.timeH >= last.endH && d.timeH <= nowH) ? { n: last.n, endH: last.endH } : null;
+  // A session counts as dosed by a dose given during it, or any dose entered after it
+  // up to the read point (given or planned) — so a planned dose clears the flag.
+  const dosedFor = (x) => r.doses.some(d => (d.timeH < x.endH && d.timeH + (d.tinfH || 0) > x.startH)
+    || (d.timeH >= x.endH && d.timeH < readAtH));
+  const pa = hdPreAboveLevel(r, nowH);
+  const missed = last && !dosedFor(last)
+    ? Object.assign({ n: last.n, endH: last.endH }, pa && pa.n === last.n ? { held: pa.conc } : {}) : null;
   const future = r.doses.filter(d => d.timeH > nowH);
   const winStart = follow ? Math.min(follow.startH, doseAtH) : nowH;
   const plannedInWindow = r.doses.filter(d => d.timeH >= winStart && d.timeH < readAtH && d.timeH > nowH - 1e-9);
   // A measured pre-HD level above 20 with no dose entered after it: no dose now, and a
   // recheck (D17, the user's decision 2026-10-02: the top of Rybak 2020 Rec 14's 15–20
-  // band, as their unit's practice). "Pre-HD" is the session layer's own label (D15).
-  const g = gotiGraphParams(r).ind;
-  const lastLev = (r.levels || []).filter(l => l.timeH <= nowH).sort((a, b) => a.timeH - b.timeH).pop();
-  const lastT = lastLev ? hdLevelTiming(lastLev.timeH, r.hdSessions, g ? hdRedistributionWindowH(g.k10, g.k12, g.k21) : 0) : null;
-  const preAbove = lastLev && lastT.kind === 'pre' && lastLev.conc > HD_PREDIALYSIS_MAX
-    && !r.doses.some(d => d.timeH > lastLev.timeH && d.timeH <= nowH) ? { conc: lastLev.conc, n: lastT.n, timeH: lastLev.timeH } : null;
+  // band, as their unit's practice) — but only for the dose after the session that
+  // level preceded: the one the dose follows, or with none ahead the latest one ended.
+  // It never carries to a later session (final review C1).
+  const decides = follow || last || null;
+  const preAbove = pa && decides && pa.n === decides.n ? pa : null;
   const base = { oneTime: true, doseAtH, after: follow ? follow.n : null, gapH: gap, readAtH,
     plannedCount: future.length, plannedInWindow, missed, preAbove };
   if (plannedInWindow.length) {
@@ -8220,6 +8240,10 @@ function addHdSchedule() {
 // read, or what is missing. derated: the fit is Low/Very low confidence.
 function hdNextDoseHTML(rec, derated, nowH, print) {
   if (rec && rec.oneTime) return hdOneTimeHTML(rec, derated, nowH, print);
+  // The scheduled answer stays predictive; a pre-HD level above 20 before its session is a caution (D17).
+  if (rec && rec.preAbove) return noteHTML({ tier: 'caution', word: 'Pre-HD level above 20',
+      html: `The pre-HD level before session ${rec.preAbove.n} was ${rec.preAbove.conc.toFixed(1)} mg/L, above ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14). Recheck before dosing.` })
+    + hdNextDoseHTML(Object.assign({}, rec, { preAbove: null }), derated, nowH, print);
   const asOf = nowH != null ? ` Read as of ${fmtClock(nowH)}.` : '';
   const basis = `<p class="vx-hd-basis vx-muted">On the averaged Goti-HD fit (Goti 2018, the dialysis model DoseMeRx also offers), dosing with each session (Rybak 2020). Levels, drawn pre-HD, drive the next dose.${asOf}</p>`;
   if (rec.need) return `
@@ -8268,8 +8292,13 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
   const from = rec.after != null ? `session ${rec.after} ends` : 'now';
   const basis = `<p class="vx-hd-basis vx-muted">On the averaged Goti-HD fit (Goti 2018, the dialysis model DoseMeRx also offers); one-time: no schedule logged. Sized to the middle of ${range} mg/L (Rybak 2020 Rec 14).${asOf}</p>`;
   const caution = `<p class="vx-hold vx-muted">The model averages dialysis over time. If the next session is delayed or cancelled, levels will run higher than shown.</p>`;
-  const missed = rec.missed ? noteHTML({ tier: 'caution', word: `No dose entered after session ${rec.missed.n}`,
-    html: `It ended ${Math.max(1, Math.round(nowH - rec.missed.endH))} h ago. If a dose was given, enter it; this answer assumes it was not.` }) : '';
+  const ago = rec.missed ? Math.max(1, Math.round(nowH - rec.missed.endH)) : 0;
+  const missed = !rec.missed || (rec.reason === 'pre-above' && rec.preAbove && rec.preAbove.n === rec.missed.n) ? ''
+    : rec.missed.held != null
+      ? noteHTML({ tier: 'info', word: `No dose after session ${rec.missed.n}`,
+          html: `It ended ${ago} h ago; its pre-HD level was ${rec.missed.held.toFixed(1)} mg/L, above ${range} mg/L.` })
+      : noteHTML({ tier: 'caution', word: `No dose entered after session ${rec.missed.n}`,
+          html: `It ended ${ago} h ago. If a dose was given, enter it; this answer assumes it was not.` });
   const gapCtl = print ? `<span class="hd-gap-text">assumed gap ${rec.gapH} h</span>`
     : `<span class="toggle-group hd-gap" role="group" aria-label="Assumed time to the next session">${HD_ONE_TIME_GAPS_H.map(g =>
         `<button type="button" class="toggle-opt${g === rec.gapH ? ' active' : ''}" data-onclick="k78" data-arg="${g}" aria-pressed="${g === rec.gapH}">${g} h</button>`).join('')}</span>`;
