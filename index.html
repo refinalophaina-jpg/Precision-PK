@@ -2234,6 +2234,10 @@
   .hd-give-row input { min-height: 44px; font: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; color: var(--ink);
     background: var(--input); border: 1px solid var(--paper-edge); border-radius: var(--radius-sm); padding: 8px 10px; }
   .hd-give-row .hd-give-time { width: 6.5em; }
+  /* The label on its own line, date and time side by side beneath it, so the pair fits
+     the 250-300px verdict column and a 375px phone (v3.9.0). */
+  .hd-give-row > .vx-k { flex-basis: 100%; }
+  .hd-give-row .hd-give-date { width: 10.5em; }
   .hd-give-row input:focus-visible { outline: 2px solid var(--terracotta-ink); outline-offset: 1px; }
   @media print { .hd-gap { display: none; } }
   .vx-hd-basis { font-size: var(--fs-sm); line-height: 1.5; margin: 8px 0 0; }
@@ -2745,7 +2749,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.8.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.9.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2776,7 +2780,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.8.0</div>
+  <div class="header-tag">Vancomycin TDM v3.9.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3812,7 +3816,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.8.0';
+const APP_VERSION = '3.9.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -3916,6 +3920,7 @@ const __ACT = {
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
   k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
   k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(el && el.id ? el.id : 'b-hd-give-time'); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0) */
+  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-first-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } bState.firstDoseAtH = Number.isFinite(h) ? h : null; if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(el && el.id ? el.id : 'b-first-time'); if (f) f.focus(); } },   /* first dose of the recommended regimen (v3.9.0) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -8437,6 +8442,43 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
       ${k ? `<p class="vx-delta">Includes the ${ks} already entered.</p>` : ''}
     </div>` + table + caution + basis;
 }
+// The first dose of the recommended regimen (v3.9.0, the user's request: "q24h
+// recommended, but I can only give it at 12:00"). Due = the last dose given + the
+// new interval; now if that has passed; or a chosen time, never before now. Timing
+// and readouts only: at steady state AUC24 = daily dose / CL whatever the start,
+// so nothing here changes the dose.
+function firstDosePlan(r, rec, nowH, atH) {
+  if (!(r && (r.doses || []).length && rec && rec.tau > 0)) return null;
+  const given = r.doses.filter(d => d.timeH <= nowH + 1e-9);
+  const pool = given.length ? given : r.doses;
+  const dueH = pool[pool.length - 1].timeH + rec.tau;
+  const chosen = Number.isFinite(atH);
+  const firstH = chosen ? Math.max(atH, nowH) : Math.max(dueH, nowH);
+  const clamped = chosen && atH < nowH - 1e-9;
+  const daily = rec.tau <= 24 && 24 % rec.tau === 0;
+  const times = daily ? Array.from({ length: 24 / rec.tau }, (_, k) => localTimeStr(new Date((firstH + k * rec.tau) * 3600000))) : null;
+  return { firstH, dueH, deltaH: firstH - dueH, duePassed: !chosen && dueH < nowH - 1e-9, chosen, clamped,
+    pre: predictFittedAt(r, firstH), times, nextH: daily ? null : firstH + rec.tau, nowH };
+}
+// The first-dose readout under the regimen: a date and 24-hour time on screen (k82),
+// text on paper.
+function firstDoseHTML(plan, rec, print) {
+  const q = fmtFreq(rec.tau), d = plan.deltaH;
+  const rel = Math.abs(d) < 1 / 60 ? `on the ${q} schedule` : `${+Math.abs(d).toFixed(1)} h ${d > 0 ? 'after' : 'before'} the ${q} schedule`;
+  const list = (a) => a.length < 2 ? a[0] : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+  const then = plan.times ? `then ${list(plan.times)} daily` : `then every ${rec.tau} h (next ${fmtClock(plan.nextH)})`;
+  const dt = new Date(plan.firstH * 3600000);
+  const ctl = print ? '' : `
+      <p class="vx-sub hd-give-row"><span class="vx-k">First dose</span>
+        <input type="date" id="b-first-date" class="hd-give-date" value="${localDateStr(dt)}" data-onchange="k82" aria-label="Date of the first dose">
+        <input type="text" id="b-first-time" class="hd-give-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" value="${localTimeStr(dt)}" data-onchange="k82" aria-label="Time of the first dose, 24-hour">
+        ${plan.clamped ? `<span class="vx-muted">not before ${fmtClock(plan.nowH)}</span>` : ''}
+        <span class="vx-muted" id="b-first-msg" aria-live="polite"></span></p>`;
+  return ctl + `
+      <p class="vx-sub vx-first">${print ? '<span class="vx-k">First dose</span> ' : ''}${fmtClock(plan.firstH)} · ${rel}${plan.duePassed ? ` (was due ${fmtClock(plan.dueH)})` : ''} · ${then}</p>
+      <p class="vx-sub">Level by then <strong>${plan.pre.toFixed(1)} mg/L</strong> <span class="vx-muted">fitted, before the first dose</span></p>
+      <p class="vx-sub vx-muted">Steady-state AUC₂₄ and trough are unchanged: the start time shifts the schedule, not the exposure.</p>`;
+}
 // Before the first level (D16): Rybak 2020 Rec 13 for this weight — both dialyser
 // permeabilities, both timings. Permeability is never assumed. Doses already
 // entered are acknowledged: a loading dose may already have been given.
@@ -10447,6 +10489,7 @@ function runBayesian() {
   beginFormRun('auc');   // forget the last refusal and its field marks
   const { doses, levels, sessions, errors } = parseBayesCourse();
   bState.hdGiveAtH = null;   // a give-at time belongs to the answer it was set on (final review I4)
+  bState.firstDoseAtH = null; // so does a first-dose time (v3.9.0)
 
   // CODEX F-002. Refuse to fit a course that does not match what was entered.
   // Silently dropping an incomplete administration produced a fit on a history
@@ -11928,6 +11971,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       ? `<p class="vx-delta">Same as the current regimen.</p>`
       : `<p class="vx-delta">Against the current regimen: AUC₂₄ ${dAUC >= 0 ? '+' : '−'}${Math.abs(dAUC).toFixed(0)} mg·h/L${dTr != null ? `, trough ${dTr >= 0 ? '+' : '−'}${Math.abs(dTr).toFixed(1)} mg/L` : ''}.</p>`;
     }
+    // When the first dose of this regimen goes in (v3.9.0): not on HD, where dosing follows sessions.
+    const firstPlan = !isHD && rec && !rec.noSolution && !r.lowCrClHold ? firstDosePlan(r, rec, r.fitNowH, bState.firstDoseAtH) : null;
     verdict = `
       <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
         <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.dose)}</span> IV <span class="vx-freq">${fmtFreq(rec.tau)}</span></h3>
@@ -11942,6 +11987,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <p class="vx-sub"><span class="vx-k">Trough</span> <span class="tone-${recTrTone}">${rec.Ctrough.toFixed(1)} mg/L</span> <span class="vx-muted">safety check, not a target</span>
           <span class="vx-nb"><span class="vx-k">AUC/MIC</span> ${(rec.auc24 / mic).toFixed(0)}</span></p>
         ${delta}
+        ${firstPlan ? firstDoseHTML(firstPlan, rec, false) : ''}
       </div>`;
     lowConfSpan = derated ? ` This dose was generated from a fit the tool itself does not trust.${span}` : '';
   } else if (rec && rec.noSolution) {
@@ -12715,7 +12761,7 @@ function refreshProfileGraph() {
     const projN    = Math.min(8, Math.max(1, parseInt(document.getElementById('b-proj-n')?.value) || 4));
     const tinfH    = autoTinf(projDose);
     const lastDose = r.doses[r.doses.length-1];
-    const startT   = lastDose.timeH + projTau;
+    const startT   = Number.isFinite(bState.firstDoseAtH) ? bState.firstDoseAtH : lastDose.timeH + projTau;   // a chosen first dose (v3.9.0)
     for (let i = 0; i < projN; i++) {
       projDoses.push({ mg: projDose, tinfH, timeH: startT + i * projTau });
     }
@@ -14825,6 +14871,7 @@ function _prRecommendation(r, screen) {
     const best = r.rec;
     const tinf = best.tinfH ? best.tinfH : autoTinf(best.dose);
     h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? '<span class="pr-prov">provisional</span>' : ''}</p>`;
+    if (!r.lowCrClHold) { const fp = firstDosePlan(r, r.rec, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.firstDoseAtH); if (fp) h += firstDoseHTML(fp, r.rec, true); }
     h += `<dl class="pr-dl">`
       + `<div><dt>Infusion</dt><dd>${fmtHrs(tinf)}</dd></div>`
       + `<div><dt>Predicted AUC₂₄</dt><dd>${best.auc24.toFixed(0)} mg·h/L</dd></div>`

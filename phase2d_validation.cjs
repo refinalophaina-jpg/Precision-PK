@@ -2111,7 +2111,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const clockOnly = [...body.matchAll(/<input[^>]*(?:placeholder="HH:MM"|pattern="\[0-2\]\[0-9\]:\[0-5\]\[0-9\]"|data-time24)[^>]*>/g)].map(m => m[0]);
     assert(clockOnly.length >= 3, `expected the dose, level and SCr time fields, found ${clockOnly.length}`);
     // The HD session start time (D15) sits beside its own date input too.
-    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-|id="b-hds-time"|id="b-hd-give-time"/;   // b-hd-give-time sits beside b-hd-give-date (v3.8.0)
+    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-|id="b-hds-time"|id="b-hd-give-time"|id="b-first-time"/;   // b-hd-give-time sits beside b-hd-give-date (v3.8.0)
     assert(/id="b-hds-date"[^>]*><\/label>\s*<label>Start <input[^>]*id="b-hds-time"/.test(body), 'the schedule start time sits beside its date');
     assert(/id="b-hd-date-\$\{id\}"[^>]*>\s*<input[^>]*id="b-hd-time-\$\{id\}"/.test(body), 'the HD start time is paired with its date');
     const orphans = clockOnly.filter(t => !paired.test(t));
@@ -4799,6 +4799,64 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/k79:[^\n]*b-hd-give-msg/.test(script37), 'a bad give-at time is said, not silently reset');
     const h = sandbox.hdNextDoseHTML(sandbox.hdOneTimeDose(hd37({ CL_ind: pk37.TVCL * 2 }), 20, 48), false, 20);
     assert(/Next HD at<\/span>/.test(h) && /after session 1 began<\/span>/.test(h), 'the gap control says what it counts from');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 38 — the regular regimen's first-dose time (v3.9.0)
+//
+// "q24h recommended, but I can only give it at 12:00": the first dose of the
+// recommended regimen can be timed. Timing and readouts only — the steady-state
+// exposure does not depend on when the regimen starts, so the dose never changes.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 38 — first-dose time (v3.9.0)');
+  console.log(`${'─'.repeat(60)}`);
+  const src38 = fs.readFileSync(htmlPath, 'utf8');
+  const script38 = src38.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code38 = script38.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf38 = (n) => { const c = code38.slice(code38.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  const r38 = { model: 'buelga', CL_ind: 3, V_ind: 60, doses: [{ mg: 1000, tinfH: 1, timeH: 0 }], levels: [], fitNowH: 20 };
+  const q24 = { dose: 1750, tau: 24, tinfH: 2 };
+  test('38.1 the default first dose is when the new regimen is due; a passed due time means now; a chosen time is never before now', () => {
+    const due = sandbox.firstDosePlan(r38, q24, 20);
+    assert(due.firstH === 24 && due.dueH === 24 && due.deltaH === 0 && !due.chosen, JSON.stringify(due));
+    assert(Math.abs(due.pre - sandbox.predictFittedAt(r38, 24)) < 1e-9, 'the fitted level when the first dose goes in');
+    const passed = sandbox.firstDosePlan(r38, q24, 26.5);
+    assert(passed.firstH === 26.5 && passed.deltaH === 2.5 && passed.duePassed, JSON.stringify(passed));
+    const chosen = sandbox.firstDosePlan(r38, q24, 20, 26);
+    assert(chosen.firstH === 26 && chosen.deltaH === 2 && chosen.chosen && !chosen.clamped, JSON.stringify(chosen));
+    const early = sandbox.firstDosePlan(r38, q24, 20, 15);
+    assert(early.firstH === 20 && early.clamped, 'not before now');
+    assert(sandbox.firstDosePlan({ doses: [] }, q24, 20) === null, 'no dose entered: no plan, nothing drawn');
+  });
+  test('38.2 the schedule after it: clock times through the day, or the next dose for intervals over 24 h', () => {
+    const p12 = sandbox.firstDosePlan(r38, { dose: 1000, tau: 12, tinfH: 1 }, 20, 26);
+    assert(p12.times.length === 2 && p12.times[0] === sandbox.localTimeStr(new Date(26 * 3600000)), JSON.stringify(p12.times));
+    const p24 = sandbox.firstDosePlan(r38, q24, 20, 26);
+    assert(p24.times.length === 1, 'one clock time a day');
+    const p48 = sandbox.firstDosePlan(r38, { dose: 2000, tau: 48, tinfH: 2 }, 20, 26);
+    assert(p48.times === null && p48.nextH === 74, JSON.stringify(p48));
+  });
+  test('38.3 the readout: when, against the schedule, the level by then, the times after, and exposure unchanged; controls on screen only', () => {
+    const plan = sandbox.firstDosePlan(r38, q24, 20, 26.5);
+    const h = sandbox.firstDoseHTML(plan, q24, false);
+    assert(/id="b-first-date"[^>]*data-onchange="k82"/.test(h) && /id="b-first-date"[^>]*>\s*<input type="text" id="b-first-time"[^>]*data-time24[^>]*data-onchange="k82"/.test(h), 'date and 24-hour time, side by side');
+    assert(/2\.5 h after the q24h schedule/.test(h) && /then \d\d:\d\d daily/.test(h) && /Level by then <strong>[\d.]+ mg\/L<\/strong>/.test(h), h.slice(0, 600));
+    assert(/steady-state AUC₂₄ and trough are unchanged/i.test(h), 'exposure unchanged, said');
+    const early = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, 22), q24, false);
+    assert(/2 h before the q24h schedule/.test(early), early.slice(0, 400));
+    const p = sandbox.firstDoseHTML(plan, q24, true);
+    assert(!/<input/.test(p) && /First dose/.test(p), 'print: the time as text');
+  });
+  test('38.4 wiring: the verdict carries it (not on HD); a new fit clears it; k82 sets it or says why not; the projection starts there; print has it', () => {
+    const rb = bodyOf38('renderBayesianResults');
+    assert(/firstDoseHTML\(firstPlan, rec, false\)/.test(rb) && /const firstPlan = !isHD && rec && !rec\.noSolution/.test(rb), 'the regular verdict, not HD');
+    assert(/bState\.firstDoseAtH = null;/.test(bodyOf38('runBayesian')), 'a new fit clears it');
+    assert(/k82:[^\n]*b-first-msg[^\n]*bState\.firstDoseAtH = /.test(script38), 'k82: a bad time is said, a good one stored');
+    assert(/const startT\s*=\s*Number\.isFinite\(bState\.firstDoseAtH\) \? bState\.firstDoseAtH : lastDose\.timeH \+ projTau;/.test(bodyOf38('refreshProfileGraph')), 'the projection starts at the chosen time');
+    assert(/firstDoseHTML\(fp, r\.rec, true\)/.test(bodyOf38('_prRecommendation')), 'print');
   });
 }
 

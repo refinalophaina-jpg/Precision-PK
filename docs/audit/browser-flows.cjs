@@ -228,6 +228,16 @@ async function enterCourse(page) {
       prior: (g('.lg-pop', 'backgroundImage') || '').includes(tok('--ink-soft')) ? tok('--ink-soft') : 'missing' }; });
   ok('the key separates model from measurement', key.fit && key.fit === key.ring && key.fit !== key.data && key.prior !== key.fit && key.prior !== key.data, JSON.stringify(key));
   ok('the de-rated state is one hue ("provisional" and the confidence word)', look.confColour === look.provColour, look.confColour + ' / ' + look.provColour);
+  // v3.9.0: the recommended regimen's first dose can be timed — typed "1200" (no colon) reads
+  // 12:00; the readout says where that sits against the schedule and the level by then.
+  await page.locator('#b-first-date').fill(day(1)); await page.waitForTimeout(300);   // tomorrow: a time already past is clamped to now
+  await typeInto(page, '#b-first-time', '1200'); await page.locator('#b-first-time').press('Tab');
+  await page.waitForTimeout(400);
+  const first = await page.evaluate(() => ({ t: (document.getElementById('b-first-time') || {}).value,
+    line: ((document.querySelector('#b-results .vx-first') || {}).textContent || '').replace(/\s+/g, ' '),
+    level: /Level by then [\d.]+ mg\/L/.test(document.querySelector('#b-results .vx-verdict').textContent) }));
+  ok('the first dose of the recommended regimen can be timed; the readout follows the typed time',
+     first.t === '12:00' && /12:00/.test(first.line) && /(before|after|on) the q\d+h schedule/.test(first.line) && first.level, JSON.stringify(first));
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));
   ok('the privacy note is not a box inside the profiles box', look.noteBox === '0px', look.noteBox);
