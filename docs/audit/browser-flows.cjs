@@ -434,6 +434,27 @@ async function enterCourse(page) {
   await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
   await m.waitForTimeout(250);
   await m.screenshot({ path: path.join(OUT, 'mobile-hd.png') });
+  // D16: generate an MWF schedule; with a level the verdict is a post-HD dose (or a hold, or a
+  // request for sessions), never a q-interval regimen; the Trough guard refuses an HD patient.
+  await m.evaluate(() => { const d = document.querySelector('.hd-sched'); if (d) d.open = true; });
+  await m.locator('#b-hds-pattern').selectOption('MWF');
+  await m.locator('#b-hds-date').fill(day(2)); await typeInto(m, '#b-hds-time', '13:00');
+  await typeInto(m, '#b-hds-hours', '4'); await typeInto(m, '#b-hds-count', '3');
+  await m.locator('[data-onclick="k76"]').tap();
+  const nSess = await m.evaluate(() => document.querySelectorAll('[id^="b-hd-row-"]').length);
+  await m.locator('[data-onclick="k47"]').tap();
+  await m.waitForSelector('#b-results #vx-regimen', { timeout: 20000 }); await m.waitForTimeout(400);
+  const hdVerdict = await m.evaluate(() => document.getElementById('vx-regimen').textContent.replace(/\s+/g, ' ').trim());
+  ok('HD schedule adds 3 sessions; the verdict is a post-HD dose, a hold, or asks for sessions — never q-interval',
+     nSess === 5 && /IV after HD|No dose after session|Add the next sessions/.test(hdVerdict) && !/\bq\d+h\b/.test(hdVerdict), `${nSess} · ${hdVerdict}`);
+  await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
+  await m.waitForTimeout(250);
+  await m.screenshot({ path: path.join(OUT, 'mobile-hd-dose.png') });
+  await m.locator('[data-onclick="k1"]').tap();
+  await m.evaluate(() => { const c = document.getElementById('t-hd'); if (c && !c.checked) c.click(); });
+  await m.locator('[data-onclick="k31"]').tap(); await m.waitForTimeout(300);
+  const guardTxt = await m.evaluate(() => (document.getElementById('results-content') || {}).textContent || '');
+  ok('Trough module refuses an HD patient and points to Goti-HD', /use AUC Precision/.test(guardTxt) && !/mg IV q\d+h/.test(guardTxt), guardTxt.slice(0, 160));
   const mAttr = await attributeInjected(m, mProblems);
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);

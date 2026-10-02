@@ -588,6 +588,61 @@ half-lives, the pre-HD reading, and that sessions never reach an objective.
 **Not clinically validated.** The layer reads the fit; it does not make the fit more right for
 a dialysis patient.
 
+## D16 — Dosing on intermittent haemodialysis (2026-10-02)
+
+The question asked: is anything else needed to dose IHD patients, scheduled or not? After D15
+the tool could label HD but not dose it. Goti-HD's verdict was a steady-state regimen (e.g.
+"250 mg q24h"), and HD patients are not dosed that way. Spec:
+`docs/superpowers/specs/2026-10-02-hd-dosing-design.md`. Plan:
+`docs/superpowers/plans/2026-10-02-hd-dosing.md`.
+
+**Sources.** Rybak MJ et al., *Am J Health-Syst Pharm* 2020;77:835–864:
+- **Rec 11:** loading by actual body weight, at most 3,000 mg.
+- **Rec 13:** mg/kg by dialyser permeability and timing.
+  - After HD: low permeability 25 loading / 7.5 maintenance; high permeability 25 / 10.
+  - Intradialytic: low 30 / 7.5–10; high 35 / 10–15.
+  - Maintenance is thrice weekly, with every session.
+- **Rec 14:** pre-dialysis 15–20 mg/L is likely to give AUC 400–600 over the previous 24 h.
+  Levels, not weight, drive dosing.
+- **Text:** 20–40% of an intradialytic dose is removed by the dialyser.
+
+**Built:**
+- **Post-HD dose on the fitted curve.** The dose goes at the end of the next planned session (one
+  in progress counts) and is sized at the start of the session after it, on the averaged
+  Goti-HD fit with every entered dose. This is the shape of DoseMeRx's "Calculate Next Dose".
+  The rule:
+  - **hold** when no dose already reads at least 15 mg/L;
+  - else the **smallest 250 mg step** that lands in 15–20;
+  - else the **closest step, flagged**. A maintenance dose never exceeds `DOSE_MAX_PER_DOSE_MG`.
+
+  It reports the AUC₂₄ over the 24 h before the sizing session (Simpson, 3-minute steps,
+  converged within 1%), the peak, and the same dose repeated after each later planned session.
+  It counts planned dose rows already entered and says so. With fewer than two planned sessions
+  it asks for them rather than assuming a schedule.
+- **Empiric table before the first level.** Rec 13 for the patient's actual body weight, after
+  HD and during HD, rounded to 250 mg, loading capped at 3,000 mg. **Both permeability rows are
+  shown**, because the dialyser is not an input we can default safely.
+- **Recurring schedule.** MWF, TuThSa or every N days. Dates are stepped on the calendar at
+  local noon, so a DST change cannot shift a session (SUITE 19).
+- **A dose started during a session gets a caution**, citing the removal range above.
+- **The Trough module refuses a patient ticked as on haemodialysis** and offers Goti-HD. CrCl
+  from creatinine does not describe clearance on dialysis.
+- **The steady-state regimen is not the answer for HD.** It stays in "Regimens" as a reference,
+  with a line saying so. Its flags are not shown as notes, and the HD headings are ink, not the
+  alarm colour.
+
+**Rejected:**
+- **Intradialytic dosing in the recommendation.** The averaged model cannot see the dialyser's
+  removal.
+- **Targeting AUC instead of pre-HD.** The user chose pre-HD 15–20 as the rule, with AUC shown
+  beside it.
+
+**Checks:**
+- Engine parity against 95e3e90: 225 calls, 0 differences (fits untouched).
+- SUITE 35 holds 13 tests.
+- **Not clinically validated** on local HD patients. The averaged model's pre-HD predictions are
+  what DoseMeRx's Goti HD model also produces, not a measured accuracy.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

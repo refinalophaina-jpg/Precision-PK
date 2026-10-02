@@ -2141,6 +2141,7 @@
   .vx-regimen .rec-dose { font: inherit; color: inherit; letter-spacing: inherit; }
   .vx-freq { color: var(--terracotta-ink); }
   .vx-regimen-hold { font-size: var(--fs-xl); color: var(--alarm); }
+  .vx-regimen-hd   { font-size: var(--fs-xl); color: var(--ink); }   /* an HD answer (D16): not an alarm */
   .vx-hold { font-size: var(--fs-sm); line-height: 1.6; color: var(--ink-soft); margin: 0 0 12px; }
   .vx-inf  { font-size: var(--fs-sm); color: var(--ink-soft); margin: 0 0 16px; }
   .vx-prov { color: var(--amber); font-weight: 600; }
@@ -2189,6 +2190,7 @@
   .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
   .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .vx-hd-basis { font-size: var(--fs-sm); line-height: 1.5; margin: 8px 0 0; }
   .hd-flag { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: var(--fs-sm); color: var(--ink-soft); }
   .hd-sched { margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
   .hd-sched > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
@@ -8073,17 +8075,17 @@ function troughHdNoticeHTML() {
 // The HD verdict (D16): a dose after the next session, a hold, or what is missing.
 function hdNextDoseHTML(rec) {
   if (rec.need) return `
-    <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">Add the next sessions</h3>
+    <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">Add the next sessions</h3>
     <p class="vx-hold">A post-HD dose is sized at the session after the one it follows, so it needs two planned
       sessions; ${rec.planned ? 'one is entered' : 'none are entered'}. Add them under Haemodialysis sessions — the schedule generator adds a week in one step.</p>`;
   const where = `after session ${rec.session} (${fmtClock(rec.doseAtH)})`;
   const plan = rec.plannedAfter ? `Includes ${rec.plannedAfter} planned dose${rec.plannedAfter === 1 ? '' : 's'} already entered.` : '';
   const head = rec.kind === 'hold'
-    ? `<h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">No dose ${where}</h3>
+    ? `<h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">No dose ${where}</h3>
        <p class="vx-hold">Without a dose the fitted pre-HD level at session ${rec.sizing} is ${rec.pre.toFixed(1)} mg/L — at or above ${HD_PREDIALYSIS_MIN}. Recheck the pre-HD level. ${plan}</p>`
     : `<div class="rec-box vx-rec">
-        <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${where}</span></h3>
-        <p class="vx-inf">Infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}</p>
+        <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">after HD</span></h3>
+        <p class="vx-inf">After session ${rec.session} ends · ${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}</p>
         <p class="vx-sub"><span class="vx-k">Pre-HD, session ${rec.sizing}</span> <strong>${rec.pre.toFixed(1)} mg/L</strong>
           ${rec.kind === 'closest' ? `— no 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}` : `· within ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L`}</p>
         <p class="vx-sub"><span class="vx-k">AUC₂₄</span> ${rec.auc24.toFixed(0)} mg·h/L <span class="vx-muted">over the 24 h before it</span>
@@ -8099,7 +8101,7 @@ function hdEmpiricHTML(rows, abwKg) {
   const cell = (r) => `${fmtDose(r.ld)}${r.ldCapped ? '*' : ''} · ${r.md[0] === r.md[1] ? fmtDose(r.md[0]) : `${fmtDose(r.md[0])}–${fmtDose(r.md[1])}`}${r.mdOverCeiling ? '†' : ''}`;
   const at = (t, p) => rows.find(r => r.timing === t && r.perm === p);
   return `
-    <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">Empiric haemodialysis dosing</h3>
+    <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">Empiric haemodialysis dosing</h3>
     <table class="ev-table vx-hd-empiric"><caption>Loading · maintenance with each session, for ${abwKg.toFixed(0)} kg (actual body weight)</caption>
       <thead><tr><th scope="col">Dialyser</th><th scope="col">After HD ends</th><th scope="col">During HD</th></tr></thead>
       <tbody>
@@ -11327,7 +11329,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   }
 
   // ── Dose refusal / safety flags ─────────────────────────────────────────
-  if (r.rec && !r.rec.noSolution && r.rec.flags && r.rec.flags.length) {
+  if (r.rec && !r.rec.noSolution && r.rec.flags && r.rec.flags.length && !(r.model === 'goti' && r.dial)) {
     for (const fl of r.rec.flags) {
       notes.push({ tier: fl.level === 'danger' ? 'alarm' : fl.level === 'warning' ? 'caution' : 'info',
                    word: fl.level === 'danger' ? 'Recommendation limit' : 'Recommendation note', html: escHtml(fl.text) });

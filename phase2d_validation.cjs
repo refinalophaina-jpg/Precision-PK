@@ -4262,7 +4262,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('35.8b the HD verdicts say a post-HD dose, a hold, or what is missing — never a q-interval regimen', () => {
     const dose = sandbox.hdNextDoseHTML(sandbox.hdNextDose(hdR(), 20));
-    assert(/IV <span class="vx-freq">after session 2/.test(dose) && /Pre-HD, session 3/.test(dose) && !/\bq\d+h\b/.test(dose), dose.slice(0, 200));
+    assert(/IV <span class="vx-freq">after HD<\/span>/.test(dose) && /After session 2 ends/.test(dose) && /Pre-HD, session 3/.test(dose) && !/\bq\d+h\b/.test(dose), dose.slice(0, 200));
     const hold = sandbox.hdNextDoseHTML(sandbox.hdNextDose(hdR({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 2000, tinfH: 2, timeH: 9 }, { mg: 2000, tinfH: 2, timeH: 30 }] }), 20));
     assert(/No dose after session 2/.test(hold), hold.slice(0, 160));
     assert(/Add the next sessions/.test(sandbox.hdNextDoseHTML({ need: 'sessions', planned: 1 })), 'asks for sessions');
@@ -4270,6 +4270,13 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/High permeability/.test(emp) && /Low permeability/.test(emp) && /2 g · 750 mg/.test(emp) && /Rec 14/.test(emp), emp.slice(0, 300));
     const src35b = fs.readFileSync(htmlPath, 'utf8');
     assert(/isHD && nLev === 0[\s\S]{0,200}hdEmpiricHTML/.test(src35b) && /hdRec = hdNextDose\(r, /.test(src35b), 'the renderer uses both for Goti-HD');
+  });
+  test('35.8c HD headings are neutral, and no note speaks for the hidden steady-state regimen', () => {
+    const emp = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78);
+    const ask = sandbox.hdNextDoseHTML({ need: 'sessions', planned: 0 });
+    assert(!/vx-regimen-hold/.test(emp) && !/vx-regimen-hold/.test(ask), 'not the alarm-tinted hold heading');
+    assert(/r\.rec && !r\.rec\.noSolution && r\.rec\.flags && r\.rec\.flags\.length && !\(r\.model === 'goti' && r\.dial\)/.test(code35),
+      'the steady-state regimen\'s flags are not shown for Goti-HD, where that regimen is not the answer');
   });
   test('35.9 MWF / TuThSa from any start date, across a month end', () => {
     assert(sandbox.hdScheduleDates('2026-09-29', 'MWF', 0, 4).join() === '2026-09-30,2026-10-02,2026-10-05,2026-10-07', 'Tue start → Wed first');
