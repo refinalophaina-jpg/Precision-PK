@@ -678,6 +678,106 @@ Also fixed:
   entered.
 
 
+## D17 — A one-time dose when the HD schedule is unknown; the midpoint pick (2026-10-02, v3.7.0)
+
+Spec: `docs/superpowers/specs/2026-10-02-hd-one-time-dose-design.md`. Plan:
+`docs/superpowers/plans/2026-10-02-hd-one-time-dose.md`.
+
+**The problem.** The D16 post-HD dose needs two upcoming sessions: one for the dose to follow,
+one to size at. With fewer, the verdict said "Add the next sessions". The handoff's own case got
+no answer:
+- 1 g, HD the same day, no dose after it;
+- 10.3 mg/L about 12 h after HD ended.
+
+Pharmacists often do not know the schedule: ED and ICU admissions, transfers, AKI on HD, a
+pending nephrology decision.
+
+**What it does now.**
+- **When it applies:** with fewer than two upcoming sessions, Goti-HD answers with a **one-time
+  dose**. There is no mode toggle.
+- **When the dose is given:** after the one session still ahead, if there is one; otherwise now.
+- **Where it is sized:** at an **assumed gap to the next session**, 24 / 48 / 72 h, default 48
+  (a PREFERENCE under rule 8). The gap is stated in the answer and changed with one tap (`k78`).
+  - The gap is not in the fit fingerprint and not saved with a profile; Reset clears it.
+  - VancoPK's HD calculator also defaults to 2 days. The user's institutional protocol rechecks
+    once 72 h have passed.
+- **Also shown:**
+  - a **dose × gap table**, with in-range cells marked by the drawn check and screen-reader text;
+  - the **missed post-HD dose** flag ("No dose entered after session N");
+  - the averaged-model caution ("if the next session is delayed or cancelled, levels will run
+    higher");
+  - the next step ("draw a pre-HD level before the next session").
+- **Print** states the gap as text.
+
+**The pick, in both HD answers.** The in-range 250 mg step **closest to 17.5 mg/L**, the
+derived midpoint of Rybak 2020 Recommendation 14's 15–20 band. Ties go to the smaller dose.
+- **Why:** "smallest in range" settled near 15, which VancoPK's published arithmetic (Ke
+  0.005 h⁻¹) puts at an AUC of about 380 over the prior 24 h.
+- **Chosen by the user.**
+- **Rule 9:** SUITE 35.4's "one step less misses 15 (the smallest)" became "no neighbouring
+  in-range step is closer to 17.5". On that fixture the pick moved from 250 mg (pre-HD 16.05) to
+  500 mg (18.74). No other SUITE 35 expectation changed. 35.18 now expects
+  `hdViewFor(r, bState.hdGapH)`.
+
+**A measured pre-HD level above 20 means no dose now** (added mid-build, the user's decision).
+- **The trigger:** the latest level is labelled pre-HD by the session layer (D15), is above
+  20 mg/L, and no dose has been entered after it.
+- **The answer:** no dose, and a recheck before the next session. The dose table stays visible.
+- **The basis:** the top of Rec 14's band. It matches the user's institutional practice for
+  unscheduled HD, which holds above 20. No institutional content is shipped.
+
+**Declined from the handoff, with reasons:**
+- a rebound estimate (rejected in D15; Goti-HD has no rebound phase, and the example level was
+  already past redistribution);
+- P(AUC₂₄ > 400/600) (our uncertainty was simulated for steady-state Goti, not single HD
+  doses);
+- a new High/Moderate/Low grade (the fit's grade and "provisional" are reused);
+- the handoff's "500 mg" (computed, never targeted);
+- "repeat in 24–48 h" (no source).
+
+The tl;dr pharmacy level-only table (Kujawski 2019: <10 → 1000 mg, 10–25 → 500–750 mg, >25 →
+none) was considered and not adopted. The author presents it as "a VERY general scheme", it
+cites nothing, and its 15–25 target predates and contradicts Rec 14.
+
+**The handoff case, as answered** (fictional 70 kg, CrCl 10, Goti-HD MAP fit to 10.3 at 05:42;
+missed dose flagged on session 1):
+
+| Assumed gap | Dose | Fitted pre-HD | AUC₂₄ |
+|---|---|---|---|
+| 24 h | 750 mg | 18.3 mg/L | 502 |
+| 48 h | 1000 mg | 18.4 mg/L | 472 |
+| 72 h | 1250 mg | 18.1 mg/L | 467 |
+
+**Cross-checks.**
+- **VancoPK** (`docs/audit/probe-hd-one-time.cjs`, public, Fewel's published HD method). The probe
+  reproduces the site's own screen (20.6 mg/L). Over 162 fictional cases:
+  - before the pre-HD hold, 81% of doses were within one 250 mg step, median |difference|
+    250 mg at each gap;
+  - with the hold, 70%, median −250 mg. VancoPK still doses at pre-HD 22–25 after its 35% session
+    removal; we hold.
+  - **Direction of the disagreement:** at short gaps ours reads lower, because VancoPK removes
+    35% at the session the dose follows while Goti-HD's averaged clearance spreads that removal.
+    At long gaps ours reads higher, because the averaged dialytic clearance runs across 72 h with
+    no session in it.
+- **The user's institutional protocol** (private, outside every repository, compared in general
+  terms only). Over 108 fictional cases, ours was within one step in 89 at the 48 h default and
+  97 at 72 h, with median difference 0. Heavier patients read about one step lower at 48 h.
+
+**Display.**
+- The heading is "<dose> IV now" or "… after HD". "One-time" leads the subline, because the
+  spec's "· one-time" in the heading wrapped onto two display lines at 375 px.
+- The gap buttons reuse `.toggle-opt` / `.active`. The chosen table row takes the paper-deep step
+  and a terracotta-ink row head.
+
+**Tests and gates.**
+- **phase2d 374/374:** SUITE 37, 37.2–37.18; SUITE 36 pins the version.
+- **Browser flows 61/61:** the one-time answer and the missed flag on a phone; the 72 h button by
+  keyboard, with focus kept.
+- Engine parity 0 differences; phase3 21/21; phase4 49/49; rendered contrast 0 AA failures in
+  light, dark and phone.
+
+**Not clinically validated on local HD patients.**
+
 ## D18 — The profile chart, polished; every level on the axis (2026-10-02, v3.6.0)
 
 **Asked.** The user wanted the dosing profile graph more aesthetic "than the current black
