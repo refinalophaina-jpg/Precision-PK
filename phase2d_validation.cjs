@@ -1478,6 +1478,22 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       'the legend swatch and the strip read the token the canvas draws');
   });
 
+  test('The key draws each mark the way the canvas does; long dash means only the prior', ()=>{
+    // Finish review 2026-10-02: a CSS dashed border draws ~3 px dashes, so the prior's swatch
+    // did not match its 6/4 line; the band swatch lacked the band's edges; and after "now" the
+    // posterior's 7/4 dash read as a second prior on the stretch read for the next dose.
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    assert(/\.lg-pop\s*\{[^}]*repeating-linear-gradient\(90deg, var\(--ink-soft\) 0 6px, transparent 6px 10px\)/.test(src), 'prior swatch: a 6/4 ink-soft dash, as drawn');
+    assert(/\.lg-band\s*\{[^}]*border-top: 1px solid color-mix\(in srgb, var\(--series-fit\) 42%, transparent\)/.test(src), 'band swatch carries its edge');
+    const lines = sandbox.drawProfileGraph.toString();
+    assert(/themeRGBA\('--series-fit', 0\.8, 'rgba\(103,81,168,0\.8\)'\), 2, \[3,3\]\)/.test(lines), 'after now the posterior is a short 3/3 dash');
+    assert(!/\[7,4\]/.test(lines), 'no posterior dash close to the prior\'s 6/4');
+    // The fit's ring is drawn after the measured dot, on its own casing, so it is whole even
+    // when the residual is small (it was half hidden under the dot's halo at a near-trough level).
+    const pl = lines.slice(lines.indexOf('const paintLevels'), lines.indexOf('const paintPen'));
+    assert(pl.indexOf("'--series-measured'") > -1 && pl.indexOf("'--series-measured'") < pl.indexOf("ctx.arc(x, yp, 4.5"), 'ring after the dot');
+  });
+
   test('Course-strip level values never sit on each other or on the interval labels', ()=>{
     const close = [{ conc: 15.2, timeH: t0 + 63 }, { conc: 28.4, timeH: t0 + 66 }];
     for (const width of [343, 700]) {

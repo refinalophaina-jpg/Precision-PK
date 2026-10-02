@@ -2209,9 +2209,12 @@
     margin: 6px 0 0 46px; padding: 0; border: 0; }
   .vx-legend .legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .lg { display: inline-block; width: 18px; height: 0; flex: none; }
-  .lg-ind  { border-top: 2px solid var(--series-fit); }
-  .lg-pop  { border-top: 1.5px dashed var(--ink-soft); }
-  .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
+  .lg-ind  { border-top: 2.5px solid var(--series-fit); }
+  /* The prior's key is the 6/4 dash the canvas draws: a CSS dashed border draws ~3 px dashes. */
+  .lg-pop  { height: 1.5px; background: repeating-linear-gradient(90deg, var(--ink-soft) 0 6px, transparent 6px 10px); }
+  .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); box-sizing: border-box;
+    border-top: 1px solid color-mix(in srgb, var(--series-fit) 42%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--series-fit) 42%, transparent); }
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
   .hd-dose { white-space: nowrap; }
   .hd-perkg { display: block; font-size: var(--fs-xs); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
@@ -9623,7 +9626,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
         ctx.beginPath();
         if (pastPts.length) ctx.moveTo(tx(pastPts[pastPts.length-1].t), ty(pastPts[pastPts.length-1].c));
         futPts.forEach((p,i) => { i===0 && pastPts.length ? ctx.lineTo(tx(p.t),ty(p.c)) : (i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c))); });
-      }, themeRGBA('--series-fit', 0.8, 'rgba(103,81,168,0.8)'), 2, [7,4]);
+      }, themeRGBA('--series-fit', 0.8, 'rgba(103,81,168,0.8)'), 2, [3,3]);   // short: the long dash is the prior's alone
     }
     if (projPts.length > 1) {
       const bridgePts = ptsInd.filter(p => p.t+tStart >= (futPts.length ? futPts[futPts.length-1].t+tStart : tNow) && p.t+tStart <= tProjStart);
@@ -9658,13 +9661,17 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
         ctx.fillStyle = themeRGBA('--ink', 0.34, 'rgba(45,52,40,0.34)');
         ctx.fillRect(x - 0.5, Math.min(y, yp) + (y < yp ? 5 : 4.5), 1, span);
       }
-      ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
-      ctx.lineWidth   = 1.5;
-      ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = themeColor('--paper', '#faf5ed');
       ctx.beginPath(); ctx.arc(x, y, 7 * g, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = themeColor('--series-measured', '#3e6b1f');
       ctx.beginPath(); ctx.arc(x, y, 5 * g, 0, Math.PI * 2); ctx.fill();
+      // The fit's ring last, on its own paper casing, so it is whole even when the
+      // residual is small (finish review: half hidden under the halo at a near trough).
+      ctx.strokeStyle = themeColor('--paper', '#faf5ed'); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
       ctx.font        = "600 11px 'Outfit', sans-serif";
       const lbl = `${+lev.conc.toFixed(1)}`;
       const flip = x + 12 + ctx.measureText(lbl).width > pad.left + gW;

@@ -733,6 +733,15 @@ dark "instrument panel" redesign that would have broken the house style.
 - **The fix:** the domain now reaches every level. Both renderers pass the levels, so the shared
   axis stays shared.
 
+**Finish review.** One bounded pass by a fresh reviewer, on captures of the committed build,
+found three material issues, all fixed with a test that failed first:
+1. **The legend's prior swatch** was a CSS dashed border (~3 px dashes) against the drawn 6/4
+   dash. It is now a gradient dash, and the band swatch has its edges.
+2. **After "now" the posterior's 7/4 dash** read as a second prior, on the stretch read for the
+   next dose. It is now a short 3/3 dash.
+3. **At a near-trough level the fit's ring** was half hidden under the measured dot's halo. It is
+   now drawn last, on its own casing.
+
 **Rule 9.** The browser check "measured levels are ink, not rose" became "measured levels wear
 their own hue, not ink". This is the user's direction, not a weakened test.
 
@@ -740,12 +749,13 @@ their own hue, not ink". This is the user's direction, not a weakened test.
 it (SUITE 36). The reconstructed history is in the README. The one-time HD dose (D17), specified
 earlier the same day, ships after this as 3.7.0.
 
-**Tests.** phase2d 356/356, adding:
-- four SUITE 13 tests:
+**Tests.** phase2d 357/357, adding:
+- five SUITE 13 tests:
   - the long-course axis;
   - the measured and prior tokens;
   - strip label overlap at 343 and 700 px;
-  - the arrival's gating.
+  - the arrival's gating;
+  - the key drawn as the canvas draws (finish review).
 - SUITE 36 (the version).
 
 The three polish tests were confirmed to fail against the pre-polish file. Browser flows 59/59;
