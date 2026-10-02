@@ -678,6 +678,89 @@ Also fixed:
   entered.
 
 
+## D18 — The profile chart, polished; every level on the axis (2026-10-02, v3.6.0)
+
+**Asked.** The user wanted the dosing profile graph more aesthetic "than the current black
+boxes", with bolder colour differentiation for the posterior, the population and the measured
+concentrations, attention-grabbing without distracting, and animation where appropriate.
+They chose **"Lab-grade on paper"** over two alternatives: the same without animation, and a
+dark "instrument panel" redesign that would have broken the house style.
+
+**What changed.** Presentation only; engine parity: 225 calls, 0 differences.
+
+- **Measured levels get their own hue, `--series-measured`:** #3e6b1f light, #a6d27c dark.
+  - Until now measured data was ink (D14).
+  - The new hue is the house moss deepened past the validator's chroma floor.
+  - Worst protan/deutan ΔE: 12.0 light, 14.7 dark against the projection, and 20.1 against the
+    fit.
+  - **The dark step sits outside the line lightness band on purpose.** It is a marker, lightest
+    on dark as it is darkest on paper. In-band greens collapsed into terracotta under
+    deuteranopia (ΔE 0.2–5.7).
+  - **Where it applies:** the profile chart, the strip, the legend, and the Trough chart's
+    measured level. The values printed beside the dots stay ink.
+- **The prior stays a neutral, now `--ink-soft`** (1.5 px, 6/4 dash, on every chart), so it
+  reads as a curve and not a gridline. A fourth hue was tried and failed:
+  - slate against the fit: ΔE 11.5 in normal vision;
+  - teal against the measured green: 13.8;
+  - taupe and ochre: below the chroma floor, and inseparable from green under deuteranopia.
+- **The residual is drawn.** A hairline (ink 34%) joins each measured dot to the fit's ring.
+  It is drawn as a 1 px rectangle, which also keeps it out of SUITE 13's count of stroked dose
+  stubs.
+- **Posterior and band:** the posterior is 2.5 px on a paper casing; the 80% band has hairline
+  edges in its own hue.
+- **The course strip:**
+  - each dose is an **infusion block**: a tinted body as wide as the infusion, plus a solid cap at
+    its charted start;
+  - a level's value moves left of its dot when the next dot is close (it printed "15●228.4");
+  - an interval label never sits on a level value.
+- **The arrival** is the one authored moment.
+  - **What happens:** on a new result the trace sweeps left to right in 950 ms (ease-out quart),
+    with a pen point at its edge. Each level lands as the trace passes, and the strip is staged
+    on the same sweep through `profileArriveDelay`.
+  - **Gating:** `refreshProfileGraph` checks result identity and `profileMotionOK()`, so a
+    redraw (theme, resize, a toggle), reduced motion and print draw statically.
+  - **The last frame equals the static drawing.**
+  - This supersedes DESIGN.md's "one quiet fade" for this chart, at the user's request.
+- **The print caption** no longer claims a trough band that is not drawn.
+
+**Reported bug, fixed: a long course lost its latest level.**
+- **The report:** on a 7–8 day course with several levels, the most recent level and the curve
+  around it were not shown.
+- **The cause:** `profileDomain` ended at most 48 h after the last dose and ignored the levels. A
+  level drawn while doses were held fell off both the curve and the strip, while the fit still
+  used it.
+- **Reproduced in SUITE 13:** the axis ended at 185 h, with the level at 206 h.
+- **The fix:** the domain now reaches every level. Both renderers pass the levels, so the shared
+  axis stays shared.
+
+**Finish review.** One bounded pass by a fresh reviewer, on captures of the committed build,
+found three material issues, all fixed with a test that failed first:
+1. **The legend's prior swatch** was a CSS dashed border (~3 px dashes) against the drawn 6/4
+   dash. It is now a gradient dash, and the band swatch has its edges.
+2. **After "now" the posterior's 7/4 dash** read as a second prior, on the stretch read for the
+   next dose. It is now a short 3/3 dash.
+3. **At a near-trough level the fit's ring** was half hidden under the measured dot's halo. It is
+   now drawn last, on its own casing.
+
+**Rule 9.** The browser check "measured levels are ink, not rose" became "measured levels wear
+their own hue, not ink". This is the user's direction, not a weakened test.
+
+**Version.** `APP_VERSION` was introduced at **3.6.0**: the header and both print headers carry
+it (SUITE 36). The reconstructed history is in the README. The one-time HD dose (D17), specified
+earlier the same day, ships after this as 3.7.0.
+
+**Tests.** phase2d 357/357, adding:
+- five SUITE 13 tests:
+  - the long-course axis;
+  - the measured and prior tokens;
+  - strip label overlap at 343 and 700 px;
+  - the arrival's gating;
+  - the key drawn as the canvas draws (finish review).
+- SUITE 36 (the version).
+
+The three polish tests were confirmed to fail against the pre-polish file. Browser flows 59/59;
+phase3 21/21; phase4 49/49.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

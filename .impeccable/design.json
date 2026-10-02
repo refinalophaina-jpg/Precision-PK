@@ -312,6 +312,13 @@
         "cssVar": "--series-projection (the recommendation's future: projected curve, band, dose marks; Trough recommended curve)",
         "dark": "#cb7a5d",
         "canonical": "oklch(65.8% 0.113 39.1)"
+      },
+      "series-measured": {
+        "role": "data",
+        "displayName": "Series Measured",
+        "cssVar": "--series-measured (a measured level: curve dot, course-strip dot, legend, Trough measured level; values beside it stay ink) — 2026-10-02",
+        "dark": "#a6d27c",
+        "canonical": "oklch(47.8% 0.117 135.0)"
       }
     },
     "typographyMeta": {

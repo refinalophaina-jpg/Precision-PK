@@ -24,7 +24,7 @@ FORM: The course timeline — position 7 of 7 on the ranked list; seed key 7ea7d
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
 ## Signature interaction and motion
-Scrubbing the course strip or the curve moves one shared time cursor across both, reading the concentration at that moment; response under 100 ms. Motion: one quiet fade of the results on arrival; nothing animates uncertainty.
+Scrubbing the course strip or the curve moves one shared time cursor across both, reading the concentration at that moment; response under 100 ms. Motion: one quiet fade of the results on arrival; nothing animates uncertainty after it has arrived. One authored moment (2026-10-02, the user's request): on a new result the curve traces in left to right with a pen at its edge, each level lands as the trace passes, and the course strip is staged on the same sweep; never on a redraw, under reduced motion, or in print.
 
 ## Unresolved
 None blocking. Print keeps white ground and a text summary under each chart.

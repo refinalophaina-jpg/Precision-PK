@@ -2,6 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+
+> **Amended 2026-10-02, after D18 (the profile polish) shipped first as v3.6.0:**
+> - D17 ships as **v3.7.0**.
+> - `APP_VERSION`, its header and print-header markup, and the SUITE 36 version test already exist.
+>   Task 1 is therefore only a bump of the constant and the two markup strings to 3.7.0.
+> - D17's own tests go in a new **SUITE 37** block. Read every "36.x" test id below as "37.x".
+> - The baseline count is 356, not 351.
+> - The population prior is now `--ink-soft` and measured levels `--series-measured`. Nothing in
+>   D17 depends on either.
+
 **Goal:** When fewer than two upcoming HD sessions are logged, Goti-HD answers with a one-time
 dose sized for an assumed 24/48/72 h gap, default 48. Missing post-HD doses are flagged. One
 shared midpoint (17.5 mg/L) pick serves both HD paths. The build ships as **v3.6.0**.

@@ -1,5 +1,15 @@
 # One-time haemodialysis dose when the schedule is unknown — design (D17)
 
+
+> **Amended 2026-10-02, after D18 (the profile polish) shipped first as v3.6.0:**
+> - D17 ships as **v3.7.0**.
+> - `APP_VERSION`, its header and print-header markup, and the SUITE 36 version test already exist.
+>   Task 1 is therefore only a bump of the constant and the two markup strings to 3.7.0.
+> - D17's own tests go in a new **SUITE 37** block. Read every "36.x" test id below as "37.x".
+> - The baseline count is 356, not 351.
+> - The population prior is now `--ink-soft` and measured levels `--series-measured`. Nothing in
+>   D17 depends on either.
+
 Date: 2026-10-02 · Status: proposed · Builds on D16 (HD dosing, shipped in `6c1ed2b`, minors in `9710104`).
 
 ## Why

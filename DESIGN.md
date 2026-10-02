@@ -22,6 +22,7 @@ colors:
   rose: "#a8546a"
   series-fit: "#6751a8"
   series-projection: "#cc785c"
+  series-measured: "#3e6b1f"
 typography:
   display:
     fontFamily: "'DM Serif Display', Georgia, serif"
@@ -190,7 +191,7 @@ A warm, low-chroma paper-and-ink palette with one earthen accent and two small s
 - **Alarm Crimson** (`alarm`, the `--red` extension at 342°, deliberately apart from terracotta's 15°): top-tier safety only. Alarm notes' signal word and icon, refused-field borders, the error-summary link underline, and the hold headline when no regimen is given.
 - **Purple** (`purple`): the house hue the fit's chart colour is stepped from (`series-fit`); not used directly in the results.
 - **Moss** (`moss`): the `success` alias and a 10% band in the comparison canvases; a data colour.
-- **Rose** (`rose`): an incumbent house extension kept in `:root`; the results world does not use it for levels (measured levels are ink).
+- **Rose** (`rose`): an incumbent house extension kept in `:root`; the results world does not use it for levels (measured levels are `series-measured`).
 
 ### Neutral
 - **Bone Paper** (`paper`): the page ground and the input panel ground; the "selected" step for segmented options and model options.
@@ -198,18 +199,22 @@ A warm, low-chroma paper-and-ink palette with one earthen accent and two small s
 - **Paper Edge** (`paper-edge`): 1px borders on fields, the header's bottom edge and the input panel's right edge.
 - **Raised Card** (`card`): the extension's raised ground, used sparingly in the input panel.
 - **Input Ground** (`input`): every typed field and unselected model option.
-- **Ink** (`ink`): headline text, the regimen, key figures, dose bars and every measured level: data is ink.
+- **Ink** (`ink`): headline text, the regimen, key figures, the dose cap on the course strip, and every value printed beside a mark: text is ink.
 - **Soft Ink** (`ink-soft`): secondary text: verdict sub-lines, notes, evidence body copy.
-- **Muted Ink** (`ink-muted`): labels, units, axes, legends and gists; the text step that clears 4.5:1 on every ground. As a mark: the population prior's dash and the creatinine ticks.
+- **Muted Ink** (`ink-muted`): labels, units, axes, legends and gists; the text step that clears 4.5:1 on every ground. As a mark: the creatinine ticks. (The population prior moved to `ink-soft`, 2026-10-02.)
 - **Faint Ink** (`ink-faint`): rules and marks only (the "now" dash, strip ticks, gridlines); 3.1:1, never text.
 - **Hairline** (`rule`, ink at 10%): every divider between results sections, evidence rows and table rows.
 
 ### Chart Series
-The concentration curves encode model and measurement in different colours, so a reader can tell at a glance what was measured, what the model fitted, and what the population predicted. Both hues are the house's own, stepped into a chart band (OKLCH L 0.43–0.77 light, 0.48–0.67 dark; chroma ≥ 0.10) and validated with a colour-vision simulation: fit against projection is ΔE 22.0 light and 18.0 dark under protanopia and deuteranopia.
-- **Series Fit** (`series-fit`, #6751a8; #9583d5 dark): this patient's fit wherever it is drawn. The posterior curve (solid, then dashed after "now"), its simulated 80% band as a 16% tint, the open ring at the fit's value at each measured level, the shared cursor's dot, and the Trough chart's current-regimen curve.
+The concentration curves encode model and measurement in different colours, so a reader can tell at a glance what was measured, what the model fitted, and what the population predicted. The fit and projection hues are the house's own, stepped into a chart band (OKLCH L 0.43–0.77 light, 0.48–0.67 dark; chroma ≥ 0.10) and validated with a colour-vision simulation: fit against projection is ΔE 22.0 light and 18.0 dark under protanopia and deuteranopia.
+- **Series Fit** (`series-fit`, #6751a8; #9583d5 dark): this patient's fit wherever it is drawn. The posterior curve (solid, then a short 3/3 dash after "now": the long dash belongs to the prior alone), its simulated 80% band as a 16% tint, the open ring at the fit's value at each measured level, the shared cursor's dot, and the Trough chart's current-regimen curve.
 - **Series Projection** (`series-projection`, terracotta #cc785c; #cb7a5d dark, the same hue stepped into the dark band): the recommendation's future: the projected curve, its band tint, projected dose marks and bars, and the Trough chart's recommended curve.
-- Measured levels are **ink** dots with a 2px paper halo and their value. The population prior is a thin **muted-ink** dash, on both charts: on the Trough chart it is the population estimate for the regimen shown, drawn once a level has been fitted (steady-state trough, two levels, random level). Initial dosing has no such line, because there its one curve already is the population prediction.
-- **The Dose Tinkerer** uses the same code: the regimen being tried in `series-projection`, the current regimen as fitted in `series-fit`, the population estimate for the tried regimen as the muted-ink dash, and the neutral trough-reference band. In the **regimen comparison** the current regimen leads in `series-fit`. Every tried regimen is a projection, so they share the projection's hue family (`series-projection`, `terracotta-ink`) and are told apart by line pattern and shade as well. Each is keyed beside a swatch drawn the same way. Six at most, so no style is reused. Both charts draw on true elapsed time, with each regimen's cycle repeated across the longest interval shown.
+- **Series Measured** (`series-measured`, #3e6b1f; #a6d27c dark; profile polish 2026-10-02, the user's request): a measured level, the strongest mark on the chart. The house moss deepened past the chroma floor and validated against the other two series (worst protan/deutan ΔE 12.0 light, 14.7 dark). In dark it steps outside the line band on purpose: a marker, lightest on dark as it is darkest on paper. A 5px dot on a 7px paper halo with its value in ink beside it; the strip's level dots and the legend swatch read the same token, and so does the Trough chart's measured level.
+- **The residual is drawn.** A hairline (ink 34%) joins each measured dot to the fit's open ring at that moment, so the distance between measurement and model is a mark, not an estimate by eye. The ring is drawn last, on its own 3px paper casing, so it stays whole when the residual is small.
+- **The key draws each mark as the canvas does:** the prior's swatch is a 6/4 dash made with a gradient (a CSS dashed border draws ~3px dashes), the band's swatch carries its 42% edges, and the posterior's swatch is 2.5px.
+- **The posterior** is 2.5px on a paper casing (the line laid over a 5.5px paper stroke), so it reads crisply over its band and the grid; the band carries hairline edges in its own hue (42%).
+- The population prior is an **ink-soft** long dash (1.5px, 6/4), on every chart: darker than any gridline so it reads as a curve, but never a series hue: a fourth hue collided with the fit (ΔE 11.5) or the measured green. On the Trough chart it is the population estimate for the regimen shown, drawn once a level has been fitted (steady-state trough, two levels, random level). Initial dosing has no such line, because there its one curve already is the population prediction.
+- **The Dose Tinkerer** uses the same code: the regimen being tried in `series-projection`, the current regimen as fitted in `series-fit`, the population estimate for the tried regimen as the ink-soft dash, and the neutral trough-reference band. In the **regimen comparison** the current regimen leads in `series-fit`. Every tried regimen is a projection, so they share the projection's hue family (`series-projection`, `terracotta-ink`) and are told apart by line pattern and shade as well. Each is keyed beside a swatch drawn the same way. Six at most, so no style is reused. Both charts draw on true elapsed time, with each regimen's cycle repeated across the longest interval shown.
 - **The Trough module's "Try another regimen"** draws its own comparison below the tried regimen's numbers, and never redraws the result chart. The tried regimen is drawn in `series-projection` beside the current regimen as fitted, in `series-fit`, once a level exists. In initial dosing and the two- and random-level modes it is drawn beside the recommendation, also in `series-projection`, so the tried regimen takes the comparison's second style (`terracotta-ink`, dashed). The population estimate for the tried regimen is the muted-ink dash in the level-based modes. The band is the clinician's trough target. These steady-state charts paint no background of their own: like the Trough and profile charts they sit on the page ground, so none reads as a box.
 - **The HD verdict** (D16) keeps the verdict grammar: the dose in display type with "after HD" in terracotta, then a subline naming the session and time. A hold, an empiric table or a request for sessions uses an ink heading (`vx-regimen-hd`), never the alarm colour. The empiric table shows both dialyser permeabilities rather than assume one.
 - **Haemodialysis sessions** (D15) are events, not series. Each is a neutral ink band (8%) behind everything on the course strip, the curve and the printed chart, labelled "HD" and keyed as "Haemodialysis session". A level drawn during or soon after a session carries a caution in words; levels themselves are never altered.
@@ -224,7 +229,7 @@ The concentration curves encode model and measurement in different colours, so a
 
 **The Token-Only Rule.** Every colour resolves from a token, including canvas, which reads tokens through `themeColor()` / `themeRGBA()` so it re-themes. Tints are `color-mix()` over a token, never a raw `rgba()` literal.
 
-**The Model-and-Measurement Rule.** On a concentration chart, measured data is ink and the fit is `series-fit`. Neither colour is used for the other. The fit's value at a measured level is an open ring in the fit's hue beside the ink dot, so the residual reads as the distance between two colours. The legend's swatches read the same tokens as the plot, and a chart's written summary never names a colour.
+**The Model-and-Measurement Rule.** On a concentration chart, measured data is `series-measured` and the fit is `series-fit`. Neither colour is used for the other, and values beside either are ink. The fit's value at a measured level is an open ring in the fit's hue beside the measured dot, joined to it by a hairline, so the residual reads as the distance between two colours. The legend's swatches read the same tokens as the plot, and a chart's written summary never names a colour.
 
 ## Typography
 
@@ -311,7 +316,7 @@ A 2×2 grid (one column at ≤420px) of 4px tiles on the input ground with a pap
 - **Disabled:** paper-deep ground, a dashed faint-ink border and muted text, with the state also in a word.
 
 ### Course Strip (signature)
-An SVG timeline across the top of the results: "Dose" and "Level" lanes in muted 12px labels, ink dose bars as wide as each infusion with the dose in 12px Outfit 500 above the first bar and elapsed gaps ("12 h") beneath, ink level dots with values, muted creatinine ticks, a paper-deep region after "now", and projected doses in the projection's hue. It carries its own clock axis on a phone. A sideways drag scrubs the shared cursor; a vertical one still scrolls.
+An SVG timeline across the top of the results: "Dose" and "Level" lanes in muted 12px labels. Each dose is an infusion block: a body as wide as the infusion (ink 28%) with a solid ink cap at its start, the charted time. The dose is in 12px Outfit 500 above the first block and elapsed gaps ("12 h") beneath. Level dots are `series-measured` with their values: a value sits left of its dot when the next dot is too close, and an interval label that would touch a level value is left out. Then muted creatinine ticks, a paper-deep region after "now", and projected doses in the projection's hue. It carries its own clock axis on a phone. A sideways drag scrubs the shared cursor; a vertical one still scrolls.
 
 ### Verdict (signature)
 A column with no box: the regimen in Display with the interval in terracotta-ink; an "Infuse over…" line (plus amber "provisional" when confidence is Low); AUC₂₄ as a Figure with "likely X to Y" and its lopsided percentages; a 20-dot plot of plausible AUCs over a 7% ink target band, filled dots inside the band, hollow outside, a terracotta point-estimate tick; the trough as a safety check; then, below a hairline, one confidence word with its reason and model, one "Next" line, and the text actions.
@@ -333,7 +338,7 @@ Unboxed. A signal word in Outfit 600 beside a drawn 16px icon (`alarm`, `caution
 - **Do** use the drawn `ICON` set for alarm, caution and info.
 - **Do** give every canvas colour through `themeColor()` / `themeRGBA()` and every tint through `color-mix()` over a token.
 - **Do** keep touch targets at 44px and typed fields at 16px.
-- **Do** keep motion to one quiet fade on arrival (0.26–0.32s, no transform beyond 4px) and colour transitions of about 0.2s, all dropped under `prefers-reduced-motion`.
+- **Do** keep motion to one quiet fade on arrival (0.26–0.32s, no transform beyond 4px) and colour transitions of about 0.2s, all dropped under `prefers-reduced-motion`. **One authored exception, the arrival** (profile polish 2026-10-02, the user's request): on a NEW result only, the concentration curve traces in left to right over 950ms with an exponential ease-out and a pen point at its leading edge, each measured level lands (scale with a slight overshoot) as the trace passes it, and the course strip's blocks, dots and labels appear on the same sweep. The frame, axes and "now" are there from the first frame. It never plays on a redraw (theme, resize, a toggle), under reduced motion, or in print, and the last frame is exactly the static chart.
 
 ### Don't:
 - **Don't** put results in cards, give a callout a coloured side stripe, or use backdrop blur.

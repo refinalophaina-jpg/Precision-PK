@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v3.0** — results redesigned 2026-09-29 (answer first, read off the patient's
+**Status: Live · v3.6.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
 course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
@@ -153,3 +153,21 @@ toggle that had never repainted the graphs because it called a function that doe
 `SUITE 12` now drives the real renderer through a recording canvas. See
 [`docs/ui-and-graphics-audit-2026-09.md`](docs/ui-and-graphics-audit-2026-09.md), which also
 lists what was deliberately left open.
+
+## Version history
+
+The build names its version in the header and on the printed report (`APP_VERSION`). Every
+release bumps it: **minor** for a change in clinical behaviour or a new feature, **patch** for
+fixes and wording, **major** for an engine or model overhaul. The header said "v3.0" through
+the six releases after it; the table below reconstructs them from git (2026-10-02).
+
+| Version | Date | What shipped | Commit |
+|---|---|---|---|
+| 3.0 | 2026-09-12 | One temporal model; the ranking stops pretending to choose an interval | `7f04623` |
+| 3.1 | 2026-09-28 | Engine audit fixes | `61dbb6d` |
+| 3.2 | 2026-09-29 | Results redesign: the answer read off the patient's course (D12, D13) | `7def88a` |
+| 3.3 | 2026-09-30 | Model and measurement in different colours across the charts (D14) | `51b7eaf` |
+| 3.4 | 2026-10-02 | Haemodialysis sessions (D15) | `95e3e90` |
+| 3.5 | 2026-10-02 | Dosing on intermittent haemodialysis (D16) | `6c1ed2b` |
+| 3.5.1 | 2026-10-02 | D16 minors: the mg/kg basis, session numbering | `9710104` |
+| 3.6.0 | 2026-10-02 | Profile polish: measured levels in their own hue, the residual drawn, the arrival; every level on the axis on a long course (D18) | |

@@ -1449,6 +1449,80 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(plot.tSpan >= 12, `tail too short to show terminal decay: ${plot.tSpan.toFixed(1)}h`);
   });
 
+  test('Every measured level is on the axis, even one drawn days after the last dose (a held dose)', ()=>{
+    // Reported 2026-10-02: on a 7–8 day course with several levels the most recent level
+    // was not on the chart. The domain ended at most 48 h after the last dose and ignored
+    // the levels, so a level drawn while doses were held fell off both the curve and the
+    // strip — while the fit still used it. The axis must contain everything drawn on it.
+    const course = q8h.slice(0, 18);                                    // last dose at t0 + 136 h
+    const late = [{ conc: 14.7, timeH: t0 + 63 }, { conc: 22.1, timeH: t0 + 136 + 70 }];   // 70 h after it
+    const { plot } = runProfile(course, late, 4.5, 60);
+    assert(plot.tStart + plot.tSpan > late[1].timeH,
+      `the axis ends at ${(plot.tStart + plot.tSpan - t0).toFixed(0)} h; the latest level is at ${late[1].timeH - t0} h`);
+    const el = { clientWidth: 700, innerHTML: '', setAttribute(){} };
+    sandbox.drawCourseStrip(el, course, 0, late, [], 4.5 / 60);
+    assert((el.innerHTML.match(/class="lv"/g) || []).length === 2, 'both levels on the strip');
+  });
+
+  // Profile polish (2026-10-02, the user's request): measured levels in their own hue,
+  // the prior a darker neutral dash, labels that never sit on each other, and an arrival
+  // that plays once per new result and never on a redraw or in print.
+  test('Measured levels wear --series-measured; the prior is the --ink-soft reference', ()=>{
+    const { ops } = runProfile(q8h, lev, 4.5, 60);
+    assert(PALETTE['--series-measured'] && ops.colors.has(PALETTE['--series-measured']), 'the measured hue is drawn');
+    assert(ops.colors.has(PALETTE['--ink-soft']), 'the prior is drawn in --ink-soft');
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    assert(/--series-measured:\s*#[0-9a-f]{6}/i.test(src) && (src.match(/--series-measured:\s*#a6d27c/gi) || []).length === 2,
+      'one light value and the same dark step in both dark blocks');
+    assert(/\.lg-lv\s*\{[^}]*var\(--series-measured\)/.test(src) && /\.course \.lv\s*\{[^}]*var\(--series-measured\)/.test(src),
+      'the legend swatch and the strip read the token the canvas draws');
+  });
+
+  test('The key draws each mark the way the canvas does; long dash means only the prior', ()=>{
+    // Finish review 2026-10-02: a CSS dashed border draws ~3 px dashes, so the prior's swatch
+    // did not match its 6/4 line; the band swatch lacked the band's edges; and after "now" the
+    // posterior's 7/4 dash read as a second prior on the stretch read for the next dose.
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    assert(/\.lg-pop\s*\{[^}]*repeating-linear-gradient\(90deg, var\(--ink-soft\) 0 6px, transparent 6px 10px\)/.test(src), 'prior swatch: a 6/4 ink-soft dash, as drawn');
+    assert(/\.lg-band\s*\{[^}]*border-top: 1px solid color-mix\(in srgb, var\(--series-fit\) 42%, transparent\)/.test(src), 'band swatch carries its edge');
+    const lines = sandbox.drawProfileGraph.toString();
+    assert(/themeRGBA\('--series-fit', 0\.8, 'rgba\(103,81,168,0\.8\)'\), 2, \[3,3\]\)/.test(lines), 'after now the posterior is a short 3/3 dash');
+    assert(!/\[7,4\]/.test(lines), 'no posterior dash close to the prior\'s 6/4');
+    // The fit's ring is drawn after the measured dot, on its own casing, so it is whole even
+    // when the residual is small (it was half hidden under the dot's halo at a near-trough level).
+    const pl = lines.slice(lines.indexOf('const paintLevels'), lines.indexOf('const paintPen'));
+    assert(pl.indexOf("'--series-measured'") > -1 && pl.indexOf("'--series-measured'") < pl.indexOf("ctx.arc(x, yp, 4.5"), 'ring after the dot');
+  });
+
+  test('Course-strip level values never sit on each other or on the interval labels', ()=>{
+    const close = [{ conc: 15.2, timeH: t0 + 63 }, { conc: 28.4, timeH: t0 + 66 }];
+    for (const width of [343, 700]) {
+      const el = { clientWidth: width, innerHTML: '', setAttribute(){} };
+      sandbox.drawCourseStrip(el, q8h.slice(0, 10), 0, close, [], 4.5 / 60);
+      const boxes = [...el.innerHTML.matchAll(/<text x="([\d.]+)" y="([\d.]+)" class="(lvv|gap)"( text-anchor="(end|middle)")?[^>]*>([^<]+)</g)]
+        .map(m => { const x = +m[1], w = m[6].length * 6.6, a = m[5]; const left = a === 'end' ? x - w : a === 'middle' ? x - w / 2 : x;
+          return { cls: m[3], y: +m[2], l: left, r: left + w, t: m[6] }; });
+      const vals = boxes.filter(b => b.cls === 'lvv');
+      assert(vals.length >= 1, `at ${width}px no level value was labelled`);
+      for (let i = 0; i < vals.length; i++) for (let j = i + 1; j < vals.length; j++)
+        assert(vals[i].r <= vals[j].l || vals[j].r <= vals[i].l, `at ${width}px "${vals[i].t}" overlaps "${vals[j].t}"`);
+      for (const g of boxes.filter(b => b.cls === 'gap')) for (const v of vals)
+        assert(g.r <= v.l - 1 || v.r <= g.l - 1, `at ${width}px the interval "${g.t}" touches the level value "${v.t}"`);
+    }
+  });
+
+  test('The arrival plays once per new result — never on a redraw, under reduced motion, or in print', ()=>{
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    const refresh = sandbox.refreshProfileGraph.toString();
+    assert(/const arrive = r !== _profileArrivedFor && profileMotionOK\(\);/.test(refresh) && /_profileArrivedFor = r;/.test(refresh), 'gated on a new result');
+    assert(/drawCourseStrip\([\s\S]*arrive\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive \}/.test(refresh), 'the strip and the curve share the gate');
+    assert(/prefers-reduced-motion: reduce/.test(sandbox.profileMotionOK.toString()), 'reduced motion is honoured');
+    const pr = src.slice(src.indexOf('const gp = gotiGraphParams(r);\n    drawProfileGraph(off'), src.indexOf('const url = off.toDataURL'));
+    assert(pr.length > 0 && !/arrive/.test(pr), 'print draws without the arrival');
+    // The static path settles synchronously: the plot geometry exists straight away.
+    assert(runProfile(q8h, lev, 4.5, 60).plot, 'no arrival requested: drawn and settled at once');
+  });
+
   test('Every colour is a token', ()=>{
     const DARK = __themePalette('dark');
     const light = runProfile(q8h, lev, 4.5, 60).ops;
@@ -4385,6 +4459,26 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/k77:[^\n]*switchModule\('auc'\)[^\n]*gotihd/.test(script35), 'one action moves the patient to Goti-HD');
     const note = sandbox.troughHdNoticeHTML();
     assert(/use AUC Precision/.test(note) && /data-onclick="k77"/.test(note) && !/mg IV q\d+h/.test(note), note.slice(0, 160));
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 36 — the release version (2026-10-02)
+//
+// The header said "v3.0" through six releases. One constant now names the build,
+// and the static header and print-header markup must say the same.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 36 — the release version');
+  console.log(`${'─'.repeat(60)}`);
+  test('36.1 the version is one constant, shown in the header and on both print headers', () => {
+    const src36 = fs.readFileSync(htmlPath, 'utf8');
+    const m = src36.match(/const APP_VERSION = '(\d+\.\d+\.\d+)';/);
+    assert(m, 'APP_VERSION is declared');
+    assert(src36.includes(`<div class="header-tag">Vancomycin TDM v${m[1]}</div>`), 'the static header names the same version');
+    assert(src36.includes(`<div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v${m[1]}</div>`), 'the static print header names it');
+    assert(sandbox._prHeader('1 Oct 2026 10:00', 'Goti 2018').includes(`v${m[1]}`), 'the built print report names it');
   });
 }
 

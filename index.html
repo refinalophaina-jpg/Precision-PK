@@ -52,10 +52,16 @@
        chroma >= 0.10, validated with the dataviz palette validator (protan/deutan
        dE 22.0 light, 18.0 dark). --series-fit is this patient's fit wherever it
        is drawn: the curve, its 80% band, its value at each level, the cursor.
-       --series-projection is the recommendation's future. Measured data is ink;
-       the population prior is --ink-muted. */
+       --series-projection is the recommendation's future. --series-measured
+       (2026-10-02, the profile polish) is a measured level, the strongest mark:
+       the house moss deepened past the chroma floor; validated against the other
+       two (worst protan/deutan dE 12.0 light; 14.7 dark, where it steps OUTSIDE
+       the line band on purpose: a marker, lightest on dark as it is darkest on
+       paper). The population prior stays a neutral reference, --ink-soft dashed:
+       a fourth hue collided with the fit (dE 11.5) or the measured green. */
     --series-fit:        #6751a8;
     --series-projection: #cc785c;
+    --series-measured:   #3e6b1f;
     /* Text-contrast extensions (design audit 2026-09-28). The canonical
        --ink-faint (#8a8e80, 3.1:1) and --terracotta (#cc785c, 3.0:1) stay for
        rules, fills and outlines; TEXT uses these, which clear 4.5:1 on paper,
@@ -137,6 +143,7 @@
       --rose:         #d08ba0;
       --series-fit:        #9583d5;
       --series-projection: #cb7a5d;   /* terracotta's hue, stepped into the dark band */
+      --series-measured:   #a6d27c;   /* the measured green, lightest on dark */
       --ink-muted:      #9a9282;
       --terracotta-ink: #e39a7f;
       --shadow-card:  none;
@@ -164,6 +171,7 @@
       --rose:         #d08ba0;
       --series-fit:        #9583d5;
       --series-projection: #cb7a5d;   /* terracotta's hue, stepped into the dark band */
+      --series-measured:   #a6d27c;   /* the measured green, lightest on dark */
       --ink-muted:      #9a9282;
       --terracotta-ink: #e39a7f;
       --shadow-card:  none;
@@ -2113,13 +2121,28 @@
   .course text { font-family: var(--font-body); font-variant-numeric: tabular-nums; }
   .course .lane { font-size: 12px; fill: var(--ink-muted); }
   .course .base { stroke: var(--rule); stroke-width: 1; }
-  .course .bar  { fill: var(--ink); }
-  .course .bar.proj { fill: var(--series-projection); }
+  /* A dose is an infusion block: a tinted body as wide as the infusion and a solid
+     cap at its start (the charted time), not a black box (profile polish 2026-10-02). */
+  .course .bar  { fill: color-mix(in srgb, var(--ink) 28%, transparent); }
+  .course .cap  { fill: var(--ink); }
+  .course .bar.proj { fill: color-mix(in srgb, var(--series-projection) 30%, transparent); }
+  .course .cap.proj { fill: var(--series-projection); }
   .course .dl   { font-size: 12px; font-weight: 500; fill: var(--ink); }
   .course .dl.proj { fill: var(--terracotta-ink); }
   .course .gap  { font-size: 12px; fill: var(--ink-muted); }
-  .course .lv   { fill: var(--ink); stroke: var(--paper); stroke-width: 1.5; }
+  .course .lv   { fill: var(--series-measured); stroke: var(--paper); stroke-width: 1.5; }
   .course .lvv  { font-size: 12px; font-weight: 500; fill: var(--ink); }
+  /* The arrival (profile polish 2026-10-02): each mark appears as the curve's trace
+     below passes its time; the delay is set per mark by drawCourseStrip. A new
+     result only; the global prefers-reduced-motion rule removes it. */
+  @keyframes course-block { from { transform: scaleX(0); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes course-land  { 0% { transform: scale(0); opacity: 0; } 65% { transform: scale(1.25); opacity: 1; } 100% { transform: none; opacity: 1; } }
+  @keyframes course-fade  { from { opacity: 0; } to { opacity: 1; } }
+  svg.course.is-arriving .bar, svg.course.is-arriving .cap { transform-box: fill-box; transform-origin: left center;
+    animation: course-block 420ms cubic-bezier(.16, 1, .3, 1) both; }
+  svg.course.is-arriving .lv { transform-box: fill-box; transform-origin: center;
+    animation: course-land 360ms cubic-bezier(.16, 1, .3, 1) both; }
+  svg.course.is-arriving .dl, svg.course.is-arriving .gap, svg.course.is-arriving .lvv { animation: course-fade 320ms ease-out both; }
   .course .scr  { stroke: var(--ink-muted); stroke-width: 1.5; }   /* its lane label names it; purple now means the fit */
   .course .scrv { font-size: 12px; fill: var(--ink-muted); }
   .course .now  { stroke: var(--ink-faint); stroke-dasharray: 4 4; }
@@ -2186,9 +2209,12 @@
     margin: 6px 0 0 46px; padding: 0; border: 0; }
   .vx-legend .legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .lg { display: inline-block; width: 18px; height: 0; flex: none; }
-  .lg-ind  { border-top: 2px solid var(--series-fit); }
-  .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
-  .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
+  .lg-ind  { border-top: 2.5px solid var(--series-fit); }
+  /* The prior's key is the 6/4 dash the canvas draws: a CSS dashed border draws ~3 px dashes. */
+  .lg-pop  { height: 1.5px; background: repeating-linear-gradient(90deg, var(--ink-soft) 0 6px, transparent 6px 10px); }
+  .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); box-sizing: border-box;
+    border-top: 1px solid color-mix(in srgb, var(--series-fit) 42%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--series-fit) 42%, transparent); }
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
   .hd-dose { white-space: nowrap; }
   .hd-perkg { display: block; font-size: var(--fs-xs); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
@@ -2198,7 +2224,7 @@
   .hd-sched > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
   .hd-sched-row { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
   .hd-sched-row label { display: grid; gap: 4px; }
-  .lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
+  .lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--series-measured); }
   .lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--series-fit); box-sizing: border-box; }
   .lg-proj { border-top: 2px solid var(--series-projection); }
   .vx-summary { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 10px 0 0 46px; max-width: 72ch; }
@@ -2701,7 +2727,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.6.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2732,7 +2758,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.0</div>
+  <div class="header-tag">Vancomycin TDM v3.6.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3764,6 +3790,11 @@
 
 
 <script>
+// The build's version. Every release bumps it: minor for a change in clinical
+// behaviour or a new feature, patch for fixes and wording, major for an engine or
+// model overhaul. The static header and print-header markup carry the same string
+// (SUITE 36). History: README "Version history".
+const APP_VERSION = '3.6.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -7104,7 +7135,7 @@ function drawTxTinkChart(suffix) {
     v.base && { pts: curve(v.base.dose, v.base.tau, v.kel, v.vd), tau: v.base.tau,
                 color: themeColor(v.base.token, '#6751a8'), width: 2 },
     v.pop && { pts: curve(v.dose, v.tau, v.pop.kel, v.pop.vd), tau: v.tau,
-               color: themeColor('--ink-muted', '#676b5e'), width: 1.25, dash: [5, 4] },
+               color: themeColor('--ink-soft', '#5a6151'), width: 1.5, dash: [6, 4] },
     { pts: curve(v.dose, v.tau, v.kel, v.vd), tau: v.tau,
       color: themeColor(v.tried.token, '#cc785c'), width: 2.25, dash: v.tried.dash },
   ], { band: v.band, height: 180 });
@@ -7232,8 +7263,8 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
 
   // The profile chart's colour code (D14): the current regimen, fitted to the
   // patient, in --series-fit; the recommendation or a projection in
-  // --series-projection; the population estimate as a thin --ink-muted dash;
-  // a measured level in ink; the trough target as a faint ink band.
+  // --series-projection; the population estimate as an --ink-soft long dash;
+  // a measured level in --series-measured; the trough target as a faint ink band.
   const cText = themeColor('--ink-muted', '#676b5e');
   const cRec  = themeColor('--series-projection', '#cc785c');
   const cCurve = opts.role === 'current' ? themeColor('--series-fit', '#6751a8') : cRec;   // the current regimen, fitted to the patient
@@ -7285,8 +7316,8 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     ctx.stroke();
   };
   if (priorPoints) {           // behind the regimens: the reference, clearly secondary
-    ctx.save(); ctx.setLineDash([5, 4]);
-    stroke(priorPoints, themeColor('--ink-muted', '#676b5e'), 1.25);
+    ctx.save(); ctx.setLineDash([6, 4]);
+    stroke(priorPoints, themeColor('--ink-soft', '#5a6151'), 1.5);
     ctx.restore();
   }
   stroke(points, cCurve, 2.25);
@@ -7333,7 +7364,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     const oy = ty(opts.obsLevel);
     if (oy >= pad.top - 4 && oy <= pad.top + gH + 4) {
       obsMark = [ox, oy];
-      ctx.fillStyle = themeColor('--ink', '#2d3428');   // data ink, as on the Bayesian curve
+      ctx.fillStyle = themeColor('--series-measured', '#3e6b1f');   // measured, as on the Bayesian curve
       ctx.strokeStyle = cRing; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(ox, oy, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.fillStyle = themeColor('--ink', '#2d3428');
@@ -9377,7 +9408,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const kelPop = CLpop / Vpop;
   // Same domain and side padding as the course strip above, so the two share
   // one time axis at every width.
-  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions, levels);
   const tNow   = Date.now() / 3600000;
 
   // Dispatch to 1-comp or 2-comp based on gotiInd presence
@@ -9442,245 +9473,325 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const tx = rel => pad.left + (rel / tSpan) * gW;
   const ty = c   => pad.top  + gH  - (c / cMaxVal) * gH;
 
-  ctx.clearRect(0, 0, cW, cHpx);
+  const nHistoric  = doses.length - nProj;
+  const tProjStart = nProj > 0 ? doses[nHistoric].timeH : Infinity;
+  const nowRel     = tNow - tStart;
+  const cStep      = niceStep(cMaxVal, 6);
+  const tStepMajor = niceTimeStep(tSpan, Math.max(3, Math.floor(gW / 90)));
+  const tStepMinor = tStepMajor / (tStepMajor % 3 === 0 ? 3 : 2);
+  const trace = (pts) => { ctx.beginPath(); pts.forEach((p, i) => { i === 0 ? ctx.moveTo(tx(p.t), ty(p.c)) : ctx.lineTo(tx(p.t), ty(p.c)); }); };
+  const pastPts = ptsInd.filter(p => p.t+tStart <= tNow && p.t+tStart < tProjStart);
+  const futPts  = ptsInd.filter(p => p.t+tStart >= tNow && p.t+tStart < tProjStart);
+  const projPts = nProj > 0 ? ptsInd.filter(p => p.t+tStart >= tProjStart) : [];
   // No trough band: a 10–20 reference behind the PEAKS invited reading the peaks
   // as out of range, and AUC — not trough — is the target (design audit
   // 2026-09-28). The trough is read from the curve and the crosshair.
 
-  // ── After "now" is prediction, not record: the course strip's faint field,
-  //    continued down the curve. Drawn first, so the grid reads through it.
-  {
-    const r = tNow - tStart;
-    if (r > 0 && r < tSpan) {
-      const xf = tx(r);
+  // ── The ground: after "now" is prediction, not record (the course strip's faint
+  //    field, continued down the curve); haemodialysis sessions (D15), a neutral
+  //    band each; the concentration grid and the time grid. ──
+  const paintGround = () => {
+    if (nowRel > 0 && nowRel < tSpan) {
+      const xf = tx(nowRel);
       ctx.fillStyle = themeColor('--paper-deep', '#f2ecdf');
       ctx.fillRect(xf, pad.top, pad.left + gW - xf, gH);
     }
-  }
-  // ── Haemodialysis sessions (D15): a neutral band each, labelled, behind the
-  //    curves. Not a series colour — a session is an event, not a model.
-  for (const x of (opts.sessions || [])) {
-    const a = Math.max(0, x.startH - tStart), b = Math.min(tSpan, x.endH - tStart);
-    if (b <= 0 || a >= tSpan) continue;
-    ctx.fillStyle = themeRGBA('--ink', 0.08, 'rgba(40,36,30,0.08)');
-    ctx.fillRect(tx(a), pad.top, Math.max(1, tx(b) - tx(a)), gH);
-    ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
-    ctx.font = "500 12px 'Outfit', sans-serif";
-    ctx.textAlign = 'center';
-    ctx.fillText('HD', (tx(a) + tx(b)) / 2, pad.top - 8);
-  }
+    // A session is an event, not a model: not a series colour.
+    for (const x of (opts.sessions || [])) {
+      const a = Math.max(0, x.startH - tStart), b = Math.min(tSpan, x.endH - tStart);
+      if (b <= 0 || a >= tSpan) continue;
+      ctx.fillStyle = themeRGBA('--ink', 0.08, 'rgba(40,36,30,0.08)');
+      ctx.fillRect(tx(a), pad.top, Math.max(1, tx(b) - tx(a)), gH);
+      ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
+      ctx.font = "500 12px 'Outfit', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText('HD', (tx(a) + tx(b)) / 2, pad.top - 8);
+    }
+    ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
+    ctx.lineWidth   = 1;
+    for (let c=0; c<=cMaxVal + 1e-9; c+=cStep) {
+      ctx.beginPath(); ctx.moveTo(pad.left, ty(c)); ctx.lineTo(pad.left+gW, ty(c)); ctx.stroke();
+    }
+    // Vertical time gridlines — the step adapts to the course length.
+    ctx.strokeStyle = themeColor('--rule','rgba(0,0,0,0.05)');
+    ctx.lineWidth   = 0.5;
+    for (let tMark = tStepMinor; tMark <= tSpan; tMark += tStepMinor) {
+      if (Math.abs(tMark % tStepMajor) < 1e-6) continue;      // majors drawn below
+      const xM = tx(tMark);
+      if (xM < pad.left || xM > pad.left+gW) continue;
+      ctx.beginPath(); ctx.moveTo(xM, pad.top); ctx.lineTo(xM, pad.top+gH); ctx.stroke();
+    }
+    ctx.strokeStyle = themeRGBA('--ink-faint', 0.28, 'rgba(138,142,128,0.28)');
+    ctx.lineWidth   = 0.75;
+    ctx.setLineDash([2,5]);
+    for (let tMark = tStepMajor; tMark <= tSpan; tMark += tStepMajor) {
+      const xM = tx(tMark);
+      if (xM < pad.left || xM > pad.left+gW) continue;
+      ctx.beginPath(); ctx.moveTo(xM, pad.top); ctx.lineTo(xM, pad.top+gH); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  };
 
-  // ── Horizontal concentration grid ──
-  ctx.strokeStyle = themeRGBA('--ink-faint', 0.18, 'rgba(138,142,128,0.18)');
-  ctx.lineWidth   = 1;
-  const cStep = niceStep(cMaxVal, 6);
-  for (let c=0; c<=cMaxVal + 1e-9; c+=cStep) {
-    ctx.beginPath(); ctx.moveTo(pad.left, ty(c)); ctx.lineTo(pad.left+gW, ty(c)); ctx.stroke();
-  }
-
-  // ── Vertical time gridlines — step adapts to the course length ──
-  const tStepMajor = niceTimeStep(tSpan, Math.max(3, Math.floor(gW / 90)));
-  const tStepMinor = tStepMajor / (tStepMajor % 3 === 0 ? 3 : 2);
-  ctx.strokeStyle = themeColor('--rule','rgba(0,0,0,0.05)');
-  ctx.lineWidth   = 0.5;
-  for (let tMark = tStepMinor; tMark <= tSpan; tMark += tStepMinor) {
-    if (Math.abs(tMark % tStepMajor) < 1e-6) continue;      // majors drawn below
-    const xM = tx(tMark);
-    if (xM < pad.left || xM > pad.left+gW) continue;
-    ctx.beginPath(); ctx.moveTo(xM, pad.top); ctx.lineTo(xM, pad.top+gH); ctx.stroke();
-  }
-  ctx.strokeStyle = themeRGBA('--ink-faint', 0.28, 'rgba(138,142,128,0.28)');
-  ctx.lineWidth   = 0.75;
-  ctx.setLineDash([2,5]);
-  for (let tMark = tStepMajor; tMark <= tSpan; tMark += tStepMajor) {
-    const xM = tx(tMark);
-    if (xM < pad.left || xM > pad.left+gW) continue;
-    ctx.beginPath(); ctx.moveTo(xM, pad.top); ctx.lineTo(xM, pad.top+gH); ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  const nHistoric  = doses.length - nProj;
-  const tProjStart = nProj > 0 ? doses[nHistoric].timeH : Infinity;
-
-  // ── The 80% band (simulated), soft: the fit's own hue over the fitted
-  //    course, the projection's over a projected regimen. Filled only.
-  if (band && ptsHi.length > 1) {
-    const fillBand = (pred, color) => {
-      const hi = ptsHi.filter(pred), lo = ptsLo.filter(pred);
-      if (hi.length < 2) return;
+  // ── The 80% band (simulated): the fit's own hue over the fitted course, the
+  //    projection's over a projected regimen. The fill here; its edges are drawn
+  //    with the lines, after the prior. ──
+  const bandPart = (pred) => {
+    const hi = ptsHi.filter(pred), lo = ptsLo.filter(pred);
+    return hi.length < 2 ? null : { hi, lo };
+  };
+  const bandFit  = band && ptsHi.length > 1 ? bandPart(p => p.t + tStart <= tProjStart) : null;
+  const bandProj = band && ptsHi.length > 1 && nProj > 0 ? bandPart(p => p.t + tStart >= tProjStart) : null;
+  const paintBand = () => {
+    const fillBand = (b, color) => {
+      if (!b) return;
       ctx.fillStyle = color;
       ctx.beginPath();
-      hi.forEach((p, i) => { i === 0 ? ctx.moveTo(tx(p.t), ty(p.c)) : ctx.lineTo(tx(p.t), ty(p.c)); });
-      for (let i = lo.length - 1; i >= 0; i--) ctx.lineTo(tx(lo[i].t), ty(lo[i].c));
+      b.hi.forEach((p, i) => { i === 0 ? ctx.moveTo(tx(p.t), ty(p.c)) : ctx.lineTo(tx(p.t), ty(p.c)); });
+      for (let i = b.lo.length - 1; i >= 0; i--) ctx.lineTo(tx(b.lo[i].t), ty(b.lo[i].c));
       ctx.closePath();
       ctx.fill();
     };
-    fillBand(p => p.t + tStart <= tProjStart, themeRGBA('--series-fit', 0.16, 'rgba(103,81,168,0.16)'));
-    if (nProj > 0) fillBand(p => p.t + tStart >= tProjStart, themeRGBA('--series-projection', 0.16, 'rgba(204,120,92,0.16)'));
-  }
+    fillBand(bandFit,  themeRGBA('--series-fit', 0.16, 'rgba(103,81,168,0.16)'));
+    fillBand(bandProj, themeRGBA('--series-projection', 0.16, 'rgba(204,120,92,0.16)'));
+  };
 
-  // ── "Now" line ──
-  const nowRel = tNow - tStart;
-  if (nowRel > 0 && nowRel < tSpan) {
-    const xNow = tx(nowRel);
-    ctx.strokeStyle = themeRGBA('--ink-faint', 0.7, 'rgba(138,142,128,0.7)');
-    ctx.lineWidth   = 1;
-    ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.moveTo(xNow, pad.top); ctx.lineTo(xNow, pad.top+gH); ctx.stroke();
+  // ── Frame marks: the "now" line, and an 8 px stub on the axis per dose (amounts,
+  //    times and gaps are on the course strip above, on the same axis). Only the
+  //    first projected dose — a real regime boundary — spans the plot. ──
+  const paintFrame = () => {
+    if (nowRel > 0 && nowRel < tSpan) {
+      const xNow = tx(nowRel);
+      ctx.strokeStyle = themeRGBA('--ink-faint', 0.7, 'rgba(138,142,128,0.7)');
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(xNow, pad.top); ctx.lineTo(xNow, pad.top+gH); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle   = themeColor('--ink-muted', '#676b5e');
+      ctx.font        = "500 11px 'Outfit', sans-serif";
+      ctx.textAlign   = 'center';
+      ctx.textBaseline= 'alphabetic';
+      ctx.fillText('now', xNow, pad.top-6);
+    }
+    for (let di = 0; di < doses.length; di++) {
+      const d   = doses[di];
+      const isP = di >= nHistoric;
+      const xD  = tx(d.timeH - tStart);
+      const firstProjected = isP && di === nHistoric;
+      ctx.strokeStyle = isP ? themeRGBA('--series-projection', 0.8, 'rgba(204,120,92,0.8)')
+                            : themeRGBA('--ink', 0.55, 'rgba(45,52,40,0.55)');
+      ctx.lineWidth   = 1;
+      if (isP) ctx.setLineDash([3,3]);
+      ctx.beginPath();
+      if (firstProjected) { ctx.moveTo(xD, pad.top); ctx.lineTo(xD, pad.top + gH); }
+      else                { ctx.moveTo(xD, pad.top + gH - 8); ctx.lineTo(xD, pad.top + gH); }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  };
+
+  // ── The curves. The population prior is the neutral reference: --ink-soft in a
+  //    long dash, darker than any gridline so it reads as a curve, never a series
+  //    hue (a fourth hue collided with the fit or the measured green; see :root).
+  //    The band's edges are hairlines in its own hue. The individual curve is the
+  //    fit's hue — solid for the fitted past, dashed after now, the projection's hue
+  //    for a projected regimen — laid on a paper casing so it reads crisply over
+  //    the band and the grid (profile polish 2026-10-02). ──
+  const paintLines = () => {
+    ctx.strokeStyle = themeColor('--ink-soft', '#5a6151');
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([6,4]);
+    trace(ptsPop); ctx.stroke();
     ctx.setLineDash([]);
+    const edges = (b, color) => {
+      if (!b) return;
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      trace(b.hi); ctx.stroke(); trace(b.lo); ctx.stroke();
+    };
+    edges(bandFit,  themeRGBA('--series-fit', 0.42, 'rgba(103,81,168,0.42)'));
+    edges(bandProj, themeRGBA('--series-projection', 0.42, 'rgba(204,120,92,0.42)'));
+    const cased = (path, color, width, dash) => {
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.setLineDash(dash || []);
+      ctx.strokeStyle = themeColor('--paper', '#faf5ed'); ctx.lineWidth = width + 3;
+      path(); ctx.stroke();
+      ctx.strokeStyle = color; ctx.lineWidth = width;
+      path(); ctx.stroke();
+      ctx.setLineDash([]); ctx.lineCap = 'butt';
+    };
+    const fit = themeColor('--series-fit', '#6751a8');
+    if (pastPts.length > 1) cased(() => trace(pastPts), fit, 2.5);
+    else if (!futPts.length && !projPts.length) cased(() => trace(ptsInd), fit, 2.5);
+    if (futPts.length > 1) {
+      cased(() => {
+        ctx.beginPath();
+        if (pastPts.length) ctx.moveTo(tx(pastPts[pastPts.length-1].t), ty(pastPts[pastPts.length-1].c));
+        futPts.forEach((p,i) => { i===0 && pastPts.length ? ctx.lineTo(tx(p.t),ty(p.c)) : (i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c))); });
+      }, themeRGBA('--series-fit', 0.8, 'rgba(103,81,168,0.8)'), 2, [3,3]);   // short: the long dash is the prior's alone
+    }
+    if (projPts.length > 1) {
+      const bridgePts = ptsInd.filter(p => p.t+tStart >= (futPts.length ? futPts[futPts.length-1].t+tStart : tNow) && p.t+tStart <= tProjStart);
+      const startP = bridgePts.length ? bridgePts[bridgePts.length-1] : (futPts.length ? futPts[futPts.length-1] : pastPts[pastPts.length-1]);
+      cased(() => {
+        ctx.beginPath();
+        if (startP) ctx.moveTo(tx(startP.t), ty(startP.c));
+        projPts.forEach((p,i) => { i===0 && startP ? ctx.lineTo(tx(p.t),ty(p.c)) : (i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c))); });
+      }, themeColor('--series-projection', '#cc785c'), 2.5);
+    }
+  };
+
+  // ── Measured levels: a dot in --series-measured with its value (data), an open
+  //    ring in the fit's hue at what the fit predicts at that moment, and between
+  //    them a hairline — the residual, the distance between measurement and model,
+  //    drawn rather than left to the eye. Model and measurement never share a
+  //    colour; the value is text, so it is ink. revealX: during the arrival a level
+  //    lands as the trace passes it (null: everything settled). ──
+  const easeBack = (k) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+  const paintLevels = (revealX) => {
+    for (const lev of levels) {
+      const relT = lev.timeH - tStart;
+      if (relT < 0 || relT > tSpan) continue;
+      const x = tx(relT), y = ty(lev.conc);
+      const k = revealX == null ? 1 : Math.max(0, Math.min(1, (revealX - x) / PROFILE_LAND_PX));
+      if (k <= 0) continue;
+      const g = k < 1 ? Math.max(0, easeBack(k)) : 1;
+      const yp = ty(predInd(lev.timeH));
+      ctx.globalAlpha = Math.min(1, k * 1.6);
+      const span = Math.abs(y - yp) - 9.5;
+      if (span > 2) {
+        ctx.fillStyle = themeRGBA('--ink', 0.34, 'rgba(45,52,40,0.34)');
+        ctx.fillRect(x - 0.5, Math.min(y, yp) + (y < yp ? 5 : 4.5), 1, span);
+      }
+      ctx.fillStyle = themeColor('--paper', '#faf5ed');
+      ctx.beginPath(); ctx.arc(x, y, 7 * g, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = themeColor('--series-measured', '#3e6b1f');
+      ctx.beginPath(); ctx.arc(x, y, 5 * g, 0, Math.PI * 2); ctx.fill();
+      // The fit's ring last, on its own paper casing, so it is whole even when the
+      // residual is small (finish review: half hidden under the halo at a near trough).
+      ctx.strokeStyle = themeColor('--paper', '#faf5ed'); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.font        = "600 11px 'Outfit', sans-serif";
+      const lbl = `${+lev.conc.toFixed(1)}`;
+      const flip = x + 12 + ctx.measureText(lbl).width > pad.left + gW;
+      ctx.textAlign   = flip ? 'right' : 'left';
+      ctx.textBaseline= 'middle';
+      ctx.lineWidth   = 3;
+      ctx.strokeStyle = themeColor('--paper', '#faf5ed');
+      ctx.strokeText(lbl, x + (flip ? -12 : 12), y);
+      ctx.fillStyle   = themeColor('--ink', '#2d3428');
+      ctx.fillText(lbl, x + (flip ? -12 : 12), y);
+      ctx.globalAlpha = 1;
+    }
+  };
+
+  // ── The pen: during the arrival only, a point riding the posterior at the trace's
+  //    leading edge over a faint rule — the curve being drawn, then gone. ──
+  const paintPen = (revealX) => {
+    if (!(revealX > pad.left && revealX < pad.left + gW)) return;
+    const c = predInd(tStart + ((revealX - pad.left) / gW) * tSpan);
+    if (!Number.isFinite(c)) return;
+    ctx.fillStyle = themeRGBA('--series-fit', 0.14, 'rgba(103,81,168,0.14)');
+    ctx.fillRect(revealX - 0.5, pad.top, 1, gH);
+    const y = ty(Math.max(0, Math.min(cMaxVal, c)));
+    ctx.beginPath(); ctx.arc(revealX, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = themeColor('--series-fit', '#6751a8'); ctx.fill();
+    ctx.strokeStyle = themeColor('--paper', '#faf5ed'); ctx.lineWidth = 1.5; ctx.stroke();
+  };
+
+  // ── Axes: concentration ticks, the unit, clock time and hours since the first dose. ──
+  const paintAxes = () => {
     ctx.fillStyle   = themeColor('--ink-muted', '#676b5e');
     ctx.font        = "500 11px 'Outfit', sans-serif";
-    ctx.textAlign   = 'center';
-    ctx.textBaseline= 'alphabetic';
-    ctx.fillText('now', xNow, pad.top-6);
-  }
-
-  // ── Dose events: an 8 px stub on the axis per dose. Amounts, times and gaps
-  //    are on the course strip above, on the same time axis. Only the first
-  //    projected dose — a real regime boundary — spans the plot.
-  for (let di = 0; di < doses.length; di++) {
-    const d   = doses[di];
-    const isP = di >= nHistoric;
-    const xD  = tx(d.timeH - tStart);
-    const firstProjected = isP && di === nHistoric;
-    ctx.strokeStyle = isP ? themeRGBA('--series-projection', 0.8, 'rgba(204,120,92,0.8)')
-                          : themeRGBA('--ink', 0.55, 'rgba(45,52,40,0.55)');
-    ctx.lineWidth   = 1;
-    if (isP) ctx.setLineDash([3,3]);
-    ctx.beginPath();
-    if (firstProjected) { ctx.moveTo(xD, pad.top); ctx.lineTo(xD, pad.top + gH); }
-    else                { ctx.moveTo(xD, pad.top + gH - 8); ctx.lineTo(xD, pad.top + gH); }
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // ── Population curve (thin, dashed, neutral — the reference, clearly secondary) ──
-  ctx.strokeStyle = themeColor('--ink-muted', '#676b5e');
-  ctx.lineWidth   = 1.25;
-  ctx.setLineDash([5,4]);
-  ctx.beginPath();
-  ptsPop.forEach((p,i) => { i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c)); });
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // ── Individual curve: the fit's hue, solid for the fitted past and dashed
-  //    after now; the projection's hue for a projected regimen. Measured data
-  //    stays ink, so model and measurement never share a colour. ──
-  const pastPts    = ptsInd.filter(p => p.t+tStart <= tNow && p.t+tStart < tProjStart);
-  const futPts     = ptsInd.filter(p => p.t+tStart >= tNow && p.t+tStart < tProjStart);
-  const projPts    = nProj > 0 ? ptsInd.filter(p => p.t+tStart >= tProjStart) : [];
-
-  ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
-  ctx.lineWidth   = 2;
-  if (pastPts.length > 1) {
-    ctx.beginPath();
-    pastPts.forEach((p,i) => { i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c)); });
-    ctx.stroke();
-  } else if (!futPts.length && !projPts.length) {
-    ctx.beginPath();
-    ptsInd.forEach((p,i) => { i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c)); });
-    ctx.stroke();
-  }
-  if (futPts.length > 1) {
-    ctx.strokeStyle = themeRGBA('--series-fit', 0.75, 'rgba(103,81,168,0.75)');
-    ctx.setLineDash([7,4]);
-    ctx.beginPath();
-    if (pastPts.length) ctx.moveTo(tx(pastPts[pastPts.length-1].t), ty(pastPts[pastPts.length-1].c));
-    futPts.forEach((p,i) => { i===0 && pastPts.length ? ctx.lineTo(tx(p.t),ty(p.c)) : (i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c))); });
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  if (projPts.length > 1) {
-    ctx.strokeStyle = themeColor('--series-projection', '#cc785c');
-    ctx.lineWidth   = 2;
-    const bridgePts = ptsInd.filter(p => p.t+tStart >= (futPts.length ? futPts[futPts.length-1].t+tStart : tNow) && p.t+tStart <= tProjStart);
-    ctx.beginPath();
-    const startP = bridgePts.length ? bridgePts[bridgePts.length-1] : (futPts.length ? futPts[futPts.length-1] : pastPts[pastPts.length-1]);
-    if (startP) ctx.moveTo(tx(startP.t), ty(startP.c));
-    projPts.forEach((p,i) => { i===0 && startP ? ctx.lineTo(tx(p.t),ty(p.c)) : (i===0 ? ctx.moveTo(tx(p.t),ty(p.c)) : ctx.lineTo(tx(p.t),ty(p.c))); });
-    ctx.stroke();
-  }
-
-  // ── Measured levels: an ink dot with its value (data), and an open ring in
-  //    the fit's hue at what the fit predicts at that moment, so the residual
-  //    reads as the distance between measurement and model ──
-  for (const lev of levels) {
-    const relT = lev.timeH - tStart;
-    if (relT < 0 || relT > tSpan) continue;
-    const x = tx(relT), y = ty(lev.conc);
-    const yp = ty(predInd(lev.timeH));
-    ctx.strokeStyle = themeColor('--series-fit', '#6751a8');
-    ctx.lineWidth   = 1.5;
-    ctx.beginPath(); ctx.arc(x, yp, 4.5, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = themeColor('--paper', '#faf5ed');
-    ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = themeColor('--ink', '#2d3428');   // data is ink: never the fit's hue, never rose (beside the alarm)
-    ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.font        = "600 11px 'Outfit', sans-serif";
-    const lbl = `${+lev.conc.toFixed(1)}`;
-    const flip = x + 12 + ctx.measureText(lbl).width > pad.left + gW;
-    ctx.textAlign   = flip ? 'right' : 'left';
+    ctx.textAlign   = 'right';
     ctx.textBaseline= 'middle';
-    ctx.lineWidth   = 3;
-    ctx.strokeStyle = themeColor('--paper', '#faf5ed');
-    ctx.strokeText(lbl, x + (flip ? -11 : 11), y);
-    ctx.fillStyle   = themeColor('--ink', '#2d3428');
-    ctx.fillText(lbl, x + (flip ? -11 : 11), y);
-  }
-
-  // ── Y-axis labels ──
-  ctx.fillStyle   = themeColor('--ink-muted', '#676b5e');
-  ctx.font        = "500 11px 'Outfit', sans-serif";
-  ctx.textAlign   = 'right';
-  ctx.textBaseline= 'middle';
-  const cDec = cStep < 1 ? (cStep < 0.2 ? 2 : 1) : 0;
-  for (let c=0; c<=cMaxVal + 1e-9; c+=cStep) {
-    ctx.fillText(c.toFixed(cDec), pad.left-6, ty(c));
-  }
-  // The unit heads the tick column. It sat at pad.top − 6, left-aligned, where
-  // the "g" descender ran into the top tick label ("mg/L30").
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText('mg/L', pad.left - 6, pad.top - 12);
-
-  // ── X-axis: clock time (month by name, 24-hour) and hours since first dose ──
-  ctx.textBaseline= 'top';
-  // A label centred on a tick near either edge is pulled in to stay whole — the
-  // last one ("30 Sep 08:00") was cut off by the canvas edge.
-  const edgeText = (txt, x, y) => {
-    const w = ctx.measureText(txt).width;
-    if (x + w / 2 > cW - 2)  { ctx.textAlign = 'right'; x = cW - 2; }
-    else if (x - w / 2 < 2)  { ctx.textAlign = 'left';  x = 2; }
-    else                       ctx.textAlign = 'center';
-    ctx.fillText(txt, x, y);
+    const cDec = cStep < 1 ? (cStep < 0.2 ? 2 : 1) : 0;
+    for (let c=0; c<=cMaxVal + 1e-9; c+=cStep) {
+      ctx.fillText(c.toFixed(cDec), pad.left-6, ty(c));
+    }
+    // The unit heads the tick column. It sat at pad.top − 6, left-aligned, where
+    // the "g" descender ran into the top tick label ("mg/L30").
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('mg/L', pad.left - 6, pad.top - 12);
+    ctx.textBaseline= 'top';
+    // A label centred on a tick near either edge is pulled in to stay whole — the
+    // last one ("30 Sep 08:00") was cut off by the canvas edge.
+    const edgeText = (txt, x, y) => {
+      const w = ctx.measureText(txt).width;
+      if (x + w / 2 > cW - 2)  { ctx.textAlign = 'right'; x = cW - 2; }
+      else if (x - w / 2 < 2)  { ctx.textAlign = 'left';  x = 2; }
+      else                       ctx.textAlign = 'center';
+      ctx.fillText(txt, x, y);
+    };
+    let lastTickX = -Infinity;
+    const MIN_SEP   = 52; // px between consecutive tick labels
+    for (let tMark = 0; tMark <= tSpan; tMark += tStepMajor) {
+      const xM   = tx(tMark);
+      if (xM < pad.left || xM > pad.left+gW) continue;
+      if ((xM - lastTickX) < MIN_SEP) continue;
+      lastTickX = xM;
+      const d2 = new Date((tStart+tMark)*3600000);
+      const hh = d2.getHours().toString().padStart(2,'0');
+      const mi = d2.getMinutes().toString().padStart(2,'0');
+      const prevD2 = new Date((tStart+tMark-tStepMajor)*3600000);
+      const showDate = tMark===0 || d2.getDate() !== prevD2.getDate();
+      ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
+      ctx.font = "500 11px 'Outfit', sans-serif";
+      edgeText(showDate ? `${d2.getDate()} ${MONTH_ABBR[d2.getMonth()]} ${hh}:${mi}` : `${hh}:${mi}`, xM, pad.top+gH+5);
+      edgeText(`${tMark % 1 === 0 ? tMark : tMark.toFixed(1)} h`, xM, pad.top+gH+19);
+    }
   };
-  let lastTickX = -Infinity;
-  const MIN_SEP   = 52; // px between consecutive tick labels
-  for (let tMark = 0; tMark <= tSpan; tMark += tStepMajor) {
-    const xM   = tx(tMark);
-    if (xM < pad.left || xM > pad.left+gW) continue;
-    if ((xM - lastTickX) < MIN_SEP) continue;
-    lastTickX = xM;
-    const d2 = new Date((tStart+tMark)*3600000);
-    const hh = d2.getHours().toString().padStart(2,'0');
-    const mi = d2.getMinutes().toString().padStart(2,'0');
-    const prevD2 = new Date((tStart+tMark-tStepMajor)*3600000);
-    const showDate = tMark===0 || d2.getDate() !== prevD2.getDate();
-    ctx.fillStyle = themeColor('--ink-muted', '#676b5e');
-    ctx.font = "500 11px 'Outfit', sans-serif";
-    edgeText(showDate ? `${d2.getDate()} ${MONTH_ABBR[d2.getMonth()]} ${hh}:${mi}` : `${hh}:${mi}`, xM, pad.top+gH+5);
-    edgeText(`${tMark % 1 === 0 ? tMark : tMark.toFixed(1)} h`, xM, pad.top+gH+19);
-  }
 
+  // One picture at a reveal position (null: complete). The series are clipped to
+  // the trace; the frame and the axes are there from the first frame, so the chart
+  // is never empty.
+  const paint = (revealX) => {
+    ctx.clearRect(0, 0, cW, cHpx);
+    paintGround();
+    const clipped = (fn) => {
+      if (revealX == null) { fn(); return; }
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, revealX, cHpx); ctx.clip(); fn(); ctx.restore();
+    };
+    clipped(paintBand);
+    paintFrame();
+    clipped(paintLines);
+    paintLevels(revealX);
+    if (revealX != null) paintPen(revealX);
+    paintAxes();
+  };
   // Keep everything a crosshair needs to invert a pixel back into a time and a
   // concentration. Stored on the canvas so multiple graphs stay independent.
-  canvas._pkPlot = {
-    pad, gW, gH, cW, cHpx, tStart, tSpan, cMaxVal, dpr,
-    predInd, predPop,
-    doses: doses.map(d => ({ mg: d.mg, timeH: d.timeH, tinfH: d.tinfH })),
-    levels: levels.map(l => ({ conc: l.conc, timeH: l.timeH })),
-    baseImage: ctx.getImageData(0, 0, canvas.width, canvas.height),
+  const settle = () => {
+    canvas._pkPlot = {
+      pad, gW, gH, cW, cHpx, tStart, tSpan, cMaxVal, dpr,
+      predInd, predPop,
+      doses: doses.map(d => ({ mg: d.mg, timeH: d.timeH, tinfH: d.tinfH })),
+      levels: levels.map(l => ({ conc: l.conc, timeH: l.timeH })),
+      baseImage: ctx.getImageData(0, 0, canvas.width, canvas.height),
+    };
+    attachPlotCrosshair(canvas);
   };
-  attachPlotCrosshair(canvas);
+
+  // The arrival (profile polish 2026-10-02): on a NEW result only (opts.arrive, set
+  // by refreshProfileGraph, which also checks reduced motion), the trace sweeps left
+  // to right with an exponential ease-out and lands on exactly the static picture.
+  if (canvas._pkRaf) { cancelAnimationFrame(canvas._pkRaf); canvas._pkRaf = 0; }
+  if (opts.arrive && typeof requestAnimationFrame === 'function' && typeof performance !== 'undefined') {
+    canvas._pkPlot = null;   // no cursor over a half-drawn picture
+    const x0 = pad.left, reach = gW + PROFILE_LAND_PX, t0ms = performance.now();
+    const step = (nowMs) => {
+      const u = Math.min(1, (nowMs - t0ms) / PROFILE_ARRIVE_MS);
+      if (u >= 1) { canvas._pkRaf = 0; paint(null); settle(); return; }
+      paint(x0 + reach * (1 - Math.pow(1 - u, 4)));
+      canvas._pkRaf = requestAnimationFrame(step);
+    };
+    paint(x0);
+    canvas._pkRaf = requestAnimationFrame(step);
+  } else {
+    paint(null);
+    settle();
+  }
 }
 
 // ── The shared time cursor ────────────────────────────────────────────────
@@ -11010,7 +11121,26 @@ function forestPlotSVG(ag, nLev, bandMin, bandMax) {
 // The shared time domain of the course strip and the concentration curve, so
 // the two read on one axis at every width.
 const PROFILE_PAD = { top: 24, right: 16, bottom: 34, left: 46 };
-function profileDomain(doses, kelInd, sessions) {
+// The arrival (profile polish 2026-10-02): on a NEW result the curve traces in left
+// to right and each level lands as the trace passes it; the course strip above is
+// staged on the same sweep. Never on a redraw (theme, resize, a toggle), never under
+// prefers-reduced-motion, never in print. PREFERENCE: presentation only.
+const PROFILE_ARRIVE_MS = 950;   // the whole sweep
+const PROFILE_LAND_PX = 42;      // how far past a level the trace is when it has landed
+let _profileArrivedFor = null;   // the result last arrived, so a redraw does not replay it
+function profileMotionOK() {
+  try {
+    return typeof requestAnimationFrame === 'function' && !document.hidden
+      && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) { return false; }
+}
+// When the sweep reaches x (in plot pixels from the left edge, of a plot gW wide),
+// in ms: the inverse of the canvas sweep's ease-out, 1 − (1 − u)⁴.
+function profileArriveDelay(xFromLeft, gW) {
+  const f = Math.max(0, Math.min(1, xFromLeft / (gW + PROFILE_LAND_PX)));
+  return Math.round(PROFILE_ARRIVE_MS * (1 - Math.pow(1 - f, 0.25)));
+}
+function profileDomain(doses, kelInd, sessions, levels) {
   const tStart = doses[0].timeH;
   const lastD = doses[doses.length - 1];
   const span = lastD.timeH - tStart;
@@ -11023,18 +11153,29 @@ function profileDomain(doses, kelInd, sessions) {
   for (const x of (sessions || [])) {
     if (x.startH > tEnd && x.startH <= tEnd + 72) tEnd = Math.max(tEnd, x.startH + 2);
   }
+  // Every measured level is on the axis (reported 2026-10-02): a level drawn days
+  // after the last dose — doses held on a long course — fell past the 48 h tail
+  // and vanished from the curve and the strip while the fit still used it. The
+  // axis must contain everything drawn on it; a small margin keeps the dot and its
+  // value clear of the edge.
+  for (const l of (levels || [])) {
+    if (l.timeH > tEnd - 2) tEnd = Math.max(tEnd, l.timeH + Math.max(4, 0.03 * (l.timeH - tStart)));
+  }
   return { tStart, tEnd };
 }
 
 // The course strip: what was given (bars as wide as each infusion), what was
 // measured (dots with values), creatinine (ticks), and "now" — on the same time
 // axis as the curve beneath it. Drawn as SVG so it reflows and prints crisply.
-function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions) {
+function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive) {
   if (!el || !doses.length) return;
   const W = Math.max(280, el.clientWidth || 600), H = 76;
-  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions, levels);
   const P = PROFILE_PAD, gW = W - P.left - P.right, span = tEnd - tStart;
   const x = t => P.left + (t - tStart) / span * gW;
+  // On a new result each mark appears as the curve's trace below passes its time
+  // (the same sweep, profileArriveDelay); otherwise no motion at all.
+  const at = (xp, extra) => arrive ? ` style="animation-delay:${profileArriveDelay(xp - P.left, gW) + (extra || 0)}ms"` : '';
   const nHist = doses.length - (nProj || 0);
   const Y = { dose: 14, level: 42, scr: 64 };
   let s = '';
@@ -11043,25 +11184,50 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions) {
   if (scr && scr.length) s += `<text x="${P.left - 8}" y="${Y.scr + 4}" class="lane" text-anchor="end">SCr</text>`;
   s += `<line x1="${P.left}" x2="${P.left + gW}" y1="${Y.dose + 9}" y2="${Y.dose + 9}" class="base"/>`;
   let lastLbl = -Infinity;
+  const gapLbls = [];   // placed after the level values, which win any overlap
   doses.forEach((d, i) => {
     const x0 = x(d.timeH), w = Math.max(2, x(d.timeH + d.tinfH) - x0);
     const proj = i >= nHist;
-    s += `<rect x="${x0.toFixed(1)}" y="${Y.dose - 5}" width="${w.toFixed(1)}" height="10" class="${proj ? 'bar proj' : 'bar'}"><title>${fmtDose(d.mg)} at ${fmtClock(d.timeH)} over ${fmtHrs(d.tinfH)}${proj ? ' (projected)' : ''}</title></rect>`;
+    // An infusion block: the body as wide as the infusion, a solid cap at its start.
+    s += `<rect x="${x0.toFixed(1)}" y="${Y.dose - 5}" width="${w.toFixed(1)}" height="10" class="${proj ? 'bar proj' : 'bar'}"${at(x0)}><title>${fmtDose(d.mg)} at ${fmtClock(d.timeH)} over ${fmtHrs(d.tinfH)}${proj ? ' (projected)' : ''}</title></rect>`;
+    s += `<rect x="${x0.toFixed(1)}" y="${Y.dose - 5}" width="${Math.min(2.5, w).toFixed(1)}" height="10" class="cap${proj ? ' proj' : ''}"${at(x0)}/>`;
     const change = i === 0 || d.mg !== doses[i - 1].mg || proj !== (i - 1 >= nHist);
     // Label the first dose and every change of strength (or into projection) —
     // a regimen change is never decimated away. Steady runs stay unlabelled.
-    if (change) { s += `<text x="${x0.toFixed(1)}" y="${Y.dose - 8}" class="dl${proj ? ' proj' : ''}">${fmtDose(d.mg)}</text>`; lastLbl = x0; }
+    if (change) { s += `<text x="${x0.toFixed(1)}" y="${Y.dose - 8}" class="dl${proj ? ' proj' : ''}"${at(x0)}>${fmtDose(d.mg)}</text>`; lastLbl = x0; }
     if (i > 0) {
       const xp = x(doses[i - 1].timeH), gap = d.timeH - doses[i - 1].timeH;
-      if (x0 - xp > 44) s += `<text x="${((x0 + xp) / 2).toFixed(1)}" y="${Y.dose + 22}" class="gap" text-anchor="middle">${+gap.toFixed(1)} h</text>`;
+      if (x0 - xp > 44) gapLbls.push({ cx: (x0 + xp) / 2, txt: `${+gap.toFixed(1)} h`, x0 });
     }
   });
-  (levels || []).forEach(l => {
-    if (l.timeH < tStart || l.timeH > tEnd) return;
-    const cx = x(l.timeH);
-    s += `<circle cx="${cx.toFixed(1)}" cy="${Y.level}" r="4" class="lv"><title>${+l.conc.toFixed(1)} mg/L at ${fmtClock(l.timeH)}</title></circle>`;
-    s += `<text x="${(cx + 7).toFixed(1)}" y="${Y.level + 4}" class="lvv">${+l.conc.toFixed(1)}</text>`;
+  // Each level's value sits right of its dot, or left when the next dot is too close
+  // (two levels drawn hours apart printed one value over the other, "15●228.4"); with
+  // no room either side the value stays in the dot's title and on the curve below.
+  const lvs = (levels || []).filter(l => l.timeH >= tStart && l.timeH <= tEnd).slice().sort((a, b) => a.timeH - b.timeH);
+  let prevRight = -Infinity;
+  const lvBoxes = [];
+  lvs.forEach((l, i) => {
+    const cx = x(l.timeH), txt = `${+l.conc.toFixed(1)}`, wTxt = txt.length * 6.6 + 2;
+    const nextX = i + 1 < lvs.length ? x(lvs[i + 1].timeH) : Infinity;
+    s += `<circle cx="${cx.toFixed(1)}" cy="${Y.level}" r="4" class="lv"${at(cx, 60)}><title>${+l.conc.toFixed(1)} mg/L at ${fmtClock(l.timeH)}</title></circle>`;
+    lvBoxes.push([cx - 5, cx + 5]);
+    if (cx + 7 + wTxt < nextX - 6 && cx + 7 + wTxt <= W - 2) {
+      s += `<text x="${(cx + 7).toFixed(1)}" y="${Y.level + 4}" class="lvv"${at(cx, 60)}>${txt}</text>`;
+      lvBoxes.push([cx + 7, cx + 7 + wTxt]);
+      prevRight = cx + 7 + wTxt;
+    } else if (cx - 7 - wTxt > prevRight + 4 && cx - 7 - wTxt >= 2) {
+      s += `<text x="${(cx - 7).toFixed(1)}" y="${Y.level + 4}" class="lvv" text-anchor="end"${at(cx, 60)}>${txt}</text>`;
+      lvBoxes.push([cx - 7 - wTxt, cx - 7]);
+      prevRight = cx + 4;
+    } else prevRight = cx + 4;
   });
+  // The interval between doses ("12 h") sits just above the level lane; where it
+  // would touch a level or its value, the level wins and the interval is left out.
+  for (const g of gapLbls) {
+    const half = g.txt.length * 3.3 + 3;
+    if (lvBoxes.some(([a, b]) => g.cx + half > a - 2 && g.cx - half < b + 2)) continue;
+    s += `<text x="${g.cx.toFixed(1)}" y="${Y.dose + 22}" class="gap" text-anchor="middle"${at(g.x0)}>${g.txt}</text>`;
+  }
   (scr || []).forEach(sr => {
     if (sr.timeH < tStart || sr.timeH > tEnd) return;
     const cx = x(sr.timeH);
@@ -11120,6 +11286,7 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions) {
   s += `<line class="cursor" x1="0" x2="0" y1="2" y2="${hScr - 2}" visibility="hidden"/>`;
   el.setAttribute('viewBox', `0 0 ${W} ${hScr}`);
   el.setAttribute('width', W); el.setAttribute('height', hScr);
+  if (el.classList) el.classList.toggle('is-arriving', !!arrive);
   el.innerHTML = s;
   // Pointing here moves the curve's cursor (attachPlotCrosshair), and the curve
   // moves this rule: one instant, one x, on both.
@@ -12273,15 +12440,18 @@ function refreshProfileGraph() {
   }
 
   const allDoses  = [...r.doses, ...projDoses];
+  // A new result arrives once; a redraw of the same one (theme, resize, a toggle) does not.
+  const arrive = r !== _profileArrivedFor && profileMotionOK();
+  _profileArrivedFor = r;
   requestAnimationFrame(() => {
     const gp = gotiGraphParams(r);
     const row = aucUncertaintyRow((r.levels || []).length, uncertaintyModelKey(r));
     drawProfileGraph(canvas, allDoses, r.levels, r.CL_ind, r.V_ind, r.CL_pop, r.V_pop, gp.ind, gp.pop, projDoses.length,
-                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [] });
+                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [], arrive });
     let scr = [];
     try { scr = readSerialScr(); } catch (e) {}
     drawCourseStrip(document.getElementById('b-course-strip'), allDoses, projDoses.length, r.levels, scr,
-                    r.CL_ind / r.V_ind, r.hdSessions || []);
+                    r.CL_ind / r.V_ind, r.hdSessions || [], arrive);
   });
 }
 
@@ -12544,7 +12714,7 @@ function runBayesTinkerer() {
       const triedPts = ssProfilePts || ssCurve(dose, tau, tinfH, CL_ind / V_ind, V_ind, 200);
       drawSSTinkCanvas(ssCanvas, [
         curPts && { pts: curPts, tau: tinkCur.tau, color: themeColor('--series-fit', '#6751a8'), width: 2 },
-        popPts && { pts: popPts, tau, color: themeColor('--ink-muted', '#676b5e'), width: 1.25, dash: [5, 4] },
+        popPts && { pts: popPts, tau, color: themeColor('--ink-soft', '#5a6151'), width: 1.5, dash: [6, 4] },
         { pts: triedPts, tau, color: themeColor('--series-projection', '#cc785c'), width: 2.25 },
       ], { band: tinkBand, height: 180 });
     }
@@ -13041,8 +13211,9 @@ function _buildPrintGraph(r) {
     const url = off.toDataURL('image/png');
     return `<div class="pr-section pr-section-wide"><h2 class="pr-section-title">Concentration–time profile</h2>
       <div class="pr-graph"><img src="${url}" alt="Vancomycin concentration-time profile"></div>
-      <div class="pr-caption">Solid line: individual (Bayesian) fit. Dashed: population prediction.
-        Points: measured levels. Shaded band: trough target. Vertical marks: doses.</div></div>`;
+      <div class="pr-caption">Solid line: individual (Bayesian) fit. Long dashes: population prediction.
+        Filled points: measured levels; open rings: the fit at each level, joined by a hairline (the residual).
+        Marks on the axis: doses.${(r.hdSessions || []).length ? ' Shaded columns: haemodialysis sessions.' : ''}</div></div>`;
   } catch (e) {
     return '';
   } finally {
@@ -14296,7 +14467,7 @@ function _prStamp(d) {
 function _prHeader(now, modelName) {
   return `<div class="pr-header">
     <div class="pr-brand">AinaDara</div>
-    <div class="pr-tag">Vancomycin TDM Report &middot; Clinical Pharmacist Tool</div>
+    <div class="pr-tag">Vancomycin TDM Report &middot; Clinical Pharmacist Tool &middot; v${APP_VERSION}</div>
     <div class="pr-meta">Generated ${escHtml(now)}${modelName ? ` &middot; Model: ${escHtml(modelName)}` : ''}</div>
   </div>`;
 }
