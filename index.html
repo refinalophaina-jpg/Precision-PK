@@ -8026,24 +8026,58 @@ function fittedAUC(r, t0, t1, n) {
   for (let i = 1; i < n; i++) sum += (i % 2 ? 4 : 2) * predictFittedAt(r, t0 + i * h);
   return sum * h / 3;
 }
-// Post-HD dose (D16). The dose follows the next session: one in progress, one
-// still to come, or one that ended under HD_POSTSESSION_DOSE_WINDOW_H ago with no
-// dose entered after it (then the dose is given now). It is sized at the start
+// Post-HD dose (D16; target point D17). The dose follows the next session: one in
+// progress, one still to come, or one that ended under HD_POSTSESSION_DOSE_WINDOW_H ago
+// with no dose entered after it (then the dose is given now). It is sized at the start
 // of the session after that, on the fitted curve with every dose entered.
 //   - A planned dose already entered around that session is READ, not
 //     overridden: kind 'planned' reports what it gives.
-//   - Otherwise: hold when no dose still reads at least 15 mg/L; else the
-//     smallest 250 mg step landing in 15–20 (Rybak 2020 Rec 14); else the
-//     closest step — which may be no dose — flagged.
+//   - Otherwise hdPickDose: the 250 mg step (or no dose) whose pre-HD level is
+//     closest to the middle of 15–20 (Rybak 2020 Rec 14), ties to the smaller
+//     dose; a hold when no dose is that step or every step reads above 20; else
+//     the step closest to the range, flagged.
 // A maintenance dose never exceeds DOSE_MAX_PER_DOSE_MG. Dose with every
 // session: Rybak 2020 (text, Rec 13).
 // PREFERENCE (rule 8): chooses which session the dose follows; changes no number.
 const HD_POSTSESSION_DOSE_WINDOW_H = 6;
-function hdNextDose(r, nowH) {
-  const all = (r.hdSessions || []).slice().sort((a, b) => a.startH - b.startH);
+// The target point within Rybak 2020 Rec 14's 15–20 band (D17, chosen by the user
+// 2026-10-02): derived from the band, not a new number. The smallest in-range step
+// settled near 15, which VancoPK's published arithmetic puts at AUC ~380.
+const HD_PREDIALYSIS_MID = (HD_PREDIALYSIS_MIN + HD_PREDIALYSIS_MAX) / 2;
+function HD_PREDIALYSIS_MID_FOR_TEST() { return HD_PREDIALYSIS_MID; }
+// The result with one more dose at atH (infusion time from autoTinf); r itself for 0 mg.
+function hdWithDose(r, mg, atH) {
+  return mg > 0 ? Object.assign({}, r, { doses: r.doses.concat([{ mg, tinfH: autoTinf(mg), timeH: atH }]) }) : r;
+}
+// Sessions a post-HD dose can still follow, in start order.
+function hdUpcomingSessions(r, nowH) {
   const dosedAfter = (x) => r.doses.some(d => d.timeH >= x.endH);
-  const upcoming = all.filter(x => x.endH > nowH
-    || (x.endH > nowH - HD_POSTSESSION_DOSE_WINDOW_H && !dosedAfter(x)));
+  return (r.hdSessions || []).slice().sort((a, b) => a.startH - b.startH)
+    .filter(x => x.endH > nowH || (x.endH > nowH - HD_POSTSESSION_DOSE_WINDOW_H && !dosedAfter(x)));
+}
+// One rule for both HD answers (D17): 0 and every 250 mg step to the per-dose
+// ceiling, each given at doseAtH, read on the fitted curve at readAtH.
+function hdPickDose(r, doseAtH, readAtH) {
+  const steps = [0];
+  for (let mg = MATRIX_DOSE_STEP; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) steps.push(mg);
+  const ev = steps.map(mg => ({ mg, pre: predictFittedAt(hdWithDose(r, mg, doseAtH), readAtH) }));
+  const off = (e) => Math.abs(e.pre - HD_PREDIALYSIS_MID);
+  const inRange = ev.filter(e => e.pre >= HD_PREDIALYSIS_MIN && e.pre <= HD_PREDIALYSIS_MAX);
+  let pick, kind, reason = '';
+  if (inRange.length) {
+    pick = inRange.reduce((b, e) => off(e) < off(b) ? e : b);   // strict: a tie keeps the smaller dose
+    kind = pick.mg ? 'dose' : 'hold'; reason = pick.mg ? '' : 'in';
+  } else if (ev[0].pre > HD_PREDIALYSIS_MAX) {
+    pick = ev[0]; kind = 'hold'; reason = 'above';
+  } else {
+    const gap = (e) => e.pre < HD_PREDIALYSIS_MIN ? HD_PREDIALYSIS_MIN - e.pre : e.pre - HD_PREDIALYSIS_MAX;
+    pick = ev.reduce((b, e) => gap(e) < gap(b) ? e : b);
+    kind = pick.mg ? 'closest' : 'hold'; reason = pick.mg ? '' : 'overshoot';
+  }
+  return { kind, reason, mg: pick.mg, tinfH: pick.mg ? autoTinf(pick.mg) : 0, pre: pick.pre, rr: hdWithDose(r, pick.mg, doseAtH) };
+}
+function hdNextDose(r, nowH) {
+  const upcoming = hdUpcomingSessions(r, nowH);
   if (upcoming.length < 2) return { need: 'sessions', planned: upcoming.length };
   const first = upcoming[0], sizing = upcoming[1];
   const doseAtH = Math.max(first.endH, nowH);
@@ -8054,33 +8088,17 @@ function hdNextDose(r, nowH) {
     const pre = predictFittedAt(r, sizing.startH);
     return Object.assign(base, { kind: 'planned', mg: 0, tinfH: 0, pre, auc24: fittedAUC(r, sizing.startH - 24, sizing.startH), peak: null, repeat: [] });
   }
-  const withDose = (mg) => mg > 0
-    ? Object.assign({}, r, { doses: r.doses.concat([{ mg, tinfH: autoTinf(mg), timeH: doseAtH }]) }) : r;
-  const steps = [0];
-  for (let mg = MATRIX_DOSE_STEP; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) steps.push(mg);
-  const ev = steps.map(mg => ({ mg, pre: predictFittedAt(withDose(mg), sizing.startH) }));
-  const gap = (e) => e.pre < HD_PREDIALYSIS_MIN ? HD_PREDIALYSIS_MIN - e.pre
-                   : e.pre > HD_PREDIALYSIS_MAX ? e.pre - HD_PREDIALYSIS_MAX : 0;
-  let pick, kind, reason = '';
-  if (ev[0].pre >= HD_PREDIALYSIS_MIN) { pick = ev[0]; kind = 'hold'; reason = ev[0].pre > HD_PREDIALYSIS_MAX ? 'above' : 'in'; }
-  else {
-    pick = ev.find(e => e.mg > 0 && gap(e) === 0);
-    kind = pick ? 'dose' : 'closest';
-    if (!pick) {
-      pick = ev.reduce((b, e) => gap(e) < gap(b) ? e : b);
-      if (pick.mg === 0) { kind = 'hold'; reason = 'overshoot'; }
-    }
-  }
-  const rr = withDose(pick.mg), tinfH = pick.mg ? autoTinf(pick.mg) : 0;
+  const pk = hdPickDose(r, doseAtH, sizing.startH);
+  const rr = pk.rr, tinfH = pk.tinfH;
   const repeat = [];
   let course = rr;
   for (let k = 1; k + 1 < upcoming.length; k++) {
-    if (pick.mg) course = Object.assign({}, course, { doses: course.doses.concat([{ mg: pick.mg, tinfH, timeH: upcoming[k].endH }]) });
+    if (pk.mg) course = Object.assign({}, course, { doses: course.doses.concat([{ mg: pk.mg, tinfH, timeH: upcoming[k].endH }]) });
     repeat.push({ n: upcoming[k + 1].n, pre: predictFittedAt(course, upcoming[k + 1].startH) });
   }
-  return Object.assign(base, { kind, reason, mg: pick.mg, tinfH, pre: pick.pre,
+  return Object.assign(base, { kind: pk.kind, reason: pk.reason, mg: pk.mg, tinfH, pre: pk.pre,
     auc24: fittedAUC(rr, sizing.startH - 24, sizing.startH),
-    peak: pick.mg ? predictFittedAt(rr, doseAtH + tinfH) : null, repeat });
+    peak: pk.mg ? predictFittedAt(rr, doseAtH + tinfH) : null, repeat });
 }
 // The HD answer for a result, read once at fit time (r.fitNowH) so a redraw or a
 // print can never show a different one (D16).

@@ -4305,9 +4305,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(rec.session === 2 && rec.sizing === 3 && Math.abs(rec.doseAtH - 56) < 1e-9, JSON.stringify(rec));
     assert(rec.kind === 'dose' && rec.pre >= 15 && rec.pre <= 20, `this fixture needs a dose in range: ${JSON.stringify(rec)}`);
     assert(sandbox.hdNextDose(hdR(), 20).mg === rec.mg, 'deterministic');
-    if (rec.mg > 250) {
-      const less = sandbox.predictFittedAt(Object.assign(hdR(), { doses: hdR().doses.concat([{ mg: rec.mg - 250, tinfH: sandbox.autoTinf(rec.mg - 250), timeH: 56 }]) }), 100);
-      assert(less < 15, 'one 250 mg step less misses the range: this is the smallest');
+    // D17 (rule 9, recorded in docs/v3-decisions.md): the pick is the in-range step closest
+    // to 17.5 — it was the smallest in range ("one 250 mg step less misses 15").
+    for (const mg of [rec.mg - 250, rec.mg + 250].filter(x => x >= 0 && x <= 2000)) {
+      const p = sandbox.predictFittedAt(sandbox.hdWithDose(hdR(), mg, 56), 100);
+      assert(!(p >= 15 && p <= 20) || Math.abs(p - 17.5) >= Math.abs(rec.pre - 17.5), `a neighbouring in-range step (${mg} mg, ${p.toFixed(2)}) is not closer to 17.5`);
     }
   });
   test('35.5 a session in progress: the dose goes at its end', () => {
@@ -4479,6 +4481,65 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(src36.includes(`<div class="header-tag">Vancomycin TDM v${m[1]}</div>`), 'the static header names the same version');
     assert(src36.includes(`<div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v${m[1]}</div>`), 'the static print header names it');
     assert(sandbox._prHeader('1 Oct 2026 10:00', 'Goti 2018').includes(`v${m[1]}`), 'the built print report names it');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 37 — one-time HD dose and the midpoint pick (D17)
+//
+// With fewer than two upcoming sessions the Goti-HD answer is a one-time dose sized
+// at an ASSUMED gap (24/48/72 h, default 48). Both HD answers pick the in-range
+// 250 mg step closest to the middle of Rybak 2020 Rec 14's 15–20 mg/L band.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 37 — one-time HD dose, midpoint pick (D17)');
+  console.log(`${'─'.repeat(60)}`);
+  const K37 = require('./harness_constants.cjs').extract();
+  const src37 = fs.readFileSync(htmlPath, 'utf8');
+  const script37 = src37.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code37 = script37.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf37 = (n) => { const c = code37.slice(code37.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  // predictFittedAt is a top-level function declaration, so the vm global holds it and a
+  // stub here is what hdPickDose calls. The stub reads the dose the rule appended.
+  const stubPre = (table, fn) => { const prev = sandbox.predictFittedAt;
+    sandbox.predictFittedAt = (r) => { const mg = r.doses.length > 1 ? r.doses[r.doses.length - 1].mg : 0;
+      return typeof table === 'function' ? table(mg) : (table[mg] != null ? table[mg] : 99); };
+    try { return fn(); } finally { sandbox.predictFittedAt = prev; } };
+  const r1 = { doses: [{ mg: 1000, tinfH: 1, timeH: 0 }] };
+  test('37.2 the pick is the in-range step closest to 17.5; ties go to the smaller dose', () => {
+    const tie = stubPre({ 0: 14, 250: 16, 500: 19, 750: 22 }, () => sandbox.hdPickDose(r1, 10, 58));
+    assert(tie.kind === 'dose' && tie.mg === 250, `16 and 19 are both 1.5 from 17.5: smaller wins, got ${JSON.stringify(tie)}`);
+    const mid = stubPre({ 0: 12, 250: 15.2, 500: 17.3, 750: 19.9 }, () => sandbox.hdPickDose(r1, 10, 58));
+    assert(mid.mg === 500 && mid.kind === 'dose', `old rule gave 250; midpoint gives 500, got ${mid.mg}`);
+    const nowDose = stubPre({ 0: 16, 250: 17.4, 500: 19 }, () => sandbox.hdPickDose(r1, 10, 58));
+    assert(nowDose.kind === 'dose' && nowDose.mg === 250, `old rule held at 16; midpoint doses 250, got ${JSON.stringify(nowDose)}`);
+    assert(Math.abs(sandbox.HD_PREDIALYSIS_MID_FOR_TEST() - 17.5) < 1e-12, 'midpoint derived from the band');
+  });
+  test('37.3 holds and the closest answer keep their meaning', () => {
+    const inHold = stubPre({ 0: 17.6, 250: 19.5 }, () => sandbox.hdPickDose(r1, 10, 58));
+    assert(inHold.kind === 'hold' && inHold.reason === 'in' && inHold.mg === 0, JSON.stringify(inHold));
+    const above = stubPre({ 0: 21 }, () => sandbox.hdPickDose(r1, 10, 58));
+    assert(above.kind === 'hold' && above.reason === 'above', JSON.stringify(above));
+    const over = stubPre({ 0: 14.1 }, () => sandbox.hdPickDose(r1, 10, 58));   // every step reads 99
+    assert(over.kind === 'hold' && over.reason === 'overshoot' && over.mg === 0, JSON.stringify(over));
+    const low = stubPre((mg) => 5 + mg / 250, () => sandbox.hdPickDose(r1, 10, 58));   // 2000 mg reads 13
+    assert(low.kind === 'closest' && low.mg === 2000, JSON.stringify(low));
+    assert(low.rr.doses.length === 2 && low.rr.doses[1].mg === 2000 && low.rr.doses[1].timeH === 10, 'rr carries the chosen dose');
+  });
+  test('37.4 the scheduled answer uses the shared rule on the real fit', () => {
+    const pk = sandbox.gotiPopPK(10, 70, true);
+    const r = { model: 'goti', dial: true, CL_ind: pk.TVCL, V_ind: pk.TVVc, tbw: 70,
+      goti: { Vc_ind: pk.TVVc, Vp_ind: pk.TVVp, Q: pk.Q }, levels: [], doses: [{ mg: 1750, tinfH: 2, timeH: 0 }],
+      hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 52, endH: 56 }, { n: 3, startH: 100, endH: 104 }] };
+    const rec = sandbox.hdNextDose(r, 20);
+    const pres = [0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000].map(mg => ({ mg,
+      pre: sandbox.predictFittedAt(sandbox.hdWithDose(r, mg, 56), 100) }));
+    const inR = pres.filter(p => p.pre >= 15 && p.pre <= 20);
+    assert(inR.length, 'the fixture has an in-range step (else this test would be vacuous)');
+    const best = inR.reduce((b, p) => Math.abs(p.pre - 17.5) < Math.abs(b.pre - 17.5) ? p : b);
+    assert(rec.mg === best.mg, `scheduled pick ${rec.mg} is the in-range step nearest 17.5 (${best.mg})`);
+    assert(/hdPickDose\(/.test(bodyOf37('hdNextDose')) && /hdUpcomingSessions\(/.test(bodyOf37('hdNextDose')), 'hdNextDose uses the shared helpers');
   });
 }
 

@@ -112,6 +112,8 @@ function extract() {
     AUC24_TARGET_MAX:       num(src, 'AUC24_TARGET_MAX'),
     AUC24_ABSOLUTE_MAX:     num(src, 'AUC24_ABSOLUTE_MAX'),
     DOSE_MAX_PER_DOSE_MG:   num(src, 'DOSE_MAX_PER_DOSE_MG'),
+    HD_PREDIALYSIS_MIN:     num(src, 'HD_PREDIALYSIS_MIN'),
+    HD_PREDIALYSIS_MAX:     num(src, 'HD_PREDIALYSIS_MAX'),
     DOSE_MAX_TDD_MG:        num(src, 'DOSE_MAX_TDD_MG'),
     AMPUTATION_MAX_PCT:     num(src, 'AMPUTATION_MAX_PCT'),
   };
