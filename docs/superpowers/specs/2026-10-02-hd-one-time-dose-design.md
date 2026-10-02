@@ -21,10 +21,27 @@ post-HD dose. Say plainly what the answer cannot know.
 ## Decisions (with the user, 2026-10-02)
 
 - **No mode toggle.** The one-time answer appears automatically wherever D16 returns
-  `need: 'sessions'`. A logged schedule keeps the D16 answer unchanged.
+  `need: 'sessions'`. A logged schedule keeps the D16 answer, with the new target point below.
 - **Gap to the next session:** 24, 48 or 72 h, counted from the dose. Default **48 h**, the
   shorter gap of a thrice-weekly schedule; it is a PREFERENCE under rule 8. The gap is stated in
   the answer and never hidden.
+  - VancoPK's HD calculator (Fewel) offers 1–4 days and defaults to 2.
+  - The user's institutional protocol rechecks a level once 72 h have passed since the last
+    session, hence 72 h as the longest gap.
+- **Target point within 15–20: the step closest to the midpoint, 17.5.** This replaces D16's
+  "smallest step in range" in **both** paths, through one shared rule.
+  - **Why:** "smallest in range" settles near 15. On VancoPK's published one-compartment
+    arithmetic (Ke 0.005 h⁻¹), a level falling to 15 before dialysis is an AUC of about 380 over
+    the prior 24 h, below 400. VancoPK aims at about 20 ("a daily AUC of about 500"), and the
+    user's protocol re-doses anything under 20.
+  - **Why not aim at 20:** with 250 mg steps and model error, aiming at 20 crosses it most often.
+    The midpoint leaves room on both sides.
+  - **What it costs:** in anuric patients the nephrotoxicity reason for the low end mostly no
+    longer applies; with residual function it does, and the midpoint is still inside Rybak's
+    band.
+  - **Not a new constant:** the midpoint is derived, `(HD_PREDIALYSIS_MIN + HD_PREDIALYSIS_MAX) / 2`.
+  - **Ties:** go to the smaller dose.
+  - **Chosen by the user, 2026-10-02.**
 - **Declined from the handoff, with reasons:**
   - **Estimated rebound concentration.** It was rejected in D15. Goti-HD averages dialysis and has
     no rebound phase to read. In the handoff's example the level is 12 h after HD, past
@@ -48,24 +65,40 @@ The same as D16, Rybak 2020 (AJHP 77:835–864):
 
 The **15–20 target** (`HD_PREDIALYSIS_MIN`/`MAX`), **250 mg rounding** (`MATRIX_DOSE_STEP`), the
 **2,000 mg per-dose ceiling** (`DOSE_MAX_PER_DOSE_MG`) and **infusion times** (`autoTinf`) are
-reused. No new clinical constant.
+reused. No new clinical constant is shipped; the midpoint is derived from the two bounds.
+
+**Comparators, used in verification only:**
+- VancoPK (Fewel), https://vancopk.com, Intermittent Hemodialysis calculator and its kinetics
+  review. The saved copy is `Literature/VancoPK_source_2026-09-05.html`.
+- tl;dr pharmacy (Kujawski 2019), considered and not adopted (see Tests).
 
 ## Components
 
 ### Shared choice rule — `hdPickDose(r, doseAtH, readAtH)`
 
-D16's selection, extracted from `hdNextDose` with **no change in behaviour** (engine parity and
-SUITE 35 prove it):
+D16's selection is extracted from `hdNextDose`, with the **target point changed to the
+midpoint** (Decisions above).
 - Candidates: 0, then 250…2,000 mg in 250 mg steps, each with `autoTinf`, appended at `doseAtH`.
   Each is read on the fitted curve (`predictFittedAt`) at `readAtH`.
-- **hold** if 0 mg reads at least 15 (reason `above` or `in`).
-- Otherwise the smallest dose reading 15–20 (**dose**).
-- Otherwise the closest (**closest**). If the closest is 0, it is **hold** with reason
-  `overshoot`.
+- **Among the candidates reading 15–20, including 0,** the one closest to 17.5 wins; ties go to
+  the smaller dose.
+  - If that is 0, it is **hold**, reason `in`.
+  - Otherwise it is **dose**.
+- **If none reads 15–20:**
+  - if 0 already reads above 20, it is **hold**, reason `above`;
+  - otherwise the step closest to the range is **closest**, and if that is 0, it is **hold**,
+    reason `overshoot`.
 - Returns `{kind, reason, mg, tinfH, pre, rr}`, where `rr` is the result with the chosen dose
   appended.
 
-`hdNextDose` calls it. Its output is identical.
+**Effect on D16:** where no dose already reads 15–17.5, the scheduled path may now give a dose
+where it held before. Where the smallest in-range step undershot the midpoint, it may give one
+step more. The **"hold if no dose reads at least 15"** rule becomes **"hold if no dose is closest
+to 17.5, or above 20"**.
+- **SUITE 35 updates:** expectations that encoded the old pick are changed in the open. Each is
+  listed in the D17 record with old → new, under rule 9.
+- **New tests** pin the midpoint choice and its tie-break.
+- **"Show the math"** HD rule text is updated to match.
 
 ### One-time dose — `hdOneTimeDose(r, nowH, gapH)`
 
@@ -136,17 +169,24 @@ Called by `hdViewFor` when `hdNextDose` returns `need`.
 
 ## What does not change
 
-- The fit, levels, objectives and the D16 scheduled path. Its output for two or more upcoming
-  sessions stays byte-identical.
+- The fit, levels and objectives.
+- The D16 scheduled path. Everything except the target point within 15–20 is unchanged:
+  - session choice;
+  - planned-dose reading;
+  - the repeat projection;
+  - AUC₂₄ and peak;
+  - display.
 - The non-HD verdict and `bayesDoseOptimizer`.
 - **Engine parity:** the existing 225 calls must show 0 differences.
 
 ## Tests
 
 **SUITE 36** in `phase2d_validation.cjs`:
-- `hdPickDose` matches D16 on the SUITE 35 fixtures. SUITE 35 stays green, unchanged.
+- `hdPickDose`: the midpoint pick and its smaller-dose tie-break; hold when 0 mg is closest to
+  17.5 or above 20; `closest` and `overshoot` as before. SUITE 35 expectations that encoded the
+  smallest-in-range pick are updated, and each change is listed old → new in D17 (rule 9).
 - **Dose time:** now when no session is upcoming; after the session when exactly one is upcoming.
-  Two upcoming sessions still give the D16 answer, not the one-time answer.
+  Two upcoming sessions still give the scheduled answer, not the one-time answer.
 - **Sizing:** at +24, +48 and +72 h, the chosen dose reads 15–20 at its gap, or is
   `closest`/`hold` by the shared rule. An invalid gap falls back to 48.
 - **Planned dose:** a planned dose inside the window is read, not replaced.
@@ -167,6 +207,23 @@ Called by `hdViewFor` when `hdNextDose` returns `need`.
 - no horizontal scroll;
 - no console or CSP errors.
 
+**Public anchor: VancoPK's HD method (`docs/audit/probe-hd-one-time.cjs`, committed).**
+- **The method:** Fewel's calculator at vancopk.com.
+  - Next pre-HD = (pre-HD × (1 − removal) + dose / Vd) × e^(−Ke × gap).
+  - Vd = 0.29·age + 0.33·ABW + 11 (Fewel 2021, already shipped and verified; the probe calls it
+    and does not copy it).
+  - Ke = 0.005 h⁻¹ and removal 30–40% (35% default) are the site's documentation, used **only in
+    the probe**, never shipped.
+  - It reproduces the site's screen (16.6 mg/L, 750 mg, 2 days → 20.6).
+- **The cases:** fictional patients, with ages 40–85, weights 45–110 kg, pre-HD levels 8–25 and
+  gaps 24/48/72 h. Each is a pre-HD level drawn before a session, with the dose after it.
+- **Compared:**
+  - our chosen dose;
+  - VancoPK's forecast for that dose;
+  - the 250 mg step VancoPK's method would place nearest 17.5.
+- **Disagreements** are summarised in D17 with their direction and size, and explained (averaged
+  Goti-HD clearance versus Ke 0.005 plus a removal fraction). They are not tuned away.
+
 **Independent anchor (private, not committed).** The user's institution publishes its own
 level-based table for unscheduled HD. It is weight-tiered, with re-dose and hold thresholds, and a
 72 h recheck that agrees with the longest gap offered here.
@@ -177,10 +234,11 @@ level-based table for unscheduled HD. It is weight-tiered, with re-dose and hold
 - **Disagreements** are explained in the D17 record in general terms ("the model doses higher for
   low weights because…"), not tuned away.
 
-**A level-only table the user once used** (<10 → 1000 mg; 10–25 → 500–750 mg; >25 → none) was
-considered and **not adopted**:
-- it has no traceable source;
-- its 15–25-era thresholds contradict Rybak 2020 Recommendation 14 (pre-HD 15–20).
+**The level-only table from tl;dr pharmacy** (Kujawski S, "Vancomycin Dosing in Hemodialysis",
+2019-03-25: <10 → 1000 mg; 10–25 → 500–750 mg; >25 → none) was considered and **not adopted**:
+- the author presents it as "a VERY general scheme" they prefer, and cites no source;
+- its practical 15–25 target predates, and contradicts, Rybak 2020 Recommendation 14 (pre-HD
+  15–20).
 
 **Then:** the parity run, the full suites, rendered contrast in both themes, and the records:
 D17 in `docs/v3-decisions.md`, CLAUDE.md, DESIGN.md, the hub how-to and build log, the hub PR,
