@@ -2190,6 +2190,8 @@
   .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
   .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .hd-dose { white-space: nowrap; }
+  .hd-perkg { display: block; font-size: var(--fs-xs); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
   .vx-hd-basis { font-size: var(--fs-sm); line-height: 1.5; margin: 8px 0 0; }
   .hd-flag { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: var(--fs-sm); color: var(--ink-soft); }
   .hd-sched { margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
@@ -7814,10 +7816,10 @@ function parseBayesCourse() {
       errors.push(`HD session row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
       return;
     }
-    sessions.push({ startH: tMs / 3600000, endH: tMs / 3600000 + hChk.value, hours: hChk.value, label: `${dateS} ${timeS}` });
+    // n is the input row's own number, so "session 3" is always the row labelled HD 3.
+    sessions.push({ n: Number(id), startH: tMs / 3600000, endH: tMs / 3600000 + hChk.value, hours: hChk.value, label: `${dateS} ${timeS}` });
   });
   sessions.sort((a, b) => a.startH - b.startH);
-  sessions.forEach((x, i) => { x.n = i + 1; });
   for (let i = 1; i < sessions.length; i++) {
     if (sessions[i].startH < sessions[i - 1].endH - 1e-9) {
       errors.push(`The HD session at ${sessions[i].label} starts before the ${sessions[i - 1].label} session ends — check the times.`);
@@ -8146,7 +8148,11 @@ function hdNextDoseHTML(rec, derated, nowH) {
 // permeabilities, both timings. Permeability is never assumed. Doses already
 // entered are acknowledged: a loading dose may already have been given.
 function hdEmpiricHTML(rows, abwKg, doses) {
-  const cell = (r) => `${fmtDose(r.ld)}${r.ldCapped ? '*' : ''} · ${r.md[0] === r.md[1] ? fmtDose(r.md[0]) : `${fmtDose(r.md[0])}–${fmtDose(r.md[1])}`}${r.mdOverCeiling ? '†' : ''}`;
+  // Each cell shows the mg/kg it was rounded from, so 250 mg rounding at a low weight is visible.
+  const perKg = (r) => `${r.ldPerKg} · ${r.mdPerKg[0] === r.mdPerKg[1] ? r.mdPerKg[0] : `${r.mdPerKg[0]}–${r.mdPerKg[1]}`} mg/kg`;
+  // A dose never breaks from its unit; the line may break only at " · ".
+  const nb = (t) => `<span class="hd-dose">${t}</span>`;
+  const cell = (r) => `${nb(fmtDose(r.ld) + (r.ldCapped ? '*' : ''))} · ${nb((r.md[0] === r.md[1] ? fmtDose(r.md[0]) : `${fmtDose(r.md[0])}–${fmtDose(r.md[1])}`) + (r.mdOverCeiling ? '†' : ''))}<span class="hd-perkg">${perKg(r)}</span>`;
   const at = (t, p) => rows.find(r => r.timing === t && r.perm === p);
   const given = (doses || []).slice().sort((a, b) => a.timeH - b.timeH);
   return `
@@ -11233,7 +11239,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const tauForVOI = (rec && !rec.noSolution) ? rec.tau : (cur2 ? cur2.tau : null);
   const nlv = aucForVOI > 0 ? nextLevelValue(aucForVOI, nLev, uncertaintyModelKey(r), tauForVOI, CL_ind) : null;
   const nextStep = (() => {
-    if (isHD) return (r.levels || []).length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
+    if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
       : 'Give the loading dose, then draw a pre-HD level before the next session.';
     if (rec && rec.noSolution) return 'Every candidate breached a hard safety limit. Confirm the inputs; if they hold, seek specialist guidance.';
     if (r.lowCrClHold) return 'Give one loading dose, then dose by measured levels — see the severe renal impairment note.';
@@ -13928,10 +13934,10 @@ function courseReadback(doses, levels, nowMs, sessions) {
   const future = (ms) => Number.isFinite(nowMs) && ms > nowMs ? ' · in the future' : '';
   const out = { dose: {}, level: {}, hd: {} };
   // Haemodialysis sessions (D15): complete ones, as hours, numbered by start.
-  // row = the input row's id; n = the session's number in time order.
+  // row = the input row's id, which is also the session's number (HD 3 is session 3).
   const H = (sessions || []).map(x => ({ row: x.n, date: x.date, time: x.time, ms: courseRowMs(x.date, x.time), len: parseFloat(x.hours) }))
     .filter(x => Number.isFinite(x.ms) && x.len > 0).sort((a, b) => a.ms - b.ms)
-    .map((x, i) => Object.assign(x, { startH: x.ms / 3600000, endH: x.ms / 3600000 + x.len, n: i + 1 }));
+    .map(x => Object.assign(x, { startH: x.ms / 3600000, endH: x.ms / 3600000 + x.len, n: Number(x.row) }));
 
   D.forEach(d => {
     let text = '';

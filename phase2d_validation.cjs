@@ -4267,7 +4267,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/No dose after session 2/.test(hold), hold.slice(0, 160));
     assert(/Add the next sessions/.test(sandbox.hdNextDoseHTML({ need: 'sessions', planned: 1 })), 'asks for sessions');
     const emp = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78);
-    assert(/High permeability/.test(emp) && /Low permeability/.test(emp) && /2 g · 750 mg/.test(emp) && /Rec 14/.test(emp), emp.slice(0, 300));
+    assert(/High permeability/.test(emp) && /Low permeability/.test(emp) && /<span class="hd-dose">2 g<\/span> · <span class="hd-dose">750 mg<\/span>/.test(emp) && /Rec 14/.test(emp), emp.slice(0, 300));
     const src35b = fs.readFileSync(htmlPath, 'utf8');
     assert(/hdView && hdView\.empiric[\s\S]{0,120}hdEmpiricHTML\(hdView\.empiric/.test(src35b) && /hdRec = hdView\.rec/.test(src35b), 'the renderer uses both for Goti-HD, from the frozen view');
   });
@@ -4345,6 +4345,29 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const calc = bodyOf35('calculate'), g = calc.indexOf("document.getElementById('t-hd')");
     assert(/beginFormRun\('trough'\)/.test(calc.slice(g, g + 400)), 'the guard begins the form run, which shows the area');
     assert(sandbox.isClock24('13:00') && sandbox.isClock24('00:00') && !sandbox.isClock24('29:99') && !sandbox.isClock24('24:00'), 'clock');
+  });
+  test('35.21 the empiric table shows the mg/kg each rounded dose came from', () => {
+    const html = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(20), 20, []);
+    assert(/25 · 10 mg\/kg/.test(html) && /35 · 10–15 mg\/kg/.test(html) && /25 · 7\.5 mg\/kg/.test(html) && /30 · 7\.5–10 mg\/kg/.test(html), html.slice(0, 600));
+  });
+  test('35.23 a dose never breaks from its unit; "Next" does not ask for a loading dose already entered', () => {
+    const html = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78, []);
+    assert(/<span class="hd-dose">500 mg–750 mg<\/span>/.test(html), html.slice(0, 600));
+    const rb = bodyOf35('renderBayesianResults');
+    assert(/doses\.length \? 'Draw a pre-HD level before the next session; it drives the next dose\.'/.test(rb), 'next step reads the doses entered');
+  });
+  test('35.22 a session is numbered by its own input row, so "session 3" is the row labelled HD 3', () => {
+    const prevQ = sandbox.document.querySelectorAll, prevG = sandbox.document.getElementById;
+    const f = { 'b-dose-mg-1': '1000', 'b-dose-tinf-1': '1', 'b-dose-date-1': '2026-09-01', 'b-dose-time-1': '08:00',
+      'b-hd-date-2': '2026-09-05', 'b-hd-time-2': '13:00', 'b-hd-hours-2': '4',
+      'b-hd-date-3': '2026-09-03', 'b-hd-time-3': '13:00', 'b-hd-hours-3': '4' };
+    sandbox.document.querySelectorAll = (sel) => /dose-row/.test(sel) ? [{ id: 'b-dose-row-1' }] : /hd-row/.test(sel) ? [{ id: 'b-hd-row-2' }, { id: 'b-hd-row-3' }] : [];
+    sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
+    let r; try { r = sandbox.parseBayesCourse(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+    assert(r.sessions[0].label === '2026-09-03 13:00' && r.sessions[0].n === 3 && r.sessions[1].n === 2, JSON.stringify(r.sessions));
+    const rb = sandbox.courseReadback([{ n: '1', date: '2026-09-01', time: '08:00', tinf: '1' }], [{ n: '1', date: '2026-09-04', time: '06:00' }], NaN,
+      [{ n: '2', date: '2026-09-05', time: '13:00', hours: '4' }, { n: '3', date: '2026-09-03', time: '13:00', hours: '4' }]);
+    assert(/after HD session 3 ended/.test(rb.level['1']), rb.level['1']);
   });
   test('35.9 MWF / TuThSa from any start date, across a month end', () => {
     assert(sandbox.hdScheduleDates('2026-09-29', 'MWF', 0, 4).join() === '2026-09-30,2026-10-02,2026-10-05,2026-10-07', 'Tue start → Wed first');

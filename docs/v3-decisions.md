@@ -668,6 +668,15 @@ Also fixed:
   states the HD rule.
 - The schedule rejects a time that is not a clock time.
 
+**Deferred minors, fixed the same day:**
+- **mg/kg basis shown.** Each empiric cell shows the mg/kg its rounded doses came from, so a
+  250 mg rounding at a low weight is visible.
+- **Session numbers match the rows.** A session is numbered by its own input row ("session 3"
+  is the row labelled HD 3), not by its position in time.
+- **Doses keep their units.** A dose no longer wraps away from its unit.
+- **"Next" knows about doses already given.** It no longer asks for a loading dose already
+  entered.
+
 
 ## Known gaps
 
