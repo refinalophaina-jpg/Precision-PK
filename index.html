@@ -3915,7 +3915,7 @@ const __ACT = {
   k76: (el, ev, arg) => { addHdSchedule() },   /* recurring HD schedule (D16) */
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
   k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
-  k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(el && el.id ? el.id : 'b-hd-give-time'); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0) */
+  k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(el && el.id ? el.id : 'b-hd-give-time'); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -7926,19 +7926,28 @@ const HD_POSTSESSION_HALF_LIVES = 3;
 
 // On dialysis, a SCr drawn during or after a session understates the patient's SCr —
 // the session removes creatinine too — so Cockcroft-Gault reads a clearance that is
-// too high. The newest reading is replaced by the newest one drawn BEFORE the session
-// it follows (v3.8.0, the user's decision); with none, it is flagged, not replaced.
+// too high. v3.8.0 (the user's decision; bounds from the final review, C1):
+//   - "Pre-dialysis" is the session layer's own pre-HD label: drawn at or before a
+//     session's start and within HD_PRE_LABEL_H of it. A newest reading that is
+//     itself pre-dialysis is used as measured.
+//   - Otherwise the newest reading was drawn during or after a session; it is
+//     replaced only by that session's pre-dialysis reading, and only if that
+//     reading is HIGHER (the premise is that the post value understates). Else it
+//     is flagged, not replaced.
 // No value is altered: only which measured reading is used. Pure.
-//   returns null (use as measured) | { use: reading | null, skipped: reading, n }
+//   returns null (as measured) | { use: reading | null, skipped: reading, n, lowerPre }
 function hdPreDialysisScr(readings, sessions) {
   const R = (readings || []).slice().sort((a, b) => a.timeH - b.timeH);
   const S = (sessions || []).slice().sort((a, b) => a.startH - b.startH);
   if (!R.length || !S.length) return null;
+  const preFor = (x, t) => t <= x.startH + 1e-9 && x.startH - t <= HD_PRE_LABEL_H;
   const newest = R[R.length - 1];
-  const prior = S.filter(x => x.startH <= newest.timeH).pop();
+  if (S.some(x => preFor(x, newest.timeH))) return null;
+  const prior = S.filter(x => x.startH < newest.timeH).pop();
   if (!prior) return null;
-  const pre = R.filter(x => x.timeH < prior.startH).pop() || null;
-  return { use: pre, skipped: newest, n: prior.n };
+  const pre = R.filter(x => preFor(prior, x.timeH)).pop() || null;
+  const higher = pre && pre.scr > newest.scr;
+  return { use: higher ? pre : null, skipped: newest, n: prior.n, lowerPre: pre && !higher ? pre : null };
 }
 // Where a level sits relative to the sessions. Pure.
 //   kind: 'during' | 'post' (inside the redistribution window) | 'pre' |
@@ -8176,18 +8185,34 @@ function hdOneTimeDose(r, nowH, gapH, giveAtH) {
   const follow = upcoming.length ? upcoming[0] : null;
   const earliest = follow ? Math.max(follow.endH, nowH) : nowH;
   const giveOk = Number.isFinite(giveAtH);
-  const doseAtH = giveOk ? Math.max(earliest, giveAtH) : earliest;
+  let doseAtH = giveOk ? Math.max(earliest, giveAtH) : earliest;
   const giveClamped = giveOk && giveAtH < earliest - 1e-9;
   const began = (r.hdSessions || []).slice().sort((a, b) => a.startH - b.startH).filter(x => x.startH <= nowH);
   let anchor = follow || began.pop() || null;
-  const room = autoTinf(DOSE_MAX_PER_DOSE_MG);
+  const len = anchor ? anchor.endH - anchor.startH : 0;   // an assumed session lasts as long as the anchor
   const nextFor = (g) => (anchor ? anchor.startH : doseAtH) + g;
-  let gapAvail = HD_ONE_TIME_GAPS_H.map(g => nextFor(g) >= doseAtH + room);
+  // A gap has passed only once that assumed session would be over.
+  const availNow = () => HD_ONE_TIME_GAPS_H.map(g => !anchor || nextFor(g) + len > doseAtH);
+  let gapAvail = availNow();
   let anchorStale = false;
   if (anchor && !gapAvail.some(Boolean)) { anchor = null; anchorStale = true; gapAvail = HD_ONE_TIME_GAPS_H.map(() => true); }
   const want = HD_ONE_TIME_GAPS_H.includes(gapH) ? gapH : HD_ONE_TIME_GAP_DEFAULT_H;
   const ok = (g) => gapAvail[HD_ONE_TIME_GAPS_H.indexOf(g)];
   const gap = ok(want) ? want : ok(HD_ONE_TIME_GAP_DEFAULT_H) ? HD_ONE_TIME_GAP_DEFAULT_H : HD_ONE_TIME_GAPS_H[gapAvail.indexOf(true)];
+  // The assumed session starts before the largest dose could be infused and the fit's
+  // own distribution phase has passed (or would be in progress): the dose follows it,
+  // and the next HD counts from its start (final review I2, the user's decision). No
+  // new number: autoTinf of the per-dose ceiling and hdRedistributionWindowH.
+  const gi = gotiGraphParams(r).ind;
+  const room = autoTinf(DOSE_MAX_PER_DOSE_MG) + (gi ? hdRedistributionWindowH(gi.k10, gi.k12, gi.k21) : 0);
+  let assumedAfter = null;
+  if (anchor && nextFor(gap) - doseAtH < room) {
+    const sStart = nextFor(gap);
+    assumedAfter = { startH: sStart, endH: sStart + len };
+    doseAtH = Math.max(doseAtH, assumedAfter.endH);
+    anchor = { n: null, startH: sStart, endH: sStart + len, assumed: true };
+    gapAvail = availNow();
+  }
   const readAtH = nextFor(gap);
   const nextHs = HD_ONE_TIME_GAPS_H.map(nextFor);
   const ended = (r.hdSessions || []).filter(x => x.endH <= nowH && x !== follow).sort((a, b) => a.endH - b.endH);
@@ -8211,7 +8236,7 @@ function hdOneTimeDose(r, nowH, gapH, giveAtH) {
   const preAbove = pa && decides && pa.n === decides.n ? pa : null;
   const base = { oneTime: true, doseAtH, after: follow ? follow.n : null, gapH: gap, readAtH,
     plannedCount: future.length, plannedInWindow, missed, preAbove,
-    anchorN: anchor ? anchor.n : null, nextHs, gapAvail, anchorStale,
+    anchorN: anchor ? anchor.n : null, nextHs, gapAvail, anchorStale, assumedAfter,
     giveAtH: giveOk ? doseAtH : null, giveClamped, earliestH: earliest };
   if (plannedInWindow.length) {
     return Object.assign(base, { kind: 'planned', reason: '', mg: 0, tinfH: 0, pre: predictFittedAt(r, readAtH),
@@ -8340,9 +8365,16 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
   const k = rec.plannedCount, ks = `${k} planned dose${k === 1 ? '' : 's'}`;
   const prov = derated ? ' · <span class="vx-prov">provisional</span>' : '';
   // The assumed next HD as a clock time, and what it counts from (v3.8.0).
-  const nextAt = `${fmtClock(rec.readAtH)} (${rec.gapH} h after ${rec.anchorN != null ? `session ${rec.anchorN} began` : 'this dose'})`;
-  const nextAtB = `<strong>${fmtClock(rec.readAtH)}</strong> (${rec.gapH} h after ${rec.anchorN != null ? `session ${rec.anchorN} began` : 'this dose'})`;
-  const stale = rec.anchorStale ? `<p class="vx-delta">The last session began more than 72 h before this dose, so the gap counts from the dose.</p>` : '';
+  const fromWhat = rec.anchorN != null ? `session ${rec.anchorN} began` : rec.assumedAfter ? 'the assumed session begins' : 'this dose';
+  const nextAt = `${fmtClock(rec.readAtH)} (${rec.gapH} h after ${fromWhat})`;
+  const nextAtB = `<strong>${fmtClock(rec.readAtH)}</strong> (${rec.gapH} h after ${fromWhat})`;
+  const stale = rec.anchorStale ? `<p class="vx-delta">Every assumed session after the last logged one has already passed, so the gap counts from the dose.</p>` : '';
+  // When: after a logged or an assumed session, at a later give-at time, or now.
+  const later = rec.giveAtH != null && rec.earliestH != null && rec.doseAtH > rec.earliestH + 1e-9;
+  const sameDay = (h) => new Date(h * 3600000).toDateString() === new Date((nowH != null ? nowH : h) * 3600000).toDateString();
+  const when = rec.after != null || rec.assumedAfter ? 'after HD'
+    : later ? `at ${sameDay(rec.doseAtH) ? localTimeStr(new Date(rec.doseAtH * 3600000)) : fmtClock(rec.doseAtH)}` : 'now';
+  const assumedTxt = rec.assumedAfter ? `after the assumed session ${fmtClock(rec.assumedAfter.startH)}–${localTimeStr(new Date(rec.assumedAfter.endH * 3600000))} · ` : '';
   const basis = `<p class="vx-hd-basis vx-muted">On the averaged Goti-HD fit (Goti 2018, the dialysis model DoseMeRx also offers); one-time: no schedule logged. Sized to the middle of ${range} mg/L (Rybak 2020 Rec 14).${asOf}</p>`;
   const caution = `<p class="vx-hold vx-muted">The model averages dialysis over time. If the next session is delayed or cancelled, levels will run higher than shown.</p>`;
   const ago = rec.missed ? Math.max(1, Math.round(nowH - rec.missed.endH)) : 0;
@@ -8354,16 +8386,18 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
           html: `It ended ${ago} h ago. If a dose was given, enter it; this answer assumes it was not.` });
   const gapCtl = print ? `<span class="hd-gap-text">assumed gap ${rec.gapH} h</span>`
     : `<span class="toggle-group hd-gap" role="group" aria-label="Assumed time to the next session">${HD_ONE_TIME_GAPS_H.map(g =>
-        `<button type="button" class="toggle-opt${g === rec.gapH ? ' active' : ''}" data-onclick="k78" data-arg="${g}" aria-pressed="${g === rec.gapH}"${rec.gapAvail && rec.gapAvail[HD_ONE_TIME_GAPS_H.indexOf(g)] === false ? ' disabled aria-disabled="true" title="Already passed for this dose time"' : ''}>${g} h</button>`).join('')}</span>`;
+        `<button type="button" class="toggle-opt${g === rec.gapH ? ' active' : ''}" data-onclick="k78" data-arg="${g}" aria-pressed="${g === rec.gapH}"${rec.gapAvail && rec.gapAvail[HD_ONE_TIME_GAPS_H.indexOf(g)] === false ? ' disabled aria-disabled="true" title="That session would already be over"' : ''}>${g} h</button>`).join('')}</span>`;
   // When the dose will be given (v3.8.0): on screen only; paper shows the time in the line above.
   const giveRow = print ? '' : (() => { const d = new Date(rec.doseAtH * 3600000); return `
       <p class="vx-sub hd-give-row"><span class="vx-k">Give at</span>
         <input type="date" id="b-hd-give-date" class="hd-give-date" value="${localDateStr(d)}" data-onchange="k79" aria-label="Date the one-time dose will be given">
         <input type="text" id="b-hd-give-time" class="hd-give-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" value="${localTimeStr(d)}" data-onchange="k79" aria-label="Time the one-time dose will be given, 24-hour">
-        ${rec.giveClamped ? `<span class="vx-muted">not before ${fmtClock(rec.earliestH)}</span>` : ''}</p>`; })();
-  const gapRow = `<p class="vx-sub hd-gap-row"><span class="vx-k">Next HD in</span> ${gapCtl}</p>`;
+        ${rec.giveClamped ? `<span class="vx-muted">not before ${fmtClock(rec.earliestH)}</span>` : ''}
+        <span class="vx-muted" id="b-hd-give-msg" aria-live="polite"></span></p>`; })();
+  const giveRowSet = rec.giveAtH != null ? giveRow : '';   // a hold or a planned dose keeps a set time visible, so it can be undone
+  const gapRow = `<p class="vx-sub hd-gap-row"><span class="vx-k">Next HD at</span> ${gapCtl} <span class="vx-muted">after ${rec.anchorN != null ? `session ${rec.anchorN} began` : rec.assumedAfter ? 'the assumed session begins' : 'this dose'}</span></p>`;
   const table = rec.table && rec.table.length ? `
-    <table class="ev-table vx-hd-onetime"><caption>Pre-HD level (mg/L) if the next HD starts ${rec.anchorN != null ? `this long after session ${rec.anchorN} began` : 'this long after the dose'}</caption>
+    <table class="ev-table vx-hd-onetime"><caption>Pre-HD level (mg/L) if the next HD starts ${rec.anchorN != null ? `this long after session ${rec.anchorN} began` : rec.assumedAfter ? 'this long after the assumed session began' : 'this long after the dose'}</caption>
       <thead><tr><th scope="col">Dose</th>${HD_ONE_TIME_GAPS_H.map((g, i) => `<th scope="col">${g} h${rec.nextHs ? `<span class="hd-at">${fmtClock(rec.nextHs[i])}</span>` : ''}</th>`).join('')}</tr></thead>
       <tbody>${rec.table.map(row => `<tr${row.mg === rec.mg ? ' class="is-pick"' : ''}><th scope="row">${row.mg ? fmtDose(row.mg) : 'None'}</th>${row.at.map(c => {
         if (c == null) return `<td class="hd-na">—<span class="sr-only"> already passed</span></td>`;
@@ -8376,13 +8410,13 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
       <p class="vx-inf"><strong>One-time</strong> · ${rec.plannedInWindow.map(d => `${fmtDose(d.mg)} at ${fmtClock(d.timeH)}`).join(' · ')}${prov}</p>
       <p class="vx-sub">With the ${ks} entered, the fitted level if the next HD starts ${nextAt} is <strong>${rec.pre.toFixed(1)} mg/L</strong> — ${where(rec.pre)} mg/L.</p>
       ${gapRow}${stale}
-      <p class="vx-delta">Edit the planned dose row to test another dose.</p>
+      <p class="vx-delta">Edit the planned dose row to test another dose.</p>${giveRowSet}
     </div>` + caution + basis;
   if (rec.kind === 'hold' && rec.reason === 'pre-above') return missed + `
       <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">${rec.after != null ? `No dose after session ${rec.after}` : 'No dose now'}</h3>
       <p class="vx-hold">The pre-HD level before session ${rec.preAbove.n} was <strong>${rec.preAbove.conc.toFixed(1)} mg/L</strong>, above ${range} mg/L (Rybak 2020 Rec 14). Recheck the level before the next session.</p>
       <p class="vx-sub">With no dose, the fitted level if the next HD starts ${nextAt} is ${rec.pre.toFixed(1)} mg/L.</p>
-      ${gapRow}${stale}` + table + caution + basis;
+      ${gapRow}${giveRowSet}${stale}` + table + caution + basis;
   if (rec.kind === 'hold') {
     const lead = k ? `With the ${ks} entered and no further dose, the` : 'Without a dose, the';
     const tail = rec.reason === 'overshoot'
@@ -8391,11 +8425,11 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
     return missed + `
       <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">${rec.after != null ? `No dose after session ${rec.after}` : 'No dose now'}</h3>
       <p class="vx-hold">${lead} fitted level if the next HD starts ${nextAt} is ${rec.pre.toFixed(1)} mg/L${tail}</p>
-      ${gapRow}${stale}` + table + caution + basis;
+      ${gapRow}${giveRowSet}${stale}` + table + caution + basis;
   }
   return missed + `<div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
-      <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${rec.after != null ? 'after HD' : 'now'}</span></h3>
-      <p class="vx-inf"><strong>One-time</strong> · ${rec.after != null ? `after session ${rec.after} ends · ` : ''}${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
+      <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${when}</span></h3>
+      <p class="vx-inf"><strong>One-time</strong> · ${rec.after != null ? `after session ${rec.after} ends · ` : assumedTxt}${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
       <p class="vx-sub">Sized for a pre-HD level of <strong>${rec.pre.toFixed(1)} mg/L</strong> if the next HD starts ${nextAtB}${rec.kind === 'closest' ? ` — no 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : ''}.</p>
       ${gapRow}${giveRow}${stale}
       <p class="vx-sub"><span class="vx-k">AUC₂₄</span> ${rec.auc24.toFixed(0)} mg·h/L <span class="vx-muted">over the 24 h before it</span>
@@ -10412,6 +10446,7 @@ function computeGuidelineDose(tbw, crcl) {
 function runBayesian() {
   beginFormRun('auc');   // forget the last refusal and its field marks
   const { doses, levels, sessions, errors } = parseBayesCourse();
+  bState.hdGiveAtH = null;   // a give-at time belongs to the answer it was set on (final review I4)
 
   // CODEX F-002. Refuse to fit a course that does not match what was entered.
   // Silently dropping an incomplete administration produced a fit on a history
@@ -10472,6 +10507,10 @@ function runBayesian() {
   // Goti-HD: the newest SCr drawn before the session it follows (hdPreDialysisScr, v3.8.0).
   const hdScr = bState.model === 'goti' && bState.dial ? hdPreDialysisScr(serialScr, sessions) : null;
   const effScr = hdScr && hdScr.use ? hdScr.use.scr : (scrSel ? scrSel.scr : scrEl);
+  // With a pre-dialysis SCr in use, the renal-change check and the printed SCr label
+  // read the readings up to it: the dialysis drop is not a change in kidney function,
+  // but a real change before it still is (final review I6, I7).
+  const scrSelUsed = hdScr && hdScr.use ? selectEffectiveScr(serialScr.filter(x => x.timeH <= hdScr.use.timeH + 1e-9), lastDoseTimeH) : scrSel;
 
   const crcl = getBayesCrCl(effScr);
   if (!crcl) { showFormErrors('auc', 'Could not calculate CrCl — check patient demographics.', [bayesDemographicGaps(effScr)]); return; }
@@ -10484,7 +10523,7 @@ function runBayesian() {
   const agCtx = {
     activeModel: bState.model,
     crcl, tbw, htCm, age, sex: bState.sex, scr: effScr,
-    scrSource: scrSel ? 'serial' : 'baseline', scrLabel: scrSel ? scrSel.label : null,
+    scrSource: scrSel ? 'serial' : 'baseline', scrLabel: scrSelUsed ? scrSelUsed.label : null,
     crclSource: crclSourceLabel(),
     dial: !!bState.dial,
     crclGoti:   (function(){ try { return getGotiCrCl(effScr); }   catch (e) { return null; } })(),
@@ -10612,7 +10651,7 @@ function runBayesian() {
     // CODEX F-003: bind this fit to the inputs it came from.
   try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
   renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
-      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel, hdScr, arcInfo, lowCrClInfo });
+      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel: scrSelUsed, hdScr, arcInfo, lowCrClInfo });
 
   } else if (isHughes) {
     // ── Hughes 2024 (2-Compartment, obese) ──
@@ -10686,7 +10725,7 @@ function runBayesian() {
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
-      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel, hdScr, arcInfo, lowCrClInfo });
+      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel: scrSelUsed, hdScr, arcInfo, lowCrClInfo });
 
   } else {
     // ── Buelga 2005 (1-Compartment) ──
@@ -10728,7 +10767,7 @@ function runBayesian() {
     };
     try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
     renderBayesianResults(bState.result, divergeMsg, levelWarnings, mic,
-      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel, hdScr, arcInfo, lowCrClInfo });
+      { modelRec, guidDose, isICU, effScr, scrUsedSerial: serialScr.length > 0, scrSel: scrSelUsed, hdScr, arcInfo, lowCrClInfo });
   }
 }
 
@@ -11789,14 +11828,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   } else if (hdScr) {
     notes.push({ tier: 'caution', word: 'SCr drawn after dialysis', html: `
       The newest SCr (${hdScr.skipped.scr.toFixed(2)} mg/dL${hdScr.skipped.label ? ' at ' + escHtml(hdScr.skipped.label) : ''}) was drawn after dialysis began
-      (session ${hdScr.n}); dialysis removes creatinine too, so the clearance this fit starts from reads high. Add a pre-dialysis SCr.` });
+      (session ${hdScr.n}); dialysis removes creatinine too, so the clearance this fit starts from reads high. ${hdScr.lowerPre ? `The pre-dialysis reading (${hdScr.lowerPre.scr.toFixed(2)} mg/dL) is lower still, so it is not used either; check both values.` : 'Add a pre-dialysis SCr (drawn within ' + HD_PRE_LABEL_H + ' h before the session).'}` });
   } else if (isHD && !p2c.scrUsedSerial && (r.hdSessions || []).length) {
     notes.push({ tier: 'info', word: 'SCr on dialysis', html: `Enter a pre-dialysis SCr: one drawn after a session reads low, because dialysis removes creatinine too, and overstates clearance.
       Dated serial readings let the calculator choose the pre-dialysis one itself.` });
   }
   if (p2c.scrUsedSerial && p2c.effScr) {
     const sel = p2c.scrSel || {};
-    if (sel.changedAcrossFit && !(hdScr && hdScr.use)) {
+    if (sel.changedAcrossFit) {
       notes.push({ tier: 'caution', word: 'Renal function changed across the fit', html: `
         SCr was ${sel.nearestScr.toFixed(2)} mg/dL${sel.nearestLabel ? ' at ' + escHtml(sel.nearestLabel) : ''}, nearest the last dose, and is now ${sel.scr.toFixed(2)}.
         The fit assumes one clearance for the whole course, so levels drawn before the change describe the earlier kidney function.
@@ -11921,12 +11960,13 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     hdRec = hdView.rec;
     verdict = hdNextDoseHTML(hdRec, !!(conf && conf.rank >= 2), hdView.nowH);
     lowConfSpan = '';
-    const otWhen = hdRec.after != null ? `after session ${hdRec.after}` : 'now';
+    const otWhen = hdRec.after != null ? `after session ${hdRec.after}` : hdRec.assumedAfter ? 'after the assumed session'
+      : hdRec.giveAtH != null && hdRec.doseAtH > hdRec.earliestH + 1e-9 ? `at ${fmtClock(hdRec.doseAtH)}` : 'now';
     hdSentence = hdRec.oneTime
-      ? (hdRec.kind === 'planned' ? `Planned dose, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h later.`
+      ? (hdRec.kind === 'planned' ? `Planned dose, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${fmtClock(hdRec.readAtH)}.`
         : hdRec.kind === 'hold' && hdRec.preAbove ? `No dose ${otWhen}: the pre-HD level before session ${hdRec.preAbove.n} was ${hdRec.preAbove.conc.toFixed(1)} mg/L, above ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}; recheck before the next session.`
-        : hdRec.kind === 'hold' ? `No dose ${otWhen}: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h later.`
-        : `${fmtDose(hdRec.mg)} IV ${otWhen}, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h after it.`)
+        : hdRec.kind === 'hold' ? `No dose ${otWhen}: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${fmtClock(hdRec.readAtH)}.`
+        : `${fmtDose(hdRec.mg)} IV ${otWhen}, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${fmtClock(hdRec.readAtH)}.`)
         + (hdRec.missed ? ` No dose entered after session ${hdRec.missed.n}.` : '')
       : hdRec.need ? 'A post-HD dose needs the next two upcoming sessions.'
       : hdRec.kind === 'planned' ? `Planned dose after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}.`
@@ -12433,7 +12473,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <li><strong>Fit.</strong> Maximum a posteriori (Burton 1985): minimise Σ ηᵢ²/ωᵢ² + Σ (Cobs − Cpred)²/σ² over the
         ${nLev} measured level${nLev === 1 ? '' : 's'}, predicting each by superposition of every dose actually given, from five starting points.</li>
       <li><strong>Result.</strong> CL ${CL_ind.toFixed(2)} L/h, ${isGotiRes && r.goti ? `Vc ${r.goti.Vc_ind.toFixed(1)} L, Vp ${r.goti.Vp_ind.toFixed(1)} L` : `V ${V_ind.toFixed(1)} L`}, t½ ${t12_ind.toFixed(1)} h${objFinal !== null ? `, objective ${objFinal.toFixed(2)}` : ''}.</li>
-      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed ${HD_ONE_TIME_GAPS_H.join(', ')} h gap after the dose (default ${HD_ONE_TIME_GAP_DEFAULT_H} h). On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
+      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed next session ${HD_ONE_TIME_GAPS_H.join(', ')} h after the last session began (start to start; default ${HD_ONE_TIME_GAP_DEFAULT_H} h), or after the dose when none is logged; if that session would start before a dose could be infused and distributed, the dose follows it, and a give-at time moves the dose but never the next session. On dialysis a SCr drawn after a session is replaced by that session's higher pre-dialysis reading. On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
       ${!isHD && rec && !rec.noSolution ? `<li><strong>Exposure.</strong> At steady state AUC₂₄ = daily dose ÷ CL = ${rec.dose} mg × 24/${rec.tau} ÷ ${CL_ind.toFixed(2)} L/h = <strong>${rec.auc24.toFixed(0)} mg·h/L</strong>.</li>
       <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r)))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.</li>` : ''}
       <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on 250 mg steps.</li>
@@ -14493,8 +14533,11 @@ function syncModuleSwitch() {
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   const onCourseEdit = (e) => {
     const t = e && e.target;
-    if (!t || !t.closest || !t.closest('.course-row')) return;
+    if (!t || !t.closest) return;
+    // Every 24-hour field formats as typed ("1700" -> "17:00"), not only course rows:
+    // a phone's numeric keypad has no colon (final review I3, v3.8.0).
     if (e.type === 'input' && t.hasAttribute && t.hasAttribute('data-time24')) formatTime24Input(t, e);
+    if (!t.closest('.course-row')) return;
     refreshCourseReadback();
   };
   document.addEventListener('input', onCourseEdit);

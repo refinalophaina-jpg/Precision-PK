@@ -507,13 +507,13 @@ async function enterCourse(page) {
   if (await m.locator('#b-hd-give-time').count()) {
     await m.locator('#b-hd-give-date').fill(day(1));
     await m.waitForTimeout(300);
-    await typeInto(m, '#b-hd-give-time', '10:00'); await m.locator('#b-hd-give-time').press('Tab');
+    await typeInto(m, '#b-hd-give-time', '1000'); await m.locator('#b-hd-give-time').press('Tab');   // a phone keypad has no colon
     await m.waitForTimeout(400);
     const give = await m.evaluate(() => ({ inf: document.querySelector('.vx-verdict .vx-inf').textContent.replace(/\s+/g, ' '),
       time: (document.getElementById('b-hd-give-time') || {}).value, anchored: /after session \d+ began/.test(document.querySelector('.vx-verdict').textContent) }));
     ok('HD one-time: a typed give-at time moves the dose in the answer; the next HD stays anchored to the last session',
        /10:00/.test(give.inf) && give.time === '10:00' && give.anchored, JSON.stringify(give));
-  } else ok('HD one-time: a typed give-at time moves the dose in the answer; the next HD stays anchored to the last session', true, 'answer was a hold: no give-at row');
+  } else ok('HD one-time: a typed give-at time moves the dose in the answer; the next HD stays anchored to the last session', false, 'no give-at row: this fixture must give a dose');
   const mAttr = await attributeInjected(m, mProblems);
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);
