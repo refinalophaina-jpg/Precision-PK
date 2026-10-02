@@ -7918,6 +7918,32 @@ function hdSessionSummary(r, nowH) {
   };
 }
 
+// ─── Empiric dosing on intermittent haemodialysis (D16) ───
+// Rybak MJ et al. Am J Health-Syst Pharm 2020;77:835–864.
+//   Rec 13 (B-II): mg/kg by dialyser permeability and timing; maintenance thrice
+//   weekly, given with every session. Rec 11: loading by actual body weight,
+//   not exceeding 3,000 mg. Rec 14: once a pre-dialysis level exists, levels —
+//   not a weight-based dose — drive dosing.
+const HD_EMPIRIC_MG_PER_KG = {
+  after:         { high: { ld: 25, md: [10, 10] },  low: { ld: 25, md: [7.5, 7.5] } },
+  intradialytic: { high: { ld: 35, md: [10, 15] },  low: { ld: 30, md: [7.5, 10] } },
+};
+const HD_LOADING_MAX_MG = 3000;   // Rec 11
+function roundDose250(mg) { return Math.max(MATRIX_DOSE_STEP, Math.round(mg / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP); }
+function hdEmpiricDoses(abwKg) {
+  if (!(abwKg > 0)) return null;
+  const rows = [];
+  for (const timing of ['after', 'intradialytic']) for (const perm of ['high', 'low']) {
+    const c = HD_EMPIRIC_MG_PER_KG[timing][perm];
+    const ldRaw = roundDose250(c.ld * abwKg);
+    const md = [roundDose250(c.md[0] * abwKg), roundDose250(c.md[1] * abwKg)];
+    rows.push({ timing, perm, ldPerKg: c.ld, mdPerKg: c.md,
+      ld: Math.min(HD_LOADING_MAX_MG, ldRaw), ldCapped: ldRaw > HD_LOADING_MAX_MG,
+      md, mdOverCeiling: md[1] > DOSE_MAX_PER_DOSE_MG });
+  }
+  return rows;
+}
+
 // ─── 1-compartment superposition ───
 // doses: [{mg, tinfH, timeH}]  t: absolute time (h, same epoch)  kel: h⁻¹  vd: L
 function predictConc1comp(doses, t, kel, vd) {

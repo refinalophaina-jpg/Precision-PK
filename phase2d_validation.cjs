@@ -4181,6 +4181,36 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 35 — intermittent haemodialysis dosing (D16)
+//
+// Rybak 2020 (AJHP 77:835): Rec 11 (loading by actual body weight, ≤ 3,000 mg),
+// Rec 13 (mg/kg by dialyser permeability and timing), Rec 14 (pre-dialysis
+// 15–20 mg/L; levels drive dosing). A post-HD dose sized on the fitted curve.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 35 — intermittent haemodialysis dosing (D16)');
+  console.log(`${'─'.repeat(60)}`);
+  const { hdEmpiricDoses } = sandbox;
+  test('35.1 empiric HD doses follow Rybak 2020 Rec 13, rounded to 250 mg', () => {
+    const rows = hdEmpiricDoses(78);
+    const at = (t, p) => rows.find(r => r.timing === t && r.perm === p);
+    assert(at('after', 'high').ld === 2000 && at('after', 'high').md.join() === '750,750', JSON.stringify(at('after', 'high')));
+    assert(at('after', 'low').md.join() === '500,500', 'after/low 7.5 mg/kg × 78 = 585 → 500');
+    assert(at('intradialytic', 'high').ld === 2750 && at('intradialytic', 'high').md.join() === '750,1250', 'intradialytic/high');
+    assert(at('intradialytic', 'low').ld === 2250 && at('intradialytic', 'low').md.join() === '500,750', 'intradialytic/low');
+    assert(hdEmpiricDoses(0) === null && hdEmpiricDoses(NaN) === null, 'no weight, no table');
+  });
+  test('35.2 loading is capped at 3,000 mg (Rec 11); a maintenance dose over the per-dose ceiling is flagged', () => {
+    const big = hdEmpiricDoses(400);
+    assert(big.every(r => r.ld === 3000 && r.ldCapped), 'every loading row capped at 400 kg');
+    assert(big.find(r => r.timing === 'after' && r.perm === 'high').mdOverCeiling, '10 mg/kg × 400 = 4000 > 2000');
+    const small = hdEmpiricDoses(20);
+    assert(small.every(r => !r.ldCapped && r.md[0] >= 250), 'a 20 kg patient gets at least one 250 mg step');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
