@@ -4407,7 +4407,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const emp = sandbox._prRecommendation(Object.assign({}, r, { levels: [] }), {});
     assert(/Empiric haemodialysis dosing/.test(emp) && !/\bq\d+h\b/.test(emp), emp.slice(0, 200));
     const rb = bodyOf35('renderBayesianResults');
-    assert(!/hdNextDose\(r, Date\.now\(\)/.test(rb) && /hdViewFor\(r\)/.test(rb), 'the render reads the frozen view');
+    assert(!/hdNextDose\(r, Date\.now\(\)/.test(rb) && /hdViewFor\(r, bState\.hdGapH\)/.test(rb), 'the render reads the frozen view');
     assert(/as of/.test(sandbox.hdNextDoseHTML(v.rec, false, v.nowH)), 'the verdict says when it was read');
   });
   test('35.19 for HD nothing else calls the steady-state regimen "recommended"; the math explains the HD rule', () => {
@@ -4604,6 +4604,50 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const rec = sandbox.hdViewFor(r, 48).rec;
     assert(rec.oneTime && rec.after === null && rec.missed && rec.missed.n === 1, JSON.stringify(rec).slice(0, 300));
     assert(['dose', 'closest'].includes(rec.kind) && rec.mg >= 250, `a dose is advised: ${rec.kind} ${rec.mg}`);
+  });
+  const ot = (over) => Object.assign({ oneTime: true, doseAtH: 20, after: null, gapH: 48, readAtH: 68, plannedCount: 0,
+    plannedInWindow: [], missed: null, kind: 'dose', reason: '', mg: 750, tinfH: 1, pre: 17.2, auc24: 430, peak: 31.5,
+    table: [{ mg: 0, at: [12, 10, 8.5] }, { mg: 250, at: [15.1, 13, 11] }, { mg: 500, at: [19, 16, 13.4] },
+            { mg: 750, at: [22.8, 17.2, 15.9] }, { mg: 1000, at: [26.7, 21.4, 20.3] }] }, over || {});
+  test('37.13 the one-time verdict: dose now, assumed gap stated, three gap buttons, the table, the caution', () => {
+    const h = sandbox.hdNextDoseHTML(ot(), false, 20);
+    assert(/<span class="rec-dose">750 mg<\/span> IV <span class="vx-freq">now · one-time<\/span>/.test(h), h.slice(0, 300));
+    assert(/Sized for a pre-HD level of <strong>17\.2 mg\/L<\/strong> if the next HD starts <strong>48 h<\/strong> after this dose/.test(h), 'sized-for line');
+    const btns = h.match(/<button[^>]*data-onclick="k78"[^>]*>/g) || [];
+    assert(btns.length === 3 && btns.every(b => /type="button"/.test(b)), `three gap buttons: ${btns.length}`);
+    assert(/data-arg="48" aria-pressed="true"/.test(h) && /data-arg="72" aria-pressed="false"/.test(h), 'the chosen gap is pressed');
+    assert(/class="ev-table vx-hd-onetime"/.test(h) && /<tr class="is-pick">/.test(h) && /within 15–20/.test(h), 'table with the pick and screen-reader range text');
+    assert(!/[✓✔⚠]/.test(h) && /class="hd-in"/.test(h), 'in-range cells use the drawn check, never a glyph');
+    assert(/delayed or cancelled, levels will run higher than shown/.test(h), 'the averaged-model caution');
+    assert(/one-time: no schedule logged/.test(h) && !/\bq\d+h\b/.test(h), 'basis line; never a q-interval');
+  });
+  test('37.14 print shows the gap as text, with no buttons', () => {
+    const p = sandbox.hdNextDoseHTML(ot(), false, 20, true);
+    assert(!/<button/.test(p) && /assumed gap 48 h/.test(p), p.slice(0, 400));
+  });
+  test('37.15 a missed post-HD dose is said first, as a caution', () => {
+    const h = sandbox.hdNextDoseHTML(ot({ missed: { n: 1, endH: 8 } }), false, 20);
+    assert(h.indexOf('No dose entered after session 1') > -1 && h.indexOf('No dose entered after session 1') < h.indexOf('vx-regimen'), 'before the heading');
+    assert(/note-caution/.test(h) && /ended 12 h ago/.test(h) && /this answer assumes it was not/.test(h), h.slice(0, 400));
+  });
+  test('37.16 holds and "after HD" read right, in the neutral heading', () => {
+    const now = sandbox.hdNextDoseHTML(ot({ kind: 'hold', reason: 'in', mg: 0, tinfH: 0, pre: 17.6, peak: null }), false, 20);
+    assert(/>No dose now</.test(now) && /vx-regimen-hd/.test(now) && !/vx-regimen-hold/.test(now), now.slice(0, 300));
+    const after = sandbox.hdNextDoseHTML(ot({ after: 2, doseAtH: 56 }), false, 20);
+    assert(/<span class="vx-freq">after HD · one-time<\/span>/.test(after) && /After session 2 ends/.test(after), after.slice(0, 300));
+    const holdAfter = sandbox.hdNextDoseHTML(ot({ after: 2, kind: 'hold', reason: 'above', mg: 0, pre: 23, peak: null }), false, 20);
+    assert(/>No dose after session 2</.test(holdAfter), holdAfter.slice(0, 200));
+    const prov = sandbox.hdNextDoseHTML(ot(), true, 20);
+    assert(/rec-derated/.test(prov) && /provisional/.test(prov), 'a provisional fit marks it');
+  });
+  test('37.17 wiring: k78 sets the gap and re-renders without refitting; screen and print pass the gap; next step and math', () => {
+    assert(/k78:[^\n]*bState\.hdGapH = Number\(arg\)[^\n]*renderBayesianResults\(bState\.result/.test(script37), 'k78');
+    const rb = bodyOf37('renderBayesianResults');
+    assert(/const hdView = hdViewFor\(r, bState\.hdGapH\);/.test(rb) && rb.indexOf('const hdView') < rb.indexOf('const nextStep'), 'the view is read before the next step');
+    assert(/hdView\.rec\.oneTime\) return 'Draw a pre-HD level before the next session\. Once the schedule is known, log it and each post-HD dose is sized for you\.'/.test(rb), 'one-time next step');
+    assert(/HD rule\.[\s\S]{0,700}closest to \$\{HD_PREDIALYSIS_MID\}/.test(rb) && /one-time/.test(rb.slice(rb.indexOf('HD rule.'), rb.indexOf('HD rule.') + 900)), 'the math states the midpoint and the one-time gap');
+    const pr = bodyOf37('_prRecommendation');
+    assert(/hdViewFor\(r, bState\.hdGapH\)/.test(pr) && /hdNextDoseHTML\(hv\.rec, !!screen\.provisional, hv\.nowH, true\)/.test(pr), 'print');
   });
 }
 
