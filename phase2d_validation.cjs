@@ -4217,6 +4217,56 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const sm = sandbox.hdSessionSummary(r, 110);
     assert(sm.dosesDuringHD && sm.dosesDuringHD.length === 1 && sm.dosesDuringHD[0].mg === 750 && sm.dosesDuringHD[0].n === 1, JSON.stringify(sm.dosesDuringHD));
   });
+  const hdR = (extra) => { const pk = sandbox.gotiPopPK(10, 70, true);
+    return Object.assign({ model: 'goti', dial: true, CL_ind: pk.TVCL, V_ind: pk.TVVc, tbw: 70,
+      goti: { Vc_ind: pk.TVVc, Vp_ind: pk.TVVp, Q: pk.Q }, levels: [],
+      doses: [{ mg: 1750, tinfH: 2, timeH: 0 }],
+      hdSessions: [{ n: 1, startH: 4, endH: 8 }, { n: 2, startH: 52, endH: 56 }, { n: 3, startH: 100, endH: 104 }, { n: 4, startH: 172, endH: 176 }] }, extra || {}); };
+  test('35.4 the dose goes at the end of the next session and is sized at the start of the one after', () => {
+    const rec = sandbox.hdNextDose(hdR(), 20);
+    assert(rec.session === 2 && rec.sizing === 3 && Math.abs(rec.doseAtH - 56) < 1e-9, JSON.stringify(rec));
+    assert(rec.kind === 'dose' && rec.pre >= 15 && rec.pre <= 20, `this fixture needs a dose in range: ${JSON.stringify(rec)}`);
+    assert(sandbox.hdNextDose(hdR(), 20).mg === rec.mg, 'deterministic');
+    if (rec.mg > 250) {
+      const less = sandbox.predictFittedAt(Object.assign(hdR(), { doses: hdR().doses.concat([{ mg: rec.mg - 250, tinfH: sandbox.autoTinf(rec.mg - 250), timeH: 56 }]) }), 100);
+      assert(less < 15, 'one 250 mg step less misses the range: this is the smallest');
+    }
+  });
+  test('35.5 a session in progress: the dose goes at its end', () => {
+    const rec = sandbox.hdNextDose(hdR(), 54);
+    assert(rec.session === 2 && Math.abs(rec.doseAtH - 56) < 1e-9 && rec.sizing === 3, JSON.stringify(rec));
+  });
+  test('35.6 hold when no dose still reads at least 15 mg/L; asks for sessions when they are missing', () => {
+    const loaded = sandbox.hdNextDose(hdR({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 2000, tinfH: 2, timeH: 9 }, { mg: 2000, tinfH: 2, timeH: 30 }] }), 20);
+    assert(loaded.kind === 'hold' && loaded.mg === 0, JSON.stringify(loaded));
+    const one = sandbox.hdNextDose(hdR({ hdSessions: [{ n: 1, startH: 52, endH: 56 }] }), 20);
+    assert(one.need === 'sessions' && one.planned === 1, 'one planned session cannot size a dose');
+    assert(sandbox.hdNextDose(hdR({ hdSessions: [] }), 20).need === 'sessions', 'none');
+  });
+  test('35.7 out of reach: the closest dose, flagged, never above the per-dose ceiling', () => {
+    const rec = sandbox.hdNextDose(hdR({ CL_ind: 30 }), 20);   // implausibly high clearance: nothing reaches 15
+    assert(rec.kind === 'closest' && rec.mg <= 2000 && rec.pre < 15, JSON.stringify(rec));
+  });
+  test('35.8 AUC24 before the sizing session, the peak, the repeat projection; planned doses are counted', () => {
+    const rec = sandbox.hdNextDose(hdR(), 20);
+    assert(rec.auc24 > 0 && rec.peak > rec.pre, 'auc24 and peak');
+    assert(rec.repeat.length === 1 && rec.repeat[0].n === 4 && rec.repeat[0].pre > 0, JSON.stringify(rec.repeat));
+    const auc = sandbox.fittedAUC(hdR(), 0, 24), coarse = sandbox.fittedAUC(hdR(), 0, 24, 48);
+    assert(Math.abs(auc - coarse) / auc < 0.01, 'the integral is converged');
+    const withPlan = sandbox.hdNextDose(hdR({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 60 }] }), 20);
+    assert(withPlan.plannedAfter === 1, 'a planned dose after the dose time is counted, and said');
+  });
+  test('35.8b the HD verdicts say a post-HD dose, a hold, or what is missing — never a q-interval regimen', () => {
+    const dose = sandbox.hdNextDoseHTML(sandbox.hdNextDose(hdR(), 20));
+    assert(/IV <span class="vx-freq">after session 2/.test(dose) && /Pre-HD, session 3/.test(dose) && !/\bq\d+h\b/.test(dose), dose.slice(0, 200));
+    const hold = sandbox.hdNextDoseHTML(sandbox.hdNextDose(hdR({ doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 2000, tinfH: 2, timeH: 9 }, { mg: 2000, tinfH: 2, timeH: 30 }] }), 20));
+    assert(/No dose after session 2/.test(hold), hold.slice(0, 160));
+    assert(/Add the next sessions/.test(sandbox.hdNextDoseHTML({ need: 'sessions', planned: 1 })), 'asks for sessions');
+    const emp = sandbox.hdEmpiricHTML(sandbox.hdEmpiricDoses(78), 78);
+    assert(/High permeability/.test(emp) && /Low permeability/.test(emp) && /2 g · 750 mg/.test(emp) && /Rec 14/.test(emp), emp.slice(0, 300));
+    const src35b = fs.readFileSync(htmlPath, 'utf8');
+    assert(/isHD && nLev === 0[\s\S]{0,200}hdEmpiricHTML/.test(src35b) && /hdRec = hdNextDose\(r, /.test(src35b), 'the renderer uses both for Goti-HD');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
