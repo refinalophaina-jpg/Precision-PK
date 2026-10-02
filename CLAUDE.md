@@ -140,12 +140,16 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **351/351 pass** |
+| `phase2d_validation.cjs` | **356/356 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
 | `docs/audit/browser-flows.cjs` | **59/59** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+
+**Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
+release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
+for an engine or model overhaul. The history table is in the README.
 
 Syntax check after any edit:
 
@@ -196,8 +200,11 @@ Rules the 2026-09 design pass learned the hard way:
 - **A label on a chart must avoid what is drawn**, markers included: the trough-band label
   scans the band's edges for a clear place rather than trusting a corner.
 - **Model and measurement never share a colour.** On a concentration chart the fit and everything
-  it predicts (band, ring at each level, cursor) wear `--series-fit`; measured levels are ink; the
-  population prior is an `--ink-muted` dash; the projection is `--series-projection`. The legend
+  it predicts (band, ring at each level, cursor) wear `--series-fit`; measured levels wear
+  `--series-measured` (since 2026-10-02; values beside them stay ink) and a hairline joins each to
+  the fit's ring (the residual); the population prior is an `--ink-soft` long dash; the projection is
+  `--series-projection`. A fourth series hue failed the colour-vision validator, which is why the
+  prior is a neutral. The legend
   swatches (`.lg-*`) read the same tokens as the canvas, and a chart's summary never names a colour.
   The Tinkerer and the regimen comparison follow it too: tried regimens are projections, so in the
   comparison they share the projection's hue family and differ by line pattern (`COMPARE_STYLES`,
@@ -254,7 +261,13 @@ be true, not merely pretty:
   step aligned with nothing at Q6H/Q12H/Q18H and drew nineteen labels at Q48H.
 - **The axis must contain everything drawn on it** — the target band and any observed level,
   not just the curve. Deriving the top from the curve alone painted the band off-canvas for
-  any regimen whose peak fell below the target ceiling.
+  any regimen whose peak fell below the target ceiling. `profileDomain` reaches every measured
+  level: on a long course with doses held, a level drawn days after the last dose fell past the
+  48 h tail and vanished from the curve and the strip while the fit used it (fixed 2026-10-02).
+- **The arrival is the one animation** (2026-10-02, the user's request): on a new result the curve
+  traces in and the levels land (`PROFILE_ARRIVE_MS`), gated by `refreshProfileGraph` on result
+  identity and `profileMotionOK()`. Never animate a redraw, reduced motion or print, and the last
+  frame must equal the static drawing (the harness only ever sees the static path).
 - **The target band is the clinician's own**, never a hard-coded 10–20.
 - **Never rescale one series onto another's axis.** The comparison chart used to stretch each
   regimen onto the longest interval, so a Q6H trough was drawn at 12 h under an axis reading
