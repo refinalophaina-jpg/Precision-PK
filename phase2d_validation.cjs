@@ -4193,6 +4193,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log('  SUITE 35 — intermittent haemodialysis dosing (D16)');
   console.log(`${'─'.repeat(60)}`);
   const { hdEmpiricDoses } = sandbox;
+  const script35 = fs.readFileSync(htmlPath, 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code35 = script35.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf35 = (n) => { const c = code35.slice(code35.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
   test('35.1 empiric HD doses follow Rybak 2020 Rec 13, rounded to 250 mg', () => {
     const rows = hdEmpiricDoses(78);
     const at = (t, p) => rows.find(r => r.timing === t && r.perm === p);
@@ -4275,6 +4278,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('35.10 every N days counts calendar days, across a DST change', () => {
     assert(sandbox.hdScheduleDates('2026-10-30', 'N', 2, 3).join() === '2026-10-30,2026-11-01,2026-11-03', 'US DST ends 1 Nov 2026');
     assert(sandbox.hdScheduleDates('', 'MWF', 0, 3).length === 0 && sandbox.hdScheduleDates('2026-09-29', 'N', 0, 3).length === 0, 'a blank or zero input adds nothing');
+  });
+  test('35.11 the Trough module refuses an HD patient before any number is computed', () => {
+    const calc = bodyOf35('calculate');
+    const guard = calc.indexOf("document.getElementById('t-hd')"), first = calc.indexOf('calcCrCl(');
+    assert(guard > 0 && guard < first, 'the HD guard runs before CrCl');
+    assert(/troughHdNoticeHTML\(\)/.test(calc) && /return;/.test(calc.slice(guard, guard + 400)), 'it renders the notice and returns');
+    assert(/k77:[^\n]*switchModule\('auc'\)[^\n]*gotihd/.test(script35), 'one action moves the patient to Goti-HD');
+    const note = sandbox.troughHdNoticeHTML();
+    assert(/use AUC Precision/.test(note) && /data-onclick="k77"/.test(note) && !/mg IV q\d+h/.test(note), note.slice(0, 160));
   });
 }
 

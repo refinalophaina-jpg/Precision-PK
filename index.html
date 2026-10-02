@@ -2189,6 +2189,7 @@
   .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
   .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .hd-flag { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: var(--fs-sm); color: var(--ink-soft); }
   .hd-sched { margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
   .hd-sched > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
   .hd-sched-row { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
@@ -2894,6 +2895,7 @@
     <!-- Renal Function -->
     <div>
       <h2 class="form-h2">Renal function</h2>
+      <label class="hd-flag"><input type="checkbox" id="t-hd"> Patient receives intermittent haemodialysis</label>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
           <label class="field-label" for="scr">Serum Creatinine</label>
@@ -3858,6 +3860,7 @@ const __ACT = {
   k74: (el, ev, arg) => { addBayesSession() },   /* + Add HD session (D15) */
   k75: (el, ev, arg) => { removeBayesSession(Number(arg)) },   /* remove HD session row */
   k76: (el, ev, arg) => { addHdSchedule() },   /* recurring HD schedule (D16) */
+  k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -6125,6 +6128,14 @@ function updateModelInfo() {
 //  MAIN CALCULATION
 // ══════════════════════════════════════════
 function calculate() {
+  // D16: CrCl does not describe vancomycin clearance on dialysis, so every
+  // trough-based number would be wrong in kind, not degree. Refuse, and point
+  // to the dialysis model.
+  if (typeof document !== 'undefined' && (document.getElementById('t-hd') || {}).checked) {
+    const rc = document.getElementById('results-content');
+    if (rc) rc.innerHTML = troughHdNoticeHTML();
+    return;
+  }
   const age = v('age'), tbw = v('tbw'), ht = v('height'), scr = v('scr');
   const troughMin = v('trough-min'), troughMax = v('trough-max'), mic = v('mic');
   const clModel = s('cl-model'), vdModel = s('vd-model');
@@ -8051,6 +8062,13 @@ function addHdSchedule() {
   }
   if (msg) msg.textContent = `Added ${dates.length} session${dates.length === 1 ? '' : 's'}.`;
   scheduleCourseReadback();
+}
+// Trough-module guard (D16): an HD patient gets this notice, never a number.
+function troughHdNoticeHTML() {
+  return noteHTML({ tier: 'caution', word: 'On haemodialysis — use AUC Precision', html:
+    `Trough-based dosing estimates clearance from creatinine, which does not describe vancomycin clearance on
+     intermittent haemodialysis. Use AUC Precision with Goti 2018 · HD: log the sessions, and dose after each one
+     from the pre-HD level. <button type="button" class="vx-act" data-onclick="k77">Open AUC Precision · Goti-HD</button>` });
 }
 // The HD verdict (D16): a dose after the next session, a hold, or what is missing.
 function hdNextDoseHTML(rec) {
