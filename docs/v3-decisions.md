@@ -805,6 +805,104 @@ findings, each fixed with a test that failed first (37.19–37.22, suite 378/378
 
 **Not clinically validated on local HD patients.**
 
+## D19 — The one-time HD dose, corrected: the gap from the last session, the pre-dialysis SCr, a give-at time (2026-10-02, v3.8.0)
+
+**Reported from real use (fictional-equivalent case, the user's own):**
+- 70 F, 51.8 kg, 149.9 cm;
+- SCr 3.7 on 1 Oct and 2.0 on 2 Oct;
+- 1 g at 09:18 on 1 Oct, then HD 13:42–17:45;
+- a level of 10.3 mg/L at 05:42 on 2 Oct.
+
+v3.7.0 said **1.5 g IV now**. The user expected a 500–750 mg supplement. Reproduced in the app,
+with two causes and one missing input.
+
+1. **The gap counted from the dose, not from the last session.** "Next HD in 48 h" from a dose
+   at 14:54 on 2 Oct assumed the next session at 14:54 on 4 Oct, 73 h after the last one began.
+   - **Now (the user's decision):** the next HD is the anchor session's start plus 24/48/72 h,
+     start to start, as a thrice-weekly schedule runs. The anchor is the session the dose
+     follows, else the last that began.
+   - **Exceptions:** with no session logged, or when every gap has passed (the last session began
+     more than 72 h ago), the gap counts from the dose, and the answer says so.
+   - **Unavailable gaps:** a gap is unavailable if a dose at the ceiling (`autoTinf` of the
+     per-dose maximum) could not be infused before that session. No new constant. The answer
+     names the assumed next HD as a clock time, and passed gaps are disabled.
+   - **Effect alone:** 1.5 g → 1 g.
+2. **The SCr was drawn after dialysis.** The newest SCr, 2.0, came the morning after the
+   session. Dialysis removes creatinine as well, so CrCl read 21 mL/min instead of 12, and Goti-HD
+   started from CL 0.79 L/h. One level barely moved it (0.81).
+   - **Now (the user's decision):** on Goti-HD, when dated serial readings span a logged session,
+     the fit uses the newest SCr drawn before the session the newest reading follows
+     (`hdPreDialysisScr`), and says so in a caution.
+   - **With no pre-dialysis reading,** it is flagged, not replaced.
+   - **With only the undated SCr field,** an info note asks for a pre-dialysis value.
+   - **No value is ever altered** (rule 4): only which measured reading is used. "Renal function
+     changed across the fit" is not raised for the dialysis drop.
+   - **Effect, with 1:** 1 g → **750 mg** (18.2 mg/L at 3 Oct 13:42).
+3. **"Give at."** The dose could only be given at 12:00 or later. The one-time answer now takes
+   a date and a 24-hour time (`k79`, `bState.hdGiveAtH`).
+   - It is never earlier than now or the end of the session the dose follows; an earlier time is
+     clamped, and the answer says so.
+   - It moves the dose, never the assumed next HD.
+   - It is on screen only; paper prints the dose time.
+   - **Extending it to the regular regimen's first dose** was declined for now (the user's
+     choice); it is a separate change.
+
+**Rule 9.** Tests that encoded the old anchor or the two-argument view were changed in the open:
+- 37.5: read point 68 → 52;
+- 37.6: 104 → 100;
+- 37.7: `20 + g` → `4 + g`;
+- 37.13's wording, which now names a clock time;
+- 35.18, 37.17: `hdViewFor(r, bState.hdGapH, bState.hdGiveAtH)`.
+
+SUITE 19 whitelists `b-hd-give-time`, which sits beside its date, `b-hd-give-date`.
+
+**Final review** (a fresh reviewer on the branch): one Critical and seven Important findings,
+each fixed with a test that failed first (37.28–37.31).
+- **C1, Critical: the pre-dialysis SCr swap had no bounds.** It could pick a pre-AKI baseline
+  (0.9, giving 1.5 g), an older value over a real pre-dialysis draw, or a reading that was itself
+  post-dialysis. Now:
+  - "pre-dialysis" means the session layer's own pre-HD label: at or before a session's start and
+    within `HD_PRE_LABEL_H`;
+  - a newest reading that is itself pre-dialysis is used as measured;
+  - a post reading is replaced only by that session's pre-dialysis reading, and only if it is
+    higher; otherwise it is flagged.
+- **I2: an assumed session imminent at the dose time** (your decision). If the assumed session
+  starts before the largest dose could be infused and the fit's own distribution phase has
+  passed, or would be in progress, the dose follows it. The assumed session lasts as long as the
+  anchor, and the next HD counts from its start. A gap has passed only once its assumed session
+  would be over.
+- **I1:** the summary and Show the math name the clock time and the anchor.
+- **I3:** every 24-hour field now formats as typed ("1700" → "17:00"); a bad give-at time is
+  said, not silently reset.
+- **I4:** a new fit clears the give-at time, and a hold or a planned dose keeps a set time
+  visible.
+- **I5:** the heading says "IV at 17:00" when the dose is given later.
+- **I6:** the printed SCr label is the reading used.
+- **I7:** the renal-change caution compares the readings up to the one used, so a real AKI change
+  still warns while the dialysis drop does not.
+- **Wording:** "Next HD at … after session N began"; the disabled-button title; the
+  stale-anchor text.
+- **37.17's character window** was widened, because the rule text grew; the assertion is
+  unchanged.
+
+**Deferred minors:**
+- focus returns to the time field after Tab;
+- the date picker re-renders per segment;
+- across a DST change the assumed HD is on absolute hours;
+- whole-minute display of "not before".
+
+Engine parity does not exercise HD functions, so it is not evidence for this change. The HD
+evidence is SUITE 37, the browser flows and the reported case: **750 mg** with serial SCr; 1 g
+with the SCr field alone, plus a note asking for a pre-dialysis value.
+
+**Tests and gates:**
+- phase2d **387/387**: SUITE 37.23–37.31;
+- browser flows **62/62**: a give-at time typed as "1000" on a phone moves the dose, and the
+  next HD stays anchored;
+- rendered contrast: 0 AA failures in light, dark and phone.
+
+**Not clinically validated on local HD patients.**
+
 ## D18 — The profile chart, polished; every level on the axis (2026-10-02, v3.6.0)
 
 **Asked.** The user wanted the dosing profile graph more aesthetic "than the current black

@@ -88,6 +88,14 @@ intradialytic-dose caution, and a Trough-module refusal for HD patients.
 sized at an assumed 24/48/72 h gap (default 48, `bState.hdGapH`, `k78`), with a missed post-HD
 dose flagged. A measured pre-HD level above 20 with no dose since means no dose now and a recheck,
 for the dose after the session it preceded only; the scheduled answer shows it as a caution.
+**v3.8.0 (D19):**
+- The assumed next HD counts from the last session's **start**, start to start; it counts from
+  the dose only with no session logged, or when every gap has passed.
+- A give-at time (`k79`, `bState.hdGiveAtH`) moves the dose, never the next HD.
+- On Goti-HD a SCr drawn after a session is replaced by that session's pre-dialysis reading,
+  using the pre-HD label, and only if it is higher (`hdPreDialysisScr`). The result says so; no
+  value is ever altered.
+- An assumed session imminent at the dose time means the dose follows it.
 Both HD answers pick the in-range 250 mg step closest to 17.5 mg/L (`hdPickDose`).
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
@@ -146,12 +154,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **378/378 pass** |
+| `phase2d_validation.cjs` | **387/387 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **61/61** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **62/62** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
