@@ -986,6 +986,39 @@ earlier the same day, ships after this as 3.7.0.
 The three polish tests were confirmed to fail against the pre-polish file. Browser flows 59/59;
 phase3 21/21; phase4 49/49.
 
+## D20 — The regular regimen's first dose can be timed (2026-10-02, v3.9.0)
+
+**Asked.** The user's example: "1 g yesterday at 09:30, a level this morning; q24h recommended,
+but I can only give it at 12:00 or later".
+
+**The approved design** (the user chose timing and readouts only):
+- **The first dose** of the recommended regimen, regular non-HD answers only, is:
+  - by default, when it is due: the last dose given plus the recommended interval;
+  - now, if that has passed, saying "was due …";
+  - or a chosen date and 24-hour time (`k82`, `bState.firstDoseAtH`), never before now.
+- **The readout:** the time against the schedule ("2.5 h after the q24h schedule"), the clock
+  times after it ("then 12:00 daily"; "then every 48 h (next …)" above 24 h), and the fitted
+  level when the first dose goes in.
+- **One line saying the steady-state AUC₂₄ and trough are unchanged.** At steady state
+  AUC₂₄ = daily dose / CL, whatever the start. **The dose never changes.** A top-up rule for a
+  low level before a late dose was declined, because it would be an unsourced number.
+- **Behaviour:**
+  - the projection curve starts at the chosen time;
+  - print carries the time and the schedule;
+  - a new fit clears it;
+  - a bad time is reported, not silently reset;
+  - "1200" is read as 12:00.
+- **Placement:** at the end of the regimen box, after the AUC and the trough, so the answer
+  still leads. The label sits on its own line, with date and time side by side, so the pair fits
+  the verdict column and a 375 px phone. The HD "Give at" row shares the layout.
+
+**Tests and gates:**
+- phase2d **391/391** (SUITE 38: the timing rules, the schedule, the readout, the wiring);
+- browser flows **63/63** (a time typed as "1200" for tomorrow reads 12:00 and moves the
+  readout);
+- rendered contrast 0 AA failures;
+- engine parity 0 differences: no engine function changed.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module
