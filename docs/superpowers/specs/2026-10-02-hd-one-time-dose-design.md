@@ -243,3 +243,34 @@ level-based table for unscheduled HD. It is weight-tiered, with re-dose and hold
 **Then:** the parity run, the full suites, rendered contrast in both themes, and the records:
 D17 in `docs/v3-decisions.md`, CLAUDE.md, DESIGN.md, the hub how-to and build log, the hub PR,
 the user's merge, and production verification.
+
+## Version (requested by the user, 2026-10-02)
+
+The header has said "Vancomycin TDM v3.0" since 2026-09-12. Six releases have shipped since then.
+This release makes the version a maintained fact.
+
+- **One constant, `APP_VERSION`.** The header tag and a new version line on the printed report
+  both read it. A SUITE check fails if the static header markup and the constant disagree.
+- **Scheme:**
+  - **major:** an engine or model overhaul;
+  - **minor:** any change in clinical behaviour, or a new feature;
+  - **patch:** fixes, wording and minor polish.
+  Every release bumps it. No release ships under the previous number.
+- **Reconstructed history**, recorded in the README and in `docs/v3-decisions.md`:
+
+  | Version | Date | What shipped | Commit |
+  |---|---|---|---|
+  | 3.0 | 2026-09-12 | One temporal model | `7f04623` |
+  | 3.1 | 2026-09-28 | Engine audit (already named v3.1 in code comments) | `61dbb6d` |
+  | 3.2 | 2026-09-29 | Results redesign and input defects (D12, D13) | `7def88a` |
+  | 3.3 | 2026-09-30 | Model vs measurement colours: profile, Tinkerer, Trough and dose explorer (D14) | `51b7eaf` |
+  | 3.4 | 2026-10-02 | HD sessions (D15) | `95e3e90` |
+  | 3.5 | 2026-10-02 | HD dosing (D16) | `6c1ed2b` |
+  | 3.5.1 | 2026-10-02 | D16 minors | `9710104` |
+  | **3.6.0** | this release | One-time HD dose; midpoint target pick (D17) | |
+
+- **Git tag** `v3.6.0` on the released commit. The past versions get no retro tags; the table
+  is the record.
+- **The hub build log** names the version for every release.
+- **The ainadara.com project card** may name the version, but it is deployed from
+  `ainadara-site`, which Codex owns. It is handed over, not changed here.
