@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v3.6.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
+**Status: Live · v3.7.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
 course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
@@ -170,4 +170,5 @@ the six releases after it; the table below reconstructs them from git (2026-10-0
 | 3.4 | 2026-10-02 | Haemodialysis sessions (D15) | `95e3e90` |
 | 3.5 | 2026-10-02 | Dosing on intermittent haemodialysis (D16) | `6c1ed2b` |
 | 3.5.1 | 2026-10-02 | D16 minors: the mg/kg basis, session numbering | `9710104` |
-| 3.6.0 | 2026-10-02 | Profile polish: measured levels in their own hue, the residual drawn, the arrival; every level on the axis on a long course (D18) | |
+| 3.6.0 | 2026-10-02 | Profile polish: measured levels in their own hue, the residual drawn, the arrival; every level on the axis on a long course (D18) | `a032a61` |
+| 3.7.0 | 2026-10-02 | One-time HD dose when the schedule is unknown; both HD answers pick the step closest to 17.5 mg/L; pre-HD above 20 holds (D17) | |

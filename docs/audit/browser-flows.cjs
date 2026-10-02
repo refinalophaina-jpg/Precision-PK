@@ -473,6 +473,35 @@ async function enterCourse(page) {
     return { text: (n && n.innerText) || '', visible: !!(n && n.offsetParent), button: !!(b && b.offsetParent) }; });
   ok('Trough module visibly refuses an HD patient and offers Goti-HD',
      guard.visible && guard.button && /use AUC Precision/.test(guard.text) && !/mg IV q\d+h/.test(guard.text), JSON.stringify(guard).slice(0, 200));
+  // D17: no session ahead → a one-time answer, the missed post-HD dose flagged; the 72 h
+  // button re-sizes it without refitting and keeps keyboard focus.
+  await m.locator('[data-onclick="k2"]').tap();
+  for (const id of [5, 4, 3, 2]) { const x = m.locator(`[data-onclick="k75"][data-arg="${id}"]`); if (await x.count()) await x.tap(); }
+  await m.locator('[data-onclick="k61"][data-arg="4"]').tap();          // the D2 20:00 dose: nothing after session 1 now
+  await m.locator('[data-onclick="k46"]').tap();
+  const lv = await m.evaluate(() => [...document.querySelectorAll('[id^="b-lvl-conc-"]')].pop().id.split('-').pop());
+  await typeInto(m, `#b-lvl-conc-${lv}`, '10.3'); await m.locator(`#b-lvl-date-${lv}`).fill(D2); await typeInto(m, `#b-lvl-time-${lv}`, '23:30');
+  await m.locator('[data-onclick="k47"]').tap();
+  await m.waitForFunction(() => /One-time|No dose now/.test((document.querySelector('#b-results .vx-verdict') || {}).textContent || ''), null, { timeout: 20000 });
+  await m.waitForTimeout(300);
+  const ot = await m.evaluate(() => ({ head: document.getElementById('vx-regimen').textContent.replace(/\s+/g, ' ').trim(),
+    oneTime: /One-time|No dose now/.test(document.querySelector('.vx-verdict').textContent),
+    missed: /No dose entered after session 1/.test(document.querySelector('.vx-verdict').textContent),
+    btns: [...document.querySelectorAll('#b-results [data-onclick="k78"]')].map(b => b.dataset.arg + ':' + b.getAttribute('aria-pressed')),
+    sw: document.documentElement.scrollWidth, iw: innerWidth }));
+  ok('HD one-time: no session ahead → a one-time answer, the missed post-HD dose flagged, fits 375 px',
+     ot.oneTime && /IV now|No dose now|Planned/.test(ot.head) && ot.missed && ot.btns.join() === '24:false,48:true,72:false' && ot.sw <= ot.iw, JSON.stringify(ot));
+  await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
+  await m.waitForTimeout(250);
+  await m.screenshot({ path: path.join(OUT, 'mobile-hd-onetime.png') });
+  await m.locator('#b-results [data-onclick="k78"][data-arg="72"]').focus();
+  await m.keyboard.press('Enter');
+  await m.waitForFunction(() => /72 h/.test((document.querySelector('.vx-verdict') || {}).textContent || ''), null, { timeout: 5000 });
+  const ot72 = await m.evaluate(() => ({ said: /starts (<strong>)?72 h|starts 72 h|72 h after/.test(document.querySelector('.vx-verdict').innerHTML),
+    pressed: document.querySelector('#b-results [data-onclick="k78"][data-arg="72"]').getAttribute('aria-pressed'),
+    focus: document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.arg : null }));
+  ok('HD one-time: the 72 h button re-sizes for 72 h without refitting, and keeps focus',
+     ot72.said && ot72.pressed === 'true' && ot72.focus === '72', JSON.stringify(ot72));
   const mAttr = await attributeInjected(m, mProblems);
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);

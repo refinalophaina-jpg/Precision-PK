@@ -2218,6 +2218,16 @@
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
   .hd-dose { white-space: nowrap; }
   .hd-perkg { display: block; font-size: var(--fs-xs); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .hd-gap-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .hd-gap.toggle-group { display: inline-flex; }
+  .hd-gap .toggle-opt { min-height: 44px; min-width: 56px; font-variant-numeric: tabular-nums; }
+  .vx-hd-onetime { margin-top: 10px; }
+  .vx-hd-onetime td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .vx-hd-onetime .hd-in { color: var(--ink); margin-left: 4px; }
+  .vx-hd-onetime .hd-in .ic { width: 12px; height: 12px; vertical-align: -1px; }
+  .vx-hd-onetime tr.is-pick th, .vx-hd-onetime tr.is-pick td { background: var(--paper-deep); }
+  .vx-hd-onetime tr.is-pick th { color: var(--terracotta-ink); font-weight: 600; }
+  @media print { .hd-gap { display: none; } }
   .vx-hd-basis { font-size: var(--fs-sm); line-height: 1.5; margin: 8px 0 0; }
   .hd-flag { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: var(--fs-sm); color: var(--ink-soft); }
   .hd-sched { margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
@@ -2727,7 +2737,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.6.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.7.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2758,7 +2768,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.6.0</div>
+  <div class="header-tag">Vancomycin TDM v3.7.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3794,7 +3804,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.6.0';
+const APP_VERSION = '3.7.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -3896,6 +3906,7 @@ const __ACT = {
   k75: (el, ev, arg) => { removeBayesSession(Number(arg)) },   /* remove HD session row */
   k76: (el, ev, arg) => { addHdSchedule() },   /* recurring HD schedule (D16) */
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
+  k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -7894,8 +7905,10 @@ function parseBayesCourse() {
 // Vancomycin_TDM_Software_Instructions.md §4.4.
 const HD_PREDIALYSIS_MIN = 15;  // mg/L
 const HD_PREDIALYSIS_MAX = 20;  // mg/L
-// PREFERENCE (rule 8) — these two only choose a label or a caution; neither
-// changes a fit or a dose.
+// PREFERENCE (rule 8) — label and caution windows; never a fit. Since D17 the
+// "pre-HD" label also gates the one-time hold (pre-HD > 20: no dose, recheck)
+// and the scheduled caution: 23 mg/L drawn 11.9 h before a session holds, 12.1 h
+// before stays predictive (docs/v3-decisions.md D17).
 // A level drawn within this many hours before a session reads as "pre-HD".
 const HD_PRE_LABEL_H = 12;
 // "Soon after a session" = within this many distribution half-lives (ln2/α) of
@@ -8026,69 +8039,157 @@ function fittedAUC(r, t0, t1, n) {
   for (let i = 1; i < n; i++) sum += (i % 2 ? 4 : 2) * predictFittedAt(r, t0 + i * h);
   return sum * h / 3;
 }
-// Post-HD dose (D16). The dose follows the next session: one in progress, one
-// still to come, or one that ended under HD_POSTSESSION_DOSE_WINDOW_H ago with no
-// dose entered after it (then the dose is given now). It is sized at the start
+// Post-HD dose (D16; target point D17). The dose follows the next session: one in
+// progress, one still to come, or one that ended under HD_POSTSESSION_DOSE_WINDOW_H ago
+// with no dose entered after it (then the dose is given now). It is sized at the start
 // of the session after that, on the fitted curve with every dose entered.
 //   - A planned dose already entered around that session is READ, not
 //     overridden: kind 'planned' reports what it gives.
-//   - Otherwise: hold when no dose still reads at least 15 mg/L; else the
-//     smallest 250 mg step landing in 15–20 (Rybak 2020 Rec 14); else the
-//     closest step — which may be no dose — flagged.
+//   - Otherwise hdPickDose: the 250 mg step (or no dose) whose pre-HD level is
+//     closest to the middle of 15–20 (Rybak 2020 Rec 14), ties to the smaller
+//     dose; a hold when no dose is that step or every step reads above 20; else
+//     the step closest to the range, flagged.
 // A maintenance dose never exceeds DOSE_MAX_PER_DOSE_MG. Dose with every
 // session: Rybak 2020 (text, Rec 13).
 // PREFERENCE (rule 8): chooses which session the dose follows; changes no number.
 const HD_POSTSESSION_DOSE_WINDOW_H = 6;
-function hdNextDose(r, nowH) {
-  const all = (r.hdSessions || []).slice().sort((a, b) => a.startH - b.startH);
+// The target point within Rybak 2020 Rec 14's 15–20 band (D17, chosen by the user
+// 2026-10-02): derived from the band, not a new number. The smallest in-range step
+// settled near 15, which VancoPK's published arithmetic puts at AUC ~380.
+const HD_PREDIALYSIS_MID = (HD_PREDIALYSIS_MIN + HD_PREDIALYSIS_MAX) / 2;
+function HD_PREDIALYSIS_MID_FOR_TEST() { return HD_PREDIALYSIS_MID; }
+// The result with one more dose at atH (infusion time from autoTinf); r itself for 0 mg.
+function hdWithDose(r, mg, atH) {
+  return mg > 0 ? Object.assign({}, r, { doses: r.doses.concat([{ mg, tinfH: autoTinf(mg), timeH: atH }]) }) : r;
+}
+// Sessions a post-HD dose can still follow, in start order.
+function hdUpcomingSessions(r, nowH) {
   const dosedAfter = (x) => r.doses.some(d => d.timeH >= x.endH);
-  const upcoming = all.filter(x => x.endH > nowH
-    || (x.endH > nowH - HD_POSTSESSION_DOSE_WINDOW_H && !dosedAfter(x)));
+  return (r.hdSessions || []).slice().sort((a, b) => a.startH - b.startH)
+    .filter(x => x.endH > nowH || (x.endH > nowH - HD_POSTSESSION_DOSE_WINDOW_H && !dosedAfter(x)));
+}
+// One rule for both HD answers (D17): 0 and every 250 mg step to the per-dose
+// ceiling, each given at doseAtH, read on the fitted curve at readAtH.
+function hdPickDose(r, doseAtH, readAtH) {
+  const steps = [0];
+  for (let mg = MATRIX_DOSE_STEP; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) steps.push(mg);
+  const ev = steps.map(mg => ({ mg, pre: predictFittedAt(hdWithDose(r, mg, doseAtH), readAtH) }));
+  const off = (e) => Math.abs(e.pre - HD_PREDIALYSIS_MID);
+  const inRange = ev.filter(e => e.pre >= HD_PREDIALYSIS_MIN && e.pre <= HD_PREDIALYSIS_MAX);
+  let pick, kind, reason = '';
+  if (inRange.length) {
+    pick = inRange.reduce((b, e) => off(e) < off(b) ? e : b);   // strict: a tie keeps the smaller dose
+    kind = pick.mg ? 'dose' : 'hold'; reason = pick.mg ? '' : 'in';
+  } else if (ev[0].pre > HD_PREDIALYSIS_MAX) {
+    pick = ev[0]; kind = 'hold'; reason = 'above';
+  } else {
+    const gap = (e) => e.pre < HD_PREDIALYSIS_MIN ? HD_PREDIALYSIS_MIN - e.pre : e.pre - HD_PREDIALYSIS_MAX;
+    pick = ev.reduce((b, e) => gap(e) < gap(b) ? e : b);
+    kind = pick.mg ? 'closest' : 'hold'; reason = pick.mg ? '' : 'overshoot';
+  }
+  return { kind, reason, mg: pick.mg, tinfH: pick.mg ? autoTinf(pick.mg) : 0, pre: pick.pre, rr: hdWithDose(r, pick.mg, doseAtH) };
+}
+// The latest measured level, if it is a pre-HD level above 20 with no dose entered
+// after it (D17): { conc, n, timeH }, n being the session it preceded. "Pre-HD" is
+// the session layer's own label (hdLevelTiming, HD_PRE_LABEL_H).
+function hdPreAboveLevel(r, nowH) {
+  const lastLev = (r.levels || []).filter(l => l.timeH <= nowH).sort((a, b) => a.timeH - b.timeH).pop();
+  if (!lastLev || !(lastLev.conc > HD_PREDIALYSIS_MAX)) return null;
+  const g = gotiGraphParams(r).ind;
+  const t = hdLevelTiming(lastLev.timeH, r.hdSessions, g ? hdRedistributionWindowH(g.k10, g.k12, g.k21) : 0);
+  if (t.kind !== 'pre' || r.doses.some(d => d.timeH > lastLev.timeH && d.timeH <= nowH)) return null;
+  return { conc: lastLev.conc, n: t.n, timeH: lastLev.timeH };
+}
+function hdNextDose(r, nowH) {
+  const upcoming = hdUpcomingSessions(r, nowH);
   if (upcoming.length < 2) return { need: 'sessions', planned: upcoming.length };
   const first = upcoming[0], sizing = upcoming[1];
   const doseAtH = Math.max(first.endH, nowH);
   const future = r.doses.filter(d => d.timeH > nowH);
   const plannedInWindow = r.doses.filter(d => d.timeH >= Math.min(first.startH, doseAtH) && d.timeH < sizing.startH && d.timeH > nowH - 1e-9);
-  const base = { doseAtH, session: first.n, sizing: sizing.n, plannedCount: future.length, plannedInWindow };
+  const pa = hdPreAboveLevel(r, nowH);
+  const base = { doseAtH, session: first.n, sizing: sizing.n, plannedCount: future.length, plannedInWindow,
+    preAbove: pa && pa.n === first.n ? pa : null };   // a caution only: the scheduled answer stays predictive (the user's decision)
   if (plannedInWindow.length) {
     const pre = predictFittedAt(r, sizing.startH);
     return Object.assign(base, { kind: 'planned', mg: 0, tinfH: 0, pre, auc24: fittedAUC(r, sizing.startH - 24, sizing.startH), peak: null, repeat: [] });
   }
-  const withDose = (mg) => mg > 0
-    ? Object.assign({}, r, { doses: r.doses.concat([{ mg, tinfH: autoTinf(mg), timeH: doseAtH }]) }) : r;
-  const steps = [0];
-  for (let mg = MATRIX_DOSE_STEP; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) steps.push(mg);
-  const ev = steps.map(mg => ({ mg, pre: predictFittedAt(withDose(mg), sizing.startH) }));
-  const gap = (e) => e.pre < HD_PREDIALYSIS_MIN ? HD_PREDIALYSIS_MIN - e.pre
-                   : e.pre > HD_PREDIALYSIS_MAX ? e.pre - HD_PREDIALYSIS_MAX : 0;
-  let pick, kind, reason = '';
-  if (ev[0].pre >= HD_PREDIALYSIS_MIN) { pick = ev[0]; kind = 'hold'; reason = ev[0].pre > HD_PREDIALYSIS_MAX ? 'above' : 'in'; }
-  else {
-    pick = ev.find(e => e.mg > 0 && gap(e) === 0);
-    kind = pick ? 'dose' : 'closest';
-    if (!pick) {
-      pick = ev.reduce((b, e) => gap(e) < gap(b) ? e : b);
-      if (pick.mg === 0) { kind = 'hold'; reason = 'overshoot'; }
-    }
-  }
-  const rr = withDose(pick.mg), tinfH = pick.mg ? autoTinf(pick.mg) : 0;
+  const pk = hdPickDose(r, doseAtH, sizing.startH);
+  const rr = pk.rr, tinfH = pk.tinfH;
   const repeat = [];
   let course = rr;
   for (let k = 1; k + 1 < upcoming.length; k++) {
-    if (pick.mg) course = Object.assign({}, course, { doses: course.doses.concat([{ mg: pick.mg, tinfH, timeH: upcoming[k].endH }]) });
+    if (pk.mg) course = Object.assign({}, course, { doses: course.doses.concat([{ mg: pk.mg, tinfH, timeH: upcoming[k].endH }]) });
     repeat.push({ n: upcoming[k + 1].n, pre: predictFittedAt(course, upcoming[k + 1].startH) });
   }
-  return Object.assign(base, { kind, reason, mg: pick.mg, tinfH, pre: pick.pre,
+  return Object.assign(base, { kind: pk.kind, reason: pk.reason, mg: pk.mg, tinfH, pre: pk.pre,
     auc24: fittedAUC(rr, sizing.startH - 24, sizing.startH),
-    peak: pick.mg ? predictFittedAt(rr, doseAtH + tinfH) : null, repeat });
+    peak: pk.mg ? predictFittedAt(rr, doseAtH + tinfH) : null, repeat });
+}
+// One-time HD dose (D17): fewer than two upcoming sessions are logged, so the
+// session to size at is unknown. The dose follows the one session still ahead, if
+// any, else it is given now; it is sized at an ASSUMED gap after the dose, stated
+// in the answer. Same rule as the scheduled answer (hdPickDose). A planned dose in
+// the window is read, not replaced. The latest finished session with no dose
+// entered after it — other than the one the dose follows — is reported as missed.
+// PREFERENCE (rule 8): the gaps offered and the default. 48 h is the shorter
+// thrice-weekly gap (VancoPK's HD calculator also defaults to 2 days); 72 h is the
+// longest gap before a recheck. They choose where the dose is read; the rule is Rybak's.
+const HD_ONE_TIME_GAPS_H = [24, 48, 72];
+const HD_ONE_TIME_GAP_DEFAULT_H = 48;
+function hdOneTimeDose(r, nowH, gapH) {
+  const gap = HD_ONE_TIME_GAPS_H.includes(gapH) ? gapH : HD_ONE_TIME_GAP_DEFAULT_H;
+  const upcoming = hdUpcomingSessions(r, nowH);
+  const follow = upcoming.length ? upcoming[0] : null;
+  const doseAtH = follow ? Math.max(follow.endH, nowH) : nowH;
+  const readAtH = doseAtH + gap;
+  const ended = (r.hdSessions || []).filter(x => x.endH <= nowH && x !== follow).sort((a, b) => a.endH - b.endH);
+  const last = ended[ended.length - 1];
+  // A session counts as dosed by a dose given during it, or any dose entered after it
+  // up to the read point (given or planned) — so a planned dose clears the flag.
+  const dosedFor = (x) => r.doses.some(d => (d.timeH < x.endH && d.timeH + (d.tinfH || 0) > x.startH)
+    || (d.timeH >= x.endH && d.timeH < readAtH));
+  const pa = hdPreAboveLevel(r, nowH);
+  const missed = last && !dosedFor(last)
+    ? Object.assign({ n: last.n, endH: last.endH }, pa && pa.n === last.n ? { held: pa.conc } : {}) : null;
+  const future = r.doses.filter(d => d.timeH > nowH);
+  const winStart = follow ? Math.min(follow.startH, doseAtH) : nowH;
+  const plannedInWindow = r.doses.filter(d => d.timeH >= winStart && d.timeH < readAtH && d.timeH > nowH - 1e-9);
+  // A measured pre-HD level above 20 with no dose entered after it: no dose now, and a
+  // recheck (D17, the user's decision 2026-10-02: the top of Rybak 2020 Rec 14's 15–20
+  // band, as their unit's practice) — but only for the dose after the session that
+  // level preceded: the one the dose follows, or with none ahead the latest one ended.
+  // It never carries to a later session (final review C1).
+  const decides = follow || last || null;
+  const preAbove = pa && decides && pa.n === decides.n ? pa : null;
+  const base = { oneTime: true, doseAtH, after: follow ? follow.n : null, gapH: gap, readAtH,
+    plannedCount: future.length, plannedInWindow, missed, preAbove };
+  if (plannedInWindow.length) {
+    return Object.assign(base, { kind: 'planned', reason: '', mg: 0, tinfH: 0, pre: predictFittedAt(r, readAtH),
+      auc24: fittedAUC(r, readAtH - 24, readAtH), peak: null, table: [] });
+  }
+  const pk = preAbove ? { kind: 'hold', reason: 'pre-above', mg: 0, tinfH: 0, pre: predictFittedAt(r, readAtH), rr: r }
+                      : hdPickDose(r, doseAtH, readAtH);
+  const table = [];
+  for (let mg = 0; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) {
+    const rx = hdWithDose(r, mg, doseAtH);
+    const at = HD_ONE_TIME_GAPS_H.map(g => predictFittedAt(rx, doseAtH + g));
+    table.push({ mg, at });
+    if (at.every(c => c > HD_PREDIALYSIS_MAX)) break;
+  }
+  return Object.assign(base, { kind: pk.kind, reason: pk.reason, mg: pk.mg, tinfH: pk.tinfH, pre: pk.pre,
+    auc24: fittedAUC(pk.rr, readAtH - 24, readAtH),
+    peak: pk.mg ? predictFittedAt(pk.rr, doseAtH + pk.tinfH) : null, table });
 }
 // The HD answer for a result, read once at fit time (r.fitNowH) so a redraw or a
-// print can never show a different one (D16).
-function hdViewFor(r) {
+// print can never show a different one (D16). gapH: the assumed gap for a one-time
+// answer (D17), from bState.hdGapH; anything else means the 48 h default.
+function hdViewFor(r, gapH) {
   if (!(r && r.model === 'goti' && r.dial)) return null;
   const nowH = r.fitNowH != null ? r.fitNowH : Date.now() / 3600000;
   if (!(r.levels || []).length) { const rows = hdEmpiricDoses(r.tbw); return rows ? { nowH, empiric: rows } : null; }
-  return { nowH, rec: hdNextDose(r, nowH) };
+  const rec = hdNextDose(r, nowH);
+  return { nowH, rec: rec.need ? hdOneTimeDose(r, nowH, gapH) : rec };
 }
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
@@ -8137,7 +8238,12 @@ function addHdSchedule() {
 }
 // The HD verdict (D16): a dose after the next session, a hold, the planned dose
 // read, or what is missing. derated: the fit is Low/Very low confidence.
-function hdNextDoseHTML(rec, derated, nowH) {
+function hdNextDoseHTML(rec, derated, nowH, print) {
+  if (rec && rec.oneTime) return hdOneTimeHTML(rec, derated, nowH, print);
+  // The scheduled answer stays predictive; a pre-HD level above 20 before its session is a caution (D17).
+  if (rec && rec.preAbove) return noteHTML({ tier: 'caution', word: 'Pre-HD level above 20',
+      html: `The pre-HD level before session ${rec.preAbove.n} was ${rec.preAbove.conc.toFixed(1)} mg/L, above ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14). Recheck before dosing.` })
+    + hdNextDoseHTML(Object.assign({}, rec, { preAbove: null }), derated, nowH, print);
   const asOf = nowH != null ? ` Read as of ${fmtClock(nowH)}.` : '';
   const basis = `<p class="vx-hd-basis vx-muted">On the averaged Goti-HD fit (Goti 2018, the dialysis model DoseMeRx also offers), dosing with each session (Rybak 2020). Levels, drawn pre-HD, drive the next dose.${asOf}</p>`;
   if (rec.need) return `
@@ -8174,6 +8280,68 @@ function hdNextDoseHTML(rec, derated, nowH) {
       ${rec.repeat.length ? `<p class="vx-delta">Repeated after each planned session: ${rec.repeat.map(x => `pre-HD ${x.n} ${x.pre.toFixed(1)}`).join(' · ')} mg/L</p>` : ''}
       ${k ? `<p class="vx-delta">Includes the ${ks} already entered.</p>` : ''}
     </div>` + basis;
+}
+// The one-time HD verdict (D17): no schedule logged, so the dose is sized at an
+// assumed gap the clinician can change (k78). On paper the gap is plain text.
+function hdOneTimeHTML(rec, derated, nowH, print) {
+  const asOf = nowH != null ? ` Read as of ${fmtClock(nowH)}.` : '';
+  const range = `${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}`;
+  const where = (pre) => pre < HD_PREDIALYSIS_MIN ? `below ${range}` : pre > HD_PREDIALYSIS_MAX ? `above ${range}` : `within ${range}`;
+  const k = rec.plannedCount, ks = `${k} planned dose${k === 1 ? '' : 's'}`;
+  const prov = derated ? ' · <span class="vx-prov">provisional</span>' : '';
+  const from = rec.after != null ? `session ${rec.after} ends` : 'now';
+  const basis = `<p class="vx-hd-basis vx-muted">On the averaged Goti-HD fit (Goti 2018, the dialysis model DoseMeRx also offers); one-time: no schedule logged. Sized to the middle of ${range} mg/L (Rybak 2020 Rec 14).${asOf}</p>`;
+  const caution = `<p class="vx-hold vx-muted">The model averages dialysis over time. If the next session is delayed or cancelled, levels will run higher than shown.</p>`;
+  const ago = rec.missed ? Math.max(1, Math.round(nowH - rec.missed.endH)) : 0;
+  const missed = !rec.missed || (rec.reason === 'pre-above' && rec.preAbove && rec.preAbove.n === rec.missed.n) ? ''
+    : rec.missed.held != null
+      ? noteHTML({ tier: 'info', word: `No dose after session ${rec.missed.n}`,
+          html: `It ended ${ago} h ago; its pre-HD level was ${rec.missed.held.toFixed(1)} mg/L, above ${range} mg/L.` })
+      : noteHTML({ tier: 'caution', word: `No dose entered after session ${rec.missed.n}`,
+          html: `It ended ${ago} h ago. If a dose was given, enter it; this answer assumes it was not.` });
+  const gapCtl = print ? `<span class="hd-gap-text">assumed gap ${rec.gapH} h</span>`
+    : `<span class="toggle-group hd-gap" role="group" aria-label="Assumed time to the next session">${HD_ONE_TIME_GAPS_H.map(g =>
+        `<button type="button" class="toggle-opt${g === rec.gapH ? ' active' : ''}" data-onclick="k78" data-arg="${g}" aria-pressed="${g === rec.gapH}">${g} h</button>`).join('')}</span>`;
+  const gapRow = `<p class="vx-sub hd-gap-row"><span class="vx-k">Next HD in</span> ${gapCtl}</p>`;
+  const table = rec.table && rec.table.length ? `
+    <table class="ev-table vx-hd-onetime"><caption>Pre-HD level (mg/L) if the next HD starts this long after the dose</caption>
+      <thead><tr><th scope="col">Dose</th>${HD_ONE_TIME_GAPS_H.map(g => `<th scope="col">${g} h</th>`).join('')}</tr></thead>
+      <tbody>${rec.table.map(row => `<tr${row.mg === rec.mg ? ' class="is-pick"' : ''}><th scope="row">${row.mg ? fmtDose(row.mg) : 'None'}</th>${row.at.map(c => {
+        const inR = c >= HD_PREDIALYSIS_MIN && c <= HD_PREDIALYSIS_MAX;
+        return `<td>${c.toFixed(1)}${inR ? `<span class="hd-in">${ICON.check}<span class="sr-only"> within ${range}</span></span>` : ''}</td>`;
+      }).join('')}</tr>`).join('')}</tbody></table>` : '';
+  if (rec.kind === 'planned') return missed + `
+    <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
+      <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">Planned: ${rec.plannedInWindow.map(d => fmtDose(d.mg)).join(' + ')}</h3>
+      <p class="vx-inf"><strong>One-time</strong> · ${rec.plannedInWindow.map(d => `${fmtDose(d.mg)} at ${fmtClock(d.timeH)}`).join(' · ')}${prov}</p>
+      <p class="vx-sub">With the ${ks} entered, the fitted level if the next HD starts ${rec.gapH} h after ${from} is <strong>${rec.pre.toFixed(1)} mg/L</strong> — ${where(rec.pre)} mg/L.</p>
+      ${gapRow}
+      <p class="vx-delta">Edit the planned dose row to test another dose.</p>
+    </div>` + caution + basis;
+  if (rec.kind === 'hold' && rec.reason === 'pre-above') return missed + `
+      <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">${rec.after != null ? `No dose after session ${rec.after}` : 'No dose now'}</h3>
+      <p class="vx-hold">The pre-HD level before session ${rec.preAbove.n} was <strong>${rec.preAbove.conc.toFixed(1)} mg/L</strong>, above ${range} mg/L (Rybak 2020 Rec 14). Recheck the level before the next session.</p>
+      <p class="vx-sub">With no dose, the fitted level if the next HD starts ${rec.gapH} h after ${from} is ${rec.pre.toFixed(1)} mg/L.</p>
+      ${gapRow}` + table + caution + basis;
+  if (rec.kind === 'hold') {
+    const lead = k ? `With the ${ks} entered and no further dose, the` : 'Without a dose, the';
+    const tail = rec.reason === 'overshoot'
+      ? ` — below ${HD_PREDIALYSIS_MIN}, but every 250 mg step overshoots ${HD_PREDIALYSIS_MAX}. Recheck the level before dosing.`
+      : ` — ${where(rec.pre)} mg/L. Recheck the pre-HD level.`;
+    return missed + `
+      <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">${rec.after != null ? `No dose after session ${rec.after}` : 'No dose now'}</h3>
+      <p class="vx-hold">${lead} fitted level if the next HD starts ${rec.gapH} h after ${from} is ${rec.pre.toFixed(1)} mg/L${tail}</p>
+      ${gapRow}` + table + caution + basis;
+  }
+  return missed + `<div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
+      <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${rec.after != null ? 'after HD' : 'now'}</span></h3>
+      <p class="vx-inf"><strong>One-time</strong> · ${rec.after != null ? `after session ${rec.after} ends · ` : ''}${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
+      <p class="vx-sub">Sized for a pre-HD level of <strong>${rec.pre.toFixed(1)} mg/L</strong> if the next HD starts <strong>${rec.gapH} h</strong> after this dose${rec.kind === 'closest' ? ` — no 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : ''}.</p>
+      ${gapRow}
+      <p class="vx-sub"><span class="vx-k">AUC₂₄</span> ${rec.auc24.toFixed(0)} mg·h/L <span class="vx-muted">over the 24 h before it</span>
+        <span class="vx-nb"><span class="vx-k">Peak</span> ${rec.peak.toFixed(1)} mg/L</span></p>
+      ${k ? `<p class="vx-delta">Includes the ${ks} already entered.</p>` : ''}
+    </div>` + table + caution + basis;
 }
 // Before the first level (D16): Rybak 2020 Rec 13 for this weight — both dialyser
 // permeabilities, both timings. Permeability is never assumed. Doses already
@@ -11010,6 +11178,7 @@ const ICON = {
   alarm:   '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 1.5h5.6l3.7 3.7v5.6l-3.7 3.7H5.2l-3.7-3.7V5.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 4.6v4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.2" r=".95" fill="currentColor"/></svg>',
   caution: '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 14.8 13.9H1.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.8" r=".95" fill="currentColor"/></svg>',
   info:    '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 7.2v4.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg>',
+  check:   '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8.4 6.6 11.6 12.8 4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 // A caution line for the input panels: the drawn icon, never a "⚠" glyph
 // (which several platforms render as a colour emoji), and the text escaped.
@@ -11346,6 +11515,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // frozen so every redraw and the print read the same answer.
   const isHD = r.model === 'goti' && !!r.dial;
   if (r.fitNowH == null) r.fitNowH = Date.now() / 3600000;
+  const hdView = hdViewFor(r, bState.hdGapH);   // D16/D17: read once, before the next step and the verdict
   const nLev = levels.length;
 
   document.getElementById('b-placeholder').style.display = 'none';
@@ -11406,6 +11576,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const tauForVOI = (rec && !rec.noSolution) ? rec.tau : (cur2 ? cur2.tau : null);
   const nlv = aucForVOI > 0 ? nextLevelValue(aucForVOI, nLev, uncertaintyModelKey(r), tauForVOI, CL_ind) : null;
   const nextStep = (() => {
+    if (isHD && hdView && hdView.rec && hdView.rec.oneTime) return 'Draw a pre-HD level before the next session. Once the schedule is known, log it and each post-HD dose is sized for you.';
     if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
       : 'Give the loading dose, then draw a pre-HD level before the next session.';
     if (rec && rec.noSolution) return 'Every candidate breached a hard safety limit. Confirm the inputs; if they hold, seek specialist guidance.';
@@ -11666,7 +11837,6 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
 
   // ── Haemodialysis (D16): the answer is a dose after the next session, or the
   //    empiric table before the first level — not a q-interval regimen. ──
-  const hdView = hdViewFor(r);
   let hdRec = null, hdSentence = '';
   if (hdView && hdView.empiric) {
     verdict = hdEmpiricHTML(hdView.empiric, r.tbw, doses); lowConfSpan = '';
@@ -11675,7 +11845,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     hdRec = hdView.rec;
     verdict = hdNextDoseHTML(hdRec, !!(conf && conf.rank >= 2), hdView.nowH);
     lowConfSpan = '';
-    hdSentence = hdRec.need ? 'A post-HD dose needs the next two upcoming sessions.'
+    const otWhen = hdRec.after != null ? `after session ${hdRec.after}` : 'now';
+    hdSentence = hdRec.oneTime
+      ? (hdRec.kind === 'planned' ? `Planned dose, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h later.`
+        : hdRec.kind === 'hold' && hdRec.preAbove ? `No dose ${otWhen}: the pre-HD level before session ${hdRec.preAbove.n} was ${hdRec.preAbove.conc.toFixed(1)} mg/L, above ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}; recheck before the next session.`
+        : hdRec.kind === 'hold' ? `No dose ${otWhen}: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h later.`
+        : `${fmtDose(hdRec.mg)} IV ${otWhen}, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h after it.`)
+        + (hdRec.missed ? ` No dose entered after session ${hdRec.missed.n}.` : '')
+      : hdRec.need ? 'A post-HD dose needs the next two upcoming sessions.'
       : hdRec.kind === 'planned' ? `Planned dose after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}.`
       : hdRec.kind === 'hold' ? `No dose after session ${hdRec.session}: the fitted pre-HD level at session ${hdRec.sizing} is ${hdRec.pre.toFixed(1)} mg/L.`
       : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC24 ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
@@ -12180,7 +12357,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <li><strong>Fit.</strong> Maximum a posteriori (Burton 1985): minimise Σ ηᵢ²/ωᵢ² + Σ (Cobs − Cpred)²/σ² over the
         ${nLev} measured level${nLev === 1 ? '' : 's'}, predicting each by superposition of every dose actually given, from five starting points.</li>
       <li><strong>Result.</strong> CL ${CL_ind.toFixed(2)} L/h, ${isGotiRes && r.goti ? `Vc ${r.goti.Vc_ind.toFixed(1)} L, Vp ${r.goti.Vp_ind.toFixed(1)} L` : `V ${V_ind.toFixed(1)} L`}, t½ ${t12_ind.toFixed(1)} h${objFinal !== null ? `, objective ${objFinal.toFixed(2)}` : ''}.</li>
-      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it, on this fit with every dose entered: no dose if the pre-HD level stays at or above ${HD_PREDIALYSIS_MIN} mg/L; else the smallest 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reaching ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} (Rybak 2020 Rec 14); else the closest, flagged. A planned dose already entered is read, not replaced.</li>` : ''}
+      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed ${HD_ONE_TIME_GAPS_H.join(', ')} h gap after the dose (default ${HD_ONE_TIME_GAP_DEFAULT_H} h). On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
       ${!isHD && rec && !rec.noSolution ? `<li><strong>Exposure.</strong> At steady state AUC₂₄ = daily dose ÷ CL = ${rec.dose} mg × 24/${rec.tau} ÷ ${CL_ind.toFixed(2)} L/h = <strong>${rec.auc24.toFixed(0)} mg·h/L</strong>.</li>
       <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r)))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.</li>` : ''}
       <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on 250 mg steps.</li>
@@ -14515,9 +14692,9 @@ function _prRecommendation(r, screen) {
   if (screen.stale) h += noteHTML({ tier: 'alarm', word: 'Inputs changed since the last calculation',
     html: 'The values now entered are not the ones this result was calculated from. Recalculate before relying on this report.' });
   h += `<h2 class="pr-section-title">Dose recommendation</h2>`;
-  const hv = hdViewFor(r);   // D16: paper and screen read the same frozen HD answer
+  const hv = hdViewFor(r, bState.hdGapH);   // D16/D17: paper and screen read the same frozen HD answer
   if (hv) {
-    h += (hv.empiric ? hdEmpiricHTML(hv.empiric, r.tbw, r.doses) : hdNextDoseHTML(hv.rec, !!screen.provisional, hv.nowH)).replace(/ id="vx-regimen"/g, '');
+    h += (hv.empiric ? hdEmpiricHTML(hv.empiric, r.tbw, r.doses) : hdNextDoseHTML(hv.rec, !!screen.provisional, hv.nowH, true)).replace(/ id="vx-regimen"/g, '');
   } else if (r.rec && r.rec.noSolution) {
     h += `<p class="pr-regimen pr-hold">No regimen offered.</p>`;
     h += `<p class="pr-metric">${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</p>`;

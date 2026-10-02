@@ -84,6 +84,12 @@ pre-HD level (15–20 mg/L, Rybak 2020 Rec 14). It may also be a hold, or a requ
 Before any level it is the Rec 13 empiric table. Also: a recurring-schedule generator, an
 intradialytic-dose caution, and a Trough-module refusal for HD patients.
 
+**One-time HD dose (D17):** with fewer than two upcoming sessions the answer is a one-time dose
+sized at an assumed 24/48/72 h gap (default 48, `bState.hdGapH`, `k78`), with a missed post-HD
+dose flagged. A measured pre-HD level above 20 with no dose since means no dose now and a recheck,
+for the dose after the session it preceded only; the scheduled answer shows it as a caution.
+Both HD answers pick the in-range 250 mg step closest to 17.5 mg/L (`hdPickDose`).
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, peritoneal dialysis, paediatrics, neonates,
 continuous infusion.
@@ -140,12 +146,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **357/357 pass** |
+| `phase2d_validation.cjs` | **378/378 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **59/59** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **61/61** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -293,6 +299,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |
 | `docs/validation-threshold-decisions.md` | The accept/reject record for failing thresholds |
 | `docs/audit/` | Probe scripts that reproduce each finding numerically |
+| `docs/audit/probe-hd-one-time.cjs` | D17's one-time HD dose against VancoPK's published HD method, on fictional cases |
 | `docs/audit/probe-v3-case-34m.cjs` | Reproduces the v3 case end to end: both posteriors, the Q48H recommendation, the lattice bias, and the cross-midnight wrap |
 | `docs/v3-decisions.md` | What v3 changed, what was rejected, and the numbers behind each |
 | `docs/dosemerx-comparison.html` | Capture sheet for pairing this tool against DoseMeRx at the workstation. Also served at `/vancomycin/compare/` |
