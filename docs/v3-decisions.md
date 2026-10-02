@@ -805,6 +805,65 @@ findings, each fixed with a test that failed first (37.19–37.22, suite 378/378
 
 **Not clinically validated on local HD patients.**
 
+## D19 — The one-time HD dose, corrected: the gap from the last session, the pre-dialysis SCr, a give-at time (2026-10-02, v3.8.0)
+
+**Reported from real use (fictional-equivalent case, the user's own):**
+- 70 F, 51.8 kg, 149.9 cm;
+- SCr 3.7 on 1 Oct and 2.0 on 2 Oct;
+- 1 g at 09:18 on 1 Oct, then HD 13:42–17:45;
+- a level of 10.3 mg/L at 05:42 on 2 Oct.
+
+v3.7.0 said **1.5 g IV now**. The user expected a 500–750 mg supplement. Reproduced in the app,
+with two causes and one missing input.
+
+1. **The gap counted from the dose, not from the last session.** "Next HD in 48 h" from a dose
+   at 14:54 on 2 Oct assumed the next session at 14:54 on 4 Oct, 73 h after the last one began.
+   - **Now (the user's decision):** the next HD is the anchor session's start plus 24/48/72 h,
+     start to start, as a thrice-weekly schedule runs. The anchor is the session the dose
+     follows, else the last that began.
+   - **Exceptions:** with no session logged, or when every gap has passed (the last session began
+     more than 72 h ago), the gap counts from the dose, and the answer says so.
+   - **Unavailable gaps:** a gap is unavailable if a dose at the ceiling (`autoTinf` of the
+     per-dose maximum) could not be infused before that session. No new constant. The answer
+     names the assumed next HD as a clock time, and passed gaps are disabled.
+   - **Effect alone:** 1.5 g → 1 g.
+2. **The SCr was drawn after dialysis.** The newest SCr, 2.0, came the morning after the
+   session. Dialysis removes creatinine as well, so CrCl read 21 mL/min instead of 12, and Goti-HD
+   started from CL 0.79 L/h. One level barely moved it (0.81).
+   - **Now (the user's decision):** on Goti-HD, when dated serial readings span a logged session,
+     the fit uses the newest SCr drawn before the session the newest reading follows
+     (`hdPreDialysisScr`), and says so in a caution.
+   - **With no pre-dialysis reading,** it is flagged, not replaced.
+   - **With only the undated SCr field,** an info note asks for a pre-dialysis value.
+   - **No value is ever altered** (rule 4): only which measured reading is used. "Renal function
+     changed across the fit" is not raised for the dialysis drop.
+   - **Effect, with 1:** 1 g → **750 mg** (18.2 mg/L at 3 Oct 13:42).
+3. **"Give at."** The dose could only be given at 12:00 or later. The one-time answer now takes
+   a date and a 24-hour time (`k79`, `bState.hdGiveAtH`).
+   - It is never earlier than now or the end of the session the dose follows; an earlier time is
+     clamped, and the answer says so.
+   - It moves the dose, never the assumed next HD.
+   - It is on screen only; paper prints the dose time.
+   - **Extending it to the regular regimen's first dose** was declined for now (the user's
+     choice); it is a separate change.
+
+**Rule 9.** Tests that encoded the old anchor or the two-argument view were changed in the open:
+- 37.5: read point 68 → 52;
+- 37.6: 104 → 100;
+- 37.7: `20 + g` → `4 + g`;
+- 37.13's wording, which now names a clock time;
+- 35.18, 37.17: `hdViewFor(r, bState.hdGapH, bState.hdGiveAtH)`.
+
+SUITE 19 whitelists `b-hd-give-time`, which sits beside its date, `b-hd-give-date`.
+
+**Tests and gates:**
+- phase2d **383/383**: SUITE 37.23–37.27 (anchor, passed gaps, stale anchor, give-at, display,
+  pre-dialysis SCr, wiring);
+- browser flows **62/62**: a typed give-at time moves the dose, and the next HD stays anchored;
+- engine parity 0 differences.
+
+**Not clinically validated on local HD patients.**
+
 ## D18 — The profile chart, polished; every level on the axis (2026-10-02, v3.6.0)
 
 **Asked.** The user wanted the dosing profile graph more aesthetic "than the current black

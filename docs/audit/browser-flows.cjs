@@ -502,6 +502,18 @@ async function enterCourse(page) {
     focus: document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.arg : null }));
   ok('HD one-time: the 72 h button re-sizes for 72 h without refitting, and keeps focus',
      ot72.said && ot72.pressed === 'true' && ot72.focus === '72', JSON.stringify(ot72));
+  // v3.8.0: a later give-at time, typed, moves the dose in the answer; the assumed next HD stays
+  // anchored to the last session's start. Only when the answer is a dose (the give-at row exists).
+  if (await m.locator('#b-hd-give-time').count()) {
+    await m.locator('#b-hd-give-date').fill(day(1));
+    await m.waitForTimeout(300);
+    await typeInto(m, '#b-hd-give-time', '10:00'); await m.locator('#b-hd-give-time').press('Tab');
+    await m.waitForTimeout(400);
+    const give = await m.evaluate(() => ({ inf: document.querySelector('.vx-verdict .vx-inf').textContent.replace(/\s+/g, ' '),
+      time: (document.getElementById('b-hd-give-time') || {}).value, anchored: /after session \d+ began/.test(document.querySelector('.vx-verdict').textContent) }));
+    ok('HD one-time: a typed give-at time moves the dose in the answer; the next HD stays anchored to the last session',
+       /10:00/.test(give.inf) && give.time === '10:00' && give.anchored, JSON.stringify(give));
+  } else ok('HD one-time: a typed give-at time moves the dose in the answer; the next HD stays anchored to the last session', true, 'answer was a hold: no give-at row');
   const mAttr = await attributeInjected(m, mProblems);
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);
