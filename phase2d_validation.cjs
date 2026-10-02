@@ -4208,6 +4208,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const small = hdEmpiricDoses(20);
     assert(small.every(r => !r.ldCapped && r.md[0] >= 250), 'a 20 kg patient gets at least one 250 mg step');
   });
+  test('35.3 a dose given during a session is listed, with its session', () => {
+    const pk = sandbox.gotiPopPK(10, 70, true);
+    const S = [{ n: 1, startH: 100, endH: 104 }];
+    const r = { model: 'goti', dial: true, CL_ind: pk.TVCL, V_ind: pk.TVVc, tbw: 70,
+      goti: { Vc_ind: pk.TVVc, Vp_ind: pk.TVVp, Q: pk.Q }, levels: [], hdSessions: S,
+      doses: [{ mg: 1000, tinfH: 1, timeH: 90 }, { mg: 750, tinfH: 1, timeH: 103 }] };
+    const sm = sandbox.hdSessionSummary(r, 110);
+    assert(sm.dosesDuringHD && sm.dosesDuringHD.length === 1 && sm.dosesDuringHD[0].mg === 750 && sm.dosesDuringHD[0].n === 1, JSON.stringify(sm.dosesDuringHD));
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

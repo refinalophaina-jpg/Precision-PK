@@ -7915,6 +7915,12 @@ function hdSessionSummary(r, nowH) {
     sessions, windowH: win, levels, next, plannedBefore,
     nextPre, nextPreInRange: nextPre == null ? null : nextPre >= HD_PREDIALYSIS_MIN && nextPre <= HD_PREDIALYSIS_MAX,
     modelIsHD: r.model === 'goti' && !!r.dial,
+    // A dose started during a session (D16): 20–40% of an intradialytic dose is
+    // removed by the simultaneous dialysis (Rybak 2020, AJHP 77:835); the
+    // averaged Goti-HD fit treats all of it as delivered.
+    dosesDuringHD: (r.doses || []).map(d => ({ mg: d.mg, timeH: d.timeH,
+      s: sessions.find(x => d.timeH >= x.startH && d.timeH < x.endH) }))
+      .filter(x => x.s).map(x => ({ mg: x.mg, timeH: x.timeH, n: x.s.n })),
   };
 }
 
@@ -11188,6 +11194,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
        ${hd.modelIsHD ? 'Goti-HD averages dialysis over the whole course' : 'This model does not model dialysis'}, so it
        cannot see the session or the drug returning from the tissues after it, and fits
        ${flagged.length === 1 ? 'this level' : 'these levels'} as if clearance were constant. A pre-HD level avoids this.` });
+    if (hd.dosesDuringHD.length) notes.push({ tier: 'caution', word: 'Dose given during dialysis', html:
+      `${hd.dosesDuringHD.map(d => `${fmtDose(d.mg)} at ${fmtClock(d.timeH)} (session ${d.n})`).join('; ')}.
+       About 20–40% of a dose given during a session is removed by the dialyser (Rybak 2020); the fit treats
+       the whole dose as delivered, so it may overstate this dose's contribution.` });
     if (!hd.modelIsHD) notes.push({ tier: 'caution', word: 'Sessions entered, dialysis not modelled', html:
       `${escHtml(modelLabel)} does not model dialysis: the sessions only label the levels and the chart.
        For a patient on intermittent haemodialysis, Goti-HD is the dialysis model.` });
