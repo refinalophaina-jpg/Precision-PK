@@ -9377,7 +9377,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const kelPop = CLpop / Vpop;
   // Same domain and side padding as the course strip above, so the two share
   // one time axis at every width.
-  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions, levels);
   const tNow   = Date.now() / 3600000;
 
   // Dispatch to 1-comp or 2-comp based on gotiInd presence
@@ -11010,7 +11010,7 @@ function forestPlotSVG(ag, nLev, bandMin, bandMax) {
 // The shared time domain of the course strip and the concentration curve, so
 // the two read on one axis at every width.
 const PROFILE_PAD = { top: 24, right: 16, bottom: 34, left: 46 };
-function profileDomain(doses, kelInd, sessions) {
+function profileDomain(doses, kelInd, sessions, levels) {
   const tStart = doses[0].timeH;
   const lastD = doses[doses.length - 1];
   const span = lastD.timeH - tStart;
@@ -11023,6 +11023,14 @@ function profileDomain(doses, kelInd, sessions) {
   for (const x of (sessions || [])) {
     if (x.startH > tEnd && x.startH <= tEnd + 72) tEnd = Math.max(tEnd, x.startH + 2);
   }
+  // Every measured level is on the axis (reported 2026-10-02): a level drawn days
+  // after the last dose — doses held on a long course — fell past the 48 h tail
+  // and vanished from the curve and the strip while the fit still used it. The
+  // axis must contain everything drawn on it; a small margin keeps the dot and its
+  // value clear of the edge.
+  for (const l of (levels || [])) {
+    if (l.timeH > tEnd - 2) tEnd = Math.max(tEnd, l.timeH + Math.max(4, 0.03 * (l.timeH - tStart)));
+  }
   return { tStart, tEnd };
 }
 
@@ -11032,7 +11040,7 @@ function profileDomain(doses, kelInd, sessions) {
 function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions) {
   if (!el || !doses.length) return;
   const W = Math.max(280, el.clientWidth || 600), H = 76;
-  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions, levels);
   const P = PROFILE_PAD, gW = W - P.left - P.right, span = tEnd - tStart;
   const x = t => P.left + (t - tStart) / span * gW;
   const nHist = doses.length - (nProj || 0);

@@ -1449,6 +1449,21 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(plot.tSpan >= 12, `tail too short to show terminal decay: ${plot.tSpan.toFixed(1)}h`);
   });
 
+  test('Every measured level is on the axis, even one drawn days after the last dose (a held dose)', ()=>{
+    // Reported 2026-10-02: on a 7–8 day course with several levels the most recent level
+    // was not on the chart. The domain ended at most 48 h after the last dose and ignored
+    // the levels, so a level drawn while doses were held fell off both the curve and the
+    // strip — while the fit still used it. The axis must contain everything drawn on it.
+    const course = q8h.slice(0, 18);                                    // last dose at t0 + 136 h
+    const late = [{ conc: 14.7, timeH: t0 + 63 }, { conc: 22.1, timeH: t0 + 136 + 70 }];   // 70 h after it
+    const { plot } = runProfile(course, late, 4.5, 60);
+    assert(plot.tStart + plot.tSpan > late[1].timeH,
+      `the axis ends at ${(plot.tStart + plot.tSpan - t0).toFixed(0)} h; the latest level is at ${late[1].timeH - t0} h`);
+    const el = { clientWidth: 700, innerHTML: '', setAttribute(){} };
+    sandbox.drawCourseStrip(el, course, 0, late, [], 4.5 / 60);
+    assert((el.innerHTML.match(/class="lv"/g) || []).length === 2, 'both levels on the strip');
+  });
+
   test('Every colour is a token', ()=>{
     const DARK = __themePalette('dark');
     const light = runProfile(q8h, lev, 4.5, 60).ops;
