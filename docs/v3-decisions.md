@@ -1012,10 +1012,39 @@ but I can only give it at 12:00 or later".
   still leads. The label sits on its own line, with date and time side by side, so the pair fits
   the verdict column and a 375 px phone. The HD "Give at" row shares the layout.
 
+**Final review** (a fresh reviewer): four Important findings, each fixed with a test that
+failed first (38.4, 38.5).
+1. **Planned dose rows were read three ways.** The due time now counts from the last entered
+   dose, given or planned, and says so ("after the 1 planned dose entered"). Following the
+   readout could otherwise have given two doses within 2 h.
+2. **The projection now starts where the readout says,** from the same plan: clamped, and
+   including planned rows.
+3. **"Exposure unchanged" was untrue during the changeover.** A first dose 20 h early ran the
+   first day to AUC 630. The line now reads "Steady-state … unchanged; until then an earlier
+   first dose raises exposure and a later one lowers it". **AUC₂₄ over the first 24 h** is shown
+   (`fittedAUC` with the regimen from the first dose), judged against 400–600 in words.
+4. **The date could not be typed on desktop:** every segment re-rendered the panel.
+   - `k82` now updates only the readout and the curve. Focus, the Tinkerer, the projection
+     toggle and open sections are untouched.
+   - The HD "Give at" date commits when the field is left: `focusout` was added to the delegated
+     dispatcher, and SUITE 14's list changed accordingly. Focus goes where the user was heading.
+
+**Minor fixes made:**
+- a gap under an hour is given in minutes, never "0 h";
+- daily times are wall-clock across a DST change;
+- the clamp says "as of the calculation";
+- the same regimen reads "Next dose".
+
+**Rule 9:** 37.25 now expects the HD date to commit on `focusout`; 38.4's projection and k82
+assertions were updated to the partial update.
+
+**A one-off "canvas survives a resize" failure** in one browser run did not reproduce in three
+further runs; it was recorded, not hidden.
+
 **Tests and gates:**
-- phase2d **391/391** (SUITE 38: the timing rules, the schedule, the readout, the wiring);
-- browser flows **63/63** (a time typed as "1200" for tomorrow reads 12:00 and moves the
-  readout);
+- phase2d **392/392** (SUITE 38: the timing rules, the schedule, the readout, the wiring, the
+  final-review cases);
+- browser flows **63/63** (tomorrow's date typed segment by segment and "1200" read as 12:00);
 - rendered contrast 0 AA failures;
 - engine parity 0 differences: no engine function changed.
 

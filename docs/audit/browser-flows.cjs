@@ -230,14 +230,17 @@ async function enterCourse(page) {
   ok('the de-rated state is one hue ("provisional" and the confidence word)', look.confColour === look.provColour, look.confColour + ' / ' + look.provColour);
   // v3.9.0: the recommended regimen's first dose can be timed — typed "1200" (no colon) reads
   // 12:00; the readout says where that sits against the schedule and the level by then.
-  await page.locator('#b-first-date').fill(day(1)); await page.waitForTimeout(300);   // tomorrow: a time already past is clamped to now
+  // Tomorrow, typed segment by segment (MMDDYYYY) the way a keyboard user does — a full
+  // re-render on each segment once made the date untypable (final review, v3.9.0).
+  const DAY1 = day(1);
+  { const [yy, mm, dd] = DAY1.split('-'); await page.locator('#b-first-date').focus(); await page.keyboard.type(mm + dd + yy); await page.waitForTimeout(300); }
   await typeInto(page, '#b-first-time', '1200'); await page.locator('#b-first-time').press('Tab');
   await page.waitForTimeout(400);
-  const first = await page.evaluate(() => ({ t: (document.getElementById('b-first-time') || {}).value,
+  const first = await page.evaluate(() => ({ t: (document.getElementById('b-first-time') || {}).value, d: (document.getElementById('b-first-date') || {}).value,
     line: ((document.querySelector('#b-results .vx-first') || {}).textContent || '').replace(/\s+/g, ' '),
     level: /Level by then [\d.]+ mg\/L/.test(document.querySelector('#b-results .vx-verdict').textContent) }));
   ok('the first dose of the recommended regimen can be timed; the readout follows the typed time',
-     first.t === '12:00' && /12:00/.test(first.line) && /(before|after|on) the q\d+h schedule/.test(first.line) && first.level, JSON.stringify(first));
+     first.d === DAY1 && first.t === '12:00' && /12:00/.test(first.line) && /(before|after|on) the q\d+h schedule/.test(first.line) && first.level, JSON.stringify(first));
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));
   ok('the privacy note is not a box inside the profiles box', look.noteBox === '0px', look.noteBox);

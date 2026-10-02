@@ -99,8 +99,11 @@ for the dose after the session it preceded only; the scheduled answer shows it a
 
 **First dose (D20, v3.9.0):** the regular recommendation's first dose can be timed:
 - `firstDosePlan` / `firstDoseHTML`, `k82`, `bState.firstDoseAtH`;
-- default when due, now if that has passed, a chosen time never before now;
-- timing and readouts only: the dose never changes.
+- default when due (from the last entered dose, given or planned), now if that has passed, a
+  chosen time never before now;
+- timing and readouts only: the dose never changes;
+- the first-day AUC₂₄ is shown, because the changeover is not steady state;
+- `k82` patches only the readout and the curve; a full re-render made typed dates impossible.
 Both HD answers pick the in-range 250 mg step closest to 17.5 mg/L (`hdPickDose`).
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
@@ -159,7 +162,7 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **391/391 pass** |
+| `phase2d_validation.cjs` | **392/392 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |

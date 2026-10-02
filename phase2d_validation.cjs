@@ -2012,7 +2012,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('A delegated dispatcher is installed for every event type in use', ()=>{
     assert(/function __bindActions\s*\(/.test(script), '__bindActions is missing');
     const types = new Set([...body.matchAll(/\sdata-on([a-z]+)="/g)].map(m => m[1]));
-    const dispatched = (script.match(/\['click','input','change','keydown'\]/) || [])[0];
+    // v3.9.0: 'focusout' added, so a date field can commit when it is left (typed dates).
+    const dispatched = (script.match(/\['click','input','change','keydown','focusout'\]/) || [])[0];
     assert(dispatched, 'dispatcher event list not found');
     for (const t of types) {
       assert(dispatched.includes(`'${t}'`), `events of type '${t}' are used but never dispatched`);
@@ -4728,7 +4729,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const hold = sandbox.hdNextDoseHTML(sandbox.hdOneTimeDose(hd37(), 33, 48), false, 33);
     assert(/if the next HD starts [^<(]+\(48 h after session 1 began\)/.test(hold) && !/b-hd-give-date/.test(hold), 'a hold names the clock time too, and offers no give-at time');
     assert(/data-arg="24"[^>]*disabled/.test(h), 'the passed 24 h button is disabled');
-    assert(/id="b-hd-give-date"[^>]*data-onchange="k79"/.test(h) && /id="b-hd-give-time"[^>]*data-time24[^>]*data-onchange="k79"/.test(h), 'give-at inputs');
+    assert(/id="b-hd-give-date"[^>]*data-onfocusout="k79"/.test(h) && /id="b-hd-give-time"[^>]*data-time24[^>]*data-onchange="k79"/.test(h), 'give-at inputs (v3.9.0: the date commits on leaving the field, so it can be typed)');
     assert(/<td class="hd-na">—/.test(h), 'a passed cell reads as a dash');
     const p = sandbox.hdNextDoseHTML(rec, false, 33, true);
     assert(!/<input/.test(p) && !/<button/.test(p), 'print has no controls');
@@ -4855,8 +4856,31 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/firstDoseHTML\(firstPlan, rec, false\)/.test(rb) && /const firstPlan = !isHD && rec && !rec\.noSolution/.test(rb), 'the regular verdict, not HD');
     assert(/bState\.firstDoseAtH = null;/.test(bodyOf38('runBayesian')), 'a new fit clears it');
     assert(/k82:[^\n]*b-first-msg[^\n]*bState\.firstDoseAtH = /.test(script38), 'k82: a bad time is said, a good one stored');
-    assert(/const startT\s*=\s*Number\.isFinite\(bState\.firstDoseAtH\) \? bState\.firstDoseAtH : lastDose\.timeH \+ projTau;/.test(bodyOf38('refreshProfileGraph')), 'the projection starts at the chosen time');
+    // Final review (v3.9.0): k82 updates only the readout and the curve — a full re-render on
+    // every date-segment keystroke made the date untypable and reset the rest of the panel.
+    const k82 = (script38.match(/\n  k82: [^\n]*/) || [''])[0];
+    assert(/b-first-readout/.test(k82) && /refreshProfileGraph\(\)/.test(k82) && !/renderBayesianResults/.test(k82), 'k82 is a partial update');
+    assert(/firstDosePlan\(r, \{ dose: projDose, tau: projTau, tinfH \}, r\.fitNowH, bState\.firstDoseAtH, bState\.curRegimen\)/.test(bodyOf38('refreshProfileGraph')), 'the projection starts where the readout says');
     assert(/firstDoseHTML\(fp, r\.rec, true\)/.test(bodyOf38('_prRecommendation')), 'print');
+  });
+  test('38.5 final review: planned rows set the due time; the first-day exposure is said; minutes; wall-clock times; "next dose" for the same regimen', () => {
+    const planned = Object.assign({}, r38, { doses: [{ mg: 1000, tinfH: 1, timeH: 0 }, { mg: 1000, tinfH: 1, timeH: 22 }] });
+    const pp = sandbox.firstDosePlan(planned, { dose: 1000, tau: 12, tinfH: 1 }, 20);
+    assert(pp.dueH === 34 && pp.plannedN === 1 && pp.firstH === 34, `the planned row is read: ${JSON.stringify(pp).slice(0, 200)}`);
+    assert(/after the 1 planned dose entered/.test(sandbox.firstDoseHTML(pp, { dose: 1000, tau: 12, tinfH: 1 }, false)), 'said');
+    // Early start: 1750 mg q24h given 2 h after a 1 g dose — the first day runs above steady state.
+    const early = sandbox.firstDosePlan(Object.assign({}, r38, { fitNowH: 2 }), q24, 2, 2);
+    assert(early.auc24First > 1750 / 3, `first-day AUC ${early.auc24First} above steady state ${1750 / 3}`);
+    const eh = sandbox.firstDoseHTML(early, q24, false);
+    assert(/AUC₂₄ over the first 24 h <strong>\d+<\/strong> mg·h\/L/.test(eh) && /until then an earlier first dose raises exposure/.test(eh), eh.slice(0, 700));
+    if (early.auc24First > 600) assert(/above 400–600/.test(eh), 'outside the band is said in words');
+    const near = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, 24.05), q24, false);
+    assert(/3 min after the q24h schedule/.test(near), 'minutes, never "0 h"');
+    const dst = new Date('2026-10-31T16:00').getTime() / 3600000;
+    const pd = sandbox.firstDosePlan(Object.assign({}, r38, { fitNowH: dst - 1 }), { dose: 1000, tau: 8, tinfH: 1 }, dst - 1, dst);
+    assert(pd.times.join() === '16:00,00:00,08:00', `wall-clock times across a DST change: ${pd.times.join()}`);
+    const same = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, null, { dose: 1750, tau: 24 }), q24, false);
+    assert(/Next dose/.test(same) && !/First dose/.test(same), 'the same regimen: the next dose');
   });
 }
 
