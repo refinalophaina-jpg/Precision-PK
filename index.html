@@ -2189,6 +2189,10 @@
   .lg-pop  { border-top: 1.5px dashed var(--ink-muted); }
   .lg-band { height: 10px; background: color-mix(in srgb, var(--series-fit) 16%, transparent); }
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .hd-sched { margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
+  .hd-sched > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+  .hd-sched-row { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
+  .hd-sched-row label { display: grid; gap: 4px; }
   .lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
   .lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--series-fit); box-sizing: border-box; }
   .lg-proj { border-top: 2px solid var(--series-projection); }
@@ -3669,6 +3673,19 @@
           </table>
         </div>
         <button class="course-add-btn" data-onclick="k74">+ Add HD session</button>
+        <details class="hd-sched">
+          <summary>Add a recurring schedule</summary>
+          <div class="hd-sched-row">
+            <label>Pattern <select id="b-hds-pattern"><option value="">—</option><option value="MWF">Mon · Wed · Fri</option><option value="TTS">Tue · Thu · Sat</option><option value="N">Every N days</option></select></label>
+            <label>Every N days <input type="number" id="b-hds-n" min="1" max="7" step="1" inputmode="numeric"></label>
+            <label>From <input type="date" id="b-hds-date"></label>
+            <label>Start <input type="text" id="b-hds-time" pattern="[0-2][0-9]:[0-5][0-9]" maxlength="5" inputmode="numeric" data-time24 placeholder="e.g. 08:00, 24-hour"></label>
+            <label>Length (h) <input type="number" id="b-hds-hours" min="0.5" max="12" step="0.25" inputmode="decimal"></label>
+            <label>Sessions <input type="number" id="b-hds-count" min="1" max="12" step="1" inputmode="numeric"></label>
+          </div>
+          <button type="button" class="course-add-btn" data-onclick="k76">Add sessions</button>
+          <p class="field-hint" id="b-hds-msg" aria-live="polite"></p>
+        </details>
         <p class="field-hint" style="margin-top:6px">Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.</p>
       </div>
     </div>
@@ -3840,6 +3857,7 @@ const __ACT = {
   k73: (el, ev, arg) => { setDosingWt(el,'auto') },   /* setDosingWt(this,'auto') */
   k74: (el, ev, arg) => { addBayesSession() },   /* + Add HD session (D15) */
   k75: (el, ev, arg) => { removeBayesSession(Number(arg)) },   /* remove HD session row */
+  k76: (el, ev, arg) => { addHdSchedule() },   /* recurring HD schedule (D16) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -7997,6 +8015,42 @@ function hdNextDose(r, nowH) {
     auc24: fittedAUC(rr, sizing.startH - 24, sizing.startH),
     peak: pick.mg ? predictFittedAt(rr, doseAtH + tinfH) : null,
     plannedAfter: r.doses.filter(d => d.timeH >= doseAtH).length, repeat };
+}
+// Recurring sessions (D16). Calendar days at local noon, so a DST change can
+// never move a session to the wrong date (no "+24 h" arithmetic, SUITE 19).
+const HD_PATTERN_DAYS = { MWF: [1, 3, 5], TTS: [2, 4, 6] };
+function hdScheduleDates(firstDate, pattern, everyN, count) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(firstDate || '') || !(count > 0)) return [];
+  const d = new Date(`${firstDate}T12:00`), out = [];
+  const days = HD_PATTERN_DAYS[pattern];
+  if (!days) {
+    if (pattern !== 'N' || !(everyN >= 1)) return [];
+    for (let i = 0; i < count; i++) { out.push(localDateStr(d)); d.setDate(d.getDate() + everyN); }
+    return out;
+  }
+  for (let guard = 0; out.length < count && guard < 400; guard++) {
+    if (days.includes(d.getDay())) out.push(localDateStr(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+function addHdSchedule() {
+  const g = (id) => (document.getElementById(id) || {}).value || '';
+  const pattern = g('b-hds-pattern'), first = g('b-hds-date'), time = g('b-hds-time').trim();
+  const hours = g('b-hds-hours'), count = parseInt(g('b-hds-count'), 10), everyN = parseInt(g('b-hds-n'), 10);
+  const msg = document.getElementById('b-hds-msg');
+  const dates = /^\d{2}:\d{2}$/.test(time) && checkValue(hours, 'hdHours').ok
+    ? hdScheduleDates(first, pattern, everyN, Math.min(12, count)) : [];
+  if (!dates.length) { if (msg) msg.textContent = 'Fill every field: pattern (and N for every N days), first date, start time (HH:MM), length and number of sessions.'; return; }
+  for (const ds of dates) {
+    addBayesSession();
+    const id = bHdCount;
+    document.getElementById(`b-hd-date-${id}`).value = ds;
+    document.getElementById(`b-hd-time-${id}`).value = time;
+    document.getElementById(`b-hd-hours-${id}`).value = hours;
+  }
+  if (msg) msg.textContent = `Added ${dates.length} session${dates.length === 1 ? '' : 's'}.`;
+  scheduleCourseReadback();
 }
 // The HD verdict (D16): a dose after the next session, a hold, or what is missing.
 function hdNextDoseHTML(rec) {

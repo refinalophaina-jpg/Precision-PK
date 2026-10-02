@@ -2037,7 +2037,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const clockOnly = [...body.matchAll(/<input[^>]*(?:placeholder="HH:MM"|pattern="\[0-2\]\[0-9\]:\[0-5\]\[0-9\]"|data-time24)[^>]*>/g)].map(m => m[0]);
     assert(clockOnly.length >= 3, `expected the dose, level and SCr time fields, found ${clockOnly.length}`);
     // The HD session start time (D15) sits beside its own date input too.
-    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-/;
+    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-|id="b-hds-time"/;
+    assert(/id="b-hds-date"[^>]*><\/label>\s*<label>Start <input[^>]*id="b-hds-time"/.test(body), 'the schedule start time sits beside its date');
     assert(/id="b-hd-date-\$\{id\}"[^>]*>\s*<input[^>]*id="b-hd-time-\$\{id\}"/.test(body), 'the HD start time is paired with its date');
     const orphans = clockOnly.filter(t => !paired.test(t));
     assert(orphans.length === 0,
@@ -4266,6 +4267,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/High permeability/.test(emp) && /Low permeability/.test(emp) && /2 g · 750 mg/.test(emp) && /Rec 14/.test(emp), emp.slice(0, 300));
     const src35b = fs.readFileSync(htmlPath, 'utf8');
     assert(/isHD && nLev === 0[\s\S]{0,200}hdEmpiricHTML/.test(src35b) && /hdRec = hdNextDose\(r, /.test(src35b), 'the renderer uses both for Goti-HD');
+  });
+  test('35.9 MWF / TuThSa from any start date, across a month end', () => {
+    assert(sandbox.hdScheduleDates('2026-09-29', 'MWF', 0, 4).join() === '2026-09-30,2026-10-02,2026-10-05,2026-10-07', 'Tue start → Wed first');
+    assert(sandbox.hdScheduleDates('2026-09-29', 'TTS', 0, 3).join() === '2026-09-29,2026-10-01,2026-10-03', 'TuThSa');
+  });
+  test('35.10 every N days counts calendar days, across a DST change', () => {
+    assert(sandbox.hdScheduleDates('2026-10-30', 'N', 2, 3).join() === '2026-10-30,2026-11-01,2026-11-03', 'US DST ends 1 Nov 2026');
+    assert(sandbox.hdScheduleDates('', 'MWF', 0, 3).length === 0 && sandbox.hdScheduleDates('2026-09-29', 'N', 0, 3).length === 0, 'a blank or zero input adds nothing');
   });
 }
 
