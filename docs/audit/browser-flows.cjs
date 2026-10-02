@@ -203,6 +203,7 @@ async function enterCourse(page) {
       future: !!document.querySelector('#b-course-strip rect.future'),
       stripNow: !!document.querySelector('#b-course-strip .nowl'),
       levelFill: lv && cs(lv).fill, ink: cs(document.body).color,
+      measured: (() => { const i = document.createElement('i'); i.style.color = 'var(--series-measured)'; document.body.append(i); const c = cs(i).color; i.remove(); return c; })(),
       confColour: cs(document.querySelector('#b-results .vx-conf .conf-level'))?.color,
       provColour: cs(document.querySelector('#b-results .vx-prov'))?.color,
       saveColour: cs(document.querySelector('.profile-save-btn'))?.color,
@@ -215,7 +216,9 @@ async function enterCourse(page) {
   ok('disclaimer on screen under the AUC result', look.disclaimer.some(t => /not clinically validated/.test(t)), JSON.stringify(look.disclaimer));
   ok('the course strip marks after-now as prediction', look.future);
   ok('beside the verdict the strip leaves "now" to the curve', !look.stripNow);
-  ok('measured levels are ink, not rose', look.levelFill === look.ink, look.levelFill + ' vs ' + look.ink);
+  // Profile polish (2026-10-02, the user's request): measured levels moved from ink to their own
+  // hue, --series-measured (was: "measured levels are ink, not rose").
+  ok('measured levels wear their own hue, not ink', look.levelFill === look.measured && look.levelFill !== look.ink, look.levelFill + ' vs ' + look.measured + ' / ink ' + look.ink);
   // Model and measurement in different colours (D14): the key's fit swatch, its band and
   // its ring share one hue; the measured-level swatch is ink; the two never coincide.
   const key = await page.evaluate(() => { const g = (sel, prop) => { const e = document.querySelector('#b-results ' + sel); return e && getComputedStyle(e)[prop]; };
