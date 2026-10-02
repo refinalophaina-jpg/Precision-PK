@@ -8134,13 +8134,22 @@ function hdOneTimeDose(r, nowH, gapH) {
   const future = r.doses.filter(d => d.timeH > nowH);
   const winStart = follow ? Math.min(follow.startH, doseAtH) : nowH;
   const plannedInWindow = r.doses.filter(d => d.timeH >= winStart && d.timeH < readAtH && d.timeH > nowH - 1e-9);
+  // A measured pre-HD level above 20 with no dose entered after it: no dose now, and a
+  // recheck (D17, the user's decision 2026-10-02: the top of Rybak 2020 Rec 14's 15–20
+  // band, as their unit's practice). "Pre-HD" is the session layer's own label (D15).
+  const g = gotiGraphParams(r).ind;
+  const lastLev = (r.levels || []).filter(l => l.timeH <= nowH).sort((a, b) => a.timeH - b.timeH).pop();
+  const lastT = lastLev ? hdLevelTiming(lastLev.timeH, r.hdSessions, g ? hdRedistributionWindowH(g.k10, g.k12, g.k21) : 0) : null;
+  const preAbove = lastLev && lastT.kind === 'pre' && lastLev.conc > HD_PREDIALYSIS_MAX
+    && !r.doses.some(d => d.timeH > lastLev.timeH && d.timeH <= nowH) ? { conc: lastLev.conc, n: lastT.n, timeH: lastLev.timeH } : null;
   const base = { oneTime: true, doseAtH, after: follow ? follow.n : null, gapH: gap, readAtH,
-    plannedCount: future.length, plannedInWindow, missed };
+    plannedCount: future.length, plannedInWindow, missed, preAbove };
   if (plannedInWindow.length) {
     return Object.assign(base, { kind: 'planned', reason: '', mg: 0, tinfH: 0, pre: predictFittedAt(r, readAtH),
       auc24: fittedAUC(r, readAtH - 24, readAtH), peak: null, table: [] });
   }
-  const pk = hdPickDose(r, doseAtH, readAtH);
+  const pk = preAbove ? { kind: 'hold', reason: 'pre-above', mg: 0, tinfH: 0, pre: predictFittedAt(r, readAtH), rr: r }
+                      : hdPickDose(r, doseAtH, readAtH);
   const table = [];
   for (let mg = 0; mg <= DOSE_MAX_PER_DOSE_MG; mg += MATRIX_DOSE_STEP) {
     const rx = hdWithDose(r, mg, doseAtH);
@@ -8280,6 +8289,11 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
       ${gapRow}
       <p class="vx-delta">Edit the planned dose row to test another dose.</p>
     </div>` + caution + basis;
+  if (rec.kind === 'hold' && rec.reason === 'pre-above') return missed + `
+      <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">${rec.after != null ? `No dose after session ${rec.after}` : 'No dose now'}</h3>
+      <p class="vx-hold">The pre-HD level before session ${rec.preAbove.n} was <strong>${rec.preAbove.conc.toFixed(1)} mg/L</strong>, above ${range} mg/L (Rybak 2020 Rec 14). Recheck the level before the next session.</p>
+      <p class="vx-sub">With no dose, the fitted level if the next HD starts ${rec.gapH} h after ${from} is ${rec.pre.toFixed(1)} mg/L.</p>
+      ${gapRow}` + table + caution + basis;
   if (rec.kind === 'hold') {
     const lead = k ? `With the ${ks} entered and no further dose, the` : 'Without a dose, the';
     const tail = rec.reason === 'overshoot'
@@ -11805,6 +11819,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const otWhen = hdRec.after != null ? `after session ${hdRec.after}` : 'now';
     hdSentence = hdRec.oneTime
       ? (hdRec.kind === 'planned' ? `Planned dose, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h later.`
+        : hdRec.kind === 'hold' && hdRec.preAbove ? `No dose ${otWhen}: the pre-HD level before session ${hdRec.preAbove.n} was ${hdRec.preAbove.conc.toFixed(1)} mg/L, above ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX}; recheck before the next session.`
         : hdRec.kind === 'hold' ? `No dose ${otWhen}: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h later.`
         : `${fmtDose(hdRec.mg)} IV ${otWhen}, one-time: fitted ${hdRec.pre.toFixed(1)} mg/L if the next HD starts ${hdRec.gapH} h after it.`)
         + (hdRec.missed ? ` No dose entered after session ${hdRec.missed.n}.` : '')
@@ -12313,7 +12328,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <li><strong>Fit.</strong> Maximum a posteriori (Burton 1985): minimise Σ ηᵢ²/ωᵢ² + Σ (Cobs − Cpred)²/σ² over the
         ${nLev} measured level${nLev === 1 ? '' : 's'}, predicting each by superposition of every dose actually given, from five starting points.</li>
       <li><strong>Result.</strong> CL ${CL_ind.toFixed(2)} L/h, ${isGotiRes && r.goti ? `Vc ${r.goti.Vc_ind.toFixed(1)} L, Vp ${r.goti.Vp_ind.toFixed(1)} L` : `V ${V_ind.toFixed(1)} L`}, t½ ${t12_ind.toFixed(1)} h${objFinal !== null ? `, objective ${objFinal.toFixed(2)}` : ''}.</li>
-      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed ${HD_ONE_TIME_GAPS_H.join(', ')} h gap after the dose (default ${HD_ONE_TIME_GAP_DEFAULT_H} h). On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. A planned dose already entered is read, not replaced.</li>` : ''}
+      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed ${HD_ONE_TIME_GAPS_H.join(', ')} h gap after the dose (default ${HD_ONE_TIME_GAP_DEFAULT_H} h). On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
       ${!isHD && rec && !rec.noSolution ? `<li><strong>Exposure.</strong> At steady state AUC₂₄ = daily dose ÷ CL = ${rec.dose} mg × 24/${rec.tau} ÷ ${CL_ind.toFixed(2)} L/h = <strong>${rec.auc24.toFixed(0)} mg·h/L</strong>.</li>
       <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r)))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.</li>` : ''}
       <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on 250 mg steps.</li>

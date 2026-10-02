@@ -4649,6 +4649,20 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const pr = bodyOf37('_prRecommendation');
     assert(/hdViewFor\(r, bState\.hdGapH\)/.test(pr) && /hdNextDoseHTML\(hv\.rec, !!screen\.provisional, hv\.nowH, true\)/.test(pr), 'print');
   });
+  test('37.18 a measured pre-HD level above 20 with no dose since: no dose now, recheck (the user\'s decision, Rybak Rec 14)', () => {
+    // Level 1 h before session 1 (pre-HD), no dose after it, no session ahead.
+    const pre23 = hd37({ levels: [{ conc: 23, timeH: 3 }] });
+    const rec = sandbox.hdOneTimeDose(pre23, 20, 48);
+    assert(rec.kind === 'hold' && rec.reason === 'pre-above' && rec.mg === 0 && rec.preAbove && rec.preAbove.n === 1 && rec.preAbove.conc === 23, JSON.stringify(rec).slice(0, 300));
+    assert(rec.table.length > 1, 'the dose table stays, so the clinician can see what a dose would do');
+    const html = sandbox.hdNextDoseHTML(rec, false, 20);
+    assert(/>No dose now</.test(html) && /23\.0 mg\/L<\/strong>, above 15–20/.test(html) && /Recheck the level before the next session/.test(html) && !/rec-dose/.test(html), html.slice(0, 500));
+    assert(sandbox.hdOneTimeDose(hd37({ levels: [{ conc: 18, timeH: 3 }] }), 20, 48).reason !== 'pre-above', 'a pre-HD level in range stays predictive');
+    assert(sandbox.hdOneTimeDose(hd37({ levels: [{ conc: 23, timeH: 3 }], doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 10 }] }), 20, 48).reason !== 'pre-above', 'a dose already given after the level: the decision was made');
+    assert(sandbox.hdOneTimeDose(hd37({ levels: [{ conc: 23, timeH: 3 }], hdSessions: [{ n: 1, startH: 30, endH: 34 }] }), 20, 48).reason !== 'pre-above', 'a level 27 h before a session is not pre-HD');
+    const planned = sandbox.hdOneTimeDose(hd37({ levels: [{ conc: 23, timeH: 3 }], doses: [{ mg: 1750, tinfH: 2, timeH: 0 }, { mg: 500, tinfH: 1, timeH: 30 }] }), 20, 48);
+    assert(planned.kind === 'planned', 'a planned dose entered is still read, not replaced');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
