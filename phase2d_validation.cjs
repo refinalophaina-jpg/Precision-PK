@@ -4929,7 +4929,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     none({ levelsN: 1 }, 'a level: the clearance estimates take over');
     none({ overrideOn: true }, 'a manual CrCl: the clinician chose it');
     none({ model: 'hughes' }, 'Hughes: its own fat-free-mass scale');
-    none({ model: 'goti', dial: true }, 'Goti-HD: CrCl is not the covariate');
+    none({ model: 'goti', dial: true }, 'Goti-HD: on dialysis Cockcroft-Gault does not estimate clearance');
     none({ tdd: null }, 'no regimen to judge');
     const ibw = sandbox.calcIBW('F', 165);
     none({ tbw: ibw * 1.2 }, 'not obese by the AdjBW rule (TBW not over 120% IBW)');
@@ -4971,14 +4971,18 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     });
     assert(/AdjBW [\d.]+ kg, used/.test(h), 'the used row says so');
     assert(/outside 400–600/.test(h), 'outside the band, in words');
-    assert(/round a low SCr up/.test(h) && /uses it as measured/.test(h) && /first or second dose/.test(h), 'other tools, rule 4, and what settles it');
+    // Final review (v3.10.0): "a level settles it" overclaimed — one early level still leans on the prior.
+    assert(/round a low SCr up/.test(h) && /uses it as measured/.test(h) && /A level lets the fit estimate clearance from the patient rather than from a weight/.test(h), 'other tools, rule 4, and what a level does');
     const split = sandbox.crclWeightSpread(Object.assign({}, pt, { scr: 0.9 }));
     assert(new RegExp(`Augmented clearance \\(CrCl ≥ ${K39.ARC_THRESHOLD} mL/min\\) is suspected on ${split.arcOn.join(' and ')} only`).test(sandbox.crclSpreadNote(split, { dose: 2000, tau: 12 }, 0.9, 'x').html), 'the split, named');
     assert(!/\b(red|green|purple|terracotta|orange|blue)\b/i.test(h), 'no colour words');
   });
   test('39.6 wiring: the AUC result builds it from the fit, the levels and the override; the dose is untouched', () => {
     const rb = bodyOf39('renderBayesianResults');
-    assert(/crclWeightSpread\(\{[^}]*levelsN: nLev[^}]*overrideOn: !!\(crclOverride\.on && crclOverride\.value > 0\)[^}]*tdd: rec && !rec\.noSolution \? rec\.tdd : null/.test(rb), 'called with the fit\'s inputs');
+    // Final review (v3.10.0): the override is read as it was at fit time (agCtx), not live — a redraw
+    // after unticking it showed a note that contradicted the verdict.
+    assert(/crclWeightSpread\(\{[^}]*levelsN: nLev[^}]*overrideOn: ag\.crclSource === 'manual override'[^}]*tdd: rec && !rec\.noSolution \? rec\.tdd : null/.test(rb), 'called with the fit\'s inputs');
+    assert(!/crclOverride\.on/.test(rb.slice(rb.indexOf('crclWeightSpread('), rb.indexOf('crclWeightSpread(') + 400)), 'never the live override');
     assert(/notes\.push\(crclSpreadNote\(/.test(rb), 'pushed as a note');
     assert(!/crclWeightSpread/.test(bodyOf39('runBayesian')) && !/crclWeightSpread/.test(bodyOf39('bayesDoseOptimizer')), 'never reaches the fit or the dose');
   });
@@ -4993,7 +4997,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const h = n.html, at = (t) => h.indexOf(t);
     assert(/CrCl depends on the weight used/.test(h) && at('AdjBW') >= 0 && at('AdjBW') < at('LEAD') && at('LEAD') < at('If clearance is truly augmented:') && at('If clearance is truly augmented:') < at('BULLET'),
            'the weights, then the advisory, then its actions under the condition');
-    assert(!/first or second dose settles it/.test(h), 'the advisory already says when to draw a level');
+    assert(!/A level lets the fit estimate clearance/.test(h), 'the advisory already says when to draw a level');
     assert(!h.includes('CrCl ≈ 268'), 'the advisory\'s CrCl sentence is dropped: the rows already give it');
     assert(/uses it as measured/.test(h), 'rule 4 still said');
     const lo = sandbox.crclWeightSpread(Object.assign({}, pt, { tdd: 3500 }));   // a caution spread
@@ -5011,6 +5015,51 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/word: 'Augmented renal clearance suspected', ifReal: true, head: `CrCl ≈ \$\{crclTrue\.toFixed\(0\)\} mL\/min\.`/.test(rb)
         && /word: 'High CrCl from a low creatinine — may be overestimated', head: `CrCl ≈ \$\{crclTrue\.toFixed\(0\)\} mL\/min\.`/.test(rb), 'the CrCl sentence is the head');
     assert(/html: \(renal\.head \|\| ''\) \+ renal\.lead \+ \(renal\.list \|\| ''\)/.test(rb), 'alone, the head is kept');
+  });
+  // ── Final review (v3.10.0, a fresh reviewer): four Important findings, each RED first ──
+  test('39.9 hidden under the severe-renal hold (no maintenance regimen to judge) and when HD sessions are logged', () => {
+    const none = (o, why) => assert(sandbox.crclWeightSpread(Object.assign({}, pt, o)) === null, why);
+    none({ hold: true }, 'the verdict holds maintenance: listing a regimen contradicted it');
+    none({ sessionsN: 2 }, 'on dialysis the Cockcroft-Gault rows mean nothing');
+    const rb = bodyOf39('renderBayesianResults');
+    assert(/crclWeightSpread\(\{[^}]*hold: !!r\.lowCrClHold[^}]*sessionsN: \(r\.hdSessions \|\| \[\]\)\.length/.test(rb), 'wired from the fit');
+  });
+  test('39.10 Goti above 65 with a low SCr: the rows say what SCr they used; no augmented-clearance sentence where the older-patient rule applies, on either model', () => {
+    const old = Object.assign({}, pt, { model: 'goti', age: 70, scr: 0.6, tbw: 110, heightCm: 160 });
+    const s = sandbox.crclWeightSpread(old);
+    assert(s.scrRead === K39.GOTI_SCR_FLOOR && s.arcOn === null, JSON.stringify({ scrRead: s.scrRead, arcOn: s.arcOn }));
+    const h = sandbox.crclSpreadNote(s, { dose: 1000, tau: 12 }, 0.6, 'Goti 2018 (2-comp)').html;
+    assert(new RegExp(`SCr read as ${K39.GOTI_SCR_FLOOR.toFixed(2)} mg/dL \\(Goti 2018's rule above age ${K39.GOTI_SCR_FLOOR_AGE}; measured 0\\.60\\)`).test(h), h.slice(0, 300));
+    assert(!/as measured/.test(h) && !/Augmented clearance/.test(h), 'never "as measured" for a truncated SCr; no ARC sentence');
+    const b = sandbox.crclWeightSpread(Object.assign({}, old, { model: 'buelga' }));
+    assert(b.scrRead === 0.6 && b.arcOn === null && !/Augmented clearance/.test(sandbox.crclSpreadNote(b, { dose: 1000, tau: 12 }, 0.6, 'x').html),
+           'Buelga, same patient: SCr as measured, and the older-patient rule still holds the ARC sentence back');
+    const young = sandbox.crclWeightSpread(Object.assign({}, pt, { scr: 0.9 }));
+    assert(young.scrRead === 0.9 && young.arcOn !== null, 'a younger patient keeps the split');
+  });
+  test('39.11 in or out of 400–600 is judged on the number shown', () => {
+    const base = sandbox.crclWeightSpread(pt), CL = base.rows[1].CL;
+    for (const raw of [399.7, 600.3]) {
+      const s = sandbox.crclWeightSpread(Object.assign({}, pt, { tdd: raw * CL }));
+      const used = s.rows.find(x => x.used);
+      assert(Math.abs(used.auc24 - raw) < 1e-6 && !s.outside.includes('AdjBW'), `raw ${raw} shows as ${Math.round(raw)}, inside`);
+      assert(!/AUC₂₄ (400|600), outside/.test(sandbox.crclSpreadNote(s, { dose: 1000, tau: 12 }, 0.55, 'x').html), 'never "400, outside 400–600"');
+    }
+  });
+  test('39.12 the used row is the fit\'s own prior, read through the fit\'s own CrCl readers (Buelga and Goti; young, older, short stature)', () => {
+    const prevDoc = sandbox.document, vals = {};
+    sandbox.document = { getElementById: (id) => (vals[id] = vals[id] || { value: '' }), querySelector: () => null, querySelectorAll: () => [] };
+    try {
+      for (const c of [{ age: 34, scr: 0.55, tbw: 118, ht: 165 }, { age: 72, scr: 0.6, tbw: 110, ht: 160 }, { age: 50, scr: 1.4, tbw: 95, ht: 150 }]) {
+        Object.assign(vals, { 'b-age': { value: String(c.age) }, 'b-scr': { value: String(c.scr) }, 'b-tbw': { value: String(c.tbw) }, 'b-height': { value: String(c.ht) } });
+        vm.runInContext("bState.sex = 'F'", sandbox);
+        const o = Object.assign({}, pt, { age: c.age, scr: c.scr, tbw: c.tbw, heightCm: c.ht });
+        const b = sandbox.crclWeightSpread(Object.assign({}, o, { model: 'buelga' })).rows.find(x => x.used);
+        assert(b.CL === sandbox.buelgaPopPK(sandbox.getBayesCrCl(), c.tbw).CL_pop, `Buelga ${JSON.stringify(c)}`);
+        const g = sandbox.crclWeightSpread(Object.assign({}, o, { model: 'goti' })).rows.find(x => x.used);
+        assert(g.CL === sandbox.gotiPopPK(sandbox.getGotiCrCl(), c.tbw, false).TVCL, `Goti ${JSON.stringify(c)}`);
+      }
+    } finally { sandbox.document = prevDoc; vm.runInContext('bState.sex = null', sandbox); }
   });
 }
 

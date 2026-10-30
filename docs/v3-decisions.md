@@ -1082,13 +1082,19 @@ recommended 1.5 g q8h:
 | TBW 118.0 kg | 268 → 150 | 9.72 | 463 |
 
 **Rules** (`crclWeightSpread`, `crclSpreadNote`):
-- **Shown when** the AdjBW rule is live (TBW > 120% IBW), before any level, with no manual CrCl,
-  on Buelga or non-HD Goti. Hughes has its own fat-free-mass scale and Goti-HD does not use
-  CrCl, so neither shows it. After a level the clearance estimates take over.
-- **Tier:** caution when a weight puts the regimen outside 400–600 (Rybak 2020 Rec 1);
-  otherwise info, under "All notes". No preference weight.
+- **Shown when** the AdjBW rule is live (TBW > 120% IBW), before any level, with no manual CrCl
+  at the fit, on Buelga or non-HD Goti. Hughes has its own fat-free-mass scale, and on dialysis
+  Cockcroft-Gault does not estimate clearance, so it is hidden for Goti-HD and whenever HD
+  sessions are logged. It is also hidden under the severe-renal hold, which gives no regimen.
+  After a level the clearance estimates take over.
+- **Tier:** caution when a weight puts the regimen outside 400–600 (Rybak 2020 Rec 1), judged
+  on the AUC shown; otherwise info, under "All notes". No preference weight.
 - **Augmented clearance:** when the rows straddle 130 mL/min (uncapped, measured SCr), the note
-  names the weights it rests on.
+  names the weights it rests on. Not where the older-patient low-SCr rule applies (age above 65,
+  SCr below 1.0), which already says Cockcroft-Gault may overstate clearance there.
+- **SCr is named as used.** On Goti above 65 with a low SCr the rows use Goti's truncated SCr,
+  and the note says so ("SCr read as 1.00 mg/dL (Goti 2018's rule above age 65; measured 0.60)")
+  instead of "as measured".
 - **Presentation only.** The dose is the AdjBW row's, unchanged.
 
 **One renal note, not two (the user's review, 2026-10-29).** The user asked whether the results
@@ -1105,12 +1111,39 @@ patient) carries the spread:
 - its level advice replaces the closing line.
 No advisory text was removed.
 
+**Final review** (a fresh reviewer). Nothing Critical. The reviewer confirmed that the AdjBW row
+equals the fit's prior bit for bit, across six patients on both models. Four Important findings,
+each fixed with a test that failed first:
+1. **The note listed a regimen under the severe-renal hold,** whose verdict is "no empiric
+   maintenance regimen". It is now hidden there (39.9).
+2. **The manual CrCl was read live at render time.** A redraw after unticking it (resize, phone
+   rotation, theme) showed a note that contradicted the verdict. It is now read as it was at the
+   fit, from `agCtx` (39.6, browser flow; the flow failed on the unfixed file).
+3. **On Goti the note said "SCr as measured" while the rows used the truncated SCr.** It now
+   names the SCr used (39.10).
+4. **The augmented-clearance sentence went around the older-patient rule,** bringing back for
+   that population the bedside problem the ARC rework fixed. It is held back there (39.10).
+
+Three smaller fixes:
+- in or out of range is judged on the AUC shown, never "400, outside 400–600" (39.11);
+- the note is hidden when HD sessions are logged on a non-HD model (39.9);
+- "a level settles it" overclaimed, and now reads "a level lets the fit estimate clearance from
+  the patient rather than from a weight".
+39.12 adds the reviewer's check: the used row against the fit's own CrCl readers.
+**Rule 9:** 39.5 and 39.6 changed with the spec (the wording, the fit-time override).
+
+**Deferred:**
+- Near a band edge, `bayesDoseOptimizer`'s half-step grace can call an AUC in range that the
+  note calls outside. The note judges the number it shows.
+- `bayesInputFingerprint` does not include the CrCl override, so toggling it does not mark the
+  AUC result stale. This predates D21.
+
 **Tests and gates:**
-- phase2d **400/400** (SUITE 39: the rows against an independent Cockcroft-Gault, Goti's SCr
-  rule, when it is hidden, the tier, the augmented-clearance split, the wording, the wiring, the
-  merge);
-- browser flows **67/67** (the note on an obese patient typed in; one renal note on screen; gone
-  with a manual CrCl; gone after a level);
+- phase2d **404/404** (SUITE 39: the rows against an independent Cockcroft-Gault and against the
+  fit's own CrCl readers, Goti's SCr rule, when it is hidden, the tier, the augmented-clearance
+  split, the wording, the wiring, the merge, the final-review cases);
+- browser flows **68/68** (the note on an obese patient typed in; one renal note on screen; gone
+  with a manual CrCl, and not back on a redraw after unticking it; gone after a level);
 - engine parity 0 differences against v3.9.0.
 
 ## Known gaps

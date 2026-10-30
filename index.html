@@ -7580,15 +7580,21 @@ function detectARC(crclUncapped) {
 // stays as measured (rule 4; rounded-SCr rows were declined). Presentation only:
 // the dose is the AdjBW row's, unchanged. Shown while the AdjBW rule is live
 // (TBW > 120% IBW), before any level (then the clearance estimates take over),
-// with no manual CrCl, on Buelga or non-HD Goti (Hughes has its own FFM scale).
-// Caution when a weight puts the regimen outside the Rybak 2020 band, otherwise
-// info — no preference weight.
+// with no manual CrCl as of the fit, on Buelga or non-HD Goti (Hughes has its own FFM
+// scale; on dialysis Cockcroft-Gault does not estimate clearance, so neither with HD
+// sessions logged), and never under the severe-renal hold, which gives no regimen.
+// Caution when a weight puts the regimen outside the Rybak 2020 band, judged on the
+// AUC shown; otherwise info — no preference weight. Final review (v3.10.0): the rows
+// name the SCr they used (Goti truncates above 65), and the augmented-clearance
+// sentence is held back where the older-patient low-SCr rule applies.
 function crclWeightSpread(o) {
-  if (!o || o.levelsN > 0 || o.overrideOn || !(o.tdd > 0)) return null;
+  if (!o || o.levelsN > 0 || o.overrideOn || o.hold || o.sessionsN > 0 || !(o.tdd > 0)) return null;
   if (o.model !== 'buelga' && !(o.model === 'goti' && !o.dial)) return null;
   const ibw = calcIBW(o.sex, o.heightCm);
   if (!(ibw > 0) || !(o.tbw > ibw * 1.2)) return null;
   const policy = o.model === 'goti' ? SCR_POLICY.GOTI_MODEL : SCR_POLICY.ACTUAL;
+  const scrRead = applyScrPolicy(o.scr, o.age, policy);
+  const olderLowScr = renalAdvisoryKind({ age: o.age, scr: o.scr }) === 'elderly';
   const autoWt = pickCrClWeight('auto', o.tbw, ibw).wt;
   const rows = ['IBW', 'AdjBW', 'TBW'].map(basis => {
     const wt = pickCrClWeight(basis, o.tbw, ibw).wt;
@@ -7598,10 +7604,10 @@ function crclWeightSpread(o) {
     return { basis, wt, crcl, crclUsed, capped: crcl > CRCL_MODEL_CAP, CL, auc24: o.tdd / CL, used: wt === autoWt,
              arc: detectARC(calcCrClRaw(o.age, o.sex, o.scr, wt, SCR_POLICY.ACTUAL)) };
   });
-  const outside = rows.filter(x => x.auc24 < AUC24_TARGET_MIN || x.auc24 > AUC24_TARGET_MAX).map(x => x.basis);
+  const outside = rows.filter(x => { const a = +x.auc24.toFixed(0); return a < AUC24_TARGET_MIN || a > AUC24_TARGET_MAX; }).map(x => x.basis);
   const arcRows = rows.filter(x => x.arc).map(x => x.basis);
-  return { rows, outside, tier: outside.length ? 'caution' : 'info',
-           arcOn: arcRows.length > 0 && arcRows.length < rows.length ? arcRows : null };
+  return { rows, outside, tier: outside.length ? 'caution' : 'info', scr: o.scr, scrRead,
+           arcOn: !olderLowScr && arcRows.length > 0 && arcRows.length < rows.length ? arcRows : null };
 }
 
 // `renal` is the renal-function advisory for the same patient ({ tier, word, lead, list, ifReal }),
@@ -7618,13 +7624,18 @@ function crclSpreadNote(s, rec, scr, modelLabel, renal) {
       → CL ${x.CL.toFixed(2)} L/h → AUC₂₄ ${x.auc24.toFixed(0)}${s.outside.includes(x.basis) ? `, outside ${band}` : ''}</li>`;
   }).join('');
   const arc = s.arcOn ? ` Augmented clearance (CrCl ≥ ${ARC_THRESHOLD} mL/min) is suspected on ${s.arcOn.join(' and ')} only.` : '';
-  const weights = `Cockcroft-Gault with SCr ${scr.toFixed(2)} mg/dL as measured, then the ${escHtml(modelLabel)} clearance and the
+  const truncated = s.scrRead !== scr;
+  const scrText = truncated
+    ? `SCr read as ${s.scrRead.toFixed(2)} mg/dL (Goti 2018's rule above age ${GOTI_SCR_FLOOR_AGE}; measured ${scr.toFixed(2)})`
+    : `SCr ${scr.toFixed(2)} mg/dL as measured`;
+  const weights = `Cockcroft-Gault with ${scrText}, then the ${escHtml(modelLabel)} clearance and the
     AUC₂₄ of ${fmtRegimen(rec.dose, rec.tau)} on each weight:
     <ul class="note-list">${li}</ul>${arc}`;
-  const tools = ` Other tools may use a different weight, or round a low SCr up; this calculator uses it as measured.`;
+  const tools = truncated ? ` Other tools may use a different weight or a different SCr rule.`
+                          : ` Other tools may use a different weight, or round a low SCr up; this calculator uses it as measured.`;
   if (!renal) return { tier: s.tier, word: 'CrCl depends on the weight used', html: `
     ${weights}${tools}
-    A level after the first or second dose settles it.` };
+    A level lets the fit estimate clearance from the patient rather than from a weight.` };
   return { tier: NOTE_RANK[renal.tier] <= NOTE_RANK[s.tier] ? renal.tier : s.tier, word: renal.word, html: `
     <strong>CrCl depends on the weight used.</strong> ${weights}
     ${renal.lead}${renal.list ? (renal.ifReal ? ' If clearance is truly augmented:' : '') + renal.list : ''}${tools}` };
@@ -11860,7 +11871,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     // v3.10.0 (D21): before the first level, the regimen on each weight. Read first, so a renal
     // advisory about the same CrCl carries it instead of standing beside it (pushRenal).
     const spread = crclWeightSpread({ model: r.model, dial: !!r.dial, levelsN: nLev,
-      overrideOn: !!(crclOverride.on && crclOverride.value > 0), age: Number(ag.age), sex: ag.sex, scr: Number(ag.scr),
+      overrideOn: ag.crclSource === 'manual override', hold: !!r.lowCrClHold, sessionsN: (r.hdSessions || []).length,
+      age: Number(ag.age), sex: ag.sex, scr: Number(ag.scr),
       tbw: r.tbw, heightCm: Number(ag.htCm), tdd: rec && !rec.noSolution ? rec.tdd : null });
     let spreadMerged = false;
     const pushRenal = (renal) => {

@@ -568,6 +568,10 @@ async function enterCourse(page) {
     await s.locator('[data-onclick="k1"]').click();
     await s.locator('#crcl-override-on').uncheck();
     await s.locator('[data-onclick="k2"]').click();
+    // Final review (v3.10.0): a redraw (resize, rotation, theme) re-renders the result; it must
+    // read the override as it was at the fit, not as it is now.
+    await s.setViewportSize({ width: 1100, height: 900 }); await s.waitForTimeout(600);
+    ok('unticking the override after the fit does not bring the spread back on a redraw', !(await spreadNote()));
     await s.locator('[data-onclick="k46"]').click();
     await typeInto(s, '#b-lvl-conc-1', '9.4'); await s.locator('#b-lvl-date-1').fill(D2); await typeInto(s, '#b-lvl-time-1', '22:00');
     await run();
