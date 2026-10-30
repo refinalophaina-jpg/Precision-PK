@@ -576,7 +576,9 @@ async function enterCourse(page) {
     await typeInto(s, '#b-lvl-conc-1', '9.4'); await s.locator('#b-lvl-date-1').fill(D2); await typeInto(s, '#b-lvl-time-1', '22:00');
     await run();
     ok('a level removes the spread (the clearance estimates take over)', !(await spreadNote()));
-    results.problems.push(...sProblems);
+    const sAttr = await attributeInjected(s, sProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + sAttr.injected;
+    results.problems.push(...sAttr.kept);
     await sctx.close();
   }
   await browser.close();
