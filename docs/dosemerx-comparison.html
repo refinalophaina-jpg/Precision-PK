@@ -151,7 +151,10 @@ will not be able to tell which layer disagrees.</p>
 <tr>
   <td><strong>Creatinine clearance</strong></td>
   <td>Cockcroft-Gault weight basis and any SCr floor may differ. If CrCl differs, everything
-      downstream differs, and you learn nothing about the Bayesian fit.</td>
+      downstream differs, and you learn nothing about the Bayesian fit. DoseMeRx documents its
+      CrCl rule for the 2-comp model (AdjBW above 120% IBW, cap 150 — the same as this
+      calculator) but not for the 1-comp model. One paired obese case gave Buelga CL 7.56 against
+      9.72 L/h, which back-solves to a DoseMeRx CrCl of about 117 mL/min (D21).</td>
   <td>Record <em>DoseMeRx's displayed CrCl</em>, then force the same number into this calculator
       with the <strong>manual CrCl override</strong>. That isolates the fitting layer from the
       covariate layer. Run it both ways if you want to measure the covariate difference too.</td>

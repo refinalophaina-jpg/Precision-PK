@@ -2749,7 +2749,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.9.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.10.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2780,7 +2780,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.9.0</div>
+  <div class="header-tag">Vancomycin TDM v3.10.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3816,7 +3816,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.9.0';
+const APP_VERSION = '3.10.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -7569,6 +7569,76 @@ function getUncappedCrCl(scrOverride) {
 const ARC_THRESHOLD = 130;
 function detectARC(crclUncapped) {
   return crclUncapped != null && crclUncapped >= ARC_THRESHOLD;
+}
+
+// v3.10.0 (D21) — the CrCl weight spread. Before the first level an obese
+// patient's population clearance rests on which weight Cockcroft-Gault is given,
+// and tools differ: a paired DoseMeRx run on the same Buelga model gave 7.56 L/h
+// where this calculator gave 9.72 — the CrCl differed, not the model. This shows
+// the regimen's steady-state AUC24 (daily dose / CL) on IBW, AdjBW and TBW, each
+// through the active model's own SCr rule, limits and clearance equation. SCr
+// stays as measured (rule 4; rounded-SCr rows were declined). Presentation only:
+// the dose is the AdjBW row's, unchanged. Shown while the AdjBW rule is live
+// (TBW > 120% IBW), before any level (then the clearance estimates take over),
+// with no manual CrCl as of the fit, on Buelga or non-HD Goti (Hughes has its own FFM
+// scale; on dialysis Cockcroft-Gault does not estimate clearance, so neither with HD
+// sessions logged), and never under the severe-renal hold, which gives no regimen.
+// Caution when a weight puts the regimen outside the Rybak 2020 band, judged on the
+// AUC shown; otherwise info — no preference weight. Final review (v3.10.0): the rows
+// name the SCr they used (Goti truncates above 65), and the augmented-clearance
+// sentence is held back where the older-patient low-SCr rule applies.
+function crclWeightSpread(o) {
+  if (!o || o.levelsN > 0 || o.overrideOn || o.hold || o.sessionsN > 0 || !(o.tdd > 0)) return null;
+  if (o.model !== 'buelga' && !(o.model === 'goti' && !o.dial)) return null;
+  const ibw = calcIBW(o.sex, o.heightCm);
+  if (!(ibw > 0) || !(o.tbw > ibw * 1.2)) return null;
+  const policy = o.model === 'goti' ? SCR_POLICY.GOTI_MODEL : SCR_POLICY.ACTUAL;
+  const scrRead = applyScrPolicy(o.scr, o.age, policy);
+  const olderLowScr = renalAdvisoryKind({ age: o.age, scr: o.scr }) === 'elderly';
+  const autoWt = pickCrClWeight('auto', o.tbw, ibw).wt;
+  const rows = ['IBW', 'AdjBW', 'TBW'].map(basis => {
+    const wt = pickCrClWeight(basis, o.tbw, ibw).wt;
+    const crcl = calcCrClRaw(o.age, o.sex, o.scr, wt, policy);
+    const crclUsed = Math.max(CRCL_MODEL_FLOOR, Math.min(CRCL_MODEL_CAP, crcl));
+    const CL = o.model === 'goti' ? gotiPopPK(crclUsed, o.tbw, false).TVCL : buelgaPopPK(crclUsed, o.tbw).CL_pop;
+    return { basis, wt, crcl, crclUsed, capped: crcl > CRCL_MODEL_CAP, CL, auc24: o.tdd / CL, used: wt === autoWt,
+             arc: detectARC(calcCrClRaw(o.age, o.sex, o.scr, wt, SCR_POLICY.ACTUAL)) };
+  });
+  const outside = rows.filter(x => { const a = +x.auc24.toFixed(0); return a < AUC24_TARGET_MIN || a > AUC24_TARGET_MAX; }).map(x => x.basis);
+  const arcRows = rows.filter(x => x.arc).map(x => x.basis);
+  return { rows, outside, tier: outside.length ? 'caution' : 'info', scr: o.scr, scrRead,
+           arcOn: !olderLowScr && arcRows.length > 0 && arcRows.length < rows.length ? arcRows : null };
+}
+
+// `renal` is the renal-function advisory for the same patient ({ tier, word, lead, list, ifReal }),
+// when one fires. Then there is one note, not two (the user's review, 2026-10-29): two cautions
+// about one CrCl, one saying "escalate" and the other "on IBW clearance is lower", read as a
+// contradiction. The weights lead; the advisory follows, its actions under "if truly augmented";
+// the stricter tier wins; the advisory's own level advice replaces the closing line, and its
+// "CrCl ≈ N" head is dropped because the rows already give it.
+function crclSpreadNote(s, rec, scr, modelLabel, renal) {
+  const band = `${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}`;
+  const li = s.rows.map(x => {
+    const name = `${x.basis} ${x.wt.toFixed(1)} kg${x.used ? ', used' : ''}`;
+    return `<li>${x.used ? `<strong>${name}</strong>` : name}: CrCl ${x.crcl.toFixed(0)} mL/min${x.capped ? `, limited to ${CRCL_MODEL_CAP}` : ''}
+      → CL ${x.CL.toFixed(2)} L/h → AUC₂₄ ${x.auc24.toFixed(0)}${s.outside.includes(x.basis) ? `, outside ${band}` : ''}</li>`;
+  }).join('');
+  const arc = s.arcOn ? ` Augmented clearance (CrCl ≥ ${ARC_THRESHOLD} mL/min) is suspected on ${s.arcOn.join(' and ')} only.` : '';
+  const truncated = s.scrRead !== scr;
+  const scrText = truncated
+    ? `SCr read as ${s.scrRead.toFixed(2)} mg/dL (Goti 2018's rule above age ${GOTI_SCR_FLOOR_AGE}; measured ${scr.toFixed(2)})`
+    : `SCr ${scr.toFixed(2)} mg/dL as measured`;
+  const weights = `Cockcroft-Gault with ${scrText}, then the ${escHtml(modelLabel)} clearance and the
+    AUC₂₄ of ${fmtRegimen(rec.dose, rec.tau)} on each weight:
+    <ul class="note-list">${li}</ul>${arc}`;
+  const tools = truncated ? ` Other tools may use a different weight or a different SCr rule.`
+                          : ` Other tools may use a different weight, or round a low SCr up; this calculator uses it as measured.`;
+  if (!renal) return { tier: s.tier, word: 'CrCl depends on the weight used', html: `
+    ${weights}${tools}
+    A level lets the fit estimate clearance from the patient rather than from a weight.` };
+  return { tier: NOTE_RANK[renal.tier] <= NOTE_RANK[s.tier] ? renal.tier : s.tier, word: renal.word, html: `
+    <strong>CrCl depends on the weight used.</strong> ${weights}
+    ${renal.lead}${renal.list ? (renal.ifReal ? ' If clearance is truly augmented:' : '') + renal.list : ''}${tools}` };
 }
 
 // Phase 3 Step 6 — Very-low CrCl non-dialysis edge cases.
@@ -11798,6 +11868,17 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   //     still holds — it changes what the tool TELLS the clinician about it.
   {
     const ag       = r.agCtx || {};
+    // v3.10.0 (D21): before the first level, the regimen on each weight. Read first, so a renal
+    // advisory about the same CrCl carries it instead of standing beside it (pushRenal).
+    const spread = crclWeightSpread({ model: r.model, dial: !!r.dial, levelsN: nLev,
+      overrideOn: ag.crclSource === 'manual override', hold: !!r.lowCrClHold, sessionsN: (r.hdSessions || []).length,
+      age: Number(ag.age), sex: ag.sex, scr: Number(ag.scr),
+      tbw: r.tbw, heightCm: Number(ag.htCm), tdd: rec && !rec.noSolution ? rec.tdd : null });
+    let spreadMerged = false;
+    const pushRenal = (renal) => {
+      if (spread) { notes.push(crclSpreadNote(spread, rec, Number(ag.scr), modelLabel, renal)); spreadMerged = true; }
+      else notes.push({ tier: renal.tier, word: renal.word, html: (renal.head || '') + renal.lead + (renal.list || '') });
+    };
     const ageNum   = Number(ag.age);
     const scrNum   = Number(ag.scr);
     const clRatioA = (r.CL_pop > 0) ? r.CL_ind / r.CL_pop : NaN;
@@ -11824,11 +11905,11 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <li>Read the prior-data conflict and clearance estimates under "Why this dose" before changing the dose.</li>
         </ul>` });
     } else if (kind === 'elderly-arc') {
-      notes.push({ tier: 'caution', word: 'High CrCl from a low creatinine — may be overestimated', html: `
-        CrCl ≈ ${crclTrue.toFixed(0)} mL/min. At age ${ageNum.toFixed(0)} with SCr ${scrNum.toFixed(2)} mg/dL, Cockcroft-Gault commonly overstates
+      pushRenal({ tier: 'caution', word: 'High CrCl from a low creatinine — may be overestimated', head: `CrCl ≈ ${crclTrue.toFixed(0)} mL/min.`, lead: `
+        At age ${ageNum.toFixed(0)} with SCr ${scrNum.toFixed(2)} mg/dL, Cockcroft-Gault commonly overstates
         clearance because creatinine generation is low. Goti 2018's modellers truncated SCr at
         ${GOTI_SCR_FLOOR.toFixed(1)} mg/dL above age ${GOTI_SCR_FLOOR_AGE} for this reason. True augmented clearance is
-        less likely here than in a younger or trauma patient.
+        less likely here than in a younger or trauma patient.`, list: `
         <ul class="note-list">
           <li>Confirm with a measured level before escalating the dose.</li>
           <li>Consider cystatin C as a creatinine-independent estimate.</li>
@@ -11841,8 +11922,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             ? `Goti 2018 truncated CrCl at ${CRCL_MODEL_CAP} mL/min when the model was built`
             : `Buelga 2005 was developed at CrCl ${BUELGA_CLCR_MEAN}±${BUELGA_CLCR_SD} mL/min and has no cap; this calculator limits its input to ${CRCL_MODEL_CAP} mL/min as an extrapolation guard`)
           + ` — the prior used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the estimated ${crclTrue.toFixed(0)}. With measured levels the posterior clearance can move above the prior.`;
-      notes.push({ tier: 'caution', word: 'Augmented renal clearance suspected', html: `
-        CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${cappingNote}
+      pushRenal({ tier: 'caution', word: 'Augmented renal clearance suspected', ifReal: true, head: `CrCl ≈ ${crclTrue.toFixed(0)} mL/min.`, lead: `
+        ${cappingNote}`, list: `
         <ul class="note-list">
           <li>Consider shorter dosing intervals (q6h–q8h) to maintain AUC₂₄</li>
           <li>Consider a higher loading dose (25–30 mg/kg, max 3 g) to reach target rapidly</li>
@@ -11850,11 +11931,12 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <li>Re-check renal function frequently — ARC can resolve abruptly with clinical improvement</li>
         </ul>` });
     } else if (kind === 'elderly') {
-      notes.push({ tier: 'info', word: 'Low creatinine in an older patient', html: `
+      pushRenal({ tier: 'info', word: 'Low creatinine in an older patient', lead: `
         SCr ${scrNum.toFixed(2)} mg/dL at age ${ageNum.toFixed(0)}: Cockcroft-Gault may overstate clearance when
         creatinine generation is low. Consider cystatin C, the renal trajectory, or a measured level
         before relying on the CrCl-derived dose.` });
     }
+    if (spread && !spreadMerged) notes.push(crclSpreadNote(spread, rec, Number(ag.scr), modelLabel));
   }
 
   // ── Very low CrCl non-dialysis (CrCl <10) ──

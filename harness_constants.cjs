@@ -42,6 +42,14 @@ function num(src, name) {
   return parseFloat(m[1]);
 }
 
+// Pull NAME out of a multi-name declaration, e.g. `const CRCL_MODEL_FLOOR = 5, CRCL_MODEL_CAP = 150;`.
+function numInDecl(src, name) {
+  const m = src.match(new RegExp('const\\s+[^;=]*=[^;]*?,\\s*' + name + '\\s*=\\s*(-?[0-9.]+)\\s*[,;]'))
+         || src.match(new RegExp('const\\s+' + name + '\\s*=\\s*(-?[0-9.]+)\\s*[,;]'));
+  if (!m) throw new Error(`harness_constants: could not find \`${name} = <number>\` in a const declaration in index.html.`);
+  return parseFloat(m[1]);
+}
+
 // Pull one field out of an object literal, e.g. IBW_TARGET_BMI = { M: 22.0, F: 21.5 }
 function objField(src, objName, field) {
   const obj = src.match(new RegExp('const\\s+' + objName + '\\s*=\\s*\\{([^}]*)\\}'));
@@ -116,6 +124,11 @@ function extract() {
     HD_PREDIALYSIS_MAX:     num(src, 'HD_PREDIALYSIS_MAX'),
     DOSE_MAX_TDD_MG:        num(src, 'DOSE_MAX_TDD_MG'),
     AMPUTATION_MAX_PCT:     num(src, 'AMPUTATION_MAX_PCT'),
+
+    // v3.10.0 — the CrCl weight spread (D21)
+    ARC_THRESHOLD:          num(src, 'ARC_THRESHOLD'),
+    CRCL_MODEL_CAP:         numInDecl(src, 'CRCL_MODEL_CAP'),
+    CRCL_MODEL_FLOOR:       numInDecl(src, 'CRCL_MODEL_FLOOR'),
   };
 }
 
