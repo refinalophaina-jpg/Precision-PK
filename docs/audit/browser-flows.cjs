@@ -531,6 +531,44 @@ async function enterCourse(page) {
   results.cloudflareInjected += mAttr.injected;
   results.problems.push(...mAttr.kept);
   await mctx.close();
+
+  // v3.10.0 (D21): an obese patient before the first level gets the CrCl weight spread —
+  // IBW / AdjBW (used) / TBW, each with CL and AUC24 — and it goes once a manual CrCl is
+  // set (the clinician chose it) or a level is entered (the clearance estimates take over).
+  {
+    const sctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const s = await sctx.newPage();
+    const sProblems = watch(s, 'spread');
+    await s.goto(BASE + '?v=pws-' + Date.now(), { waitUntil: 'networkidle' });
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-age', '34'); await typeInto(s, '#b-tbw', '118'); await typeInto(s, '#b-height', '165'); await typeInto(s, '#b-scr', '0.55');
+    await s.locator('[data-onclick="k40"]').click();
+    await s.locator('[data-onclick="k43"]').click();
+    await typeInto(s, '#b-dose-mg-1', '1000'); await s.locator('#b-dose-date-1').fill(D2); await typeInto(s, '#b-dose-time-1', '16:00');
+    const run = async () => { await s.locator('[data-onclick="k47"]').click(); await s.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await s.waitForTimeout(300); };
+    const spreadNote = () => s.evaluate(() => { const n = [...document.querySelectorAll('#b-results .note')].find(x => /CrCl depends on the weight used/.test(x.textContent));
+      return n ? n.textContent.replace(/\s+/g, ' ') : ''; });
+    await run();
+    const t1 = await spreadNote();
+    ok('obese, no level: the CrCl weight spread names IBW, AdjBW (used) and TBW, each with CL and AUC24, SCr as measured',
+       /IBW [\d.]+ kg/.test(t1) && /AdjBW [\d.]+ kg, used/.test(t1) && /TBW 118\.0 kg/.test(t1) && (t1.match(/AUC₂₄ \d+/g) || []).length === 3
+       && (t1.match(/CL [\d.]+ L\/h/g) || []).length === 3 && /SCr 0\.55 mg\/dL as measured/.test(t1), t1.slice(0, 400));
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('#crcl-override-on').check();
+    await typeInto(s, '#crcl-override-val', '117');
+    await s.locator('[data-onclick="k2"]').click();
+    await run();
+    ok('a manual CrCl removes the spread (the clinician chose the CrCl)', !(await spreadNote()));
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('#crcl-override-on').uncheck();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k46"]').click();
+    await typeInto(s, '#b-lvl-conc-1', '9.4'); await s.locator('#b-lvl-date-1').fill(D2); await typeInto(s, '#b-lvl-time-1', '22:00');
+    await run();
+    ok('a level removes the spread (the clearance estimates take over)', !(await spreadNote()));
+    results.problems.push(...sProblems);
+    await sctx.close();
+  }
   await browser.close();
 
   results.checks = checks;

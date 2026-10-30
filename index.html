@@ -2749,7 +2749,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.9.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.10.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2780,7 +2780,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.9.0</div>
+  <div class="header-tag">Vancomycin TDM v3.10.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3816,7 +3816,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.9.0';
+const APP_VERSION = '3.10.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -7569,6 +7569,55 @@ function getUncappedCrCl(scrOverride) {
 const ARC_THRESHOLD = 130;
 function detectARC(crclUncapped) {
   return crclUncapped != null && crclUncapped >= ARC_THRESHOLD;
+}
+
+// v3.10.0 (D21) — the CrCl weight spread. Before the first level an obese
+// patient's population clearance rests on which weight Cockcroft-Gault is given,
+// and tools differ: a paired DoseMeRx run on the same Buelga model gave 7.56 L/h
+// where this calculator gave 9.72 — the CrCl differed, not the model. This shows
+// the regimen's steady-state AUC24 (daily dose / CL) on IBW, AdjBW and TBW, each
+// through the active model's own SCr rule, limits and clearance equation. SCr
+// stays as measured (rule 4; rounded-SCr rows were declined). Presentation only:
+// the dose is the AdjBW row's, unchanged. Shown while the AdjBW rule is live
+// (TBW > 120% IBW), before any level (then the clearance estimates take over),
+// with no manual CrCl, on Buelga or non-HD Goti (Hughes has its own FFM scale).
+// Caution when a weight puts the regimen outside the Rybak 2020 band, otherwise
+// info — no preference weight.
+function crclWeightSpread(o) {
+  if (!o || o.levelsN > 0 || o.overrideOn || !(o.tdd > 0)) return null;
+  if (o.model !== 'buelga' && !(o.model === 'goti' && !o.dial)) return null;
+  const ibw = calcIBW(o.sex, o.heightCm);
+  if (!(ibw > 0) || !(o.tbw > ibw * 1.2)) return null;
+  const policy = o.model === 'goti' ? SCR_POLICY.GOTI_MODEL : SCR_POLICY.ACTUAL;
+  const autoWt = pickCrClWeight('auto', o.tbw, ibw).wt;
+  const rows = ['IBW', 'AdjBW', 'TBW'].map(basis => {
+    const wt = pickCrClWeight(basis, o.tbw, ibw).wt;
+    const crcl = calcCrClRaw(o.age, o.sex, o.scr, wt, policy);
+    const crclUsed = Math.max(CRCL_MODEL_FLOOR, Math.min(CRCL_MODEL_CAP, crcl));
+    const CL = o.model === 'goti' ? gotiPopPK(crclUsed, o.tbw, false).TVCL : buelgaPopPK(crclUsed, o.tbw).CL_pop;
+    return { basis, wt, crcl, crclUsed, capped: crcl > CRCL_MODEL_CAP, CL, auc24: o.tdd / CL, used: wt === autoWt,
+             arc: detectARC(calcCrClRaw(o.age, o.sex, o.scr, wt, SCR_POLICY.ACTUAL)) };
+  });
+  const outside = rows.filter(x => x.auc24 < AUC24_TARGET_MIN || x.auc24 > AUC24_TARGET_MAX).map(x => x.basis);
+  const arcRows = rows.filter(x => x.arc).map(x => x.basis);
+  return { rows, outside, tier: outside.length ? 'caution' : 'info',
+           arcOn: arcRows.length > 0 && arcRows.length < rows.length ? arcRows : null };
+}
+
+function crclSpreadNote(s, rec, scr, modelLabel) {
+  const band = `${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}`;
+  const li = s.rows.map(x => {
+    const name = `${x.basis} ${x.wt.toFixed(1)} kg${x.used ? ', used' : ''}`;
+    return `<li>${x.used ? `<strong>${name}</strong>` : name}: CrCl ${x.crcl.toFixed(0)} mL/min${x.capped ? `, limited to ${CRCL_MODEL_CAP}` : ''}
+      → CL ${x.CL.toFixed(2)} L/h → AUC₂₄ ${x.auc24.toFixed(0)}${s.outside.includes(x.basis) ? `, outside ${band}` : ''}</li>`;
+  }).join('');
+  const arc = s.arcOn ? ` Augmented clearance (CrCl ≥ ${ARC_THRESHOLD} mL/min) is suspected on ${s.arcOn.join(' and ')} only.` : '';
+  return { tier: s.tier, word: 'CrCl depends on the weight used', html: `
+    Cockcroft-Gault with SCr ${scr.toFixed(2)} mg/dL as measured, then the ${escHtml(modelLabel)} clearance and the
+    AUC₂₄ of ${fmtRegimen(rec.dose, rec.tau)} on each weight:
+    <ul class="note-list">${li}</ul>${arc}
+    Other tools may use a different weight, or round a low SCr up; this calculator uses it as measured.
+    A level after the first or second dose settles it.` };
 }
 
 // Phase 3 Step 6 — Very-low CrCl non-dialysis edge cases.
@@ -11855,6 +11904,15 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         creatinine generation is low. Consider cystatin C, the renal trajectory, or a measured level
         before relying on the CrCl-derived dose.` });
     }
+  }
+
+  // ── CrCl weight spread (v3.10.0, D21): before the first level, the regimen on each weight ──
+  {
+    const ag = r.agCtx || {};
+    const spread = crclWeightSpread({ model: r.model, dial: !!r.dial, levelsN: nLev,
+      overrideOn: !!(crclOverride.on && crclOverride.value > 0), age: Number(ag.age), sex: ag.sex, scr: Number(ag.scr),
+      tbw: r.tbw, heightCm: Number(ag.htCm), tdd: rec && !rec.noSolution ? rec.tdd : null });
+    if (spread) notes.push(crclSpreadNote(spread, rec, Number(ag.scr), modelLabel));
   }
 
   // ── Very low CrCl non-dialysis (CrCl <10) ──

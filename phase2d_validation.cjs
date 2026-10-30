@@ -4885,6 +4885,106 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 39 — the CrCl weight spread (v3.10.0, D21)
+//
+// Before any level, an obese patient's population clearance rests on which
+// weight Cockcroft-Gault is given. A paired DoseMeRx run on the same model
+// (Buelga) gave 7.56 L/h against this calculator's 9.72 — the CrCl differed,
+// not the model. The note shows the dose's exposure on each weight (SCr as
+// measured, rule 4); it never changes the dose. Fictional patient throughout.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 39 — CrCl weight spread (v3.10.0)');
+  console.log(`${'─'.repeat(60)}`);
+  const K39 = require('./harness_constants.cjs').extract();
+  const src39 = fs.readFileSync(htmlPath, 'utf8');
+  const script39 = src39.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code39 = script39.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf39 = (n) => { const c = code39.slice(code39.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  // 34 F, 165 cm, 118 kg, SCr 0.55 — obese (TBW well over 120% IBW), low creatinine.
+  const pt = { model: 'buelga', dial: false, levelsN: 0, overrideOn: false, age: 34, sex: 'F', scr: 0.55, tbw: 118, heightCm: 165, tdd: 4000 };
+  const cg = (wt, scr) => (140 - pt.age) * wt / (72 * scr) * 0.85;
+  const used = (c) => Math.max(K39.CRCL_MODEL_FLOOR, Math.min(K39.CRCL_MODEL_CAP, c));
+  test('39.1 three rows, IBW / AdjBW / TBW, SCr as measured; AdjBW is the one used; CL and AUC24 from the model on each', () => {
+    const s = sandbox.crclWeightSpread(pt);
+    assert(s && s.rows.length === 3, JSON.stringify(s));
+    assert(s.rows.map(x => x.basis).join() === 'IBW,AdjBW,TBW', s.rows.map(x => x.basis).join());
+    const ibw = sandbox.calcIBW('F', 165), adj = sandbox.calcAdjBW(118, ibw);
+    [ibw, adj, 118].forEach((wt, i) => {
+      const row = s.rows[i];
+      assert(Math.abs(row.wt - wt) < 1e-9, `${row.basis} weight ${row.wt} vs ${wt}`);
+      assert(Math.abs(row.crcl - cg(wt, 0.55)) < 1e-6, `${row.basis} CrCl ${row.crcl} vs ${cg(wt, 0.55)} (measured SCr)`);
+      assert(row.crclUsed === used(row.crcl) && row.capped === (row.crcl > K39.CRCL_MODEL_CAP), `${row.basis} limited to the cap`);
+      const CL = K39.BUELGA_CL_SLOPE * row.crclUsed * K39.ML_MIN_TO_L_H;
+      assert(Math.abs(row.CL - CL) < 1e-9 && Math.abs(row.auc24 - 4000 / CL) < 1e-9, `${row.basis} CL ${row.CL} AUC ${row.auc24}`);
+    });
+    assert(s.rows.filter(x => x.used).map(x => x.basis).join() === 'AdjBW', 'the auto rule picks AdjBW');
+    // The used row is exactly the prior the fit started from.
+    const crclFit = used(cg(adj, 0.55));
+    assert(Math.abs(s.rows[1].CL - sandbox.buelgaPopPK(crclFit, 118).CL_pop) < 1e-9, 'the used row is the fit\'s population CL');
+  });
+  test('39.2 shown only before the first level, for Buelga or Goti, obese, with no manual CrCl and a regimen to judge', () => {
+    const none = (o, why) => assert(sandbox.crclWeightSpread(Object.assign({}, pt, o)) === null, why);
+    none({ levelsN: 1 }, 'a level: the clearance estimates take over');
+    none({ overrideOn: true }, 'a manual CrCl: the clinician chose it');
+    none({ model: 'hughes' }, 'Hughes: its own fat-free-mass scale');
+    none({ model: 'goti', dial: true }, 'Goti-HD: CrCl is not the covariate');
+    none({ tdd: null }, 'no regimen to judge');
+    const ibw = sandbox.calcIBW('F', 165);
+    none({ tbw: ibw * 1.2 }, 'not obese by the AdjBW rule (TBW not over 120% IBW)');
+    assert(sandbox.crclWeightSpread(Object.assign({}, pt, { tbw: ibw * 1.21 })) !== null, 'just over 120%: shown');
+  });
+  test('39.3 Goti: its own SCr rule and its own clearance equation on each weight', () => {
+    const old = Object.assign({}, pt, { model: 'goti', age: 70, scr: 0.6 });   // Goti truncates SCr above 65
+    const s = sandbox.crclWeightSpread(old);
+    assert(s && s.rows.length === 3, JSON.stringify(s));
+    s.rows.forEach(row => {
+      const c = (140 - 70) * row.wt / (72 * K39.GOTI_SCR_FLOOR) * 0.85;
+      assert(Math.abs(row.crcl - c) < 1e-6, `${row.basis} Goti CrCl ${row.crcl} vs ${c}`);
+      const CL = sandbox.gotiPopPK(row.crclUsed, 118, false).TVCL;
+      assert(Math.abs(row.CL - CL) < 1e-9 && Math.abs(row.auc24 - 4000 / CL) < 1e-9, `${row.basis} Goti CL`);
+    });
+  });
+  test('39.4 caution only when a weight puts the regimen outside 400–600; which weights read as augmented clearance', () => {
+    const s = sandbox.crclWeightSpread(pt);
+    assert(s.rows.every(x => x.auc24 >= K39.AUC24_TARGET_MIN && x.auc24 <= K39.AUC24_TARGET_MAX) ? s.tier === 'info' : s.tier === 'caution', `tier ${s.tier}`);
+    const lo = sandbox.crclWeightSpread(Object.assign({}, pt, { tdd: 3500 }));   // 1750 mg q12h
+    const out = lo.rows.filter(x => x.auc24 < K39.AUC24_TARGET_MIN || x.auc24 > K39.AUC24_TARGET_MAX).map(x => x.basis);
+    assert(out.length && lo.tier === 'caution' && lo.outside.join() === out.join(), `outside ${lo.outside} vs ${out}`);
+    // ARC is judged on the uncapped Cockcroft-Gault, measured SCr: a split names the weights it rests on.
+    const arcOn = s.rows.filter(x => cg(x.wt, 0.55) >= K39.ARC_THRESHOLD).map(x => x.basis);
+    assert((arcOn.length > 0 && arcOn.length < 3) ? s.arcOn.join() === arcOn.join() : s.arcOn === null, `arcOn ${s.arcOn} vs ${arcOn}`);
+    const split = sandbox.crclWeightSpread(Object.assign({}, pt, { scr: 0.9 }));
+    const splitOn = split.rows.filter(x => cg(x.wt, 0.9) >= K39.ARC_THRESHOLD).map(x => x.basis);
+    assert(splitOn.length > 0 && splitOn.length < 3 && split.arcOn.join() === splitOn.join(), `a real split at SCr 0.9: ${split.arcOn} vs ${splitOn}`);
+  });
+  test('39.5 the note: each weight, CrCl (limited where capped), CL, AUC24; SCr as measured; what settles it; no colour words', () => {
+    const s = sandbox.crclWeightSpread(Object.assign({}, pt, { tdd: 3500 }));
+    const n = sandbox.crclSpreadNote(s, { dose: 1750, tau: 12 }, 0.55, 'Buelga 2005 (1-comp)');
+    assert(n.tier === s.tier && /CrCl depends on the weight used/.test(n.word), JSON.stringify(n).slice(0, 200));
+    const h = n.html;
+    assert(/SCr 0\.55 mg\/dL as measured/.test(h) && /1\.75 g IV q12h/.test(h), h.slice(0, 300));
+    s.rows.forEach(x => {
+      assert(h.includes(`${x.basis} ${x.wt.toFixed(1)} kg`) && h.includes(`CrCl ${x.crcl.toFixed(0)} mL/min`) && h.includes(`CL ${x.CL.toFixed(2)} L/h`) && h.includes(`AUC₂₄ ${x.auc24.toFixed(0)}`), `${x.basis} row`);
+      if (x.capped) assert(h.includes(`CrCl ${x.crcl.toFixed(0)} mL/min, limited to ${K39.CRCL_MODEL_CAP}`), `${x.basis} limited`);
+    });
+    assert(/AdjBW [\d.]+ kg, used/.test(h), 'the used row says so');
+    assert(/outside 400–600/.test(h), 'outside the band, in words');
+    assert(/round a low SCr up/.test(h) && /uses it as measured/.test(h) && /first or second dose/.test(h), 'other tools, rule 4, and what settles it');
+    const split = sandbox.crclWeightSpread(Object.assign({}, pt, { scr: 0.9 }));
+    assert(new RegExp(`Augmented clearance \\(CrCl ≥ ${K39.ARC_THRESHOLD} mL/min\\) is suspected on ${split.arcOn.join(' and ')} only`).test(sandbox.crclSpreadNote(split, { dose: 2000, tau: 12 }, 0.9, 'x').html), 'the split, named');
+    assert(!/\b(red|green|purple|terracotta|orange|blue)\b/i.test(h), 'no colour words');
+  });
+  test('39.6 wiring: the AUC result builds it from the fit, the levels and the override; the dose is untouched', () => {
+    const rb = bodyOf39('renderBayesianResults');
+    assert(/crclWeightSpread\(\{[^}]*levelsN: nLev[^}]*overrideOn: !!\(crclOverride\.on && crclOverride\.value > 0\)[^}]*tdd: rec && !rec\.noSolution \? rec\.tdd : null/.test(rb), 'called with the fit\'s inputs');
+    assert(/notes\.push\(crclSpreadNote\(/.test(rb), 'pushed as a note');
+    assert(!/crclWeightSpread/.test(bodyOf39('runBayesian')) && !/crclWeightSpread/.test(bodyOf39('bayesDoseOptimizer')), 'never reaches the fit or the dose');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);

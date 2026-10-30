@@ -1048,6 +1048,56 @@ further runs; it was recorded, not hidden.
 - rendered contrast 0 AA failures;
 - engine parity 0 differences: no engine function changed.
 
+## D21 — Before the first level, the CrCl weight spread (2026-10-29, v3.10.0)
+
+**Found.** A paired run against DoseMeRx, an obese adult with a low SCr and one dose, no level.
+Both tools used the same model (DoseMeRx's 1-compartment model is Buelga 2005 on total body
+weight), and the volumes agreed (0.98 L/kg TBW). The clearances did not: DoseMeRx 7.56 L/h,
+this calculator 9.72. The difference is the CrCl:
+- here, Cockcroft-Gault on AdjBW with the measured SCr gave 177 mL/min, limited to 150;
+- DoseMeRx's 7.56 L/h back-solves to 116.7 mL/min (7.56 / 1.08 / 0.06);
+- a 125 mL/min cap would give 8.10 L/h, so a cap at 125 does not explain it either.
+DoseMeRx documents its CrCl rule for its 2-compartment model (AdjBW above 120% IBW, cap 150, the
+same as this calculator's) and for its obese model, but not for its 1-compartment model. No
+standard Cockcroft-Gault variant reproduces 116.7 exactly; the nearest is IBW with SCr floored
+at 60 µmol/L (117.9). With one patient it cannot be identified.
+
+**Decided (the user, 2026-10-29).**
+- **The model and the cap stay.** Copying an undocumented DoseMeRx rule would be a constant
+  without provenance (rule 1).
+- **The uncertainty is shown instead.** Before the first level, AUC Precision lists the
+  regimen's AUC₂₄ on IBW, AdjBW and TBW. Each row goes through the active model's own SCr rule,
+  limits and clearance equation; AUC₂₄ is daily dose / CL, exact at steady state.
+- **Weight rows only.** Rounded-SCr rows would explain gaps like this one, but they would put a
+  number with no evidence behind it in front of the clinician (rule 4). One line says other
+  tools may round a low SCr up.
+
+**What it shows**, on the fictional patient in SUITE 39 (34 F, 165 cm, 118 kg, SCr 0.55),
+recommended 1.5 g q8h:
+
+| Weight | CrCl (mL/min) | Buelga CL (L/h) | AUC₂₄ |
+|---|---|---|---|
+| IBW 56.9 kg | 129 | 8.39 | 536 |
+| **AdjBW 81.3 kg (used)** | 185 → 150 | 9.72 | 463 |
+| TBW 118.0 kg | 268 → 150 | 9.72 | 463 |
+
+**Rules** (`crclWeightSpread`, `crclSpreadNote`):
+- **Shown when** the AdjBW rule is live (TBW > 120% IBW), before any level, with no manual CrCl,
+  on Buelga or non-HD Goti. Hughes has its own fat-free-mass scale and Goti-HD does not use
+  CrCl, so neither shows it. After a level the clearance estimates take over.
+- **Tier:** caution when a weight puts the regimen outside 400–600 (Rybak 2020 Rec 1);
+  otherwise info, under "All notes". No preference weight.
+- **Augmented clearance:** when the rows straddle 130 mL/min (uncapped, measured SCr), the note
+  names the weights it rests on.
+- **Presentation only.** The dose is the AdjBW row's, unchanged.
+
+**Tests and gates:**
+- phase2d **398/398** (SUITE 39: the rows against an independent Cockcroft-Gault, Goti's SCr
+  rule, when it is hidden, the tier, the augmented-clearance split, the wording, the wiring);
+- browser flows **66/66** (the note on an obese patient typed in; gone with a manual CrCl; gone
+  after a level);
+- engine parity 0 differences against v3.9.0.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module
