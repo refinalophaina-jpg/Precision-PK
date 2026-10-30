@@ -553,6 +553,12 @@ async function enterCourse(page) {
     ok('obese, no level: the CrCl weight spread names IBW, AdjBW (used) and TBW, each with CL and AUC24, SCr as measured',
        /IBW [\d.]+ kg/.test(t1) && /AdjBW [\d.]+ kg, used/.test(t1) && /TBW 118\.0 kg/.test(t1) && (t1.match(/AUC₂₄ \d+/g) || []).length === 3
        && (t1.match(/CL [\d.]+ L\/h/g) || []).length === 3 && /SCr 0\.55 mg\/dL as measured/.test(t1), t1.slice(0, 400));
+    // One renal note, not two: the augmented-clearance advisory carries the weights (the user's review).
+    const renal = await s.evaluate(() => { const ns = [...document.querySelectorAll('#b-results .note')].filter(n => !n.closest('details'));
+      return ns.map(n => n.textContent.replace(/\s+/g, ' ')).filter(t => /Augmented renal clearance|CrCl depends on the weight used/.test(t)); });
+    ok('one renal note on screen: the augmented-clearance advisory carries the weights, its actions under "if truly augmented"',
+       renal.length === 1 && /Augmented renal clearance suspected/.test(renal[0]) && /CrCl depends on the weight used/.test(renal[0])
+       && /If clearance is truly augmented:/.test(renal[0]), JSON.stringify(renal).slice(0, 400));
     await s.locator('[data-onclick="k1"]').click();
     await s.locator('#crcl-override-on').check();
     await typeInto(s, '#crcl-override-val', '117');

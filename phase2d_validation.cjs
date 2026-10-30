@@ -4982,6 +4982,36 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/notes\.push\(crclSpreadNote\(/.test(rb), 'pushed as a note');
     assert(!/crclWeightSpread/.test(bodyOf39('runBayesian')) && !/crclWeightSpread/.test(bodyOf39('bayesDoseOptimizer')), 'never reaches the fit or the dose');
   });
+  // The user's review (2026-10-29): on an obese young patient the spread and the augmented-
+  // clearance advisory showed as two cautions about one CrCl, one saying "escalate", the other
+  // "on IBW clearance is lower". One renal note now carries both.
+  test('39.7 one renal note, not two: the weights lead, the advisory follows, its actions under "if truly augmented"; the stricter tier wins; nothing said twice', () => {
+    const s = sandbox.crclWeightSpread(pt);
+    const renal = { tier: 'caution', word: 'Augmented renal clearance suspected', head: 'CrCl ≈ 268 mL/min.', lead: 'LEAD.', list: '<ul class="note-list"><li>BULLET</li></ul>', ifReal: true };
+    const n = sandbox.crclSpreadNote(s, { dose: 1500, tau: 8 }, 0.55, 'Buelga 2005 (1-comp)', renal);
+    assert(n.tier === 'caution' && n.word === renal.word, JSON.stringify({ tier: n.tier, word: n.word }));
+    const h = n.html, at = (t) => h.indexOf(t);
+    assert(/CrCl depends on the weight used/.test(h) && at('AdjBW') >= 0 && at('AdjBW') < at('LEAD') && at('LEAD') < at('If clearance is truly augmented:') && at('If clearance is truly augmented:') < at('BULLET'),
+           'the weights, then the advisory, then its actions under the condition');
+    assert(!/first or second dose settles it/.test(h), 'the advisory already says when to draw a level');
+    assert(!h.includes('CrCl ≈ 268'), 'the advisory\'s CrCl sentence is dropped: the rows already give it');
+    assert(/uses it as measured/.test(h), 'rule 4 still said');
+    const lo = sandbox.crclWeightSpread(Object.assign({}, pt, { tdd: 3500 }));   // a caution spread
+    const n2 = sandbox.crclSpreadNote(lo, { dose: 1750, tau: 12 }, 0.55, 'x', { tier: 'info', word: 'Low creatinine in an older patient', lead: 'L.', list: '' });
+    assert(n2.tier === 'caution' && n2.word === 'Low creatinine in an older patient' && !/truly augmented/.test(n2.html), JSON.stringify(n2).slice(0, 200));
+  });
+  test('39.8 wiring: the spread is read before the renal advisories, which hand themselves to it; it stands alone only when no advisory took it', () => {
+    const rb = bodyOf39('renderBayesianResults');
+    assert(rb.indexOf('crclWeightSpread(') >= 0 && rb.indexOf('crclWeightSpread(') < rb.indexOf('renalAdvisoryKind('), 'computed before the advisories');
+    assert(/crclSpreadNote\(spread, rec, Number\(ag\.scr\), modelLabel, renal\)/.test(rb), 'an advisory merges into it');
+    assert(/if \(spread && !spreadMerged\) notes\.push\(crclSpreadNote\(spread, rec, Number\(ag\.scr\), modelLabel\)\)/.test(rb), 'alone only when not merged');
+    ['High CrCl from a low creatinine', 'Augmented renal clearance suspected', 'Low creatinine in an older patient'].forEach(w =>
+      assert(new RegExp(`pushRenal\\(\\{ tier: '\\w+', word: '${w}`).test(rb), `${w} goes through the merge`));
+    // The advisory's "CrCl ≈ N" sentence is its head: shown alone, dropped when merged (the rows give it).
+    assert(/word: 'Augmented renal clearance suspected', ifReal: true, head: `CrCl ≈ \$\{crclTrue\.toFixed\(0\)\} mL\/min\.`/.test(rb)
+        && /word: 'High CrCl from a low creatinine — may be overestimated', head: `CrCl ≈ \$\{crclTrue\.toFixed\(0\)\} mL\/min\.`/.test(rb), 'the CrCl sentence is the head');
+    assert(/html: \(renal\.head \|\| ''\) \+ renal\.lead \+ \(renal\.list \|\| ''\)/.test(rb), 'alone, the head is kept');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

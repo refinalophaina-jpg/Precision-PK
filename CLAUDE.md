@@ -110,7 +110,8 @@ Both HD answers pick the in-range 250 mg step closest to 17.5 mg/L (`hdPickDose`
 IBW) on Buelga or non-HD Goti, a note lists the regimen's AUC₂₄ on IBW, AdjBW (used) and TBW,
 each through the model's own SCr rule, cap and clearance (`crclWeightSpread`). SCr stays as
 measured: rounded-SCr rows were declined (rule 4). Caution only when a weight leaves 400–600.
-Hidden with a manual CrCl or after a level. Presentation only: the dose never changes.
+Hidden with a manual CrCl or after a level. Presentation only: the dose never changes. When a
+renal advisory fires (augmented, low creatinine), it carries the spread: one note, not two (`pushRenal`).
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, peritoneal dialysis, paediatrics, neonates,
@@ -168,12 +169,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **398/398 pass** |
+| `phase2d_validation.cjs` | **400/400 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **66/66** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **67/67** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major

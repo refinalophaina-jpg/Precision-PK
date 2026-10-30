@@ -1091,11 +1091,26 @@ recommended 1.5 g q8h:
   names the weights it rests on.
 - **Presentation only.** The dose is the AdjBW row's, unchanged.
 
+**One renal note, not two (the user's review, 2026-10-29).** The user asked whether the results
+were carrying too much. Measured on fictional obese cases before a level: one or two notes on
+screen, eight collapsed sections, about 2.5 screens. The one real pile-up was this note: when the
+weights moved the regimen out of range, it showed beside "Augmented renal clearance suspected".
+That was two cautions about one CrCl, one saying "escalate" and the other "on IBW clearance is
+lower". Now a renal advisory (augmented, high-from-low-creatinine, or low creatinine in an older
+patient) carries the spread:
+- the weights lead, then the advisory;
+- the augmented-clearance actions sit under "If clearance is truly augmented:";
+- the stricter tier wins;
+- the advisory's "CrCl ≈ N" sentence is dropped, because the rows give it;
+- its level advice replaces the closing line.
+No advisory text was removed.
+
 **Tests and gates:**
-- phase2d **398/398** (SUITE 39: the rows against an independent Cockcroft-Gault, Goti's SCr
-  rule, when it is hidden, the tier, the augmented-clearance split, the wording, the wiring);
-- browser flows **66/66** (the note on an obese patient typed in; gone with a manual CrCl; gone
-  after a level);
+- phase2d **400/400** (SUITE 39: the rows against an independent Cockcroft-Gault, Goti's SCr
+  rule, when it is hidden, the tier, the augmented-clearance split, the wording, the wiring, the
+  merge);
+- browser flows **67/67** (the note on an obese patient typed in; one renal note on screen; gone
+  with a manual CrCl; gone after a level);
 - engine parity 0 differences against v3.9.0.
 
 ## Known gaps
