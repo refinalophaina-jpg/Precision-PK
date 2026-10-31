@@ -2240,6 +2240,8 @@
   .hd-give-row .hd-give-date { width: 10.5em; }
   .hd-give-row input:focus-visible { outline: 2px solid var(--terracotta-ink); outline-offset: 1px; }
   .hd-give-row[hidden] { display: none; }
+  /* The first-day AUC slot stays in the page, empty, so a change to it is announced (v3.11.0). */
+  #b-first-auc:empty { margin: 0; }
   /* "change" on the first-dose line (v3.11.0): a word in the sentence, not a button
      shape; the padding gives it a 44px target without moving the line. */
   #b-results .vx-link {
@@ -3934,7 +3936,7 @@ const __ACT = {
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
   k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
   k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { const nextId = ev && ev.type === 'focusout' && ev.relatedTarget && ev.relatedTarget.id; renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(ev && ev.type === 'focusout' ? (nextId || '') : (el && el.id ? el.id : 'b-hd-give-time')); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0); the date commits on leaving it and focus goes where the user was heading (v3.9.0) */
-  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) { auc.innerHTML = firstDayAucHTML(plan); auc.hidden = !auc.innerHTML; } } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0) */
+  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
@@ -8572,9 +8574,9 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const planned = plan.plannedN ? ` · after the ${plan.plannedN} planned dose${plan.plannedN === 1 ? '' : 's'} entered` : '';
   const when = plan.clamped ? ` (not before ${fmtClock(plan.nowH)}, as of the calculation)` : plan.duePassed ? ` (was due ${fmtClock(plan.dueH)})` : '';
   if (!print) return `${fmtClock(plan.firstH)}${when}${planned} · ${then} · level by then <strong>${plan.pre.toFixed(1)} mg/L</strong>`;
-  const a = plan.auc24First;
-  const band = a == null ? '' : a < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
-    : a > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
+  const a = plan.auc24First, an = a == null ? null : Math.round(a);   // judged on the number shown (D21's rule)
+  const band = an == null ? '' : an < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
+    : an > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
   return `
       <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${fmtClock(plan.firstH)}${when} · ${rel}${planned} · ${then}</p>
       <p class="vx-sub">Level by then <strong>${plan.pre.toFixed(1)} mg/L</strong> <span class="vx-muted">fitted, before the ${plan.same ? 'next' : 'first'} dose</span></p>
@@ -8585,8 +8587,10 @@ function firstDoseReadoutHTML(plan, rec, print) {
 // it, the steady-state AUC above already says what matters.
 function firstDayAucHTML(plan) {
   const a = plan && plan.auc24First;
-  if (a == null || (a >= AUC24_TARGET_MIN && a <= AUC24_TARGET_MAX)) return '';
-  return `<span class="tone-caution">First 24 h AUC₂₄ ${a.toFixed(0)}, ${a < AUC24_TARGET_MIN ? 'below' : 'above'} ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span> <span class="vx-muted">steady state unchanged</span>`;
+  if (a == null) return '';
+  const n = Math.round(a);   // judged on the number shown: never "400, below 400–600" (D21's rule)
+  if (n >= AUC24_TARGET_MIN && n <= AUC24_TARGET_MAX) return '';
+  return `<span class="tone-caution">First 24 h AUC₂₄ ${n}, ${n < AUC24_TARGET_MIN ? 'below' : 'above'} ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span> <span class="vx-muted">steady state unchanged</span>`;
 }
 // Evidence sections with nothing to show yet, as one line (v3.11.0, D22): each named
 // with what it needs, sections that need the same thing joined.
@@ -8609,8 +8613,8 @@ function firstDoseHTML(plan, rec, print) {
   return `
       <p class="vx-sub vx-first"><span class="vx-k">${plan.same ? 'Next dose' : 'First dose'}</span>
         <span id="b-first-readout" aria-live="polite">${firstDoseReadoutHTML(plan, rec, false)}</span>
-        · <button type="button" class="vx-link" data-onclick="k83" aria-expanded="false" aria-controls="b-first-edit">change</button></p>
-      <p class="vx-sub" id="b-first-auc"${auc ? '' : ' hidden'}>${auc}</p>
+        · <button type="button" class="vx-link" data-onclick="k83" aria-expanded="false" aria-controls="b-first-edit" aria-label="Change the ${plan.same ? 'next' : 'first'} dose time">change</button></p>
+      <p class="vx-sub" id="b-first-auc" aria-live="polite">${auc}</p>
       <p class="vx-sub hd-give-row" id="b-first-edit" hidden>
         <input type="date" id="b-first-date" class="hd-give-date" value="${localDateStr(dt)}" data-onchange="k82" aria-label="Date of the ${plan.same ? 'next' : 'first'} dose">
         <input type="text" id="b-first-time" class="hd-give-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" value="${localTimeStr(dt)}" data-onchange="k82" aria-label="Time of the ${plan.same ? 'next' : 'first'} dose, 24-hour">

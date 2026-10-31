@@ -5099,7 +5099,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/unchanged/.test(line) && !/AUC₂₄/.test(line), 'no teaching sentence, no first-day AUC in the line');
     const h = sandbox.firstDoseHTML(plan, q12, false);
     assert(/<span id="b-first-readout" aria-live="polite">/.test(h), 'the line is the live readout');
-    assert(/<button type="button" class="vx-link" data-onclick="k83" aria-expanded="false" aria-controls="b-first-edit">change<\/button>/.test(h), 'a "change" button that says what it opens');
+    // Final review (v3.11.0): the accessible name carries its subject, and contains the visible word.
+    assert(/<button type="button" class="vx-link" data-onclick="k83" aria-expanded="false" aria-controls="b-first-edit" aria-label="Change the first dose time">change<\/button>/.test(h), 'a "change" button that says what it opens');
     assert(/id="b-first-edit" hidden>[\s\S]*id="b-first-date"[\s\S]*id="b-first-time"/.test(h), 'the date and time are closed until asked for');
     assert(h.indexOf('b-first-readout') < h.indexOf('b-first-edit'), 'the answer reads before the controls');
   });
@@ -5112,8 +5113,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(new RegExp(`tone-caution">First 24 h AUC₂₄ ${K40.AUC24_TARGET_MIN - 40}, below ${K40.AUC24_TARGET_MIN}–${K40.AUC24_TARGET_MAX}`).test(low) && /steady state unchanged/.test(low), low);
     const high = sandbox.firstDayAucHTML(Object.assign({}, plan, { auc24First: K40.AUC24_TARGET_MAX + 25 }));
     assert(/above \d+–\d+/.test(high), high);
-    assert(/id="b-first-auc" hidden><\/p>/.test(sandbox.firstDoseHTML(within, q12, false)), 'an empty, hidden slot k82 can fill');
-    assert(/id="b-first-auc">[^<]*<span class="tone-caution">First 24 h/.test(sandbox.firstDoseHTML(Object.assign({}, plan, { auc24First: 300 }), q12, false)), 'shown when outside');
+    // Final review (v3.11.0): the slot is a live region that is always in the page, so a k82
+    // edit that moves the first-day AUC out of the band is announced.
+    assert(/id="b-first-auc" aria-live="polite"><\/p>/.test(sandbox.firstDoseHTML(within, q12, false)), 'an empty live slot k82 can fill');
+    assert(/id="b-first-auc" aria-live="polite"><span class="tone-caution">First 24 h/.test(sandbox.firstDoseHTML(Object.assign({}, plan, { auc24First: 300 }), q12, false)), 'shown when outside');
+    // Final review (v3.11.0): judged on the number shown, as D21 made the rule ("never '400, below 400–600'").
+    for (const a of [K40.AUC24_TARGET_MIN - 0.3, K40.AUC24_TARGET_MAX + 0.3]) {
+      const pa = Object.assign({}, plan, { auc24First: a });
+      assert(sandbox.firstDayAucHTML(pa) === '', `${a} reads ${Math.round(a)}: within, so nothing`);
+      assert(/within \d+–\d+/.test(sandbox.firstDoseReadoutHTML(pa, q12, true)), `${a} prints as within`);
+    }
+    assert(/First 24 h AUC₂₄ 399, below/.test(sandbox.firstDayAucHTML(Object.assign({}, plan, { auc24First: K40.AUC24_TARGET_MIN - 0.6 }))), '399.4 reads 399, below');
     const p = sandbox.firstDoseHTML(within, q12, true);
     assert(/First dose/.test(p) && /Level by then/.test(p) && /AUC₂₄ over the first 24 h/.test(p) && /trough are unchanged/.test(p) && !/<input|<button/.test(p), 'print: the full block as text');
   });

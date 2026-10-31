@@ -235,15 +235,15 @@ async function enterCourse(page) {
     const v = document.querySelector('#b-results .vx-verdict'), at = (s) => { const e = v.querySelector(s); return e ? e.getBoundingClientRect().top : -1; };
     const first = v.querySelector('.vx-first'), edit = document.getElementById('b-first-edit'), sum = document.getElementById('b-summary');
     return { order: ['#vx-regimen', '.vx-auc', '.vx-rec .vx-sub', '.vx-conf', '.vx-next', '.vx-first'].map(at),
-      firstText: first ? first.textContent.replace(/\s+/g, ' ').trim() : '', firstLines: first ? Math.round(first.getBoundingClientRect().height / parseFloat(getComputedStyle(first).lineHeight)) : 0,
+      firstText: first ? first.textContent.replace(/\s+/g, ' ').trim() : '', firstParas: v.querySelectorAll('.vx-first').length,
       editHidden: !!edit && edit.hidden && !edit.offsetParent, aucMic: /AUC\/MIC/.test(v.textContent),
       summaryShown: !!sum && !!sum.offsetParent, summaryKept: !!sum && sum.textContent.length > 20,
       canvasLabel: /^Concentration–time curve\. /.test(document.getElementById('b-profile-canvas').getAttribute('aria-label') || '') };
   });
   ok('the answer reads regimen → AUC → trough → confidence → Next → first dose',
      answer.order.every(t => t >= 0) && answer.order.every((t, i, a) => i === 0 || t > a[i - 1]), JSON.stringify(answer.order));
-  ok('the first dose is one line, time and level by then, with "change"; its date and time closed',
-     /level by then [\d.]+ mg\/L · change$/.test(answer.firstText) && answer.editHidden, JSON.stringify(answer));
+  ok('the first dose is one sentence, time and level by then, with "change"; its date and time closed',
+     answer.firstParas === 1 && /level by then [\d.]+ mg\/L · change$/.test(answer.firstText) && answer.editHidden, JSON.stringify(answer));
   ok('said once: no AUC/MIC at MIC 1; the chart summary is the canvas label, not a paragraph',
      !answer.aucMic && !answer.summaryShown && answer.summaryKept && answer.canvasLabel, JSON.stringify(answer));
   await page.setViewportSize({ width: 1280, height: 800 }); await page.waitForTimeout(500);
@@ -273,6 +273,15 @@ async function enterCourse(page) {
     level: /level by then [\d.]+ mg\/L/.test((document.querySelector('#b-results .vx-first') || {}).textContent || '') }));
   ok('the first dose of the recommended regimen can be timed; the readout follows the typed time',
      first.d === DAY1 && first.t === '12:00' && /12:00/.test(first.line) && first.level, JSON.stringify(first));
+  // Final review (v3.11.0): after the edit the first-day slot says the band only when the number
+  // shown is outside it; a second "change" closes the date and time.
+  const slot = await page.evaluate(() => (document.getElementById('b-first-auc') || {}).textContent || '');
+  const sm = slot.match(/First 24 h AUC₂₄ (\d+), (below|above) 400–600/);
+  await page.locator('#b-results [data-onclick="k83"]').click(); await page.waitForTimeout(150);
+  const closed = await page.evaluate(() => ({ hidden: document.getElementById('b-first-edit').hidden,
+    expanded: document.querySelector('#b-results [data-onclick="k83"]').getAttribute('aria-expanded') }));
+  ok('after the edit the first-day AUC is said only outside 400–600, on the number shown; "change" closes again',
+     (slot.trim() === '' || (sm && (sm[2] === 'below' ? +sm[1] < 400 : +sm[1] > 600))) && closed.hidden && closed.expanded === 'false', JSON.stringify({ slot, closed }));
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));
   ok('the privacy note is not a box inside the profiles box', look.noteBox === '0px', look.noteBox);
@@ -576,6 +585,9 @@ async function enterCourse(page) {
   {
     const sctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const s = await sctx.newPage();
+    // A fixed "now" (today 23:00), so the "now on the axis" check below cannot pass by the time
+    // of day: the dose yesterday at 16:00 has its curve's natural end well before it.
+    await s.clock.setFixedTime(new Date(`${day(0)}T23:00`));
     const sProblems = watch(s, 'spread');
     await s.goto(BASE + '?v=pws-' + Date.now(), { waitUntil: 'networkidle' });
     await s.locator('[data-onclick="k2"]').click();
