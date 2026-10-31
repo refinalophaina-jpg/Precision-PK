@@ -1515,7 +1515,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const src = fs.readFileSync(htmlPath, 'utf8');
     const refresh = sandbox.refreshProfileGraph.toString();
     assert(/const arrive = r !== _profileArrivedFor && profileMotionOK\(\);/.test(refresh) && /_profileArrivedFor = r;/.test(refresh), 'gated on a new result');
-    assert(/drawCourseStrip\([\s\S]*arrive\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive \}/.test(refresh), 'the strip and the curve share the gate');
+    // v3.11.0: both also take the same clock (nowH) after the gate — SUITE 40.8.
+    assert(/drawCourseStrip\([\s\S]*arrive, nowH\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive, nowH \}/.test(refresh), 'the strip and the curve share the gate');
     assert(/prefers-reduced-motion: reduce/.test(sandbox.profileMotionOK.toString()), 'reduced motion is honoured');
     const pr = src.slice(src.indexOf('const gp = gotiGraphParams(r);\n    drawProfileGraph(off'), src.indexOf('const url = off.toDataURL'));
     assert(pr.length > 0 && !/arrive/.test(pr), 'print draws without the arrival');
@@ -4844,11 +4845,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const plan = sandbox.firstDosePlan(r38, q24, 20, 26.5);
     const h = sandbox.firstDoseHTML(plan, q24, false);
     assert(/id="b-first-date"[^>]*data-onchange="k82"/.test(h) && /id="b-first-date"[^>]*>\s*<input type="text" id="b-first-time"[^>]*data-time24[^>]*data-onchange="k82"/.test(h), 'date and 24-hour time, side by side');
-    assert(/2\.5 h after the q24h schedule/.test(h) && /then \d\d:\d\d daily/.test(h) && /Level by then <strong>[\d.]+ mg\/L<\/strong>/.test(h), h.slice(0, 600));
-    assert(/steady-state AUC₂₄ and trough are unchanged/i.test(h), 'exposure unchanged, said');
-    const early = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, 22), q24, false);
-    assert(/2 h before the q24h schedule/.test(early), early.slice(0, 400));
+    assert(/then \d\d:\d\d daily/.test(h) && /level by then <strong>[\d.]+ mg\/L<\/strong>/.test(h), h.slice(0, 600));
+    // v3.11.0 (D22): the screen shows one line; the offset against the schedule and the
+    // "exposure unchanged" sentence are kept whole in the printed block.
     const p = sandbox.firstDoseHTML(plan, q24, true);
+    assert(/2\.5 h after the q24h schedule/.test(p) && /Level by then <strong>[\d.]+ mg\/L<\/strong>/.test(p), p.slice(0, 600));
+    assert(/steady-state AUC₂₄ and trough are unchanged/i.test(p), 'exposure unchanged, said');
+    const early = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, 22), q24, true);
+    assert(/2 h before the q24h schedule/.test(early), early.slice(0, 400));
     assert(!/<input/.test(p) && /First dose/.test(p), 'print: the time as text');
   });
   test('38.4 wiring: the verdict carries it (not on HD); a new fit clears it; k82 sets it or says why not; the projection starts there; print has it', () => {
@@ -4871,10 +4875,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // Early start: 1750 mg q24h given 2 h after a 1 g dose — the first day runs above steady state.
     const early = sandbox.firstDosePlan(Object.assign({}, r38, { fitNowH: 2 }), q24, 2, 2);
     assert(early.auc24First > 1750 / 3, `first-day AUC ${early.auc24First} above steady state ${1750 / 3}`);
-    const eh = sandbox.firstDoseHTML(early, q24, false);
+    // v3.11.0 (D22): printed whole; on screen only when outside the band (SUITE 40.2).
+    const eh = sandbox.firstDoseHTML(early, q24, true);
     assert(/AUC₂₄ over the first 24 h <strong>\d+<\/strong> mg·h\/L/.test(eh) && /until then an earlier first dose raises exposure/.test(eh), eh.slice(0, 700));
-    if (early.auc24First > 600) assert(/above 400–600/.test(eh), 'outside the band is said in words');
-    const near = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, 24.05), q24, false);
+    if (early.auc24First > 600) assert(/above 400–600/.test(eh) && /above 400–600/.test(sandbox.firstDoseHTML(early, q24, false)), 'outside the band is said in words, on paper and on screen');
+    const near = sandbox.firstDoseHTML(sandbox.firstDosePlan(r38, q24, 20, 24.05), q24, true);
     assert(/3 min after the q24h schedule/.test(near), 'minutes, never "0 h"');
     const dst = new Date('2026-10-31T16:00').getTime() / 3600000;
     const pd = sandbox.firstDosePlan(Object.assign({}, r38, { fitNowH: dst - 1 }), { dose: 1000, tau: 8, tinfH: 1 }, dst - 1, dst);
@@ -5060,6 +5065,146 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         assert(g.CL === sandbox.gotiPopPK(sandbox.getGotiCrCl(), c.tbw, false).TVCL, `Goti ${JSON.stringify(c)}`);
       }
     } finally { sandbox.document = prevDoc; vm.runInContext('bState.sex = null', sandbox); }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 40 — the answer first (v3.11.0, D22)
+//
+// The 2026-10-30 critique: the default result ran 2.5–3 screens; the first-dose
+// block (~230 px) pushed confidence and the next step under the fold; on
+// Goti-HD "No dose now" sat above an open q-interval grid and a guideline
+// regimen. The user chose: answer order regimen → AUC → trough → confidence →
+// Next → first dose; the first dose on one line; HD's grid closed after
+// Haemodialysis; duplicates and empty sections gone. Presentation only — no
+// number changes (engine parity). Fictional patient throughout.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 40 — the answer first (v3.11.0)');
+  console.log(`${'─'.repeat(60)}`);
+  const K40 = require('./harness_constants.cjs').extract();
+  const src40 = fs.readFileSync(htmlPath, 'utf8');
+  const script40 = src40.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const code40 = script40.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const bodyOf40 = (n) => { const c = code40.slice(code40.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+  const r40 = { model: 'buelga', CL_ind: 3, V_ind: 60, doses: [{ mg: 1000, tinfH: 1, timeH: 0 }], levels: [], fitNowH: 20 };
+  const q12 = { dose: 1000, tau: 12, tinfH: 1 };
+  const plan40 = () => sandbox.firstDosePlan(r40, q12, 20, 26.5);
+  test('40.1 on screen the first dose is one line — when, the times after, the level by then — and "change" opens the date and time', () => {
+    const plan = plan40();
+    const line = sandbox.firstDoseReadoutHTML(plan, q12, false);
+    assert(!/<p\b/.test(line), `one line, no paragraphs: ${line.slice(0, 300)}`);
+    assert(/then \d\d:\d\d and \d\d:\d\d daily/.test(line) && /level by then <strong>[\d.]+ mg\/L<\/strong>/.test(line), line);
+    assert(!/unchanged/.test(line) && !/AUC₂₄/.test(line), 'no teaching sentence, no first-day AUC in the line');
+    const h = sandbox.firstDoseHTML(plan, q12, false);
+    assert(/<span id="b-first-readout" aria-live="polite">/.test(h), 'the line is the live readout');
+    // Final review (v3.11.0): the accessible name carries its subject, and contains the visible word.
+    assert(/<button type="button" class="vx-link" data-onclick="k83" aria-expanded="false" aria-controls="b-first-edit" aria-label="Change the first dose time">change<\/button>/.test(h), 'a "change" button that says what it opens');
+    assert(/id="b-first-edit" hidden>[\s\S]*id="b-first-date"[\s\S]*id="b-first-time"/.test(h), 'the date and time are closed until asked for');
+    assert(h.indexOf('b-first-readout') < h.indexOf('b-first-edit'), 'the answer reads before the controls');
+  });
+  test('40.2 the first-day AUC is said only when it falls outside the band; print keeps the whole block', () => {
+    const plan = plan40();
+    const within = Object.assign({}, plan, { auc24First: (K40.AUC24_TARGET_MIN + K40.AUC24_TARGET_MAX) / 2 });
+    assert(sandbox.firstDayAucHTML(within) === '', 'within the band: nothing');
+    assert(sandbox.firstDayAucHTML(Object.assign({}, plan, { auc24First: null })) === '', 'no first-day AUC: nothing');
+    const low = sandbox.firstDayAucHTML(Object.assign({}, plan, { auc24First: K40.AUC24_TARGET_MIN - 40 }));
+    assert(new RegExp(`tone-caution">First 24 h AUC₂₄ ${K40.AUC24_TARGET_MIN - 40}, below ${K40.AUC24_TARGET_MIN}–${K40.AUC24_TARGET_MAX}`).test(low) && /steady state unchanged/.test(low), low);
+    const high = sandbox.firstDayAucHTML(Object.assign({}, plan, { auc24First: K40.AUC24_TARGET_MAX + 25 }));
+    assert(/above \d+–\d+/.test(high), high);
+    // Final review (v3.11.0): the slot is a live region that is always in the page, so a k82
+    // edit that moves the first-day AUC out of the band is announced.
+    assert(/id="b-first-auc" aria-live="polite"><\/p>/.test(sandbox.firstDoseHTML(within, q12, false)), 'an empty live slot k82 can fill');
+    assert(/id="b-first-auc" aria-live="polite"><span class="tone-caution">First 24 h/.test(sandbox.firstDoseHTML(Object.assign({}, plan, { auc24First: 300 }), q12, false)), 'shown when outside');
+    // Final review (v3.11.0): judged on the number shown, as D21 made the rule ("never '400, below 400–600'").
+    for (const a of [K40.AUC24_TARGET_MIN - 0.3, K40.AUC24_TARGET_MAX + 0.3]) {
+      const pa = Object.assign({}, plan, { auc24First: a });
+      assert(sandbox.firstDayAucHTML(pa) === '', `${a} reads ${Math.round(a)}: within, so nothing`);
+      assert(/within \d+–\d+/.test(sandbox.firstDoseReadoutHTML(pa, q12, true)), `${a} prints as within`);
+    }
+    assert(/First 24 h AUC₂₄ 399, below/.test(sandbox.firstDayAucHTML(Object.assign({}, plan, { auc24First: K40.AUC24_TARGET_MIN - 0.6 }))), '399.4 reads 399, below');
+    const p = sandbox.firstDoseHTML(within, q12, true);
+    assert(/First dose/.test(p) && /Level by then/.test(p) && /AUC₂₄ over the first 24 h/.test(p) && /trough are unchanged/.test(p) && !/<input|<button/.test(p), 'print: the full block as text');
+  });
+  test('40.3 the answer order: regimen, AUC, trough, then confidence and Next, then the first dose; AUC/MIC only when MIC is not 1', () => {
+    const rb = bodyOf40('renderBayesianResults');
+    const verdictBox = rb.slice(rb.indexOf('<div class="rec-box vx-rec'), rb.indexOf("lowConfSpan = derated"));
+    assert(!/firstDoseHTML/.test(verdictBox), 'the first dose is no longer inside the regimen box');
+    assert(/\$\{verdict\}\s*\$\{confBlock\}\s*\$\{nextBlock\}\s*\$\{firstBlock\}\s*\$\{hdBlock\}/.test(rb), 'confidence and Next before the first dose');
+    assert(/const firstBlock = firstPlan \? firstDoseHTML\(firstPlan, rec, false\) : '';/.test(rb), 'the first dose, built once');
+    assert(/Math\.abs\(mic - 1\) > 1e-9 \? `<span class="vx-nb"><span class="vx-k">AUC\/MIC<\/span>/.test(verdictBox), 'AUC/MIC only when it says something the AUC does not');
+  });
+  test('40.4 k82 updates the line and the first-day slot only; k83 opens and closes the date and time, and focuses the date', () => {
+    const k82 = (script40.match(/\n  k82: [^\n]*/) || [''])[0], k83 = (script40.match(/\n  k83: [^\n]*/) || [''])[0];
+    assert(/b-first-readout/.test(k82) && /firstDoseReadoutHTML\(plan, r\.rec, false\)/.test(k82) && /b-first-auc/.test(k82) && /firstDayAucHTML\(plan\)/.test(k82), 'both readouts');
+    assert(/refreshProfileGraph\(\)/.test(k82) && !/renderBayesianResults/.test(k82), 'still a partial update');
+    assert(/b-first-edit/.test(k83) && /\.hidden = !/.test(k83) && /aria-expanded/.test(k83) && /b-first-date/.test(k83) && /\.focus\(\)/.test(k83), k83.slice(0, 300));
+  });
+  test('40.5 Goti-HD: Regimens closed and placed after Haemodialysis; no guideline line; no projection row', () => {
+    const rb = bodyOf40('renderBayesianResults');
+    assert(/regimensSec = ev\('ev-regimens', 'Regimens', gist, body, !isHD\);/.test(rb), 'closed on HD, open otherwise');
+    const before = rb.indexOf('if (!isHD) html += regimensSec;'), hdAt = rb.indexOf("ev('ev-hd'"), after = rb.indexOf('if (isHD) html += regimensSec;');
+    assert(before > 0 && hdAt > before && after > hdAt, `order: ${before} < ${hdAt} < ${after}`);
+    assert(/if \(p2c\.guidDose && !isHD\)/.test(rb), 'no weight-based q-interval line beside an HD answer');
+    assert(/\$\{isHD \? '' : `\s*<div class="vx-proj">/.test(rb), 'no q-interval projection row on HD: the planned dose rows do that');
+  });
+  test('40.6 said once: the chart summary is the canvas\'s label only; the population-only note is gone, its narrowing sentence in Show the math', () => {
+    const rb = bodyOf40('renderBayesianResults');
+    assert(/<p class="vx-summary" id="b-summary" hidden>/.test(rb), 'kept for Copy summary, not shown or read twice');
+    assert(/aria-label="\$\{escHtml\('Concentration–time curve\. ' \+ summary\)\}"/.test(rb), 'the canvas still carries it');
+    assert(!/Population estimate only/.test(code40), 'the note repeated the range and the confidence');
+    const math = rb.slice(rb.indexOf("html += ev('ev-math'"));
+    assert(/nLev === 0 \? ` One steady-state trough narrows it to \$\{escHtml\(aucUncertaintyText\(1, uncertaintyModelKey\(r\)\)\)\}; two to \$\{escHtml\(aucUncertaintyText\(2, uncertaintyModelKey\(r\)\)\)\}\.` : ''/.test(math), 'how a level narrows it, in the Range step');
+  });
+  test('40.7 empty sections become one line, naming each and what it needs', () => {
+    assert(sandbox.emptySectionsHTML([]) === '', 'none empty: nothing');
+    const h = sandbox.emptySectionsHTML([{ title: 'Current regimen', why: 'more maintenance doses to read a schedule' },
+      { title: 'Models', why: 'a measured level' }, { title: 'Fit vs measured', why: 'a measured level' }]);
+    assert(/^<p class="ev-empty">/.test(h) && (h.match(/<p/g) || []).length === 1, h);
+    assert(/Current regimen needs more maintenance doses to read a schedule/.test(h) && /Models and Fit vs measured need a measured level/.test(h), h);
+    assert(sandbox.emptySectionsHTML([{ title: 'Models', why: 'a measured level' }]).includes('Models needs a measured level'), 'singular');
+    const rb = bodyOf40('renderBayesianResults');
+    assert(/html\.replace\('<!--ev-empty-->', \(\) => emptySectionsHTML\(evEmpty\)\)/.test(rb), 'one line, where the first empty section stood');
+    assert(/ev\('ev-models', 'Models', gist, body, false, modelsEmpty \? 'a measured level' : null\)/.test(rb), 'Models');
+    assert(/ev\('ev-fit', 'Fit vs measured', gist, body, false, fd \? null : 'a measured level'\)/.test(rb), 'Fit vs measured');
+    assert(/ev\('ev-current', 'Current regimen', gist, body, false, body \? null : 'more maintenance doses to read a schedule'\)/.test(rb), 'Current regimen');
+  });
+  test('40.8 "now" is on the time axis whenever it falls within 72 h after the curve\'s end; the strip and the curve read one clock', () => {
+    const doses = [{ mg: 1000, tinfH: 1, timeH: 100 }];
+    const base = sandbox.profileDomain(doses, 0.1, [], []);
+    assert(sandbox.profileDomain(doses, 0.1, [], [], base.tEnd - 5).tEnd === base.tEnd, 'already on it: unchanged');
+    const near = sandbox.profileDomain(doses, 0.1, [], [], base.tEnd + 20);
+    assert(near.tStart === base.tStart && near.tEnd > base.tEnd + 20, `reached with a margin: ${JSON.stringify(near)}`);
+    assert(sandbox.profileDomain(doses, 0.1, [], [], base.tEnd + 200).tEnd === base.tEnd, 'a profile opened days later is not flattened to reach it');
+    assert(/const nowH = Date\.now\(\) \/ 3600000;/.test(bodyOf40('refreshProfileGraph')), 'one clock read per redraw');
+    assert(/arrive, nowH \}\)/.test(bodyOf40('refreshProfileGraph')) && /r\.hdSessions \|\| \[\], arrive, nowH\);/.test(bodyOf40('refreshProfileGraph')), 'handed to both');
+    assert(/profileDomain\(doses, kelInd, opts\.sessions, levels, tNow\)/.test(bodyOf40('drawProfileGraph')), 'the curve');
+    assert(/profileDomain\(doses, kelInd, sessions, levels, tNow\)/.test(bodyOf40('drawCourseStrip')), 'the strip');
+  });
+  // Final review (v3.11.0), raised by the reviewer and approved by the user: the model advice was
+  // never told the patient is on dialysis, so Goti-HD read "Standard adult — Buelga 2005 is
+  // appropriate", an obese HD patient was pointed at Hughes, and the one-level note called Buelga
+  // "more reliable" — a second answer beside an HD verdict, the thing D22 removes.
+  test('40.9 on dialysis the model advice names Goti-HD and never suggests a model that does not carry dialysis', () => {
+    const hd = sandbox.getModelRecommendation(1, false, 80, 175, true);
+    assert(hd.recommended === 'gotihd' && /haemodialysis/.test(hd.reason) && /Goti 2018 · HD/.test(hd.reason), JSON.stringify(hd).slice(0, 300));
+    assert(hd.oneLevelGotiNote && /Cunio 2021/.test(hd.oneLevelGotiNote) && !/Buelga/.test(hd.oneLevelGotiNote), 'one level on HD: identifiability said, no switch to Buelga');
+    const match = sandbox.renderModelBanner(hd, 'gotihd');
+    assert(/Model matches patient profile/.test(match) && !/Suggested/.test(match), match.slice(0, 300));
+    const obeseHD = sandbox.getModelRecommendation(0, false, 130, 160, true);
+    assert(obeseHD.recommended === 'gotihd', 'class 3 obesity on HD: still Goti-HD');
+    const ob = sandbox.renderModelBanner(obeseHD, 'gotihd');
+    assert(!/Consider switching to <strong>Hughes/.test(ob) && !/Buelga 2005 came from/.test(ob), `no switch away from the dialysis model: ${ob.slice(0, 400)}`);
+    const onBuelga = sandbox.renderModelBanner(hd, 'buelga');
+    assert(/Suggested:<\/strong> On intermittent haemodialysis/.test(onBuelga) && /You are using Buelga 2005/.test(onBuelga), onBuelga.slice(0, 300));
+    // Off dialysis nothing changes.
+    assert(sandbox.getModelRecommendation(0, false, 80, 175, false).recommended === 'buelga', 'standard adult');
+    assert(sandbox.getModelRecommendation(0, false, 130, 160, false).recommended === 'hughes', 'class 3 obesity');
+    assert(/Buelga 1-comp is often the more reliable choice/.test(sandbox.getModelRecommendation(1, false, 80, 175, false).oneLevelGotiNote), 'the non-HD note unchanged');
+    // Wiring: told about dialysis from the model or logged sessions; the banner compares against Goti-HD.
+    assert(/getModelRecommendation\(filteredLevels\.length, isICU, tbw, htCm, !!bState\.dial \|\| sessions\.length > 0\)/.test(bodyOf40('runBayesian')), 'runBayesian tells it');
+    assert(/renderModelBanner\(p2c\.modelRec, isHD \? 'gotihd' : r\.model\)/.test(bodyOf40('renderBayesianResults')), 'the banner knows Goti-HD');
   });
 }
 

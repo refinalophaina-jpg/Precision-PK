@@ -22,7 +22,8 @@ The calculator's mechanism is honesty about its own limits: every clinical const
 
 - Two modules: Trough-Based (initial dosing, steady-state level, two levels, random level) and AUC Precision (MAP Bayesian with Buelga 2005, Goti 2018, Goti-HD and Hughes 2024 priors).
 - Inputs: age, sex, weight, height, SCr (and serial SCr), cystatin C, dose rows with date/time and infusion time, level rows with date/time.
-- Outputs used at the bedside: a regimen, its predicted AUC₂₄ and trough, confidence, a printable report for handoff.
+- Used at a pharmacy workstation (office or central pharmacy), desktop first; not at the bedside.
+- Outputs: a regimen, its predicted AUC₂₄ and trough, confidence, a printable report for handoff.
 - Live at pharmacy.ainadara.com/vancomycin, served from the pharmacy hub repository with a strict hash-pinned CSP (inline script hashed, delegated event handlers, no inline handlers).
 - Source of truth: Precision-PK `index.html`; validation suites `phase2d_validation.cjs`, `phase3_simulation.cjs`, `phase4_regimen_validation.cjs`.
 

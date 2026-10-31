@@ -2239,6 +2239,19 @@
   .hd-give-row > .vx-k { flex-basis: 100%; }
   .hd-give-row .hd-give-date { width: 10.5em; }
   .hd-give-row input:focus-visible { outline: 2px solid var(--terracotta-ink); outline-offset: 1px; }
+  .hd-give-row[hidden] { display: none; }
+  /* The first-day AUC slot stays in the page, empty, so a change to it is announced (v3.11.0). */
+  #b-first-auc:empty { margin: 0; }
+  /* "change" on the first-dose line (v3.11.0): a word in the sentence, not a button
+     shape; the padding gives it a 44px target without moving the line. */
+  #b-results .vx-link {
+    font: inherit; color: var(--terracotta-ink); background: none; border: 0; border-radius: 0;
+    padding: 12px 2px; margin: -12px 0; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--terracotta) 45%, transparent);
+  }
+  #b-results .vx-link:hover { text-decoration-color: currentColor; }
+  #b-results .vx-link:focus-visible { outline: 2px solid var(--terracotta-ink); outline-offset: 1px; }
   @media print { .hd-gap { display: none; } }
   .vx-hd-basis { font-size: var(--fs-sm); line-height: 1.5; margin: 8px 0 0; }
   .hd-flag { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: var(--fs-sm); color: var(--ink-soft); }
@@ -2292,6 +2305,9 @@
   details.ev > summary:hover .ev-title { color: var(--terracotta-ink); }
   .ev-title { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-lg); color: var(--ink); margin: 0; }
   .ev-gist  { font-size: var(--fs-sm); color: var(--ink-muted); }
+  /* Sections with nothing to show yet, as one line in the gists' voice (v3.11.0). */
+  .ev-empty { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-muted); margin: 0; padding: 14px 0 14px 19px;
+    border-bottom: 1px solid var(--rule); max-width: 78ch; }
   .ev-body  { padding: 0 0 22px 19px; display: grid; gap: 14px; }
   .ev-lead  { font-size: var(--fs-base); line-height: 1.55; color: var(--ink); margin: 0; }
   .ev-note  { font-size: var(--fs-sm); line-height: 1.6; color: var(--ink-soft); margin: 0; max-width: 78ch; }
@@ -2749,7 +2765,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.10.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.11.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2780,7 +2796,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.10.0</div>
+  <div class="header-tag">Vancomycin TDM v3.11.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -3816,7 +3832,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.10.0';
+const APP_VERSION = '3.11.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -3920,7 +3936,8 @@ const __ACT = {
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
   k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
   k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { const nextId = ev && ev.type === 'focusout' && ev.relatedTarget && ev.relatedTarget.id; renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(ev && ev.type === 'focusout' ? (nextId || '') : (el && el.id ? el.id : 'b-hd-give-time')); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0); the date commits on leaving it and focus goes where the user was heading (v3.9.0) */
-  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); } refreshProfileGraph(); },   /* first dose of the recommended regimen: readout + curve only (v3.9.0) */
+  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0) */
+  k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
 // deliberately global (it reaches every module), but it used to be labelled
@@ -8543,7 +8560,10 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     pre: predictFittedAt(r, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
     same: !!(cur && cur.dose === rec.dose && cur.tau === rec.tau) };
 }
-// The readout part, which k82 replaces on its own (no full re-render).
+// The readout part, which k82 replaces on its own (no full re-render). On screen
+// it is one line (v3.11.0, D22): when, the times after it and the level by then;
+// the printed block keeps the offset against the schedule, the first-day AUC and
+// the sentence on exposure.
 function firstDoseReadoutHTML(plan, rec, print) {
   const q = fmtFreq(rec.tau), d = plan.deltaH, ad = Math.abs(d);
   const amount = ad < 1 ? `${Math.round(ad * 60)} min` : `${+ad.toFixed(1)} h`;
@@ -8553,26 +8573,52 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const word = plan.same ? 'Next dose' : 'First dose';
   const planned = plan.plannedN ? ` · after the ${plan.plannedN} planned dose${plan.plannedN === 1 ? '' : 's'} entered` : '';
   const when = plan.clamped ? ` (not before ${fmtClock(plan.nowH)}, as of the calculation)` : plan.duePassed ? ` (was due ${fmtClock(plan.dueH)})` : '';
-  const a = plan.auc24First;
-  const band = a == null ? '' : a < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
-    : a > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
+  if (!print) return `${fmtClock(plan.firstH)}${when}${planned} · ${then} · level by then <strong>${plan.pre.toFixed(1)} mg/L</strong>`;
+  const a = plan.auc24First, an = a == null ? null : Math.round(a);   // judged on the number shown (D21's rule)
+  const band = an == null ? '' : an < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
+    : an > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
   return `
-      <p class="vx-sub vx-first">${print ? `<span class="vx-k">${word}</span> ` : ''}${fmtClock(plan.firstH)}${when} · ${rel}${planned} · ${then}</p>
+      <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${fmtClock(plan.firstH)}${when} · ${rel}${planned} · ${then}</p>
       <p class="vx-sub">Level by then <strong>${plan.pre.toFixed(1)} mg/L</strong> <span class="vx-muted">fitted, before the ${plan.same ? 'next' : 'first'} dose</span></p>
       ${a != null ? `<p class="vx-sub">AUC₂₄ over the first 24 h <strong>${a.toFixed(0)}</strong> mg·h/L${band}</p>` : ''}
       <p class="vx-sub vx-muted">Steady-state AUC₂₄ and trough are unchanged; until then an earlier first dose raises exposure and a later one lowers it.</p>`;
 }
-// The first-dose block under the regimen: a date and 24-hour time on screen (k82,
-// which updates only the readout and the curve), text on paper.
+// The first-day AUC on screen only when it leaves the band (v3.11.0, D22): within
+// it, the steady-state AUC above already says what matters.
+function firstDayAucHTML(plan) {
+  const a = plan && plan.auc24First;
+  if (a == null) return '';
+  const n = Math.round(a);   // judged on the number shown: never "400, below 400–600" (D21's rule)
+  if (n >= AUC24_TARGET_MIN && n <= AUC24_TARGET_MAX) return '';
+  return `<span class="tone-caution">First 24 h AUC₂₄ ${n}, ${n < AUC24_TARGET_MIN ? 'below' : 'above'} ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span> <span class="vx-muted">steady state unchanged</span>`;
+}
+// Evidence sections with nothing to show yet, as one line (v3.11.0, D22): each named
+// with what it needs, sections that need the same thing joined.
+function emptySectionsHTML(list) {
+  if (!list || !list.length) return '';
+  const groups = [];
+  for (const e of list) {
+    const g = groups.find(x => x.why === e.why);
+    if (g) g.titles.push(e.title); else groups.push({ why: e.why, titles: [e.title] });
+  }
+  const join = (a) => a.length < 2 ? a[0] : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+  return `<p class="ev-empty">${groups.map(g => `${join(g.titles)} ${g.titles.length === 1 ? 'needs' : 'need'} ${g.why}.`).join(' ')}</p>`;
+}
+// The first-dose block after the answer: one line on screen, with "change" (k83)
+// opening a date and 24-hour time (k82, which updates only the readouts and the
+// curve); the whole block as text on paper.
 function firstDoseHTML(plan, rec, print) {
   if (print) return firstDoseReadoutHTML(plan, rec, true);
-  const dt = new Date(plan.firstH * 3600000);
+  const dt = new Date(plan.firstH * 3600000), auc = firstDayAucHTML(plan);
   return `
-      <p class="vx-sub hd-give-row"><span class="vx-k">${plan.same ? 'Next dose' : 'First dose'}</span>
+      <p class="vx-sub vx-first"><span class="vx-k">${plan.same ? 'Next dose' : 'First dose'}</span>
+        <span id="b-first-readout" aria-live="polite">${firstDoseReadoutHTML(plan, rec, false)}</span>
+        · <button type="button" class="vx-link" data-onclick="k83" aria-expanded="false" aria-controls="b-first-edit" aria-label="Change the ${plan.same ? 'next' : 'first'} dose time">change</button></p>
+      <p class="vx-sub" id="b-first-auc" aria-live="polite">${auc}</p>
+      <p class="vx-sub hd-give-row" id="b-first-edit" hidden>
         <input type="date" id="b-first-date" class="hd-give-date" value="${localDateStr(dt)}" data-onchange="k82" aria-label="Date of the ${plan.same ? 'next' : 'first'} dose">
         <input type="text" id="b-first-time" class="hd-give-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" value="${localTimeStr(dt)}" data-onchange="k82" aria-label="Time of the ${plan.same ? 'next' : 'first'} dose, 24-hour">
-        <span class="vx-muted" id="b-first-msg" aria-live="polite"></span></p>
-      <div id="b-first-readout" aria-live="polite">${firstDoseReadoutHTML(plan, rec, false)}</div>`;
+        <span class="vx-muted" id="b-first-msg" aria-live="polite"></span></p>`;
 }
 // Before the first level (D16): Rybak 2020 Rec 13 for this weight — both dialyser
 // permeabilities, both timings. Permeability is never assumed. Doses already
@@ -9807,8 +9853,8 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   const kelPop = CLpop / Vpop;
   // Same domain and side padding as the course strip above, so the two share
   // one time axis at every width.
-  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions, levels);
-  const tNow   = Date.now() / 3600000;
+  const tNow   = Number.isFinite(opts.nowH) ? opts.nowH : Date.now() / 3600000;
+  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions, levels, tNow);
 
   // Dispatch to 1-comp or 2-comp based on gotiInd presence
   const predAt = (CL) => gotiInd
@@ -10476,7 +10522,10 @@ function updateScrTrendDisplay() {
 }
 
 // ─── Model selection recommendation (2C.1 + Phase 3 Hughes for obese) ───
-function getModelRecommendation(nLevels, isICU, tbw, htCm) {
+// onHD: Goti-HD selected or haemodialysis sessions logged (v3.11.0, D22). Only Goti-HD
+// carries dialysis, so on HD the advice names it and suggests nothing else: before, it
+// was never told, and an HD patient read "Standard adult — Buelga 2005 is appropriate".
+function getModelRecommendation(nLevels, isICU, tbw, htCm, onHD) {
   const htM  = htCm && htCm > 0 ? htCm / 100 : null;
   const bmi  = htM ? tbw / (htM * htM) : null;
   // HUGHES IS A CLASS-3 MODEL. Hughes 2024 enrolled only patients with
@@ -10492,7 +10541,10 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
   let reason      = 'Standard adult — Buelga 2005 (1-comp) is appropriate';
   let advisory    = null;
 
-  if (isClass3) {
+  if (onHD) {
+    recommended = 'gotihd';
+    reason = 'On intermittent haemodialysis — Goti 2018 · HD is the only model here that carries dialysis';
+  } else if (isClass3) {
     recommended = 'hughes';
     reason = `Class 3 obesity (BMI ${bmi.toFixed(1)} ≥ ${HUGHES_MIN_BMI}) — Hughes 2024 is fitted to exactly this population`;
   } else if (isObeseSub40) {
@@ -10523,9 +10575,10 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
   const oneLevelGotiNote = (nLevels === 1)
     ? 'With a single concentration, individual parameter precision is limited — a 2-compartment '
     + 'fit estimates three individual parameters and one level cannot separate them, so the '
-    + 'population prior largely determines the answer (Cunio 2021). Buelga 1-comp is often the '
-    + 'more reliable choice at one level; a second concentration resolves this far better than '
-    + 'changing model.'
+    + 'population prior largely determines the answer (Cunio 2021). '
+    + (onHD ? 'A second concentration resolves this.'
+            : 'Buelga 1-comp is often the more reliable choice at one level; a second concentration '
+            + 'resolves this far better than changing model.')
     : null;
 
   return { recommended, reason, advisory, isObese, isClass3, bmi, oneLevelGotiNote };
@@ -10534,6 +10587,7 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
 function renderModelBanner(rec, currentModel) {
   const lines = [];
   const modelLabel = m =>
+    m === 'gotihd' ? 'Goti 2018 · HD' :
     m === 'goti'   ? 'Goti 2018'  :
     m === 'hughes' ? 'Hughes 2024 (obese)' :
                      'Buelga 2005';
@@ -10547,7 +10601,10 @@ function renderModelBanner(rec, currentModel) {
       ${ICON.info} <strong>Model matches patient profile:</strong> ${rec.reason}.
     </span>`);
   }
-  if (rec.isClass3 && currentModel !== 'hughes') {
+  // On dialysis nothing points away from the one model that carries it (v3.11.0, D22).
+  if (rec.recommended === 'gotihd') {
+    // the suggestion or the match above is the whole advice
+  } else if (rec.isClass3 && currentModel !== 'hughes') {
     lines.push(`<div class="model-rec-banner model-rec-obese" style="margin-top:4px">
       ${ICON.caution} <strong>Class 3 obesity (BMI ${rec.bmi ? rec.bmi.toFixed(1) : '≥ 40'}):</strong> Buelga and Goti were not developed in obese populations. Consider switching to <strong>Hughes 2024</strong> — derived in N=83 patients with BMI ≥ 40, externally validated in 576 patients across 74 organizations.
     </div>`);
@@ -10692,7 +10749,7 @@ function runBayesian() {
   }
 
   // ── Phase 2C: model recommendation, guideline dose, SCr trend ──
-  const modelRec = getModelRecommendation(filteredLevels.length, isICU, tbw, htCm);
+  const modelRec = getModelRecommendation(filteredLevels.length, isICU, tbw, htCm, !!bState.dial || sessions.length > 0);
   const guidDose = computeGuidelineDose(tbw, crcl);
   updateScrTrendDisplay();
 
@@ -11548,7 +11605,11 @@ function profileArriveDelay(xFromLeft, gW) {
   const f = Math.max(0, Math.min(1, xFromLeft / (gW + PROFILE_LAND_PX)));
   return Math.round(PROFILE_ARRIVE_MS * (1 - Math.pow(1 - f, 0.25)));
 }
-function profileDomain(doses, kelInd, sessions, levels) {
+// A layout reach, not a clinical number: how far past the curve's natural end the
+// axis will stretch to show a planned session or "now" before the curve flattens
+// into a sliver.
+const PROFILE_REACH_H = 72;
+function profileDomain(doses, kelInd, sessions, levels, nowH) {
   const tStart = doses[0].timeH;
   const lastD = doses[doses.length - 1];
   const span = lastD.timeH - tStart;
@@ -11557,9 +11618,10 @@ function profileDomain(doses, kelInd, sessions, levels) {
   const tail = Math.min(48, Math.max(12, span * 0.5, (kelInd > 0 ? 3 * Math.LN2 / kelInd : 24)));
   let tEnd = lastD.timeH + lastD.tinfH + tail;
   // Reach a planned haemodialysis session (D15) so its start — the pre-HD
-  // reading — is on the axis; layout only, at most 72 h further.
+  // reading — is on the axis; layout only, at most PROFILE_REACH_H further.
+  const natural = tEnd;
   for (const x of (sessions || [])) {
-    if (x.startH > tEnd && x.startH <= tEnd + 72) tEnd = Math.max(tEnd, x.startH + 2);
+    if (x.startH > tEnd && x.startH <= tEnd + PROFILE_REACH_H) tEnd = Math.max(tEnd, x.startH + 2);
   }
   // Every measured level is on the axis (reported 2026-10-02): a level drawn days
   // after the last dose — doses held on a long course — fell past the 48 h tail
@@ -11569,16 +11631,23 @@ function profileDomain(doses, kelInd, sessions, levels) {
   for (const l of (levels || [])) {
     if (l.timeH > tEnd - 2) tEnd = Math.max(tEnd, l.timeH + Math.max(4, 0.03 * (l.timeH - tStart)));
   }
+  // "now" on the axis (v3.11.0, D22): before a level the tail could end hours before
+  // it, so the curve never showed where the patient is. Within the same reach only —
+  // a profile reopened days later keeps its own shape.
+  if (Number.isFinite(nowH) && nowH > tEnd - 2 && nowH <= natural + PROFILE_REACH_H) {
+    tEnd = Math.max(tEnd, nowH + Math.max(2, 0.03 * (nowH - tStart)));
+  }
   return { tStart, tEnd };
 }
 
 // The course strip: what was given (bars as wide as each infusion), what was
 // measured (dots with values), creatinine (ticks), and "now" — on the same time
 // axis as the curve beneath it. Drawn as SVG so it reflows and prints crisply.
-function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive) {
+function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive, nowH) {
   if (!el || !doses.length) return;
   const W = Math.max(280, el.clientWidth || 600), H = 76;
-  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions, levels);
+  const tNow = Number.isFinite(nowH) ? nowH : Date.now() / 3600000;
+  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions, levels, tNow);
   const P = PROFILE_PAD, gW = W - P.left - P.right, span = tEnd - tStart;
   const x = t => P.left + (t - tStart) / span * gW;
   // On a new result each mark appears as the curve's trace below passes its time
@@ -11642,7 +11711,6 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive
     s += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${Y.scr - 5}" y2="${Y.scr + 3}" class="scr"><title>SCr ${sr.scr} mg/dL at ${fmtClock(sr.timeH)}</title></line>`;
     s += `<text x="${(cx + 4).toFixed(1)}" y="${Y.scr + 3}" class="scrv">${sr.scr}</text>`;
   });
-  const tNow = Date.now() / 3600000;
   const inNow = tNow > tStart && tNow < tEnd;
   const xn = inNow ? x(tNow) : NaN;
   let hScr = scr && scr.length ? H : H - 16;
@@ -12031,17 +12099,17 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
        For a patient on intermittent haemodialysis, Goti-HD is the dialysis model.` });
   }
 
-  // ── Population-only advisory ──
-  if (nLev === 0) {
-    notes.push({ tier: 'info', word: 'Population estimate only', html: `No observed levels provided.
-      Results reflect the ${escHtml(modelLabel)} population prior for this patient's demographics
-      (AUC uncertainty ${escHtml(aucUncertaintyText(0, uncertaintyModelKey(r)))}).
-      One steady-state trough narrows it to ${escHtml(aucUncertaintyText(1, uncertaintyModelKey(r)))};
-      two to ${escHtml(aucUncertaintyText(2, uncertaintyModelKey(r)))}.` });
-  }
+  // No "population estimate only" note (v3.11.0, D22): the verdict's range, the
+  // confidence line and "0 levels" already say it; how a level narrows the range is
+  // in Show the math.
   notes.sort((a, b) => NOTE_RANK[a.tier] - NOTE_RANK[b.tier]);
   const inlineNotes = notes.filter(n => n.tier !== 'info').slice(0, 2);
   const restNotes = notes.filter(n => !inlineNotes.includes(n));
+
+  // When the first dose of this regimen goes in (v3.9.0): not on HD, where dosing follows
+  // sessions. It reads after confidence and the next step, on one line (v3.11.0, D22).
+  const firstPlan = !isHD && rec && !rec.noSolution && !r.lowCrClHold ? firstDosePlan(r, rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen) : null;
+  const firstBlock = firstPlan ? firstDoseHTML(firstPlan, rec, false) : '';
 
   // ── Dose recommendation ──
   // A refusal ({noSolution:true, regimen:null}) is a truthy object. Guarding on
@@ -12078,8 +12146,6 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       ? `<p class="vx-delta">Same as the current regimen.</p>`
       : `<p class="vx-delta">Against the current regimen: AUC₂₄ ${dAUC >= 0 ? '+' : '−'}${Math.abs(dAUC).toFixed(0)} mg·h/L${dTr != null ? `, trough ${dTr >= 0 ? '+' : '−'}${Math.abs(dTr).toFixed(1)} mg/L` : ''}.</p>`;
     }
-    // When the first dose of this regimen goes in (v3.9.0): not on HD, where dosing follows sessions.
-    const firstPlan = !isHD && rec && !rec.noSolution && !r.lowCrClHold ? firstDosePlan(r, rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen) : null;
     verdict = `
       <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
         <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.dose)}</span> IV <span class="vx-freq">${fmtFreq(rec.tau)}</span></h3>
@@ -12092,9 +12158,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <p class="vx-dots">${escHtml(v.label)} · ${range.inBand} of 20 plausible AUCs fall in ${bandMin}–${bandMax}</p>
         </div>
         <p class="vx-sub"><span class="vx-k">Trough</span> <span class="tone-${recTrTone}">${rec.Ctrough.toFixed(1)} mg/L</span> <span class="vx-muted">safety check, not a target</span>
-          <span class="vx-nb"><span class="vx-k">AUC/MIC</span> ${(rec.auc24 / mic).toFixed(0)}</span></p>
+          ${Math.abs(mic - 1) > 1e-9 ? `<span class="vx-nb"><span class="vx-k">AUC/MIC</span> ${(rec.auc24 / mic).toFixed(0)}</span>` : ''}</p>
         ${delta}
-        ${firstPlan ? firstDoseHTML(firstPlan, rec, false) : ''}
       </div>`;
     lowConfSpan = derated ? ` This dose was generated from a fit the tool itself does not trust.${span}` : '';
   } else if (rec && rec.noSolution) {
@@ -12159,6 +12224,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ${verdict}
         ${confBlock}
         ${nextBlock}
+        ${firstBlock}
         ${hdBlock}
         <div class="vx-actions">
           <a class="vx-act" href="#ev-why" data-onclick="k80" data-arg="ev-why">Why this dose</a>
@@ -12177,7 +12243,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <span class="legend-item" id="b-proj-legend" style="display:none"><i class="lg lg-proj"></i>Projected doses</span>
           ${hd ? '<span class="legend-item"><i class="lg lg-hd"></i>Haemodialysis session</span>' : ''}
         </figcaption>
-        <p class="vx-summary" id="b-summary">${escHtml(summary)}</p>
+        <p class="vx-summary" id="b-summary" hidden>${escHtml(summary)}</p>
+        ${isHD ? '' : `
         <div class="vx-proj">
           <label class="vx-proj-on"><input type="checkbox" id="b-proj-fwd" data-onchange="k64"> Project next doses</label>
           <span class="vx-proj-fields">
@@ -12194,7 +12261,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             <span class="vx-muted">doses</span>
           </span>
           <span id="b-proj-auc-note" class="vx-muted" aria-live="polite"></span>
-        </div>
+        </div>`}
       </figure>
     </div>`;
   if (inlineNotes.length) {
@@ -12203,11 +12270,18 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   }
 
   // ── Evidence, one hairline section each ────────────────────────────────────
-  const ev = (id, title, gist, body, open) => `
+  // A section with nothing to show yet is not drawn (v3.11.0, D22): it joins one
+  // line, placed where the first such section would have stood, naming each and
+  // what it needs.
+  const evEmpty = [];
+  const ev = (id, title, gist, body, open, emptyWhy) => {
+    if (emptyWhy) { evEmpty.push({ title, why: emptyWhy }); return evEmpty.length === 1 ? '<!--ev-empty-->' : ''; }
+    return `
     <details class="ev" id="${id}"${open ? ' open' : ''}>
       <summary><h3 class="ev-title">${title}</h3><span class="ev-gist">${gist}</span></summary>
       <div class="ev-body">${body}</div>
     </details>`;
+  };
   html += '<div class="vx-evidence">';
 
   // Why this dose — confidence reasons, clearance estimates, ties, fit summary
@@ -12315,14 +12389,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ${reconcile}
         ${isIrregular ? `<p class="ev-note">Select the intended future interval before relying on a steady-state projection.</p>` : ''}`;
     }
-    html += ev('ev-current', 'Current regimen', gist, body || '<p class="ev-note">Too few maintenance doses to read a schedule.</p>', false);
+    html += ev('ev-current', 'Current regimen', gist, body, false, body ? null : 'more maintenance doses to read a schedule');
   }
 
   // Models — forest plot + agreement + model suitability
   {
     const ag = agAll;                        // computed once above
     let body = '', gist = 'One model fitted';
-    if (p2c.modelRec) body += `<div class="ev-banner">${renderModelBanner(p2c.modelRec, r.model)}</div>`;
+    if (p2c.modelRec) body += `<div class="ev-banner">${renderModelBanner(p2c.modelRec, isHD ? 'gotihd' : r.model)}</div>`;
     if (ag && isFinite(ag.diffPct)) {
       const onReg = agOn === 'detected'
         ? `the detected ${fmtRegimen(cur2.dose, cur2.tau)}`
@@ -12348,10 +12422,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
               : '<strong>The models differ widely on exposure.</strong> The answer depends on which model is right for this patient; the next step above says whether a further level would change the dose.'}
           The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.</p>
         ${caveats}`;
-    } else if (!body) {
-      body = '<p class="ev-note">Model comparison needs at least one measured level.</p>';
     }
-    html += ev('ev-models', 'Models', gist, body, false);
+    const modelsEmpty = !body;   // no level to compare on and no model advice
+    html += ev('ev-models', 'Models', gist, body, false, modelsEmpty ? 'a measured level' : null);
   }
 
   // Fit vs measured — does the fit reproduce the levels?
@@ -12426,10 +12499,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         </table>
         ${note}`;
     }
-    html += ev('ev-fit', 'Fit vs measured', gist, body, false);
+    html += ev('ev-fit', 'Fit vs measured', gist, body, false, fd ? null : 'a measured level');
   }
 
-  // Regimens — the exposure matrix, and the guideline comparison as one line
+  // Regimens — the exposure matrix, and the guideline comparison as one line. On
+  // Goti-HD it is closed and follows Haemodialysis (v3.11.0, D22): the answer there
+  // is a dose after a session, and an open q-interval grid beside "No dose now"
+  // offered a second answer.
+  let regimensSec = '';
   {
     let body = r.model === 'goti' && r.dial
       ? `<p class="ev-note">On haemodialysis the maintenance dose is given with each session (Rybak 2020); the q-interval regimens below are steady-state references, not an HD schedule.</p>`
@@ -12513,7 +12590,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     // ASHP/IDSA 2020 weight-based guideline dose, as one comparison line. It
     // sat under the Bayesian dose at the same display size; a tired reader could
     // transcribe the wrong one (design audit 2026-09-28).
-    if (p2c.guidDose) {
+    if (p2c.guidDose && !isHD) {
       const gd  = p2c.guidDose;
       const guSS = ssCurve(gd.dose, gd.tau, gd.tinfH, r.kel_pop, r.V_pop, 120);
       const guTr = guSS.length ? guSS[guSS.length - 1].c : null;
@@ -12526,8 +12603,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           Not individualised — the Bayesian regimen above is the one fitted to this patient.</p>
       </div>`;
     }
-    html += ev('ev-regimens', 'Regimens', gist, body, true);
+    regimensSec = ev('ev-regimens', 'Regimens', gist, body, !isHD);
   }
+  if (!isHD) html += regimensSec;
 
   // Haemodialysis — the sessions and where each level sits against them (D15)
   if (hd) {
@@ -12550,6 +12628,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         choice; it changes no number). A level is "pre-HD" within ${HD_PRE_LABEL_H} h before a session. The ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L
         pre-dialysis range: Hui et al., J Antimicrob Chemother 2019;74:130, and the project's clinical instructions §4.4.</p>`, false);
   }
+
+  if (isHD) html += regimensSec;
 
   // Explore — the Dose Tinkerer and the regimen comparison
   html += ev('ev-explore', 'Explore a regimen', 'Dose Tinkerer — individual PK', `
@@ -12628,7 +12708,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <li><strong>Result.</strong> CL ${CL_ind.toFixed(2)} L/h, ${isGotiRes && r.goti ? `Vc ${r.goti.Vc_ind.toFixed(1)} L, Vp ${r.goti.Vp_ind.toFixed(1)} L` : `V ${V_ind.toFixed(1)} L`}, t½ ${t12_ind.toFixed(1)} h${objFinal !== null ? `, objective ${objFinal.toFixed(2)}` : ''}.</li>
       ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed next session ${HD_ONE_TIME_GAPS_H.join(', ')} h after the last session began (start to start; default ${HD_ONE_TIME_GAP_DEFAULT_H} h), or after the dose when none is logged; if that session would start before a dose could be infused and distributed, the dose follows it, and a give-at time moves the dose but never the next session. On dialysis a SCr drawn after a session is replaced by that session's higher pre-dialysis reading. On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
       ${!isHD && rec && !rec.noSolution ? `<li><strong>Exposure.</strong> At steady state AUC₂₄ = daily dose ÷ CL = ${rec.dose} mg × 24/${rec.tau} ÷ ${CL_ind.toFixed(2)} L/h = <strong>${rec.auc24.toFixed(0)} mg·h/L</strong>.</li>
-      <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r)))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.</li>` : ''}
+      <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r)))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.${nLev === 0 ? ` One steady-state trough narrows it to ${escHtml(aucUncertaintyText(1, uncertaintyModelKey(r)))}; two to ${escHtml(aucUncertaintyText(2, uncertaintyModelKey(r)))}.` : ''}</li>` : ''}
       <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on 250 mg steps.</li>
     </ol>`, false);
 
@@ -12638,6 +12718,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       notes.map(noteHTML).join(''), false);
   }
   html += '</div>';
+  html = html.replace('<!--ev-empty-->', () => emptySectionsHTML(evEmpty));
 
   cont.innerHTML = html;
   bState.summaryText = summary;
@@ -12894,12 +12975,13 @@ function refreshProfileGraph() {
   requestAnimationFrame(() => {
     const gp = gotiGraphParams(r);
     const row = aucUncertaintyRow((r.levels || []).length, uncertaintyModelKey(r));
+    const nowH = Date.now() / 3600000;   // one clock for the curve and the strip: one axis
     drawProfileGraph(canvas, allDoses, r.levels, r.CL_ind, r.V_ind, r.CL_pop, r.V_pop, gp.ind, gp.pop, projDoses.length,
-                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [], arrive });
+                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [], arrive, nowH });
     let scr = [];
     try { scr = readSerialScr(); } catch (e) {}
     drawCourseStrip(document.getElementById('b-course-strip'), allDoses, projDoses.length, r.levels, scr,
-                    r.CL_ind / r.V_ind, r.hdSessions || [], arrive);
+                    r.CL_ind / r.V_ind, r.hdSessions || [], arrive, nowH);
   });
 }
 
