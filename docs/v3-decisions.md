@@ -1146,6 +1146,80 @@ Three smaller fixes:
   with a manual CrCl, and not back on a redraw after unticking it; gone after a level);
 - engine parity 0 differences against v3.9.0.
 
+## D22 — The answer first: one screen, HD without a q-interval world, nothing said twice (2026-10-30, v3.11.0)
+
+**Found.** The user asked whether the v3.10.0 results carried too much. A dual-agent critique
+(`.impeccable/critique/2026-10-30T03-50-09Z__index-html.md`, 26/40) found the problem was
+placement, not volume:
+- the default result ran 2.5–3 screens on a desktop;
+- the first-dose block (~230 px) sat between the trough and the confidence line, so confidence and
+  the next step fell under the fold and the Print button covered them at 1280 × 800;
+- on Goti-HD, "No dose now" sat above an open Regimens grid with q24h/q48h cells, a weight-based
+  guideline regimen (1.25 g q48h, AUC 1250) and a q24h projection default.
+
+**Chosen by the user** (from the critique's options, then a before/after mockup of the answer
+column on a fictional one-level case): "Close grid, hide guideline", "Answer fits one screen" and
+"Duplicates and empty rows". "Notes by relevance" and "Regimens closed by default" (for non-HD)
+were not chosen and are not in this release. The user confirmed they read the first-dose time and
+the level by then.
+
+**What changed:**
+- **Answer order:** regimen → AUC₂₄ → trough → confidence → Next → first dose (`firstBlock`, now
+  outside the regimen box). At 1280 × 800 confidence and Next sit on the first screen, clear of
+  the Print button (a browser check).
+- **First dose, one line:** "Next dose 30 Oct 18:52 (was due 08:00) · then 18:52 and 06:52 daily ·
+  level by then 6.7 mg/L · change". "change" (`k83`) opens the date and 24-hour time and puts the
+  cursor in the date; `k82` still updates only the readouts and the curve.
+- **First-day AUC₂₄ only when it leaves 400–600** (`firstDayAucHTML`), as a caution with "steady
+  state unchanged". Within the band, the steady-state AUC already answers. This narrows D20, which
+  showed it always; the user accepted it in the mockup.
+- **On paper nothing is lost:** the printed first-dose block keeps the offset against the
+  schedule, the level by then, the first-day AUC and the sentence on exposure.
+- **AUC/MIC only when MIC ≠ 1.** At MIC 1 it repeated the AUC.
+- **Goti-HD:** Regimens is closed and placed after Haemodialysis; the guideline comparison line and
+  the "Project next doses" row are not drawn. The planned dose rows already try a post-HD dose, and
+  the verdict reads them. No number changes.
+- **Said once:**
+  - the chart's summary paragraph is hidden (kept in the DOM for Copy summary); the canvas's
+    accessible name carries it, so a screen reader no longer hears it twice;
+  - the "Population estimate only" note is gone (the range, the confidence line and "0 levels" say
+    it); its useful sentence, how one or two levels narrow the range, moved to Show the math's Range
+    step.
+- **Empty sections become one line** (`emptySectionsHTML`), placed where the first one stood:
+  "Current regimen needs more maintenance doses to read a schedule. Fit vs measured needs a measured
+  level." A section with something to show stays (Models with its model advice, for example).
+- **"now" on the time axis** whenever it falls within `PROFILE_REACH_H` (72 h, the reach a planned
+  session already had) after the curve's natural end. Before a level the tail used to stop hours
+  short of now. A profile reopened days later keeps its shape. The curve and the strip now read one
+  clock per redraw, so they cannot disagree about the axis.
+
+**My calls, stated to the user before building:** the projection row is hidden on HD rather than
+re-defaulted; the population note's narrowing sentence went to Show the math; print keeps the full
+first-dose block. Two "Next" labels now sit one above the other ("Next" for the level advice, "Next
+dose"); the user saw this in the mockup and accepted it.
+
+**Not done:** notes chosen by relevance rather than severity; Regimens closed for non-HD answers;
+one "Try a regimen" in place of three trial tools. These were the critique's other findings, and
+the user left them out.
+
+**Rule 9:**
+- 38.3 and 38.5 now read the schedule offset, the first-day AUC and "exposure unchanged" from the
+  printed block, where they still are; 38.5 also checks that an out-of-band first-day AUC is said on
+  screen.
+- The arrival test's call-shape match now includes the shared clock (`arrive, nowH`).
+- The refusal guard's 600-character window was kept: the new lines were moved above it.
+
+**Tests and gates:**
+- phase2d **412/412** (SUITE 40: the one line and "change", the first-day AUC rule and the
+  printed block, the answer order and AUC/MIC, k82/k83, the HD layout, said-once, the empty-section
+  line, "now" on the axis);
+- browser flows **75/75** (the order measured on screen, one line with its controls closed,
+  "change" focusing the date, no AUC/MIC or visible summary, confidence and Next on the first screen
+  at 1280 × 800, the HD layout typed in on a phone, the empty-section line and "now" before a level);
+- rendered contrast: the new text 5.0–8.1:1, light and dark;
+- engine parity 0 differences against v3.10.0; phase3 21/21; phase4 49/49; the comprehensive suite
+  unchanged from v3.10.0.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

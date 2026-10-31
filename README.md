@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v3.10.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
+**Status: Live · v3.11.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
 course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
@@ -94,14 +94,14 @@ node phase2d_validation.cjs
 Each script extracts the math out of `index.html` in a Node `vm` sandbox, so it tests the
 shipped file rather than a copy.
 
-| Suite | Result (2026-09-29) |
+| Suite | Result (2026-10-30, v3.11.0) |
 |---|---|
-| `phase2d_validation.cjs` | **318 / 318 pass** |
+| `phase2d_validation.cjs` | **412 / 412 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** — proves a presentation change left the engine untouched |
-| `docs/audit/browser-flows.cjs` | **46 / 46** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/browser-flows.cjs` | **75 / 75** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
@@ -174,4 +174,5 @@ the six releases after it; the table below reconstructs them from git (2026-10-0
 | 3.7.0 | 2026-10-02 | One-time HD dose when the schedule is unknown; both HD answers pick the step closest to 17.5 mg/L; pre-HD above 20 holds (D17) | `f7ec425` |
 | 3.8.0 | 2026-10-02 | One-time HD dose corrected: the gap counts from the last session's start; the pre-dialysis SCr on Goti-HD; a give-at time (D19) | `028d326` |
 | 3.9.0 | 2026-10-02 | The regular regimen's first dose can be timed; schedule and level by then; dose unchanged (D20) | `f1abe4f` |
-| 3.10.0 | 2026-10-29 | Before the first level, an obese patient's regimen is shown on IBW, AdjBW and TBW; SCr as measured; dose unchanged (D21) | |
+| 3.10.0 | 2026-10-29 | Before the first level, an obese patient's regimen is shown on IBW, AdjBW and TBW; SCr as measured; dose unchanged (D21) | `0b21a24` |
+| 3.11.0 | 2026-10-30 | The answer first: confidence and Next on the first screen, the first dose on one line; on Goti-HD the q-interval grid closed after Haemodialysis, no guideline line; duplicates and empty sections gone; "now" on the axis (D22) | |
