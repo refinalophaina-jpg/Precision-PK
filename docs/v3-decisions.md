@@ -1209,13 +1209,39 @@ the user left them out.
 - The arrival test's call-shape match now includes the shared clock (`arrive, nowH`).
 - The refusal guard's 600-character window was kept: the new lines were moved above it.
 
+**Final review** (a fresh reviewer, on every gate plus its own probes at 1440, 1280 and 375 px):
+no Critical or Important finding in the change. Fixed, each with a test that failed first (40.1,
+40.2, browser flows):
+1. **The first-day AUC was judged on the raw number but shown rounded:** 399.7 read "400, below
+   400–600". It is now judged on the number shown, as D21 made the rule, on screen and in print.
+2. **The first-day caution was not announced** when a time edit moved it out of the band. Its slot
+   is now a live region that stays in the page, empty, until it has something to say.
+3. **"change" had no subject for a screen reader.** Its name is now "Change the first dose time"
+   (or "next dose").
+4. **Three browser checks did not pin their claims.** The "now on the axis" check passed before about
+   06:00 even without the change; it now runs on a fixed clock (today 23:00), and a probe confirms it
+   fails on v3.10.0. "One line" now asserts one paragraph; a new check covers a k82 edit's first-day
+   slot and "change" closing the editor.
+
+**Deferred minors** (recorded, not fixed):
+- A window resize or theme change re-renders the whole result. That closes an open first-dose editor
+  and drops a half-typed time, though the committed time survives. The full re-render predates this
+  release.
+- Projected doses are spaced in absolute hours, so across a daylight-saving change they drift an hour
+  from the first-dose line's wall-clock times. This dates from v3.9.0.
+
+**Raised for the user:** on Goti-HD the Models section suggests "Buelga 2005 … is appropriate".
+`getModelRecommendation` is never told the patient is on dialysis. The problem predates this release,
+but it is the same "second answer beside an HD verdict" that D22 removed from Regimens.
+
 **Tests and gates:**
 - phase2d **412/412** (SUITE 40: the one line and "change", the first-day AUC rule and the
   printed block, the answer order and AUC/MIC, k82/k83, the HD layout, said-once, the empty-section
   line, "now" on the axis);
-- browser flows **75/75** (the order measured on screen, one line with its controls closed,
-  "change" focusing the date, no AUC/MIC or visible summary, confidence and Next on the first screen
-  at 1280 × 800, the HD layout typed in on a phone, the empty-section line and "now" before a level);
+- browser flows **76/76** (the order measured on screen, one sentence with its controls closed,
+  "change" focusing the date and closing again, the first-day slot after an edit, no AUC/MIC or
+  visible summary, confidence and Next on the first screen at 1280 × 800, the HD layout typed in on
+  a phone, the empty-section line and "now" on a fixed clock before a level);
 - rendered contrast: the new text 5.0–8.1:1, light and dark;
 - engine parity 0 differences against v3.10.0; phase3 21/21; phase4 49/49; the comprehensive suite
   unchanged from v3.10.0.

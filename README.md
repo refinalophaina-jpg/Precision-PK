@@ -101,7 +101,7 @@ shipped file rather than a copy.
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** — proves a presentation change left the engine untouched |
-| `docs/audit/browser-flows.cjs` | **75 / 75** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/browser-flows.cjs` | **76 / 76** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
