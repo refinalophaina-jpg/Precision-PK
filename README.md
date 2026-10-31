@@ -96,12 +96,12 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-10-30, v3.11.0) |
 |---|---|
-| `phase2d_validation.cjs` | **412 / 412 pass** |
+| `phase2d_validation.cjs` | **413 / 413 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** — proves a presentation change left the engine untouched |
-| `docs/audit/browser-flows.cjs` | **76 / 76** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/browser-flows.cjs` | **77 / 77** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
@@ -175,4 +175,4 @@ the six releases after it; the table below reconstructs them from git (2026-10-0
 | 3.8.0 | 2026-10-02 | One-time HD dose corrected: the gap counts from the last session's start; the pre-dialysis SCr on Goti-HD; a give-at time (D19) | `028d326` |
 | 3.9.0 | 2026-10-02 | The regular regimen's first dose can be timed; schedule and level by then; dose unchanged (D20) | `f1abe4f` |
 | 3.10.0 | 2026-10-29 | Before the first level, an obese patient's regimen is shown on IBW, AdjBW and TBW; SCr as measured; dose unchanged (D21) | `0b21a24` |
-| 3.11.0 | 2026-10-30 | The answer first: confidence and Next on the first screen, the first dose on one line; on Goti-HD the q-interval grid closed after Haemodialysis, no guideline line; duplicates and empty sections gone; "now" on the axis (D22) | |
+| 3.11.0 | 2026-10-30 | The answer first: confidence and Next on the first screen, the first dose on one line; on Goti-HD the q-interval grid closed after Haemodialysis, no guideline line; duplicates and empty sections gone; "now" on the axis; HD model advice names Goti-HD (D22) | |

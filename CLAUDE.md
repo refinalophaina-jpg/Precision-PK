@@ -122,6 +122,8 @@ first dose, so confidence and Next sit on the first screen at 1280 × 800.
   Print keeps the whole block.
 - **AUC/MIC** only when MIC ≠ 1.
 - **Goti-HD:** Regimens is closed and follows Haemodialysis; no guideline line, no projection row.
+  The model advice is told the patient is on dialysis (`getModelRecommendation(…, onHD)`) and names
+  Goti-HD; it never suggests Buelga or Hughes there.
 - **Said once:** the chart summary is the canvas's label only (`#b-summary` hidden, kept for Copy
   summary). No "Population estimate only" note; its narrowing sentence is in Show the math.
 - **Empty evidence sections** become one line (`emptySectionsHTML`).
@@ -185,12 +187,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **412/412 pass** |
+| `phase2d_validation.cjs` | **413/413 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **76/76** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **77/77** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -332,7 +334,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 76 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 77 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |

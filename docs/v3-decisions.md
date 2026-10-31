@@ -1230,18 +1230,28 @@ no Critical or Important finding in the change. Fixed, each with a test that fai
 - Projected doses are spaced in absolute hours, so across a daylight-saving change they drift an hour
   from the first-dose line's wall-clock times. This dates from v3.9.0.
 
-**Raised for the user:** on Goti-HD the Models section suggests "Buelga 2005 … is appropriate".
-`getModelRecommendation` is never told the patient is on dialysis. The problem predates this release,
-but it is the same "second answer beside an HD verdict" that D22 removed from Regimens.
+**Raised by the reviewer, folded in at the user's choice:** on Goti-HD the Models section said
+"Suggested: Standard adult — Buelga 2005 (1-comp) is appropriate. (You are using Goti 2018.)". This
+predated the release.
+- **Cause:** `getModelRecommendation` was never told the patient is on dialysis. For the same
+  reason, an obese HD patient was told to consider Hughes, and the one-level Cunio note called Buelga
+  "often the more reliable choice".
+- **Fix:** it now takes `onHD` (Goti-HD selected, or sessions logged). On dialysis it recommends
+  Goti-HD ("the only model here that carries dialysis"), its banner suggests no other model, and the
+  Cunio note keeps the identifiability point without the switch.
+- **Off dialysis nothing changes.** The fix is advice only, never a dose; the function's return
+  shape is unchanged, so engine parity stays at 0.
+- **Tests:** SUITE 40.9, and a browser check that failed on the branch before the fix with the
+  exact text above.
 
 **Tests and gates:**
-- phase2d **412/412** (SUITE 40: the one line and "change", the first-day AUC rule and the
+- phase2d **413/413** (SUITE 40: the one line and "change", the first-day AUC rule and the
   printed block, the answer order and AUC/MIC, k82/k83, the HD layout, said-once, the empty-section
-  line, "now" on the axis);
-- browser flows **76/76** (the order measured on screen, one sentence with its controls closed,
+  line, "now" on the axis, the HD model advice);
+- browser flows **77/77** (the order measured on screen, one sentence with its controls closed,
   "change" focusing the date and closing again, the first-day slot after an edit, no AUC/MIC or
   visible summary, confidence and Next on the first screen at 1280 × 800, the HD layout typed in on
-  a phone, the empty-section line and "now" on a fixed clock before a level);
+  a phone with its model advice, the empty-section line and "now" on a fixed clock before a level);
 - rendered contrast: the new text 5.0–8.1:1, light and dark;
 - engine parity 0 differences against v3.10.0; phase3 21/21; phase4 49/49; the comprehensive suite
   unchanged from v3.10.0.
