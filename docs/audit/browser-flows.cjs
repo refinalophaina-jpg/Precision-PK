@@ -228,19 +228,51 @@ async function enterCourse(page) {
       prior: (g('.lg-pop', 'backgroundImage') || '').includes(tok('--ink-soft')) ? tok('--ink-soft') : 'missing' }; });
   ok('the key separates model from measurement', key.fit && key.fit === key.ring && key.fit !== key.data && key.prior !== key.fit && key.prior !== key.data, JSON.stringify(key));
   ok('the de-rated state is one hue ("provisional" and the confidence word)', look.confColour === look.provColour, look.confColour + ' / ' + look.provColour);
+  // v3.11.0 (D22): the answer first. The verdict reads regimen, AUC, trough, then confidence
+  // and Next, then the first dose on one line; AUC/MIC is not repeated at MIC 1; the chart's
+  // summary is the canvas's label only. At 1280 × 800 confidence and Next are on the first screen.
+  const answer = await page.evaluate(() => {
+    const v = document.querySelector('#b-results .vx-verdict'), at = (s) => { const e = v.querySelector(s); return e ? e.getBoundingClientRect().top : -1; };
+    const first = v.querySelector('.vx-first'), edit = document.getElementById('b-first-edit'), sum = document.getElementById('b-summary');
+    return { order: ['#vx-regimen', '.vx-auc', '.vx-rec .vx-sub', '.vx-conf', '.vx-next', '.vx-first'].map(at),
+      firstText: first ? first.textContent.replace(/\s+/g, ' ').trim() : '', firstLines: first ? Math.round(first.getBoundingClientRect().height / parseFloat(getComputedStyle(first).lineHeight)) : 0,
+      editHidden: !!edit && edit.hidden && !edit.offsetParent, aucMic: /AUC\/MIC/.test(v.textContent),
+      summaryShown: !!sum && !!sum.offsetParent, summaryKept: !!sum && sum.textContent.length > 20,
+      canvasLabel: /^Concentration–time curve\. /.test(document.getElementById('b-profile-canvas').getAttribute('aria-label') || '') };
+  });
+  ok('the answer reads regimen → AUC → trough → confidence → Next → first dose',
+     answer.order.every(t => t >= 0) && answer.order.every((t, i, a) => i === 0 || t > a[i - 1]), JSON.stringify(answer.order));
+  ok('the first dose is one line, time and level by then, with "change"; its date and time closed',
+     /level by then [\d.]+ mg\/L · change$/.test(answer.firstText) && answer.editHidden, JSON.stringify(answer));
+  ok('said once: no AUC/MIC at MIC 1; the chart summary is the canvas label, not a paragraph',
+     !answer.aucMic && !answer.summaryShown && answer.summaryKept && answer.canvasLabel, JSON.stringify(answer));
+  await page.setViewportSize({ width: 1280, height: 800 }); await page.waitForTimeout(500);
+  await page.evaluate(() => { const t = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + t.getBoundingClientRect().top - 72, behavior: 'instant' }); });
+  await page.waitForTimeout(250);
+  const fold = await page.evaluate(() => { const b = (s) => { const e = document.querySelector('#b-results ' + s); return e ? Math.round(e.getBoundingClientRect().bottom) : 99999; };
+    const fab = document.querySelector('.print-fab'), f = fab && fab.getBoundingClientRect(), n = document.querySelector('#b-results .vx-next').getBoundingClientRect();
+    return { conf: b('.vx-conf'), next: b('.vx-next'), h: innerHeight, clearOfFab: !f || n.bottom <= f.top || n.right <= f.left || n.top >= f.bottom }; });
+  ok('at 1280 × 800 confidence and Next sit on the first screen, clear of the Print button',
+     fold.conf <= fold.h && fold.next <= fold.h && fold.clearOfFab, JSON.stringify(fold));
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(400);
   // v3.9.0: the recommended regimen's first dose can be timed — typed "1200" (no colon) reads
-  // 12:00; the readout says where that sits against the schedule and the level by then.
+  // 12:00; the line follows it with the level by then. v3.11.0: "change" opens the date and
+  // time and puts the cursor in the date.
   // Tomorrow, typed segment by segment (MMDDYYYY) the way a keyboard user does — a full
   // re-render on each segment once made the date untypable (final review, v3.9.0).
   const DAY1 = day(1);
+  await page.locator('#b-results [data-onclick="k83"]').click(); await page.waitForTimeout(150);
+  const opened = await page.evaluate(() => ({ focus: document.activeElement && document.activeElement.id,
+    expanded: document.querySelector('#b-results [data-onclick="k83"]').getAttribute('aria-expanded'), shown: !!document.getElementById('b-first-edit').offsetParent }));
+  ok('"change" opens the first dose\'s date and time and focuses the date', opened.focus === 'b-first-date' && opened.expanded === 'true' && opened.shown, JSON.stringify(opened));
   { const [yy, mm, dd] = DAY1.split('-'); await page.locator('#b-first-date').focus(); await page.keyboard.type(mm + dd + yy); await page.waitForTimeout(300); }
   await typeInto(page, '#b-first-time', '1200'); await page.locator('#b-first-time').press('Tab');
   await page.waitForTimeout(400);
   const first = await page.evaluate(() => ({ t: (document.getElementById('b-first-time') || {}).value, d: (document.getElementById('b-first-date') || {}).value,
     line: ((document.querySelector('#b-results .vx-first') || {}).textContent || '').replace(/\s+/g, ' '),
-    level: /Level by then [\d.]+ mg\/L/.test(document.querySelector('#b-results .vx-verdict').textContent) }));
+    level: /level by then [\d.]+ mg\/L/.test((document.querySelector('#b-results .vx-first') || {}).textContent || '') }));
   ok('the first dose of the recommended regimen can be timed; the readout follows the typed time',
-     first.d === DAY1 && first.t === '12:00' && /12:00/.test(first.line) && /(before|after|on) the q\d+h schedule/.test(first.line) && first.level, JSON.stringify(first));
+     first.d === DAY1 && first.t === '12:00' && /12:00/.test(first.line) && first.level, JSON.stringify(first));
   ok('the save action is ink, not purple', look.saveColour === look.ink, look.saveColour);
   ok('model selection is not a border', look.cardBorders[0] === look.cardBorders[1], JSON.stringify(look.cardBorders));
   ok('the privacy note is not a box inside the profiles box', look.noteBox === '0px', look.noteBox);
@@ -450,6 +482,12 @@ async function enterCourse(page) {
   ok('HD sessions: shown for Goti-HD; a level reads against the session as typed', hdShown && hdRb.some(t => /after HD session 1 ended/.test(t)), JSON.stringify(hdRb));
   ok('HD sessions: pre-HD read at the planned session, assumption stated; both sessions banded; no overflow',
      /Pre-HD Session 2, .*fitted [\d.]+ mg\/L if no further dose is given/.test(hdRes.pre) && hdRes.bands === 2 && hdRes.section && hdRes.sw <= hdRes.iw, JSON.stringify(hdRes));
+  // v3.11.0 (D22): beside an HD answer, no open q-interval world — Regimens closed and after
+  // Haemodialysis, no weight-based guideline regimen, no q-interval projection row.
+  const hdLayout = await m.evaluate(() => { const ids = [...document.querySelectorAll('#b-results details.ev')].map(d => d.id), rg = document.getElementById('ev-regimens');
+    return { ids, regOpen: !!rg && rg.open, guideline: !!document.querySelector('#b-results .guideline-line'), proj: !!document.getElementById('b-proj-fwd') }; });
+  ok('HD: Regimens closed and after Haemodialysis; no guideline regimen; no projection row',
+     hdLayout.ids.indexOf('ev-regimens') > hdLayout.ids.indexOf('ev-hd') && hdLayout.ids.indexOf('ev-hd') >= 0 && !hdLayout.regOpen && !hdLayout.guideline && !hdLayout.proj, JSON.stringify(hdLayout));
   await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
   await m.waitForTimeout(250);
   await m.screenshot({ path: path.join(OUT, 'mobile-hd.png') });
@@ -559,6 +597,16 @@ async function enterCourse(page) {
     ok('one renal note on screen: the augmented-clearance advisory carries the weights, its actions under "if truly augmented"',
        renal.length === 1 && /Augmented renal clearance suspected/.test(renal[0]) && /CrCl depends on the weight used/.test(renal[0])
        && /If clearance is truly augmented:/.test(renal[0]), JSON.stringify(renal).slice(0, 400));
+    // v3.11.0 (D22), before any level: sections with nothing to show are one line; no
+    // "population estimate only" note; "now" is on the time axis (one dose yesterday).
+    const pre = await s.evaluate(() => ({ ids: [...document.querySelectorAll('#b-results details.ev')].map(d => d.id),
+      empty: [...document.querySelectorAll('#b-results .ev-empty')].map(p => p.textContent.replace(/\s+/g, ' ').trim()),
+      popNote: /Population estimate only/.test(document.getElementById('b-results').textContent),
+      now: !!document.querySelector('#b-course-strip line.now') }));
+    // Models stays: at BMI 43 it carries the model advice (Hughes), so it has something to show.
+    ok('before a level: empty sections are one line saying what each needs; no population-only note; "now" on the axis',
+       pre.empty.length === 1 && /Current regimen needs more maintenance doses to read a schedule\. Fit vs measured needs a measured level\./.test(pre.empty[0])
+       && !pre.ids.includes('ev-current') && !pre.ids.includes('ev-fit') && pre.ids.includes('ev-models') && !pre.popNote && pre.now, JSON.stringify(pre));
     await s.locator('[data-onclick="k1"]').click();
     await s.locator('#crcl-override-on').check();
     await typeInto(s, '#crcl-override-val', '117');
