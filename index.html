@@ -10522,7 +10522,10 @@ function updateScrTrendDisplay() {
 }
 
 // ─── Model selection recommendation (2C.1 + Phase 3 Hughes for obese) ───
-function getModelRecommendation(nLevels, isICU, tbw, htCm) {
+// onHD: Goti-HD selected or haemodialysis sessions logged (v3.11.0, D22). Only Goti-HD
+// carries dialysis, so on HD the advice names it and suggests nothing else: before, it
+// was never told, and an HD patient read "Standard adult — Buelga 2005 is appropriate".
+function getModelRecommendation(nLevels, isICU, tbw, htCm, onHD) {
   const htM  = htCm && htCm > 0 ? htCm / 100 : null;
   const bmi  = htM ? tbw / (htM * htM) : null;
   // HUGHES IS A CLASS-3 MODEL. Hughes 2024 enrolled only patients with
@@ -10538,7 +10541,10 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
   let reason      = 'Standard adult — Buelga 2005 (1-comp) is appropriate';
   let advisory    = null;
 
-  if (isClass3) {
+  if (onHD) {
+    recommended = 'gotihd';
+    reason = 'On intermittent haemodialysis — Goti 2018 · HD is the only model here that carries dialysis';
+  } else if (isClass3) {
     recommended = 'hughes';
     reason = `Class 3 obesity (BMI ${bmi.toFixed(1)} ≥ ${HUGHES_MIN_BMI}) — Hughes 2024 is fitted to exactly this population`;
   } else if (isObeseSub40) {
@@ -10569,9 +10575,10 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
   const oneLevelGotiNote = (nLevels === 1)
     ? 'With a single concentration, individual parameter precision is limited — a 2-compartment '
     + 'fit estimates three individual parameters and one level cannot separate them, so the '
-    + 'population prior largely determines the answer (Cunio 2021). Buelga 1-comp is often the '
-    + 'more reliable choice at one level; a second concentration resolves this far better than '
-    + 'changing model.'
+    + 'population prior largely determines the answer (Cunio 2021). '
+    + (onHD ? 'A second concentration resolves this.'
+            : 'Buelga 1-comp is often the more reliable choice at one level; a second concentration '
+            + 'resolves this far better than changing model.')
     : null;
 
   return { recommended, reason, advisory, isObese, isClass3, bmi, oneLevelGotiNote };
@@ -10580,6 +10587,7 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm) {
 function renderModelBanner(rec, currentModel) {
   const lines = [];
   const modelLabel = m =>
+    m === 'gotihd' ? 'Goti 2018 · HD' :
     m === 'goti'   ? 'Goti 2018'  :
     m === 'hughes' ? 'Hughes 2024 (obese)' :
                      'Buelga 2005';
@@ -10593,7 +10601,10 @@ function renderModelBanner(rec, currentModel) {
       ${ICON.info} <strong>Model matches patient profile:</strong> ${rec.reason}.
     </span>`);
   }
-  if (rec.isClass3 && currentModel !== 'hughes') {
+  // On dialysis nothing points away from the one model that carries it (v3.11.0, D22).
+  if (rec.recommended === 'gotihd') {
+    // the suggestion or the match above is the whole advice
+  } else if (rec.isClass3 && currentModel !== 'hughes') {
     lines.push(`<div class="model-rec-banner model-rec-obese" style="margin-top:4px">
       ${ICON.caution} <strong>Class 3 obesity (BMI ${rec.bmi ? rec.bmi.toFixed(1) : '≥ 40'}):</strong> Buelga and Goti were not developed in obese populations. Consider switching to <strong>Hughes 2024</strong> — derived in N=83 patients with BMI ≥ 40, externally validated in 576 patients across 74 organizations.
     </div>`);
@@ -10738,7 +10749,7 @@ function runBayesian() {
   }
 
   // ── Phase 2C: model recommendation, guideline dose, SCr trend ──
-  const modelRec = getModelRecommendation(filteredLevels.length, isICU, tbw, htCm);
+  const modelRec = getModelRecommendation(filteredLevels.length, isICU, tbw, htCm, !!bState.dial || sessions.length > 0);
   const guidDose = computeGuidelineDose(tbw, crcl);
   updateScrTrendDisplay();
 
@@ -12385,7 +12396,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   {
     const ag = agAll;                        // computed once above
     let body = '', gist = 'One model fitted';
-    if (p2c.modelRec) body += `<div class="ev-banner">${renderModelBanner(p2c.modelRec, r.model)}</div>`;
+    if (p2c.modelRec) body += `<div class="ev-banner">${renderModelBanner(p2c.modelRec, isHD ? 'gotihd' : r.model)}</div>`;
     if (ag && isFinite(ag.diffPct)) {
       const onReg = agOn === 'detected'
         ? `the detected ${fmtRegimen(cur2.dose, cur2.tau)}`

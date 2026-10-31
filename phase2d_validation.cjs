@@ -5182,6 +5182,30 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/profileDomain\(doses, kelInd, opts\.sessions, levels, tNow\)/.test(bodyOf40('drawProfileGraph')), 'the curve');
     assert(/profileDomain\(doses, kelInd, sessions, levels, tNow\)/.test(bodyOf40('drawCourseStrip')), 'the strip');
   });
+  // Final review (v3.11.0), raised by the reviewer and approved by the user: the model advice was
+  // never told the patient is on dialysis, so Goti-HD read "Standard adult — Buelga 2005 is
+  // appropriate", an obese HD patient was pointed at Hughes, and the one-level note called Buelga
+  // "more reliable" — a second answer beside an HD verdict, the thing D22 removes.
+  test('40.9 on dialysis the model advice names Goti-HD and never suggests a model that does not carry dialysis', () => {
+    const hd = sandbox.getModelRecommendation(1, false, 80, 175, true);
+    assert(hd.recommended === 'gotihd' && /haemodialysis/.test(hd.reason) && /Goti 2018 · HD/.test(hd.reason), JSON.stringify(hd).slice(0, 300));
+    assert(hd.oneLevelGotiNote && /Cunio 2021/.test(hd.oneLevelGotiNote) && !/Buelga/.test(hd.oneLevelGotiNote), 'one level on HD: identifiability said, no switch to Buelga');
+    const match = sandbox.renderModelBanner(hd, 'gotihd');
+    assert(/Model matches patient profile/.test(match) && !/Suggested/.test(match), match.slice(0, 300));
+    const obeseHD = sandbox.getModelRecommendation(0, false, 130, 160, true);
+    assert(obeseHD.recommended === 'gotihd', 'class 3 obesity on HD: still Goti-HD');
+    const ob = sandbox.renderModelBanner(obeseHD, 'gotihd');
+    assert(!/Consider switching to <strong>Hughes/.test(ob) && !/Buelga 2005 came from/.test(ob), `no switch away from the dialysis model: ${ob.slice(0, 400)}`);
+    const onBuelga = sandbox.renderModelBanner(hd, 'buelga');
+    assert(/Suggested:<\/strong> On intermittent haemodialysis/.test(onBuelga) && /You are using Buelga 2005/.test(onBuelga), onBuelga.slice(0, 300));
+    // Off dialysis nothing changes.
+    assert(sandbox.getModelRecommendation(0, false, 80, 175, false).recommended === 'buelga', 'standard adult');
+    assert(sandbox.getModelRecommendation(0, false, 130, 160, false).recommended === 'hughes', 'class 3 obesity');
+    assert(/Buelga 1-comp is often the more reliable choice/.test(sandbox.getModelRecommendation(1, false, 80, 175, false).oneLevelGotiNote), 'the non-HD note unchanged');
+    // Wiring: told about dialysis from the model or logged sessions; the banner compares against Goti-HD.
+    assert(/getModelRecommendation\(filteredLevels\.length, isICU, tbw, htCm, !!bState\.dial \|\| sessions\.length > 0\)/.test(bodyOf40('runBayesian')), 'runBayesian tells it');
+    assert(/renderModelBanner\(p2c\.modelRec, isHD \? 'gotihd' : r\.model\)/.test(bodyOf40('renderBayesianResults')), 'the banner knows Goti-HD');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

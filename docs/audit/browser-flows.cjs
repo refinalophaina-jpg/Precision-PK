@@ -494,9 +494,12 @@ async function enterCourse(page) {
   // v3.11.0 (D22): beside an HD answer, no open q-interval world — Regimens closed and after
   // Haemodialysis, no weight-based guideline regimen, no q-interval projection row.
   const hdLayout = await m.evaluate(() => { const ids = [...document.querySelectorAll('#b-results details.ev')].map(d => d.id), rg = document.getElementById('ev-regimens');
-    return { ids, regOpen: !!rg && rg.open, guideline: !!document.querySelector('#b-results .guideline-line'), proj: !!document.getElementById('b-proj-fwd') }; });
+    return { ids, regOpen: !!rg && rg.open, guideline: !!document.querySelector('#b-results .guideline-line'), proj: !!document.getElementById('b-proj-fwd'),
+      advice: ((document.querySelector('#ev-models .ev-banner') || {}).textContent || '').replace(/\s+/g, ' ').trim() }; });
   ok('HD: Regimens closed and after Haemodialysis; no guideline regimen; no projection row',
      hdLayout.ids.indexOf('ev-regimens') > hdLayout.ids.indexOf('ev-hd') && hdLayout.ids.indexOf('ev-hd') >= 0 && !hdLayout.regOpen && !hdLayout.guideline && !hdLayout.proj, JSON.stringify(hdLayout));
+  ok('HD: the model advice names Goti-HD and suggests no model without dialysis',
+     /Model matches patient profile: On intermittent haemodialysis/.test(hdLayout.advice) && !/Buelga|Hughes/.test(hdLayout.advice), hdLayout.advice);
   await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
   await m.waitForTimeout(250);
   await m.screenshot({ path: path.join(OUT, 'mobile-hd.png') });
