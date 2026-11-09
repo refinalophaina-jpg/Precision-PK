@@ -5372,6 +5372,27 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(calc.indexOf("state.calcMode === 'pd'") > 0 && calc.indexOf("state.calcMode === 'pd'") < calc.indexOf('validateFields('), 'the PD branch comes before the demographics are validated');
     assert(/calcVd\('bauer', 0, 1, 0\)/.test(body('readPdForm')) && /MATZKE_VD_GROUP3/.test(body('readPdForm')), 'the volumes come from the existing sources');
   });
+  test('41.14 the answer on screen: verdict first, then the next draw, the options with the pick marked, the decline in words, context labelled; the chart in CSS classes only', () => {
+    const b = ask(fict(), { goal: { min: 15, max: 20 }, settings: { maxDoseMg: null, targetPeak: null, amLabs: '07:00' } });
+    const html = sandbox.pdResultsHTML(b, { course: fict(), goal: { min: 15, max: 20 } }, H(3, '09:00'));
+    const at = (x) => html.indexOf(x);
+    assert(at('pd-verdict') > 0 && at('pd-verdict') < at('pd-options') && at('pd-options') < at('pd-decline'), 'order');
+    assert(new RegExp(`Give <span class="rec-dose">${sandbox.fmtDose(b.pick.mg).replace('.', '\\.')}</span> IV`).test(html) && /Draw the next level/.test(html), html.slice(0, 600));
+    assert(new RegExp(`<tr class="is-rec"[^>]*>\\s*<th scope="row">${sandbox.fmtDose(b.pick.mg).replace('.', '\\.')}`).test(html), 'the recommended row is marked');
+    assert(/within 24 h of a dose ending/.test(html) && /published APD\/CAPD values \(context only\)/i.test(html), 'flags in words; context labelled');
+    const svg = sandbox.pdChartSVG(b, { course: fict(), goal: { min: 15, max: 20 } }, H(3, '09:00'));
+    assert((svg.match(/<circle[^>]*class="pd-lv"/g) || []).length === 2 && /<path[^>]*class="pd-band"/.test(svg) && (svg.match(/<rect[^>]*class="pd-cycler"/g) || []).length >= 1 && /class="pd-goal"/.test(svg), svg.slice(0, 400));
+    assert(!/#[0-9a-f]{3,6}\b|rgba?\(/i.test(svg), 'no colour literals: CSS tokens only');
+    assert(/Give 500 mg|Give [\d.]+ g|Give \d+ mg/.test(sandbox.pdSummaryText(b)), sandbox.pdSummaryText(b));
+    const early = ask(fict(), { settings: { maxDoseMg: null, targetPeak: null, amLabs: '05:00' } });
+    assert(early.cautions.some(c => /cycler/i.test(c.word) && /06:30/.test(c.html)), JSON.stringify(early.cautions));
+    // ...and the verdict never says "after the cycler" for a draw that falls on it.
+    const verdictOf = (h) => h.slice(h.indexOf('pd-verdict'), h.indexOf('</section>', h.indexOf('pd-verdict')));
+    assert(early.drawOnCycler === true && !/after the cycler/.test(verdictOf(sandbox.pdResultsHTML(early, { course: fict() }, H(3, '09:00')))), 'no contradiction with the caution');
+    assert(/after the cycler/.test(verdictOf(html)), 'a 07:00 draw after a cycler that ends at 06:30 says so');
+    const refused = sandbox.pdResultsHTML(ask(fict(), { goal: null }), { course: fict() }, H(3, '09:00'));
+    assert(/Choose a goal range/.test(refused) && !/pd-options/.test(refused), 'a refusal shows no options');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
