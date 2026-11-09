@@ -5655,6 +5655,9 @@ function calcVd(model, age, tbw, crcl) {
 const MATZKE_VD_CRCL_BREAK = 60;
 // n-weighted mean Vd across all 56 Matzke patients (see calcVd).
 const MATZKE_VD_POOLED = 0.8752;
+// Matzke 1984 group III, CrCl < 10 (n = 36): Vd 0.90 +/- 0.21 L/kg (see calcVd). Offered
+// as the alternative volume for patients on peritoneal dialysis (D23).
+const MATZKE_VD_GROUP3 = 0.90;
 function nearMatzkeBreak(crcl) { return Math.abs(crcl - MATZKE_VD_CRCL_BREAK) <= 5; }
 
 // 1-compartment IV infusion equations — steady state
@@ -8358,6 +8361,104 @@ function hdViewFor(r, gapH, giveAtH) {
   const rec = hdNextDose(r, nowH);
   return { nowH, rec: rec.need ? hdOneTimeDose(r, nowH, gapH, giveAtH) : rec };
 }
+// ══════════════════════════════════════════
+//  PERITONEAL DIALYSIS — IV vancomycin by level (D23, v3.12.0)
+// ══════════════════════════════════════════
+// No population model drives a dose here. No validated PD model exists (the one
+// adult model, Hartinger 2023, is CAPD and intraperitoneal, single-centre and
+// unvalidated), and ISPD 2022 gives no IV vancomycin dose. The patient's own
+// levels measure the decline; the cycler schedule says where each level sits.
+//
+// Loading dose: institutional convention, not a guideline value. Northwestern
+// Medicine IV vancomycin protocol (2026, public): 20 mg/kg actual body weight.
+const PD_LOAD_MG_PER_KG = 20;
+// PREFERENCE (rule 8): a level drawn this soon after a dose ended may still be
+// falling through distribution, so its interval can overstate the decline
+// (Montañés-Pauls 2012: apparent half-life 29 h over 4–24 h, 62 h over 24–48 h).
+// It labels an interval; it never changes a dose.
+const PD_EARLY_LEVEL_H = 24;
+// Context only, never a dose: IV vancomycin half-life on APD, on the cycler and
+// off it (Manley HJ et al., Perit Dial Int 2001; PMID 11587401).
+const PD_APD_T12_ON_H  = 11.6;
+const PD_APD_T12_OFF_H = 62.8;
+// Context only: the CAPD half-life range in Lam E et al., Perit Dial Int 2020 (PMC9847573).
+const PD_CAPD_T12_MIN_H = 66;
+const PD_CAPD_T12_MAX_H = 115;
+// Search bounds for an interval's elimination rate (half-life 2 h to ~290 days):
+// numerical, not clinical.
+const PD_K_SEARCH = [1e-4, 0.35];
+
+// Every nominal cycler night overlapping [fromH, toH), held or not. A night starts
+// at the same wall-clock time on each calendar day, across a DST change (no
+// "+24 h" arithmetic, SUITE 19), and runs its hours of real time. Nothing starts
+// once PD has stopped. CAPD has no cycler.
+function pdNominalSessions(schedule, fromH, toH) {
+  const sc = schedule || {};
+  if (!(sc.modality === 'ccpd' || sc.modality === 'nipd') || !isClock24(sc.startClock) || !(sc.hours > 0)) return [];
+  const [hh, mm] = sc.startClock.split(':').map(Number);
+  const held = new Set(sc.heldDates || []);
+  const d0 = new Date((fromH - sc.hours - 24) * 3600000);
+  const out = [];
+  for (let i = 0; i < 400; i++) {
+    const day = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i, hh, mm);
+    const startH = day.getTime() / 3600000, endH = startH + sc.hours;
+    if (startH >= toH || (sc.stoppedAtH != null && startH >= sc.stoppedAtH)) break;
+    if (endH > fromH) { const dateKey = localDateStr(day); out.push({ startH, endH, dateKey, held: held.has(dateKey) }); }
+  }
+  return out;
+}
+// The cycler nights that ran (held nights omitted).
+function pdSessions(schedule, fromH, toH) {
+  return pdNominalSessions(schedule, fromH, toH).filter(x => !x.held).map(({ startH, endH, dateKey }) => ({ startH, endH, dateKey }));
+}
+// The decline between consecutive levels, from the patient's own data. Each
+// interval runs from an anchor (a measured level, or the first dose when the
+// patient had no vancomycin before it) to the next level; k is the elimination
+// rate that carries the anchor, plus every dose in between, onto the measured
+// level, one-compartment with V = vdPerKg x the weight at the load.
+function pdIntervals(course) {
+  const c = course || {};
+  const doses  = (c.doses  || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const levels = (c.levels || []).slice().sort((a, b) => a.timeH - b.timeH);
+  for (const l of levels) for (const d of doses) {
+    if (l.timeH > d.timeH && l.timeH < d.timeH + d.tinfH)
+      throw new Error(`The level at ${fmtClock(l.timeH)} was drawn during the infusion of ${fmtDose(d.mg)}. A level has to follow the end of the infusion.`);
+  }
+  const vL = (c.vdPerKg || 0) * (c.loadKg || c.nowKg || 0);
+  const sc = c.schedule || {};
+  const out = [];
+  let anchor = doses.length && (!levels.length || doses[0].timeH < levels[0].timeH)
+    ? { kind: 'dose', timeH: doses[0].timeH, conc: 0 } : null;
+  for (const l of levels) {
+    if (anchor) out.push(pdInterval(anchor, l, doses, vL, sc, c.prior === 'no'));
+    anchor = { kind: 'level', timeH: l.timeH, conc: l.conc };
+  }
+  return out;
+}
+function pdInterval(anchor, level, doses, vL, sc, naive) {
+  const t = level.timeH, ta = anchor.timeH, flags = [];
+  const nights = pdNominalSessions(sc, ta, t).filter(x => x.startH >= ta && x.startH < t);
+  const nightsDone = nights.filter(x => !x.held).length, nightsHeld = nights.length - nightsDone;
+  if (nightsHeld) flags.push('held-night');
+  if (pdSessions(sc, t, t + 1e-6).some(x => x.startH <= t && t < x.endH)) flags.push('on-cycler');
+  const ends = doses.map(d => d.timeH + d.tinfH).filter(e => e <= t);
+  if (ends.length && t - Math.max(...ends) < PD_EARLY_LEVEL_H) flags.push('early');
+  if (sc.stoppedAtH != null && t <= sc.stoppedAtH) flags.push('before-stop');
+  const base = { fromH: ta, toH: t, anchor: anchor.kind, conc: level.conc, hours: t - ta, nightsDone, nightsHeld, vL };
+  const none = (flag) => Object.assign(base, { k: null, t12: null, flags: flags.concat(flag), used: false });
+  // Drug from before the first dose entered may still be on board: the first
+  // dose cannot be treated as a start from zero (builder-check answer 1).
+  if (anchor.kind === 'dose' && !naive) return none('prior-drug');
+  const dosesIn = doses.filter(d => d.timeH < t && (anchor.kind === 'dose' || d.timeH >= ta));
+  const pred = (k) => anchor.conc * Math.exp(-k * (t - ta)) + (vL > 0 ? predictConc1comp(dosesIn, t, k, vL) : 0);
+  let [lo, hi] = PD_K_SEARCH;
+  if (!(vL > 0) || pred(lo) < level.conc) return none('unexplained-high');
+  if (pred(hi) > level.conc) return none('unexplained-low');
+  for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pred(m) > level.conc) lo = m; else hi = m; }
+  const k = (lo + hi) / 2;
+  return Object.assign(base, { k, t12: Math.LN2 / k, flags, used: true });
+}
+
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
 // Trough-module guard (D16): an HD patient gets this notice, never a number.

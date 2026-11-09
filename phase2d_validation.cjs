@@ -5209,6 +5209,77 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 41 — IV vancomycin on peritoneal dialysis (v3.12.0, D23)
+//
+// A level-based mode, not a model: the patient's own decline between levels,
+// placed against the cycler schedule. Fictional CCPD patients throughout; no
+// population PD model drives a dose (no validated one exists, D23).
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 41 — peritoneal dialysis, IV (v3.12.0)');
+  console.log(`${'─'.repeat(60)}`);
+  const K41 = require('./harness_constants.cjs').extract();
+  // Hours since the epoch at a local wall-clock time, days from 10 Jun 2026 (no DST nearby).
+  const H = (d, hm) => { const [h, m] = hm.split(':').map(Number); return new Date(2026, 5, 10 + d, h, m).getTime() / 3600000; };
+  const dk = (d) => sandbox.localDateStr(new Date(2026, 5, 10 + d, 12, 0));
+  const ccpd = (extra) => Object.assign({ modality: 'ccpd', startClock: '21:00', hours: 10, heldDates: [], stoppedAtH: null }, extra || {});
+  const course = (extra) => Object.assign({ doses: [], levels: [], loadKg: 60, nowKg: 60, vdPerKg: 0.7, prior: 'no', schedule: ccpd() }, extra || {});
+  test('41.1 sessions: one per night from the start clock; held nights and nights after PD stopped omitted; CAPD has none', () => {
+    const s = sandbox.pdSessions(ccpd({ heldDates: [dk(1)] }), H(0, '00:00'), H(3, '00:00'));
+    assert(s.map(x => x.dateKey).join() === [dk(-1), dk(0), dk(2)].join(), JSON.stringify(s.map(x => x.dateKey)));
+    assert(s.every(x => Math.abs(x.endH - x.startH - 10) < 1e-9 && sandbox.localTimeStr(new Date(x.startH * 3600000)) === '21:00'), 'start clock and length');
+    assert(sandbox.pdSessions(ccpd({ modality: 'nipd' }), H(0, '00:00'), H(3, '00:00')).length === 4, 'NIPD: the same cycler nights');
+    assert(sandbox.pdSessions(ccpd({ modality: 'capd' }), H(0, '00:00'), H(3, '00:00')).length === 0, 'CAPD: no cycler');
+    const st = sandbox.pdSessions(ccpd({ stoppedAtH: H(1, '12:00') }), H(0, '00:00'), H(3, '00:00'));
+    assert(st.map(x => x.dateKey).join() === [dk(-1), dk(0)].join(), 'nothing after PD stopped');
+  });
+  test('41.2 from a naive load: k reproduces the measured level with V = vdPerKg x load weight; cycler nights counted', () => {
+    const c = course({ doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }], levels: [{ conc: 13.0, timeH: H(2, '07:30') }] });
+    const iv = sandbox.pdIntervals(c);
+    assert(iv.length === 1 && iv[0].anchor === 'dose' && iv[0].used === true && iv[0].k > 0, JSON.stringify(iv));
+    assert(Math.abs(sandbox.predictConc1comp(c.doses, iv[0].toH, iv[0].k, 42) - 13.0) < 1e-6, 'the level is reproduced');
+    assert(Math.abs(iv[0].t12 - Math.LN2 / iv[0].k) < 1e-9 && iv[0].vL === 42, 'half-life and the volume used');
+    assert(iv[0].nightsDone === 2 && iv[0].nightsHeld === 0 && iv[0].flags.length === 0, JSON.stringify(iv[0]));
+  });
+  test('41.3 vancomycin before the first dose: a level drawn before the first IV dose anchors; without one the first interval is not used', () => {
+    const c = course({ prior: 'unknown', doses: [{ mg: 750, tinfH: 1, timeH: H(0, '09:00') }],
+      levels: [{ conc: 11, timeH: H(0, '06:00') }, { conc: 13, timeH: H(1, '08:30') }] });
+    const iv = sandbox.pdIntervals(c);
+    assert(iv.length === 1 && iv[0].anchor === 'level' && iv[0].fromH === H(0, '06:00') && iv[0].used, JSON.stringify(iv));
+    const y = sandbox.pdIntervals(course({ prior: 'yes', doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }], levels: [{ conc: 13, timeH: H(2, '07:30') }] }));
+    assert(y.length === 1 && y[0].flags.includes('prior-drug') && y[0].used === false && y[0].k === null, JSON.stringify(y));
+  });
+  test('41.4 flags: early after a dose, on the cycler, a held night; rows sorted; a level inside an infusion is refused', () => {
+    const doses = [{ mg: 500, tinfH: 1, timeH: H(2, '09:00') }, { mg: 1000, tinfH: 1, timeH: H(0, '03:30') }];
+    const iv = sandbox.pdIntervals(course({ doses, levels: [{ conc: 15.5, timeH: H(3, '07:30') }, { conc: 13, timeH: H(2, '07:30') }] }));
+    assert(iv.length === 2 && iv[1].anchor === 'level' && iv[1].flags.includes('early') && iv[1].used && !iv[0].flags.includes('early'), JSON.stringify(iv.map(x => x.flags)));
+    const oc = sandbox.pdIntervals(course({ doses: [doses[1]], levels: [{ conc: 13.5, timeH: H(2, '02:00') }] }));
+    assert(oc[0].flags.includes('on-cycler'), JSON.stringify(oc[0].flags));
+    const held = sandbox.pdIntervals(course({ doses: [doses[1]], levels: [{ conc: 13, timeH: H(2, '07:30') }], schedule: ccpd({ heldDates: [dk(1)] }) }));
+    assert(held[0].nightsHeld === 1 && held[0].nightsDone === 1 && held[0].flags.includes('held-night'), JSON.stringify(held[0]));
+    let threw = '';
+    try { sandbox.pdIntervals(course({ doses: [doses[1]], levels: [{ conc: 30, timeH: H(0, '04:00') }] })); } catch (e) { threw = e.message; }
+    assert(/during the infusion/.test(threw), threw || 'no error');
+  });
+  test('41.5 a level the doses cannot explain names the volume; intervals before PD stopped are flagged', () => {
+    const hi = sandbox.pdIntervals(course({ doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }], levels: [{ conc: 30, timeH: H(1, '08:00') }] }));
+    assert(hi[0].flags.includes('unexplained-high') && hi[0].used === false && hi[0].k === null && hi[0].vL === 42, JSON.stringify(hi[0]));
+    const st = sandbox.pdIntervals(course({ schedule: ccpd({ stoppedAtH: H(2, '12:00') }),
+      doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }, { mg: 500, tinfH: 1, timeH: H(2, '09:00') }],
+      levels: [{ conc: 13, timeH: H(2, '07:30') }, { conc: 16, timeH: H(4, '07:30') }] }));
+    assert(st[0].flags.includes('before-stop') && !st[1].flags.includes('before-stop'), JSON.stringify(st.map(x => x.flags)));
+    assert(st[1].nightsDone === 0, 'no cycler nights after PD stopped');
+  });
+  test('41.6 DST: cycler nights keep their wall-clock start across 1 Nov 2026; the session runs its hours of real time', () => {
+    const from = new Date(2026, 9, 31, 12, 0).getTime() / 3600000, to = new Date(2026, 10, 2, 12, 0).getTime() / 3600000;
+    const s = sandbox.pdSessions(ccpd({ hours: 9 }), from, to);
+    assert(s.length === 2 && s.every(x => sandbox.localTimeStr(new Date(x.startH * 3600000)) === '21:00' && Math.abs(x.endH - x.startH - 9) < 1e-9), JSON.stringify(s));
+    assert(K41.PD_LOAD_MG_PER_KG === 20 && K41.PD_EARLY_LEVEL_H === 24 && K41.PD_APD_T12_ON_H === 11.6 && K41.PD_APD_T12_OFF_H === 62.8 && K41.MATZKE_VD_GROUP3 === 0.9, 'constants extracted, not copied');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
