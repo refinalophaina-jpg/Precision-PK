@@ -2116,7 +2116,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-|id="b-hds-time"|id="b-hd-give-time"|id="b-first-time"/;   // b-hd-give-time sits beside b-hd-give-date (v3.8.0)
     assert(/id="b-hds-date"[^>]*><\/label>\s*<label>Start <input[^>]*id="b-hds-time"/.test(body), 'the schedule start time sits beside its date');
     assert(/id="b-hd-date-\$\{id\}"[^>]*>\s*<input[^>]*id="b-hd-time-\$\{id\}"/.test(body), 'the HD start time is paired with its date');
-    const orphans = clockOnly.filter(t => !paired.test(t));
+    // D23 (v3.12.0): the PD dose, level, stop and give-at times each sit beside their own date.
+    const pdPaired = /id="pd-\$\{kind\}-time-|id="pd-stopped-time"|id="pd-give-time"/;
+    assert(/id="pd-\$\{kind\}-date-\$\{n\}"[^>]*>\s*<input[^>]*id="pd-\$\{kind\}-time-\$\{n\}"/.test(body), 'the PD row time is paired with its date');
+    // Two fields are times of day by design, not instants: the cycler's nightly start and
+    // the AM-labs time. They are named here, not waved through, and they only ever become
+    // instants calendar day by calendar day (pdNominalSessions, pdNextAmLabs, pdFirstLevelH
+    // build a Date from the day and the clock), never by elapsed-hours arithmetic.
+    const recurring = /id="pd-start"|id="pd-set-amlabs"/;
+    for (const f of ['pdNominalSessions', 'pdNextAmLabs', 'pdFirstLevelH']) {
+      const src = body.slice(body.indexOf('function ' + f + '('), body.indexOf('\nfunction ', body.indexOf('function ' + f + '(') + 10));
+      assert(/new Date\([a-z0-9]+\.getFullYear\(\), [a-z0-9]+\.getMonth\(\), [a-z0-9]+\.getDate\(\) \+ [a-z0-9]+, hh, mm\)/.test(src), `${f} builds each instant from a calendar day and the clock`);
+    }
+    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !recurring.test(t));
     assert(orphans.length === 0,
       `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
   });
@@ -5343,6 +5355,22 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(s.context.dailyFactor === null && /no published/i.test(s.context.label), JSON.stringify(s.context));
     const h4 = ask(fict({ schedule: sched95({ hours: 4 }) }));
     assert(JSON.stringify(h4.rows) === JSON.stringify(a.rows), 'the cycler hours change the context, never the rows');
+  });
+  test('41.13 the PD mode: a fifth button and section, its handlers, its own goal (never the trough fields), local settings read safely, no demographics demanded', () => {
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const body = (n) => { const c = script.slice(script.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+    assert(/<button class="calc-mode-btn" id="mode-btn-pd" data-onclick="k84" aria-pressed="false">Peritoneal dialysis<\/button>/.test(src) && /<div id="section-pd" style="display:none">/.test(src), 'button and section');
+    assert(/mode-btn-pd'\)\.classList\.toggle\('active',\s*mode === 'pd'\)/.test(body('setCalcMode')) && /section-pd'\)\.style\.display\s*=\s*mode === 'pd'/.test(body('setCalcMode'))
+      && /section-trough-shared'\)\.style\.display\s*=\s*mode === 'pd'\s*\?\s*'none'/.test(body('setCalcMode')), 'setCalcMode switches it, and hides the PK model and trough target');
+    for (const k of ['k84', 'k85', 'k86', 'k87', 'k88', 'k89', 'k90', 'k91', 'k92', 'k94']) assert(new RegExp('\\n  ' + k + ': ').test(script), k);
+    assert(/id="pd-goal-min"[^>]*>/.test(src) && !/id="pd-goal-min"[^>]*value="\d/.test(src) && !/id="pd-goal-max"[^>]*value="\d/.test(src), 'its own goal fields, empty');
+    assert(/data-onclick="k85" data-arg="10\|15"/.test(src) && /data-onclick="k85" data-arg="15\|20"/.test(src), 'the two presets');
+    const ls = body('pdLocalSettings');
+    assert(/try\s*\{[\s\S]*localStorage\.getItem\('vanco\.pd\.local'\)[\s\S]*\}\s*catch/.test(ls), 'local settings read inside try/catch');
+    const calc = body('calculate');
+    assert(calc.indexOf("state.calcMode === 'pd'") > 0 && calc.indexOf("state.calcMode === 'pd'") < calc.indexOf('validateFields('), 'the PD branch comes before the demographics are validated');
+    assert(/calcVd\('bauer', 0, 1, 0\)/.test(body('readPdForm')) && /MATZKE_VD_GROUP3/.test(body('readPdForm')), 'the volumes come from the existing sources');
   });
 }
 
