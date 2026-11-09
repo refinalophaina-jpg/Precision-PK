@@ -2118,6 +2118,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/id="b-hd-date-\$\{id\}"[^>]*>\s*<input[^>]*id="b-hd-time-\$\{id\}"/.test(body), 'the HD start time is paired with its date');
     // D23 (v3.12.0): the PD dose, level, stop and give-at times each sit beside their own date.
     const pdPaired = /id="pd-\$\{kind\}-time-|id="pd-stopped-time"|id="pd-give-time"/;
+    assert(/id="pd-stopped-date"[\s\S]{0,400}id="pd-stopped-time"/.test(body) && /id="pd-give-date"[\s\S]{0,400}id="pd-give-time"/.test(body), 'the PD stop and give-at times sit beside their dates');
     assert(/id="pd-\$\{kind\}-date-\$\{n\}"[^>]*>\s*<input[^>]*id="pd-\$\{kind\}-time-\$\{n\}"/.test(body), 'the PD row time is paired with its date');
     // Two fields are times of day by design, not instants: the cycler's nightly start and
     // the AM-labs time. They are named here, not waved through, and they only ever become
@@ -5281,6 +5282,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }, { mg: 500, tinfH: 1, timeH: H(2, '09:00') }],
       levels: [{ conc: 13, timeH: H(2, '07:30') }, { conc: 16, timeH: H(4, '07:30') }] }));
     assert(st[0].flags.includes('before-stop') && !st[1].flags.includes('before-stop'), JSON.stringify(st.map(x => x.flags)));
+    // Final review (v3.12.0): the second interval starts before the stop, so it runs partly on PD — flagged.
+    assert(st[1].flags.includes('spans-stop'), JSON.stringify(st[1].flags));
     assert(st[1].nightsDone === 0, 'no cycler nights after PD stopped');
   });
   test('41.6 DST: cycler nights keep their wall-clock start across 1 Nov 2026; the session runs its hours of real time', () => {
@@ -5406,6 +5409,91 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/snapshot\.pd = snapshotPdForm\(\);/.test(body('saveCurrentProfile')), 'saved');
     assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /getElementById\('b-pd'\)/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');
     assert(/const PROFILE_SCHEMA\s+=\s+1;/.test(src), 'the profile schema is unchanged: older profiles load with no pd block');
+  });
+  // ── Final review (v3.12.0): each case below failed before its fix ──
+  const settingsAt = (amLabs, extra) => Object.assign({ maxDoseMg: null, targetPeak: null, amLabs: amLabs || '06:00' }, extra || {});
+  test('41.16 a dose started at the same minute as the last level counts in the projection (never a second dose on top)', () => {
+    const base = { doses: [{ mg: 1500, tinfH: 1.5, timeH: H(0, '04:00') }], levels: [{ conc: 13, timeH: H(2, '07:00') }], loadKg: 70, nowKg: 70 };
+    const same = ask(course(Object.assign({}, base, { doses: base.doses.concat({ mg: 750, tinfH: 1, timeH: H(2, '07:00') }) })), { goal: { min: 15, max: 20 } }, H(2, '08:00'));
+    const later = ask(course(Object.assign({}, base, { doses: base.doses.concat({ mg: 750, tinfH: 1, timeH: H(2, '07:01') }) })), { goal: { min: 15, max: 20 } }, H(2, '08:00'));
+    assert(same.state === later.state && Math.abs(same.rows[0].mid - later.rows[0].mid) < 0.5, JSON.stringify([same.state, same.rows && same.rows[0], later.state, later.rows && later.rows[0]]));
+  });
+  test('41.17 above the goal: the expected level, the rows and the chart are all for the morning the draw is set for, and that morning is in or below the top', () => {
+    const a = ask(course({ doses: [{ mg: 2000, tinfH: 2, timeH: H(0, '04:00') }], levels: [{ conc: 40, timeH: H(1, '07:00') }, { conc: 30, timeH: H(2, '07:00') }] }), { goal: { min: 15, max: 20 } }, H(2, '09:00'));
+    const last = a.curve[a.curve.length - 1];
+    assert(a.state === 'no-dose' && Math.abs(last.t - a.nextDrawH) < 1e-9 && Math.abs(last.lo - a.rows[0].atDraw[0]) < 1e-9 && Math.abs(last.hi - a.rows[0].atDraw[1]) < 1e-9, JSON.stringify({ last, draw: a.nextDrawH, row: a.rows[0] }));
+    assert(a.rows[0].mid <= 20 + 1e-9 && sandbox.localTimeStr(new Date(a.nextDrawH * 3600000)) === '06:00', JSON.stringify(a.rows[0]));
+    assert(new RegExp(sandbox.fmtClock(a.nextDrawH)).test(sandbox.pdSummaryText(a)) && sandbox.pdSummaryText(a).includes(a.rows[0].atDraw[0].toFixed(1)), sandbox.pdSummaryText(a));
+  });
+  test('41.18 with a level but no measured decline: finite numbers, a provisional dose that cannot overshoot the goal top, and a heading that does not ask for a level already drawn', () => {
+    const c = course({ prior: 'unknown', nowKg: 63, loadKg: 63, levels: [{ conc: 5, timeH: H(2, '06:00') }], doses: [{ mg: 250, tinfH: 0.5, timeH: H(2, '08:00') }] });
+    const a = ask(c, { goal: { min: 15, max: 20 } }, H(2, '09:00'));
+    assert(noNaN(a) && a.state === 'need-level' && a.provisional && a.provisional.mg % 250 === 0 && a.provisional.peak <= 20 + 1e-9, JSON.stringify(a).slice(0, 400));
+    const html = sandbox.pdResultsHTML(a, { course: c }, H(2, '09:00'));
+    assert(!/Draw a level first/.test(html.slice(html.indexOf('pd-verdict'), html.indexOf('</section>', html.indexOf('pd-verdict')))), 'a level is already drawn');
+  });
+  test('41.19 two levels too close together are not a decline; a duplicate level is not a 6,931 h half-life', () => {
+    const dup = sandbox.pdIntervals(course({ doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }], levels: [{ conc: 13, timeH: H(2, '07:30') }, { conc: 13, timeH: H(2, '07:30') }] }));
+    assert(dup.length === 2 && dup[1].used === false && dup[1].flags.includes('too-short'), JSON.stringify(dup.map(i => i.flags)));
+    const half = sandbox.pdIntervals(course({ doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '03:30') }], levels: [{ conc: 13, timeH: H(2, '07:30') }, { conc: 12.9, timeH: H(2, '08:00') }] }));
+    assert(half[1].used === false && half[1].flags.includes('too-short'), JSON.stringify(half[1]));
+  });
+  test('41.20 a give-at time is never before now; the summary names the time when it is not now, and the cycler caution', () => {
+    const now = H(3, '09:00'), a = ask(fict(), { giveAtH: now - 5 }, now);
+    assert(a.giveAtH === now && a.cautions.some(c => /not before now/i.test(c.html)), JSON.stringify({ give: a.giveAtH, c: a.cautions.map(c => c.word) }));
+    const later = ask(fict(), { goal: { min: 15, max: 20 }, giveAtH: now + 3 }, now);
+    assert(new RegExp(`at ${sandbox.fmtClock(now + 3)}`).test(sandbox.pdSummaryText(later)), sandbox.pdSummaryText(later));
+    const onCyc = ask(fict(), { goal: { min: 15, max: 20 }, settings: settingsAt('05:00') }, now);
+    assert(/after the cycler/i.test(sandbox.pdSummaryText(onCyc)), sandbox.pdSummaryText(onCyc));
+  });
+  test('41.21 the target-peak row offers nothing when the level is already at or above the target peak', () => {
+    const lvT = H(3, '07:15');
+    const t = ask(fict({ levels: [{ conc: 12.4, timeH: H(2, '07:00') }, { conc: 28.6, timeH: lvT }] }), { giveAtH: lvT, settings: settingsAt('06:00', { targetPeak: 25 }) }, lvT);
+    assert(t.targetPeak && t.targetPeak.mg === 0, JSON.stringify(t.targetPeak));
+  });
+  test('41.22 a local maximum below one 250 mg step is ignored with a caution, never a blank result', () => {
+    const a = ask(fict(), { settings: settingsAt('06:00', { maxDoseMg: 200 }) });
+    assert(a.rows && Math.max(...a.rows.map(r => r.mg)) === K41.DOSE_MAX_PER_DOSE_MG && a.cautions.some(c => /maximum/i.test(c.word)), JSON.stringify(a.cautions));
+    const l = ask(course({ loadKg: 57, nowKg: 57 }), { giveAtH: H(0, '03:30'), settings: settingsAt('06:00', { maxDoseMg: 200 }) }, H(0, '03:00'));
+    assert(l.load.mg === 1250, JSON.stringify(l.load));
+  });
+  test('41.23 the first level is never a time already past: it moves to the next AM labs and says it was due', () => {
+    const a = ask(course({ doses: [{ mg: 1000, tinfH: 1, timeH: H(0, '04:00') }] }), {}, H(5, '10:00'));
+    assert(a.state === 'first-level' && a.nextDrawH >= H(5, '10:00') && a.cautions.some(c => /was due/i.test(c.html)), JSON.stringify({ next: a.nextDrawH, c: a.cautions }));
+  });
+  test('41.24 out of reach, the closest option counts giving nothing too (ties smaller)', () => {
+    const a = ask(fict(), { goal: { min: 15, max: 16.5 } });
+    const dist = (r) => (r.mid < 15 ? 15 - r.mid : r.mid > 16.5 ? r.mid - 16.5 : 0);
+    if (!a.rows.some(r => dist(r) === 0)) {
+      const best = a.rows.reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
+      assert((best.mg === 0 ? a.state === 'no-dose' : a.pick && a.pick.mg === best.mg), JSON.stringify({ best: best.mg, state: a.state, pick: a.pick }));
+    }
+  });
+  test('41.25 PD stopped: until an interval runs wholly after the stop, the before-stop decline is used with a caution; an interval across the stop is flagged and leaves the range once a post-stop one exists', () => {
+    const stop = H(3, '12:00');
+    const pre = ask(fict({ schedule: sched95({ stoppedAtH: stop }) }), {}, H(3, '13:00'));
+    assert(pre.rate.n === 2 && pre.cautions.some(c => /before PD stopped/i.test(c.word)), JSON.stringify(pre.cautions.map(c => c.word)));
+    const c = fict({ schedule: sched95({ stoppedAtH: stop }), levels: fict().levels.concat({ conc: 13.5, timeH: H(4, '07:00') }, { conc: 12.0, timeH: H(5, '07:00') }) });
+    const iv = sandbox.pdIntervals(c);
+    assert(iv[2].flags.includes('spans-stop') && !iv[3].flags.includes('spans-stop') && !iv[3].flags.includes('before-stop'), JSON.stringify(iv.map(i => i.flags)));
+    const post = ask(c, {}, H(5, '09:00'));
+    assert(post.rate.n === 1 && Math.abs(post.rate.kMin - iv[3].k) < 1e-12 && !post.cautions.some(c2 => /before PD stopped/i.test(c2.word)), JSON.stringify(post.rate));
+  });
+  test('41.26 a held cycler night ahead is said; AM labs stay at their wall-clock time across a DST change', () => {
+    const now = H(3, '09:00');
+    const held = ask(fict({ schedule: sched95({ heldDates: [dk(3)] }) }), {}, now);
+    assert(held.cautions.some(c => /held cycler night/i.test(c.word)), JSON.stringify(held.cautions.map(c => c.word)));
+    const dst = sandbox.pdNextAmLabs(new Date(2026, 9, 31, 12, 0).getTime() / 3600000, '06:00');
+    assert(sandbox.localTimeStr(new Date(dst * 3600000)) === '06:00' && sandbox.localDateStr(new Date(dst * 3600000)) === sandbox.localDateStr(new Date(2026, 10, 1, 12)), 'AM labs on 1 Nov 2026');
+    const fl = sandbox.pdFirstLevelH(new Date(2026, 9, 30, 4, 0).getTime() / 3600000, '06:00', false);
+    assert(sandbox.localTimeStr(new Date(fl * 3600000)) === '06:00', 'first level across the change');
+  });
+  test('41.27 the schedule and the course reach the page and the print: modality, cycler, exchanges x fill, held nights, doses, levels, goal, volume', () => {
+    const c = fict({ schedule: sched95({ heldDates: [dk(1)], exchanges: 5, fillL: 2 }) });
+    const a = ask(c, { goal: { min: 10, max: 15 } });
+    const html = sandbox.pdResultsHTML(a, { course: c, goal: { min: 10, max: 15 }, urine: 'anuric' }, H(3, '09:00'));
+    const sec = html.slice(html.indexOf('id="pd-course"'));
+    assert(/CCPD/.test(sec) && /21:00/.test(sec) && /9\.5 h/.test(sec) && /5 × 2 L/.test(sec) && /1\.25 g/.test(sec) && /14\.8 mg\/L/.test(sec) && /held/i.test(sec) && /0\.70 L\/kg/.test(sec), sec.slice(0, 600));
   });
 }
 

@@ -4589,6 +4589,8 @@ const PD_FLAG_WORDS = {
   'held-night': 'a held cycler night inside',
   'before-stop': 'before PD stopped',
   'prior-drug': 'drug from before the first dose: not used',
+  'too-short':  `under 12 h after the level before it: assay rounding, not a decline; not used`,
+  'spans-stop': 'runs across the time PD stopped',
   'unexplained-low': 'lower than any decline in range explains; check the times: not used',
 };
 function pdFlagWords(i) {
@@ -4597,18 +4599,18 @@ function pdFlagWords(i) {
     : f === 'early' ? `drawn within ${PD_EARLY_LEVEL_H} h of a dose ending: may overstate the decline`
     : PD_FLAG_WORDS[f] || f).join('; ');
 }
-function pdNowish(h, nowH) { return Math.abs(h - nowH) < 5 / 60; }
 function pdSummaryText(a) {
   if (!a) return '';
   const r = (x) => `${x[0].toFixed(1)}–${x[1].toFixed(1)} mg/L`, g = a.goal ? ` (goal ${a.goal.min}–${a.goal.max})` : '';
+  const cyc = a.drawOnCycler ? ', drawn after the cycler ends' : '';
   switch (a.state) {
     case 'refuse': return `PD, IV vancomycin: ${a.refuse.word}.`;
-    case 'load': return `PD, IV vancomycin: loading dose ${fmtDose(a.load.mg)} IV. First level ${fmtClock(a.load.firstLevelH)}.`;
-    case 'first-level': return `PD, IV vancomycin: draw the first level ${fmtClock(a.nextDrawH)}.`;
+    case 'load': return `PD, IV vancomycin: loading dose ${fmtDose(a.load.mg)} IV. First level ${fmtClock(a.load.firstLevelH)}${cyc}.`;
+    case 'first-level': return `PD, IV vancomycin: draw the first level ${fmtClock(a.nextDrawH)}${cyc}.`;
     case 'need-level': return `PD, IV vancomycin: ${a.provisional ? `give ${fmtDose(a.provisional.mg)} IV (provisional; no decline measured yet)` : 'draw a level first'}. Next level ${fmtClock(a.nextDrawH)}.`;
     case 'dose': { const row = a.rows.find(x => x.mg === a.pick.mg);
-      return `PD, IV vancomycin: Give ${fmtDose(a.pick.mg)} IV; expected ${r(row.atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}.`; }
-    default: return `PD, IV vancomycin: no dose today; expected ${r(a.rows[0].atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}.`;
+      return `PD, IV vancomycin: Give ${fmtDose(a.pick.mg)} IV${a.giveIsNow === false ? ` at ${fmtClock(a.giveAtH)}` : ''}; expected ${r(row.atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}${cyc}.`; }
+    default: return `PD, IV vancomycin: no dose today; expected ${r(a.rows[0].atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}${cyc}.`;
   }
 }
 // The chart: levels, the chosen option's projected range to the next draw, the
@@ -4648,7 +4650,8 @@ function pdResultsHTML(a, input, nowH) {
   const inp = input || {}, c = inp.course || {}, sc = c.schedule || {}, goal = a.goal || inp.goal;
   const range = (r) => `${r[0].toFixed(1)}–${r[1].toFixed(1)} mg/L`, when = (h) => escHtml(fmtClock(h));
   const onCycler = (sc.modality === 'ccpd' || sc.modality === 'nipd') && !(sc.stoppedAtH != null && sc.stoppedAtH <= nowH);
-  const nextLine = (label, h) => `<p class="vx-next"><span class="vx-k">${label}</span> ${when(h)} <span class="vx-muted">with AM labs${a.drawOnCycler ? ', while the cycler is running: see below' : onCycler ? ', after the cycler' : ''}</span></p>`;
+  const nextLine = (label, h, note) => `<p class="vx-next"><span class="vx-k">${label}</span> ${when(h)} <span class="vx-muted">with AM labs${a.drawOnCycler ? ', while the cycler is running: see below' : onCycler ? ', after the cycler' : ''}${note ? ` · ${note}` : ''}</span></p>`;
+  const course = pdCourseSection(inp, nowH);
   const wrap = (verdict, figure, sections) => `
     <div class="tx-result pd-result">
       <h2 class="sr-only">Peritoneal dialysis result</h2>
@@ -4671,29 +4674,29 @@ function pdResultsHTML(a, input, nowH) {
     <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
       <h3 class="vx-regimen" id="tx-regimen"><span class="rec-dose">${fmtDose(L.mg)}</span> IV <span class="vx-freq">loading dose</span></h3>
       <p class="vx-inf">Infuse over ${fmtHrs(autoTinf(L.mg))} · ${PD_LOAD_MG_PER_KG} mg/kg × ${(+c.nowKg).toFixed(1)} kg actual body weight, rounded to 250 mg${L.capped ? ` · capped at ${fmtDose(L.cap)}` : ''}</p>
-      ${nextLine('First level', L.firstLevelH)}
+      ${nextLine('First level', L.firstLevelH, 'about 48 h after the load (institutional convention)')}
       ${actions}
-    </section>`, '', [method]);
+    </section>`, '', [course, method]);
   }
   if (a.state === 'first-level' || (a.state === 'need-level' && !a.provisional)) return wrap(`
     <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
-      <h3 class="vx-regimen vx-regimen-hd" id="tx-regimen">${a.state === 'first-level' ? 'Draw the first level' : 'Draw a level first'}</h3>
+      <h3 class="vx-regimen vx-regimen-hd" id="tx-regimen">${a.state === 'first-level' ? 'Draw the first level' : a.hasLevel ? 'No dose now' : 'Draw a level first'}</h3>
       ${a.message ? `<p class="vx-hold">${escHtml(a.message)}</p>` : ''}
-      ${nextLine(a.state === 'first-level' ? 'First level' : 'Next level', a.nextDrawH)}
+      ${nextLine(a.state === 'first-level' ? 'First level' : 'Next level', a.nextDrawH, a.state === 'first-level' ? 'about 48 h after the dose (institutional convention)' : '')}
       ${actions}
-    </section>`, '', [method]);
+    </section>`, '', [course, method]);
   if (a.state === 'need-level') return wrap(`
     <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
       <h3 class="vx-regimen" id="tx-regimen">Give <span class="rec-dose">${fmtDose(a.provisional.mg)}</span> IV <span class="vx-freq">provisional</span></h3>
       <p class="vx-hold">${escHtml(a.message)} Peak about ${a.provisional.peak.toFixed(1)} mg/L.</p>
       ${nextLine('Next level', a.nextDrawH)}
       ${actions}
-    </section>`, '', [method]);
+    </section>`, '', [course, method]);
   // 'dose' or 'no-dose'
   const pickRow = a.pick ? a.rows.find(r => r.mg === a.pick.mg) : a.rows[0];
   const vs = (m) => m < goal.min ? 'below the goal' : m > goal.max ? 'above the goal' : 'within the goal';
   const head = a.state === 'dose'
-    ? `Give <span class="rec-dose">${fmtDose(a.pick.mg)}</span> IV <span class="vx-freq">${pdNowish(a.giveAtH, nowH) ? 'now' : `at ${when(a.giveAtH)}`}</span>`
+    ? `Give <span class="rec-dose">${fmtDose(a.pick.mg)}</span> IV <span class="vx-freq">${a.giveIsNow ? 'now' : `at ${when(a.giveAtH)}`}</span>`
     : 'No dose today';
   const verdict = `
     <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
@@ -4717,7 +4720,7 @@ function pdResultsHTML(a, input, nowH) {
       </figcaption>
     </figure>`;
   const tp = a.targetPeak;
-  const options = txEvHTML('pd-options', 'Options', `${a.rows.length} doses, ${pdNowish(a.giveAtH, nowH) ? 'given now' : `given ${when(a.giveAtH)}`}`, `
+  const options = txEvHTML('pd-options', 'Options', `${a.rows.length} doses, ${a.giveIsNow ? 'given now' : `given ${when(a.giveAtH)}`}`, `
     <table class="ev-table pd-opt-table">
       <caption>The peak, and the level at ${when(a.nextDrawH)}, as a range from this patient's decline</caption>
       <thead><tr><th scope="col">Dose</th><th scope="col">Peak</th><th scope="col">Level at ${when(a.nextDrawH)}</th><th scope="col">Against the goal</th></tr></thead>
@@ -4737,7 +4740,29 @@ function pdResultsHTML(a, input, nowH) {
         <td>${i.nightsDone}${i.nightsHeld ? ` (+${i.nightsHeld} held)` : ''}</td><td>${escHtml(pdFlagWords(i)) || '—'}</td></tr>`).join('')}</tbody>
     </table>
     <p class="ev-note"><strong>Published APD/CAPD values (context only)</strong>, never used for a dose: ${escHtml(ctx.label || '')}${ctx.dailyFactor != null ? `: about ${((1 - ctx.dailyFactor) * 100).toFixed(0)}% lower each day on this schedule (half-life ≈ ${ctx.t12Equiv.toFixed(0)} h).` : '.'}</p>`, false);
-  return wrap(verdict, figure, [options, decline, method]);
+  return wrap(verdict, figure, [options, decline, course, method]);
+}
+// What was entered, on screen (closed) and on paper (print opens every section).
+function pdCourseSection(inp, nowH) {
+  const c = (inp && inp.course) || {}, sc = c.schedule || {}, when = (h) => escHtml(fmtClock(h));
+  const name = { ccpd: 'CCPD', nipd: 'NIPD', capd: 'CAPD' }[sc.modality] || '—';
+  const cyc = (sc.modality === 'ccpd' || sc.modality === 'nipd') ? `, cycler ${escHtml(sc.startClock || '')} for ${sc.hours} h` : '';
+  const ex = sc.exchanges > 0 ? ` · ${sc.exchanges} × ${sc.fillL > 0 ? sc.fillL : '?'} L` : '';
+  const doses = (c.doses || []).slice().sort((x, y) => x.timeH - y.timeH), levels = (c.levels || []).slice().sort((x, y) => x.timeH - y.timeH);
+  const row = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  return txEvHTML('pd-course', 'Schedule and course', `${name}${cyc ? ` · ${escHtml(sc.startClock || '')}, ${sc.hours} h` : ''} · ${doses.length} dose${doses.length === 1 ? '' : 's'}, ${levels.length} level${levels.length === 1 ? '' : 's'}`, `
+    <dl class="ev-dl">
+      ${row('PD schedule', `${name}${cyc}${ex}`)}
+      ${row('Held cycler nights', (sc.heldDates || []).length ? (sc.heldDates || []).map(escHtml).join(', ') : 'none')}
+      ${row('PD stopped', sc.stoppedAtH != null ? when(sc.stoppedAtH) : 'no')}
+      ${row('Vancomycin before the first dose', escHtml({ no: 'no', yes: 'yes', unknown: 'unknown' }[c.prior] || '—'))}
+      ${row('Residual urine output', escHtml({ anuric: 'anuric', lt100: 'under 100 mL/day', '100to500': '100–500 mL/day', gt500: 'over 500 mL/day' }[inp.urine] || '—'))}
+      ${row('Weight', `${(+c.nowKg || 0).toFixed(1)} kg now${c.loadKg && c.loadKg !== c.nowKg ? `, ${(+c.loadKg).toFixed(1)} kg at the load` : ''} (actual body weight)`)}
+      ${row('Volume', `${c.vdPerKg === MATZKE_VD_GROUP3 ? '0.90 L/kg (Matzke 1984, CrCl < 10)' : '0.70 L/kg (Bauer)'}`)}
+      ${row('Goal', inp.goal ? `${inp.goal.min}–${inp.goal.max} mg/L` : '—')}
+      ${row('Doses', doses.length ? doses.map(d => `${escHtml(fmtDose(d.mg))} over ${fmtHrs(d.tinfH)} at ${when(d.timeH)}`).join('<br>') : 'none')}
+      ${row('Levels', levels.length ? levels.map(l => `${l.conc.toFixed(1)} mg/L at ${when(l.timeH)}`).join('<br>') : 'none')}
+    </dl>`, false);
 }
 function renderPdResults(a, input, nowH) {
   const rc = document.getElementById('results-content');
@@ -8886,6 +8911,10 @@ const PD_APD_T12_OFF_H = 62.8;
 // Context only: the CAPD half-life range in Lam E et al., Perit Dial Int 2020 (PMC9847573).
 const PD_CAPD_T12_MIN_H = 66;
 const PD_CAPD_T12_MAX_H = 115;
+// PREFERENCE (rule 8): two levels closer than this measure assay rounding, not a
+// decline (two levels 30 min apart would set k from the third digit). It excludes an
+// interval from the range; it never changes a dose by itself.
+const PD_MIN_INTERVAL_H = 12;
 // Search bounds for an interval's elimination rate (half-life 2 h to ~290 days):
 // numerical, not clinical.
 const PD_K_SEARCH = [1e-4, 0.35];
@@ -8946,11 +8975,14 @@ function pdInterval(anchor, level, doses, vL, sc, naive) {
   const ends = doses.map(d => d.timeH + d.tinfH).filter(e => e <= t);
   if (ends.length && t - Math.max(...ends) < PD_EARLY_LEVEL_H) flags.push('early');
   if (sc.stoppedAtH != null && t <= sc.stoppedAtH) flags.push('before-stop');
+  if (sc.stoppedAtH != null && ta < sc.stoppedAtH && t > sc.stoppedAtH) flags.push('spans-stop');
   const base = { fromH: ta, toH: t, anchor: anchor.kind, conc: level.conc, hours: t - ta, nightsDone, nightsHeld, vL };
   const none = (flag) => Object.assign(base, { k: null, t12: null, flags: flags.concat(flag), used: false });
   // Drug from before the first dose entered may still be on board: the first
   // dose cannot be treated as a start from zero (builder-check answer 1).
   if (anchor.kind === 'dose' && !naive) return none('prior-drug');
+  // Two levels this close together measure assay rounding, not a decline.
+  if (anchor.kind === 'level' && t - ta < PD_MIN_INTERVAL_H) return none('too-short');
   const dosesIn = doses.filter(d => d.timeH < t && (anchor.kind === 'dose' || d.timeH >= ta));
   const pred = (k) => anchor.conc * Math.exp(-k * (t - ta)) + (vL > 0 ? predictConc1comp(dosesIn, t, k, vL) : 0);
   let [lo, hi] = PD_K_SEARCH;
@@ -9012,76 +9044,104 @@ function pdAnswer(input, nowH) {
   if (inp.ipToo) return refuse('Intraperitoneal vancomycin as well', 'Serum levels cannot separate two routes at once, so no IV dose is sized while IP vancomycin is also given.');
   if (!(c.nowKg > 0)) return refuse('Weight now missing', 'Enter the actual body weight now; the volume and the doses are sized from it.');
   if (!goal || !(goal.min > 0) || !(goal.max > goal.min)) return refuse('Choose a goal range', 'Pick 10–15 or 15–20 mg/L, or enter a range with the lower number first. There is no answer without a goal.');
-  const sc = c.schedule || {}, amLabs = st.amLabs, giveAt = inp.giveAtH != null ? inp.giveAtH : nowH;
+  const sc = c.schedule || {}, amLabs = st.amLabs, cautions = [];
+  // A local maximum below one dispensing step cannot be honoured: ignored, and said.
+  const localMax = st.maxDoseMg >= MATRIX_DOSE_STEP ? st.maxDoseMg : null;
+  if (st.maxDoseMg > 0 && !localMax) cautions.push({ tier: 'caution', word: 'Local maximum ignored', html: `Your maximum single dose (${st.maxDoseMg} mg) is below one ${MATRIX_DOSE_STEP} mg step, so it is ignored. Change it under Your settings.` });
+  // A dose is never placed before now (D20's rule for a chosen time).
+  let giveAt = inp.giveAtH != null ? inp.giveAtH : nowH;
+  if (giveAt < nowH - 1e-9) { cautions.push({ tier: 'info', word: 'Give-at time', html: `The time entered (${fmtClock(giveAt)}) has passed; the options are for now, not before now.` }); giveAt = nowH; }
+  const giveIsNow = Math.abs(giveAt - nowH) < 5 / 60;
   const residual = inp.urine === '100to500' || inp.urine === 'gt500';
-  const cautions = [];
   if (residual) cautions.push({ tier: 'caution', word: 'Residual urine output', html: 'Residual kidney function can carry 39–84% of vancomycin clearance when GFR is above 5 mL/min (Lam 2020), so levels may fall faster. No dose adjustment for it is evidence-based (ISPD 2016, 2022); draw the first level at 24–48 h rather than later.' });
   if (c.loadKg > 0 && Math.abs(c.loadKg - c.nowKg) > 1e-9) cautions.push({ tier: 'info', word: 'Weight changed since the load', html: `Past intervals use ${(+c.loadKg).toFixed(1)} kg; today's options use ${(+c.nowKg).toFixed(1)} kg.` });
   const doses = (c.doses || []).slice().sort((a, b) => a.timeH - b.timeH);
   const levels = (c.levels || []).slice().sort((a, b) => a.timeH - b.timeH);
   const naive = c.prior === 'no';
+  // The first level, never a time already past.
+  const firstLevelAt = (fromH) => {
+    let h = pdFirstLevelH(fromH, amLabs, residual);
+    if (h < nowH) { cautions.push({ tier: 'caution', word: 'First level overdue', html: `It was due ${fmtClock(h)}, the AM labs nearest 48 h after the dose; draw it at the next AM labs.` }); h = pdAmLabsAtOrAfter(nowH, amLabs); }
+    return h;
+  };
   if (!doses.length && !levels.length) {
     if (!naive) return { state: 'need-level', nextDrawH: pdNextAmLabs(nowH, amLabs), message: 'Vancomycin given before the first dose entered may still be on board. Draw a level before the first IV dose; the dose is sized from it.', cautions };
-    const load = pdLoadingDose(c.nowKg, st.maxDoseMg);
-    const drawOnCycler = pdDrawCaution(sc, pdFirstLevelH(giveAt, amLabs, residual), cautions);
-    return { state: 'load', drawOnCycler, load: Object.assign(load, { firstLevelH: pdFirstLevelH(giveAt, amLabs, residual) }), giveAtH: giveAt, cautions };
+    const load = pdLoadingDose(c.nowKg, localMax);
+    const firstH = firstLevelAt(giveAt), drawOnCycler = pdDrawCaution(sc, firstH, cautions);
+    return { state: 'load', drawOnCycler, load: Object.assign(load, { firstLevelH: firstH }), giveAtH: giveAt, giveIsNow, cautions };
   }
   let intervals;
   try { intervals = pdIntervals(c); } catch (e) { return refuse('Level timing', escHtml(e.message)); }
   if (!levels.length) {
     if (!naive) return { state: 'need-level', nextDrawH: pdNextAmLabs(nowH, amLabs), message: 'Vancomycin given before the first dose entered may still be on board, so the first dose cannot be read as a start from zero. Draw a level; the decline is measured from it.', cautions, intervals };
-    const firstH = pdFirstLevelH(doses[doses.length - 1].timeH, amLabs, residual);
-    const drawOnCycler = pdDrawCaution(sc, firstH, cautions);
+    const firstH = firstLevelAt(doses[doses.length - 1].timeH), drawOnCycler = pdDrawCaution(sc, firstH, cautions);
     return { state: 'first-level', nextDrawH: firstH, drawOnCycler, cautions, intervals };
   }
   const vNow = (c.vdPerKg || 0) * c.nowKg;
   const last = levels[levels.length - 1];
-  const after = doses.filter(d => d.timeH > last.timeH);
+  // A dose started at the level's own minute follows the level (as pdIntervals reads it).
+  const after = doses.filter(d => d.timeH >= last.timeH);
   const concAt = (t, k, extra) => last.conc * Math.exp(-k * (t - last.timeH)) + predictConc1comp(after.concat(extra || []).filter(d => d.timeH < t), t, k, vNow);
   const stopped = sc.stoppedAtH != null && sc.stoppedAtH <= nowH;
   let used = intervals.filter(i => i.used);
-  if (stopped && used.some(i => !i.flags.includes('before-stop'))) used = used.filter(i => !i.flags.includes('before-stop'));
-  else if (stopped && used.length) cautions.push({ tier: 'caution', word: 'Decline measured before PD stopped', html: 'Every interval so far ran while PD was going. Without peritoneal clearance the level may fall more slowly than shown; the next level will tell.' });
-  const nextDrawH = pdNextAmLabs(giveAt, amLabs);
-  const capRows = Math.min(DOSE_MAX_PER_DOSE_MG, st.maxDoseMg > 0 ? st.maxDoseMg : Infinity);
+  if (stopped) {
+    const post = used.filter(i => i.fromH >= sc.stoppedAtH);
+    if (post.length) used = post;
+    else if (used.length) cautions.push({ tier: 'caution', word: 'Decline measured before PD stopped', html: 'No interval has run wholly after PD stopped. Without peritoneal clearance the level may fall more slowly than shown; the next level will tell.' });
+  }
+  const capRows = Math.min(DOSE_MAX_PER_DOSE_MG, localMax || Infinity);
   const context = pdPublishedContext(sc, nowH);
-  const heldAhead = pdNominalSessions(sc, last.timeH, nextDrawH).filter(x => x.held && x.startH >= last.timeH);
+  const next0 = pdNextAmLabs(giveAt, amLabs);
+  const heldAhead = pdNominalSessions(sc, last.timeH, next0).filter(x => x.held && x.startH >= last.timeH);
   if (heldAhead.length && used.length) cautions.push({ tier: 'caution', word: 'Held cycler night ahead', html: 'The decline was measured over nights on the cycler; with a night held, the level will likely fall more slowly than projected.' });
   if (!used.length) {
-    // No decline measured yet (one level after earlier drug, or none of the
-    // intervals could be explained). Provisional, labelled: below the goal, the
-    // dose that brings the PEAK to the goal's top, so it cannot overshoot at the peak.
-    const cNow = concAt(giveAt, 0);
+    // No decline measured yet (one level after earlier drug, or none of the intervals
+    // could be explained). The level now is carried with essentially no decline (the
+    // search floor), which overstates it, and below the goal the dose is the 250 mg
+    // step at or under what brings the PEAK to the goal's top: it cannot overshoot it.
+    const cNow = concAt(giveAt, PD_K_SEARCH[0]);
     const below = cNow < goal.min;
-    const mg = below ? Math.min(capRows, roundDose250(vNow * (goal.max - cNow))) : 0;
-    const drawOnCycler = pdDrawCaution(sc, nextDrawH, cautions);
-    return { state: 'need-level', nextDrawH, drawOnCycler, provisional: below ? { mg, peak: cNow + mg / vNow } : null,
-      message: below ? 'No decline has been measured yet, so the next level cannot be projected. Until it is, the dose shown brings the peak to the top of the goal.' : 'No decline has been measured yet. The level is at or above the goal: no dose now; the next level measures the decline.',
+    const mg = below ? Math.min(capRows, Math.floor(vNow * (goal.max - cNow) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP) : 0;
+    const drawOnCycler = pdDrawCaution(sc, next0, cautions);
+    return { state: 'need-level', hasLevel: true, nextDrawH: next0, drawOnCycler, giveAtH: giveAt, giveIsNow,
+      provisional: below && mg > 0 ? { mg, peak: cNow + mg / vNow } : null,
+      message: below && mg > 0 ? 'No decline has been measured yet, so the next level cannot be projected. Until it is, the dose shown brings the peak to the top of the goal, no further.'
+        : below ? 'No decline has been measured yet. The level is below the goal by less than one 250 mg step can add without passing its top: no dose now; the next level measures the decline.'
+        : 'No decline has been measured yet. The level is at or above the goal: no dose now; the next level measures the decline.',
       lastLevel: last, cautions, intervals, context };
   }
   const kMin = Math.min(...used.map(i => i.k)), kMax = Math.max(...used.map(i => i.k));
   if (used.length === 1) cautions.push({ tier: 'info', word: 'One interval', html: 'The decline rests on one interval; the next level will tell how steady it is.' });
-  const rows = [];
-  for (let mg = 0; mg <= capRows; mg += MATRIX_DOSE_STEP) {
-    const dose = mg ? [{ mg, tinfH: autoTinf(mg), timeH: giveAt }] : [];
-    const tPeak = giveAt + (mg ? dose[0].tinfH : 0);
-    const atDraw = [concAt(nextDrawH, kMax, dose), concAt(nextDrawH, kMin, dose)];
-    rows.push({ mg, peak: [concAt(tPeak, kMax, dose), concAt(tPeak, kMin, dose)], atDraw, mid: (atDraw[0] + atDraw[1]) / 2 });
-  }
-  const mid = (goal.min + goal.max) / 2, inGoal = (r) => r.mid >= goal.min && r.mid <= goal.max;
-  let state = 'no-dose', pick = null, reachTopH = null, draw = nextDrawH;
-  if (rows[0].mid < goal.min) {
-    state = 'dose';
-    const cand = rows.slice(1), ok = cand.filter(inGoal);
-    const dist = (r) => (ok.length ? Math.abs(r.mid - mid) : (r.mid < goal.min ? goal.min - r.mid : r.mid - goal.max));
-    const best = (ok.length ? ok : cand).reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
-    pick = { mg: best.mg, closest: !ok.length };
-  } else if (rows[0].mid > goal.max) {
+  const rowsAt = (drawH) => {
+    const out = [];
+    for (let mg = 0; mg <= capRows; mg += MATRIX_DOSE_STEP) {
+      const dose = mg ? [{ mg, tinfH: autoTinf(mg), timeH: giveAt }] : [];
+      const tPeak = giveAt + (mg ? dose[0].tinfH : 0);
+      const atDraw = [concAt(drawH, kMax, dose), concAt(drawH, kMin, dose)];
+      out.push({ mg, peak: [concAt(tPeak, kMax, dose), concAt(tPeak, kMin, dose)], atDraw, mid: (atDraw[0] + atDraw[1]) / 2 });
+    }
+    return out;
+  };
+  const m = (t) => (concAt(t, kMax) + concAt(t, kMin)) / 2;
+  let draw = next0, rows = rowsAt(next0), state = 'no-dose', pick = null, reachTopH = null;
+  if (rows[0].mid > goal.max) {
+    // Above the goal: no dose. The draw is the first AM labs at which the projection
+    // has come down to the goal's top, and every number shown is for that morning.
     let lo = giveAt, hi = giveAt + 24 * 60;
-    const m = (t) => (concAt(t, kMax) + concAt(t, kMin)) / 2;
-    if (m(hi) > goal.max) reachTopH = null;
-    else { for (let i = 0; i < 100; i++) { const x = (lo + hi) / 2; if (m(x) > goal.max) lo = x; else hi = x; } reachTopH = hi; }
-    if (reachTopH != null) { draw = pdNextAmLabs(reachTopH - 24, amLabs); if (draw < reachTopH) draw = pdNextAmLabs(reachTopH, amLabs); }
+    if (m(hi) <= goal.max) { for (let i = 0; i < 100; i++) { const x = (lo + hi) / 2; if (m(x) > goal.max) lo = x; else hi = x; } reachTopH = hi; }
+    for (let d = next0, i = 0; i < 60; i++, d = pdNextAmLabs(d, amLabs)) { if (m(d) <= goal.max) { draw = d; break; } }
+    if (draw !== next0) rows = rowsAt(draw);
+    if (rows[0].mid < goal.min) cautions.push({ tier: 'caution', word: 'Below the goal by then', html: `By ${fmtClock(draw)} the level is projected below ${goal.min} mg/L: a dose will likely be due after that level.` });
+  } else if (rows[0].mid < goal.min) {
+    // PREFERENCE (rule 8): the step whose expected level lands closest to the middle of
+    // the goal, ties to the smaller. It orders the 250 mg steps; it never invents a dose.
+    // When no step lands inside, the closest to the goal of all, giving nothing included.
+    const mid = (goal.min + goal.max) / 2, inGoal = (r) => r.mid >= goal.min && r.mid <= goal.max;
+    const ok = rows.filter(r => r.mg > 0 && inGoal(r));
+    const dist = (r) => (ok.length ? Math.abs(r.mid - mid) : (r.mid < goal.min ? goal.min - r.mid : r.mid - goal.max));
+    const best = (ok.length ? ok : rows).reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
+    if (best.mg) { state = 'dose'; pick = { mg: best.mg, closest: !ok.length }; }
+    else cautions.push({ tier: 'caution', word: 'No step reaches the goal', html: 'Every 250 mg step lands further from the goal than giving nothing; no dose is the closest. Recheck at the next draw.' });
   }
   // The chosen option's projected range, sampled for the chart (and its breakpoints).
   const optMg = pick ? pick.mg : 0, optDose = optMg ? [{ mg: optMg, tinfH: autoTinf(optMg), timeH: giveAt }] : [];
@@ -9093,13 +9153,22 @@ function pdAnswer(input, nowH) {
   const drawOnCycler = pdDrawCaution(sc, draw, cautions);
   let targetPeak = null;
   if (st.targetPeak > 0) {
-    const cGive = (concAt(giveAt, kMax) + concAt(giveAt, kMin)) / 2;
-    const tmg = Math.max(0, Math.min(capRows, roundDose250(vNow * (st.targetPeak - cGive))));
+    // V x (target peak - level at the give time), to the nearest step; nothing when the
+    // level is already at or above the target (no 250 mg floor here).
+    const cGive = (concAt(giveAt, kMax) + concAt(giveAt, kMin)) / 2, raw = vNow * (st.targetPeak - cGive);
+    const tmg = raw <= 0 ? 0 : Math.min(capRows, Math.round(raw / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP);
     const dose = tmg ? [{ mg: tmg, tinfH: autoTinf(tmg), timeH: giveAt }] : [];
-    targetPeak = { mg: tmg, peakTarget: st.targetPeak, atDraw: [concAt(nextDrawH, kMax, dose), concAt(nextDrawH, kMin, dose)] };
+    targetPeak = { mg: tmg, peakTarget: st.targetPeak, atDraw: [concAt(draw, kMax, dose), concAt(draw, kMin, dose)] };
   }
   return { state, pick, rows, nextDrawH: draw, reachTopH, rate: { kMin, kMax, n: used.length }, intervals, context, cautions,
-    targetPeak, lastLevel: last, vNowL: vNow, giveAtH: giveAt, goal, curve, drawOnCycler };
+    targetPeak, lastLevel: last, vNowL: vNow, giveAtH: giveAt, giveIsNow, goal, curve, drawOnCycler };
+}
+// The AM-labs instant on or after h: today's if it is still ahead, else tomorrow's.
+function pdAmLabsAtOrAfter(h, amLabs) {
+  const [hh, mm] = (isClock24(amLabs) ? amLabs : '06:00').split(':').map(Number);
+  const d = new Date(h * 3600000);
+  const today = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 0, hh, mm).getTime() / 3600000;
+  return today >= h ? today : pdNextAmLabs(h, amLabs);
 }
 // A draw time that falls while the cycler is running reads low (Lam 2020: sample
 // after the cycler series). Said once, with the time the session ends.

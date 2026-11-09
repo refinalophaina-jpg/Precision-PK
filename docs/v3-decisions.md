@@ -1332,11 +1332,39 @@ institutional protocols.
 - Hartinger 2023 as a prior (its typical V2 contradicts its own equation; no external validation).
 - A dose uplift for residual function (ISPD 2016 and 2022 give none for vancomycin).
 
+**Final review** (a fresh reviewer, all gates re-run plus its own probes): no flaw in the core
+arithmetic, but two Critical paths would show a misleading answer. Fixed in one pass, each with a test
+that failed first (41.16–41.27):
+- **Critical:**
+  - A dose started at the same minute as the last level was left out of the projection, so the tool
+    recommended a second dose on top of it.
+  - Above the goal, the expected level was quoted for a different morning from the one the draw was set
+    for. The draw is now the first AM labs at which the projection reaches the goal's top, and every
+    number is for that morning.
+- **Important, and Minors re-graded by effect:**
+  - The provisional path decided on NaN (k = 0). It now uses the search floor, and it floors to the step
+    so it cannot pass the goal's top.
+  - Two levels minutes apart counted as a decline. Intervals under 12 h are not used (PREFERENCE).
+  - A give-at time in the past was accepted; it is now never before now.
+  - The target-peak row offered 250 mg above the target.
+  - A local maximum under 250 mg left a blank result.
+  - A first level could be a time already past.
+  - The closest pick ignored giving nothing.
+  - An interval across the PD stop was unflagged; it is now `spans-stop`.
+  - The heading asked for a level already drawn.
+  - Print and Copy summary missed the schedule, the give-at time and the cycler caution. A "Schedule and
+    course" section now carries them.
+- **Pinned by new tests:** the before-stop caution, the held-night-ahead caution, and AM labs across
+  DST were right but untested.
+- **Standing rulings:** the 20 mg/kg load, the 24 h early cut-off and the 100 mL/day threshold stay
+  as labelled institutional or preference values. Flagged intervals stay in the range with their flag.
+  Ticking the PD box marks an earlier AUC result stale only at the next run (like the CrCl override).
+
 **Not clinically validated.** The numbers follow from the patient's levels and stated sources; the tool
 has not been validated against PD outcomes.
 
 **Tests and gates:**
-- phase2d **428/428** (SUITE 41: sessions, intervals and flags, prior drug, DST, the load, refusals,
+- phase2d **440/440** (SUITE 41: sessions, intervals and flags, prior drug, DST, the load, refusals,
   the range, the recommendation branches, the target-peak row, the context, the mode's wiring, the
   rendered answer and chart, the AUC refusal and profiles);
 - browser flows **84/84** (the fictional CCPD patient typed in on a fixed clock: the answer, the early
