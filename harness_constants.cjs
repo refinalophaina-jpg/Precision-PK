@@ -129,6 +129,16 @@ function extract() {
     ARC_THRESHOLD:          num(src, 'ARC_THRESHOLD'),
     CRCL_MODEL_CAP:         numInDecl(src, 'CRCL_MODEL_CAP'),
     CRCL_MODEL_FLOOR:       numInDecl(src, 'CRCL_MODEL_FLOOR'),
+
+    // v3.12.0 — IV vancomycin on peritoneal dialysis (D23)
+    PD_LOAD_MG_PER_KG:      num(src, 'PD_LOAD_MG_PER_KG'),
+    PD_EARLY_LEVEL_H:       num(src, 'PD_EARLY_LEVEL_H'),
+    PD_APD_T12_ON_H:        num(src, 'PD_APD_T12_ON_H'),
+    PD_APD_T12_OFF_H:       num(src, 'PD_APD_T12_OFF_H'),
+    PD_CAPD_T12_MIN_H:      num(src, 'PD_CAPD_T12_MIN_H'),
+    PD_CAPD_T12_MAX_H:      num(src, 'PD_CAPD_T12_MAX_H'),
+    MATZKE_VD_GROUP3:       num(src, 'MATZKE_VD_GROUP3'),
+    HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
   };
 }
 

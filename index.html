@@ -2194,14 +2194,14 @@
   .vx-conf .vx-muted { display: block; margin-top: 2px; }
   .vx-next { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink); margin: 0 0 14px; }
   .vx-actions { display: flex; flex-wrap: wrap; gap: 2px 18px; }
-  #b-results .vx-act {
+  :is(#b-results, #results-content) .vx-act {
     font: 500 var(--fs-sm)/1.2 var(--font-body); color: var(--terracotta-ink);
     background: none; border: 0; border-radius: 0; padding: 10px 0; min-height: 44px; cursor: pointer;
     text-decoration: underline; text-underline-offset: 4px;
     text-decoration-color: color-mix(in srgb, var(--terracotta) 45%, transparent);
     display: inline-flex; align-items: center;
   }
-  #b-results .vx-act:hover { text-decoration-color: currentColor; background: none; }
+  :is(#b-results, #results-content) .vx-act:hover { text-decoration-color: currentColor; background: none; }
 
   .vx-curve.profile-canvas-wrap { border: 0; background: none; border-radius: 0; padding: 0; box-shadow: none; }
   #b-profile-canvas { display: block; width: 100%; }
@@ -2627,6 +2627,26 @@
   }
 
   .tx-verdict .vx-regimen { margin-top: 0; }
+  /* Peritoneal dialysis (D23): the chart in the course strip's idiom, tokens only. */
+  .pd-figure svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .pd-chart .pd-goal   { fill: var(--paper-deep); }
+  .pd-chart .pd-cycler { fill: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .pd-chart .pd-band   { fill: color-mix(in srgb, var(--series-projection) 22%, transparent); stroke: var(--series-projection); stroke-width: 1.5; }
+  .pd-chart .pd-lv     { fill: var(--series-measured); stroke: var(--paper); stroke-width: 1.5; }
+  .pd-chart .pd-lvv, .pd-chart .pd-dl { font-size: 12px; font-weight: 500; fill: var(--ink); }
+  .pd-chart .pd-dose   { stroke: var(--ink); stroke-width: 3; }
+  .pd-chart .pd-now    { stroke: var(--ink-faint); stroke-dasharray: 4 4; }
+  .pd-chart .pd-draw   { stroke: var(--series-projection); stroke-dasharray: 2 3; }
+  .pd-chart .pd-base, .pd-chart .pd-tick { stroke: var(--rule); }
+  .pd-chart .pd-axl    { font-size: 11px; fill: var(--ink-muted); }
+  .lg.pd-lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--series-measured); }
+  .lg.pd-lg-band { background: color-mix(in srgb, var(--series-projection) 22%, transparent); border: 1px solid var(--series-projection); }
+  .lg.pd-lg-goal { background: var(--paper-deep); border: 1px solid var(--rule); }
+  .lg.pd-lg-cyc  { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .pd-opt-table tr.is-rec th, .pd-opt-table tr.is-rec td { background: var(--paper-deep); }
+  .pd-opt-table tr.is-rec th { color: var(--terracotta-ink); font-weight: 600; }
+  .pd-unused td { color: var(--ink-muted); }
+  .pd-settings summary { cursor: pointer; font-size: var(--fs-sm); color: var(--ink-soft); min-height: 44px; display: flex; align-items: center; }
   .tx-aucw  { display: block; font-size: var(--fs-base); color: var(--ink); }
   .tx-band  { display: block; font-size: var(--fs-sm); color: var(--ink-muted); }
   .tx-trough { margin-top: 10px; }
@@ -2765,7 +2785,7 @@
 </button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.11.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.12.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2796,7 +2816,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.11.0</div>
+  <div class="header-tag">Vancomycin TDM v3.12.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -2825,6 +2845,7 @@
       <button class="calc-mode-btn" id="mode-btn-level" data-onclick="k6" aria-pressed="false">Steady-state trough</button>
       <button class="calc-mode-btn" id="mode-btn-twolevels" data-onclick="k7" aria-pressed="false">Two levels</button>
       <button class="calc-mode-btn" id="mode-btn-randomlevel" data-onclick="k8" aria-pressed="false">Random level</button>
+      <button class="calc-mode-btn" id="mode-btn-pd" data-onclick="k84" aria-pressed="false">Peritoneal dialysis</button>
     </div>
     <p class="calc-mode-hint" id="calc-mode-hint">Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady-state trough</strong> once a steady-state level is available.</p>
 
@@ -3437,6 +3458,144 @@
       <input type="hidden" id="rl-t-hours">
     </div><!-- /section-randomlevel -->
 
+    <!-- Peritoneal dialysis, IV (D23). Its own goal, never the trough fields: no goal, no answer. -->
+    <div id="section-pd" style="display:none">
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">Peritoneal dialysis</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="field-group">
+            <label class="field-label" for="pd-modality">PD schedule</label>
+            <select id="pd-modality" data-onchange="k94">
+              <option value="">Choose…</option>
+              <option value="ccpd">CCPD — cycler at night, day dwell</option>
+              <option value="nipd">NIPD — cycler at night, dry day</option>
+              <option value="capd">CAPD — manual exchanges</option>
+            </select>
+          </div>
+          <div id="pd-cycler-fields" style="display:none;flex-direction:column;gap:10px">
+            <div class="form-grid-2">
+              <div class="field-group">
+                <label class="field-label" for="pd-start">Cycler starts</label>
+                <div class="input-row"><input type="text" id="pd-start" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm"><span class="unit-badge">24 h</span></div>
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="pd-hours">Treatment time</label>
+                <div class="input-row"><input type="number" id="pd-hours" min="4" max="14" step="0.5" placeholder="—"><span class="unit-badge">h</span></div>
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="pd-exchanges">Exchanges</label>
+                <div class="input-row"><input type="number" id="pd-exchanges" min="1" max="12" step="1" placeholder="—"><span class="unit-badge">a night</span></div>
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="pd-fill">Fill volume</label>
+                <div class="input-row"><input type="number" id="pd-fill" min="0.5" max="3" step="0.1" placeholder="—"><span class="unit-badge">L</span></div>
+              </div>
+            </div>
+            <p class="field-hint">Exchanges and fill volume are recorded and printed; they change no number (no study links them to vancomycin clearance).</p>
+            <div class="field-group">
+              <span class="field-label" id="pd-held-label">Nights the cycler was held</span>
+              <div class="course-table-wrap"><table class="course-table" aria-labelledby="pd-held-label"><tbody id="pd-held-tbody"></tbody></table></div>
+              <button type="button" class="course-add-btn" data-onclick="k90">+ Held night</button>
+            </div>
+          </div>
+          <label class="hd-flag"><input type="checkbox" id="pd-stopped" data-onchange="k94"> PD has stopped (catheter out)</label>
+          <div id="pd-stopped-fields" class="form-grid-2" style="display:none">
+            <div class="field-group"><label class="field-label" for="pd-stopped-date">Stopped on</label><input type="date" id="pd-stopped-date"></div>
+            <div class="field-group"><label class="field-label" for="pd-stopped-time">At</label><div class="input-row"><input type="text" id="pd-stopped-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm"><span class="unit-badge">24 h</span></div></div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="pd-prior">Vancomycin before the first dose below?</label>
+            <select id="pd-prior">
+              <option value="">Choose…</option>
+              <option value="no">No</option>
+              <option value="yes">Yes (IP or IV)</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="pd-urine">Residual urine output</label>
+            <select id="pd-urine">
+              <option value="">Choose…</option>
+              <option value="anuric">Anuric</option>
+              <option value="lt100">Under 100 mL/day</option>
+              <option value="100to500">100–500 mL/day</option>
+              <option value="gt500">Over 500 mL/day</option>
+            </select>
+          </div>
+          <label class="hd-flag"><input type="checkbox" id="pd-ip"> Also receiving intraperitoneal vancomycin</label>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">Dosing weight and volume</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <p class="field-hint">Weight now is the Total Body Weight above (actual body weight).</p>
+          <div class="field-group">
+            <label class="field-label" for="pd-load-kg">Weight at the load, if different</label>
+            <div class="input-row"><input type="number" id="pd-load-kg" min="25" max="300" step="0.1" placeholder="—"><span class="unit-badge">kg</span></div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="pd-vd">Volume of distribution</label>
+            <select id="pd-vd">
+              <option value="bauer" selected>0.70 L/kg (Bauer)</option>
+              <option value="matzke3">0.90 L/kg (Matzke 1984, CrCl &lt; 10)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">Goal level</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="toggle-group" role="group" aria-label="Goal presets">
+            <button type="button" class="toggle-opt" data-onclick="k85" data-arg="10|15" aria-pressed="false">10–15</button>
+            <button type="button" class="toggle-opt" data-onclick="k85" data-arg="15|20" aria-pressed="false">15–20</button>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="pd-goal-label">Or a range of your own</span>
+            <div class="form-grid-2" role="group" aria-labelledby="pd-goal-label">
+              <div class="input-row"><input type="number" id="pd-goal-min" min="5" max="30" step="0.5" placeholder="min" aria-label="Goal level, lower (mg/L)"><span class="unit-badge">min</span></div>
+              <div class="input-row"><input type="number" id="pd-goal-max" min="5" max="35" step="0.5" placeholder="max" aria-label="Goal level, upper (mg/L)"><span class="unit-badge">max</span></div>
+            </div>
+            <p class="field-hint">mg/L. Presets: the 2009 consensus trough ranges (Rybak 2009). No goal, no answer.</p>
+          </div>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2" id="pd-dose-label">IV doses</h2>
+        <div class="course-table-wrap"><table class="course-table" aria-labelledby="pd-dose-label"><tbody id="pd-dose-tbody"></tbody></table></div>
+        <button type="button" class="course-add-btn" data-onclick="k86">+ Dose</button>
+      </div>
+      <div>
+        <h2 class="form-h2" id="pd-lvl-label">Levels</h2>
+        <div class="course-table-wrap"><table class="course-table" aria-labelledby="pd-lvl-label"><tbody id="pd-lvl-tbody"></tbody></table></div>
+        <button type="button" class="course-add-btn" data-onclick="k88">+ Level</button>
+      </div>
+      <div class="field-group">
+        <span class="field-label" id="pd-give-label">Give the next dose at (optional; blank means now)</span>
+        <div class="form-grid-2" role="group" aria-labelledby="pd-give-label">
+          <input type="date" id="pd-give-date" aria-label="Date of the next dose">
+          <div class="input-row"><input type="text" id="pd-give-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" aria-label="Time of the next dose, 24-hour"><span class="unit-badge">24 h</span></div>
+        </div>
+      </div>
+      <details class="pd-settings">
+        <summary>Your settings (this browser)</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <p class="field-hint">Kept in this browser only, never part of the app. Use them for your institution's numbers.</p>
+          <div class="field-group"><label class="field-label" for="pd-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="pd-set-max" min="250" max="3000" step="250" placeholder="none" data-onchange="k92"><span class="unit-badge">mg</span></div></div>
+          <div class="field-group"><label class="field-label" for="pd-set-peak">Target peak, to compare</label><div class="input-row"><input type="number" id="pd-set-peak" min="10" max="50" step="1" placeholder="none" data-onchange="k92"><span class="unit-badge">mg/L</span></div></div>
+          <div class="field-group"><label class="field-label" for="pd-set-amlabs">AM labs drawn at (06:00 if blank)</label><div class="input-row"><input type="text" id="pd-set-amlabs" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" data-onchange="k92"><span class="unit-badge">24 h</span></div></div>
+        </div>
+      </details>
+    </div><!-- /section-pd -->
+
+    <!-- The PK model and the trough target belong to the other four modes. -->
+    <div id="section-trough-shared">
     <hr class="section-divider">
 
     <!-- Model Selection -->
@@ -3495,6 +3654,8 @@
         </div>
       </div>
     </div>
+
+    </div><!-- /section-trough-shared -->
 
     <!-- Buttons -->
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
@@ -3652,6 +3813,7 @@
           <input type="checkbox" id="b-dial" data-onchange="k41" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
           <label for="b-dial" style="display:inline-flex;align-items:center;min-height:44px;font-size:var(--fs-xs);color:var(--text-secondary);cursor:pointer">Haemodialysis patient (HD)</label>
         </div>
+        <label class="hd-flag"><input type="checkbox" id="b-pd"> Patient on peritoneal dialysis</label>
       </div>
     </div>
 
@@ -3832,7 +3994,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.11.0';
+const APP_VERSION = '3.12.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -3937,6 +4099,18 @@ const __ACT = {
   k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
   k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { const nextId = ev && ev.type === 'focusout' && ev.relatedTarget && ev.relatedTarget.id; renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(ev && ev.type === 'focusout' ? (nextId || '') : (el && el.id ? el.id : 'b-hd-give-time')); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0); the date commits on leaving it and focus goes where the user was heading (v3.9.0) */
   k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0) */
+  k84: (el, ev, arg) => { setCalcMode('pd'); },   /* the PD mode (D23) */
+  k85: (el, ev, arg) => { pdSetGoal(arg); },   /* a goal preset */
+  k86: (el, ev, arg) => { addPdRow('dose'); },
+  k87: (el, ev, arg) => { removePdRow('dose', arg); },
+  k88: (el, ev, arg) => { addPdRow('lvl'); },
+  k89: (el, ev, arg) => { removePdRow('lvl', arg); },
+  k90: (el, ev, arg) => { addPdRow('held'); },
+  k91: (el, ev, arg) => { removePdRow('held', arg); },
+  k92: (el, ev, arg) => { savePdLocalSettings(); },
+  k94: (el, ev, arg) => { pdToggleFields(); },
+  k93: (el, ev, arg) => { switchModule('trough'); setCalcMode('pd'); },   /* AUC Precision PD guard → the PD mode (D23) */
+  k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
@@ -4229,21 +4403,372 @@ function setCalcMode(mode) {
   document.getElementById('mode-btn-level').classList.toggle('active',        mode === 'level');
   document.getElementById('mode-btn-twolevels').classList.toggle('active',    mode === 'twolevels');
   document.getElementById('mode-btn-randomlevel').classList.toggle('active',  mode === 'randomlevel');
+  document.getElementById('mode-btn-pd').classList.toggle('active',           mode === 'pd');
   document.getElementById('section-regimen-prefs').style.display    = mode === 'initial'      ? '' : 'none';
   document.getElementById('section-current-regimen').style.display  = mode === 'level'        ? '' : 'none';
   document.getElementById('section-drug-level').style.display       = mode === 'level'        ? '' : 'none';
   document.getElementById('section-twolevels').style.display        = mode === 'twolevels'    ? '' : 'none';
   document.getElementById('section-randomlevel').style.display      = mode === 'randomlevel'  ? '' : 'none';
+  document.getElementById('section-pd').style.display               = mode === 'pd'           ? '' : 'none';
+  document.getElementById('section-trough-shared').style.display    = mode === 'pd'           ? 'none' : '';
   const hints = {
     initial:      'Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady-state trough</strong> once a steady-state level is available.',
     level:        'Enter the current dose, interval, and a measured steady-state level to fit individual PK and adjust the regimen.',
     twolevels:    'Two post-infusion levels from the <strong>first dose</strong> determine individual Kel &amp; Vd directly — useful when Cockcroft-Gault CrCl is unreliable (bedbound, AKI, obesity).',
+    pd:           'IV vancomycin for a patient on peritoneal dialysis, dosed by level: what to give, whether to give it today, and when to draw the next level, from this patient\'s own levels and cycler schedule. No population model drives a dose.',
     randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-muted)">The graph shows the recommended regimen at steady state, not the course your level came from, so the level itself is not drawn on it. Read the fitted parameters, not the curve.</span>'
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
+  if (mode === 'pd') { fillPdLocalSettings(); pdToggleFields(); }
   document.getElementById('results-placeholder').style.display = 'flex';
   document.getElementById('results-content').style.display = 'none';
   document.getElementById('results-content').innerHTML = '';
+}
+
+// ── Peritoneal dialysis mode (D23): the form ──
+const pdRowN = { dose: 0, lvl: 0, held: 0 };
+function addPdRow(kind) {
+  const n = ++pdRowN[kind], now = new Date(); now.setSeconds(0, 0);
+  const tbody = document.getElementById(`pd-${kind}-tbody`);
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.id = `pd-${kind}-row-${n}`; tr.className = 'course-row'; tr.dataset.n = String(n);
+  const rm = (k, what) => `<td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="${k}" data-arg="${n}" aria-label="Remove ${what} ${n}">${courseRemoveIcon()}</button></td>`;
+  const when = (what) => `<td class="course-when">
+      <input type="date" id="pd-${kind}-date-${n}" value="${localDateStr(now)}" aria-label="${what} ${n} date">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="pd-${kind}-time-${n}" value="${localTimeStr(now)}" aria-label="${what} ${n} time (24-hour)">
+    </td>`;
+  if (kind === 'dose') tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Dose ${n}</span></td>
+    <td class="course-what">
+      <span class="course-field"><input type="number" id="pd-dose-mg-${n}" inputmode="decimal" min="100" max="4000" step="50" aria-label="Dose ${n} amount (mg)"><span class="course-unit" aria-hidden="true">mg</span></span>
+      <span class="course-over" aria-hidden="true">over</span>
+      <span class="course-field"><input type="number" id="pd-dose-tinf-${n}" inputmode="decimal" min="0.25" max="6" step="0.25" value="1" aria-label="Dose ${n} infusion duration (h)"><span class="course-unit" aria-hidden="true">h</span></span>
+    </td>${when('Dose')}${rm('k87', 'dose')}`;
+  else if (kind === 'lvl') tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Level ${n}</span></td>
+    <td class="course-what"><span class="course-field"><input type="number" id="pd-lvl-conc-${n}" inputmode="decimal" min="0.5" max="100" step="0.1" aria-label="Level ${n} (mg/L)"><span class="course-unit" aria-hidden="true">mg/L</span></span></td>
+    ${when('Level')}${rm('k89', 'level')}`;
+  else tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Night of</span></td>
+    <td class="course-when"><input type="date" id="pd-held-date-${n}" value="${localDateStr(now)}" aria-label="Held night ${n}, the date it would have started"></td>
+    ${rm('k91', 'held night')}`;
+  tbody.appendChild(tr);
+}
+function removePdRow(kind, n) { const tr = document.getElementById(`pd-${kind}-row-${n}`); if (tr) tr.remove(); }
+function pdSetGoal(arg) {
+  const [lo, hi] = String(arg || '').split('|');
+  const a = document.getElementById('pd-goal-min'), b = document.getElementById('pd-goal-max');
+  if (a && b) { a.value = lo; b.value = hi; }
+  document.querySelectorAll('[data-onclick="k85"]').forEach(btn => {
+    const on = btn.dataset.arg === arg; btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', String(on));
+  });
+}
+function pdToggleFields() {
+  const m = (document.getElementById('pd-modality') || {}).value;
+  const cyc = document.getElementById('pd-cycler-fields'), st = document.getElementById('pd-stopped-fields');
+  if (cyc) cyc.style.display = (m === 'ccpd' || m === 'nipd') ? 'flex' : 'none';
+  if (st) st.style.display = (document.getElementById('pd-stopped') || {}).checked ? '' : 'none';
+}
+// Local settings: the user's institution's numbers, kept in this browser only and
+// never shipped. PREFERENCE (rule 8): AM labs at 06:00 when none is set; it times
+// a draw, never a dose.
+function pdLocalSettings() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem('vanco.pd.local') || '{}') || {}; } catch (e) { o = {}; }
+  return { maxDoseMg: o.maxDoseMg > 0 ? +o.maxDoseMg : null, targetPeak: o.targetPeak > 0 ? +o.targetPeak : null,
+    amLabs: isClock24(o.amLabs) ? o.amLabs : '06:00', amLabsSet: isClock24(o.amLabs) };
+}
+function savePdLocalSettings() {
+  const n = (id) => { const x = String((document.getElementById(id) || {}).value || '').trim(); return x === '' ? null : Number(x); };
+  const o = { maxDoseMg: n('pd-set-max'), targetPeak: n('pd-set-peak'), amLabs: String((document.getElementById('pd-set-amlabs') || {}).value || '') };
+  try { localStorage.setItem('vanco.pd.local', JSON.stringify(o)); } catch (e) { /* private window: settings last this visit only */ }
+}
+function fillPdLocalSettings() {
+  const st = pdLocalSettings(), set = (id, v) => { const e = document.getElementById(id); if (e && v != null) e.value = v; };
+  set('pd-set-max', st.maxDoseMg); set('pd-set-peak', st.targetPeak); if (st.amLabsSet) set('pd-set-amlabs', st.amLabs);
+}
+function pdHoursAt(dateId, timeId) {
+  const d = String((document.getElementById(dateId) || {}).value || ''), t = String((document.getElementById(timeId) || {}).value || '');
+  if (!d && !t) return { blank: true };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !isClock24(t)) return { bad: true };
+  return { h: new Date(`${d}T${t}`).getTime() / 3600000 };
+}
+// The form into pdAnswer's input, or every problem at once (for reportValidation).
+function readPdForm() {
+  const val = (id) => String((document.getElementById(id) || {}).value || '');
+  const num = (id) => { const x = val(id).trim(); return x === '' ? NaN : Number(x); };
+  const errors = [], ids = [], bad = (id, msg) => { errors.push(msg); ids.push(id); };
+  const nowKg = num('tbw');
+  if (!(nowKg >= 25 && nowKg <= 300)) bad('tbw', 'Enter the weight now (Total Body Weight), 25–300 kg.');
+  const loadKg = num('pd-load-kg');
+  if (!isNaN(loadKg) && !(loadKg >= 25 && loadKg <= 300)) bad('pd-load-kg', 'Weight at the load: 25–300 kg, or leave it blank.');
+  const modality = val('pd-modality'), cycler = modality === 'ccpd' || modality === 'nipd';
+  if (!modality) bad('pd-modality', 'Choose the PD schedule.');
+  const startClock = val('pd-start'), hours = num('pd-hours');
+  if (cycler && !isClock24(startClock)) bad('pd-start', 'Cycler start: a 24-hour time, e.g. 21:00.');
+  if (cycler && !(hours >= 4 && hours <= 14)) bad('pd-hours', 'Treatment time: 4–14 h.');
+  const heldDates = [...document.querySelectorAll('[id^="pd-held-date-"]')].map(e => e.value).filter(Boolean);
+  let stoppedAtH = null;
+  if ((document.getElementById('pd-stopped') || {}).checked) {
+    const r = pdHoursAt('pd-stopped-date', 'pd-stopped-time');
+    if (r.h == null) bad('pd-stopped-date', 'When did PD stop? A date and a 24-hour time.'); else stoppedAtH = r.h;
+  }
+  const prior = val('pd-prior'); if (!prior) bad('pd-prior', 'Say whether vancomycin was given before the first dose entered.');
+  const urine = val('pd-urine'); if (!urine) bad('pd-urine', 'Choose the residual urine output.');
+  const gMin = num('pd-goal-min'), gMax = num('pd-goal-max');
+  const goal = isNaN(gMin) && isNaN(gMax) ? null : { min: gMin, max: gMax };
+  if (goal && (isNaN(gMin) || isNaN(gMax))) bad(isNaN(gMin) ? 'pd-goal-min' : 'pd-goal-max', 'Goal level: enter both numbers.');
+  const doses = [], levels = [];
+  for (const tr of document.querySelectorAll('#pd-dose-tbody tr[data-n]')) {
+    const n = tr.dataset.n, mg = num(`pd-dose-mg-${n}`), tinf = num(`pd-dose-tinf-${n}`), w = pdHoursAt(`pd-dose-date-${n}`, `pd-dose-time-${n}`);
+    if (isNaN(mg) && w.blank) continue;
+    if (!(mg >= 100 && mg <= 4000)) bad(`pd-dose-mg-${n}`, `Dose ${n}: an amount of 100–4000 mg.`);
+    else if (!(tinf >= 0.25 && tinf <= 6)) bad(`pd-dose-tinf-${n}`, `Dose ${n}: an infusion time of 0.25–6 h.`);
+    else if (w.h == null) bad(`pd-dose-date-${n}`, `Dose ${n}: a date and a 24-hour time.`);
+    else doses.push({ mg, tinfH: tinf, timeH: w.h });
+  }
+  for (const tr of document.querySelectorAll('#pd-lvl-tbody tr[data-n]')) {
+    const n = tr.dataset.n, conc = num(`pd-lvl-conc-${n}`), w = pdHoursAt(`pd-lvl-date-${n}`, `pd-lvl-time-${n}`);
+    if (isNaN(conc) && w.blank) continue;
+    if (!(conc >= 0.5 && conc <= 100)) bad(`pd-lvl-conc-${n}`, `Level ${n}: 0.5–100 mg/L.`);
+    else if (w.h == null) bad(`pd-lvl-date-${n}`, `Level ${n}: a date and a 24-hour time.`);
+    else levels.push({ conc, timeH: w.h });
+  }
+  const give = pdHoursAt('pd-give-date', 'pd-give-time');
+  if (give.bad) bad('pd-give-date', 'Give the next dose at: a date and a 24-hour time, or leave both blank.');
+  if (errors.length) return { errors, ids };
+  // The volumes come from their existing sources: Bauer 0.70 L/kg (calcVd) or Matzke group III.
+  const vdPerKg = val('pd-vd') === 'matzke3' ? MATZKE_VD_GROUP3 : calcVd('bauer', 0, 1, 0);
+  return { input: {
+    course: { doses, levels, loadKg: isNaN(loadKg) ? nowKg : loadKg, nowKg, vdPerKg, prior,
+      schedule: { modality, startClock, hours, heldDates, stoppedAtH, exchanges: num('pd-exchanges'), fillL: num('pd-fill') } },
+    goal, urine, ipToo: !!(document.getElementById('pd-ip') || {}).checked, hd: !!(document.getElementById('t-hd') || {}).checked,
+    giveAtH: give.h != null ? give.h : null, settings: pdLocalSettings() } };
+}
+// Saved profiles carry the PD fields as entered (strings), and restore them.
+function snapshotPdForm() {
+  const v = (id) => String((document.getElementById(id) || {}).value || '');
+  const rows = (kind, fields) => [...document.querySelectorAll(`#pd-${kind}-tbody tr[data-n]`)]
+    .map(tr => Object.fromEntries(fields.map(f => [f, v(`pd-${kind}-${f}-${tr.dataset.n}`)])));
+  return { modality: v('pd-modality'), start: v('pd-start'), hours: v('pd-hours'), exchanges: v('pd-exchanges'), fill: v('pd-fill'),
+    held: rows('held', ['date']).map(r => r.date), stopped: !!(document.getElementById('pd-stopped') || {}).checked,
+    stoppedDate: v('pd-stopped-date'), stoppedTime: v('pd-stopped-time'), prior: v('pd-prior'), urine: v('pd-urine'),
+    ip: !!(document.getElementById('pd-ip') || {}).checked, loadKg: v('pd-load-kg'), vd: v('pd-vd'),
+    goalMin: v('pd-goal-min'), goalMax: v('pd-goal-max'),
+    doses: rows('dose', ['mg', 'tinf', 'date', 'time']), levels: rows('lvl', ['conc', 'date', 'time']),
+    giveDate: v('pd-give-date'), giveTime: v('pd-give-time') };
+}
+function applyPdForm(pd) {
+  if (typeof document === 'undefined' || !document.getElementById('section-pd')) return;
+  const o = pd || {}, set = (id, x) => { const e = document.getElementById(id); if (e) e.value = x == null ? '' : x; };
+  const chk = (id, x) => { const e = document.getElementById(id); if (e) e.checked = !!x; };
+  set('pd-modality', o.modality); set('pd-start', o.start); set('pd-hours', o.hours); set('pd-exchanges', o.exchanges); set('pd-fill', o.fill);
+  chk('pd-stopped', o.stopped); set('pd-stopped-date', o.stoppedDate); set('pd-stopped-time', o.stoppedTime);
+  set('pd-prior', o.prior); set('pd-urine', o.urine); chk('pd-ip', o.ip); set('pd-load-kg', o.loadKg); set('pd-vd', o.vd || 'bauer');
+  set('pd-goal-min', o.goalMin); set('pd-goal-max', o.goalMax); set('pd-give-date', o.giveDate); set('pd-give-time', o.giveTime);
+  ['dose', 'lvl', 'held'].forEach(k => { const tb = document.getElementById(`pd-${k}-tbody`); if (tb) tb.innerHTML = ''; });
+  const fill = (kind, list, fields) => (list || []).forEach(r => { addPdRow(kind); const n = pdRowN[kind]; fields.forEach(f => set(`pd-${kind}-${f}-${n}`, r[f])); });
+  fill('dose', o.doses, ['mg', 'tinf', 'date', 'time']); fill('lvl', o.levels, ['conc', 'date', 'time']);
+  fill('held', (o.held || []).map(d => ({ date: d })), ['date']);
+  pdSetGoal(`${o.goalMin || ''}|${o.goalMax || ''}`); set('pd-goal-min', o.goalMin); set('pd-goal-max', o.goalMax);
+  pdToggleFields();
+}
+function runPd() {
+  const r = readPdForm();
+  if (r.errors) { reportValidation({ ok: false, errors: r.errors, ids: r.ids }); return; }
+  const nowH = Date.now() / 3600000;
+  const answer = pdAnswer(r.input, nowH);
+  state.pdLast = { input: r.input, answer, nowH };
+  renderPdResults(answer, r.input, nowH);
+}
+
+// ── Peritoneal dialysis mode (D23): the answer on screen ──
+const PD_FLAG_WORDS = {
+  'on-cycler':  'drawn while the cycler was running: reads low',
+  'held-night': 'a held cycler night inside',
+  'before-stop': 'before PD stopped',
+  'prior-drug': 'drug from before the first dose: not used',
+  'too-short':  `under 12 h after the level before it: assay rounding, not a decline; not used`,
+  'spans-stop': 'runs across the time PD stopped',
+  'unexplained-low': 'lower than any decline in range explains; check the times: not used',
+};
+function pdFlagWords(i) {
+  return i.flags.map(f => f === 'unexplained-high'
+    ? `higher than the doses could make at V = ${i.vL.toFixed(0)} L: a smaller volume, drug given before, or a timing error; not used`
+    : f === 'early' ? `drawn within ${PD_EARLY_LEVEL_H} h of a dose ending: may overstate the decline`
+    : PD_FLAG_WORDS[f] || f).join('; ');
+}
+function pdSummaryText(a) {
+  if (!a) return '';
+  const r = (x) => `${x[0].toFixed(1)}–${x[1].toFixed(1)} mg/L`, g = a.goal ? ` (goal ${a.goal.min}–${a.goal.max})` : '';
+  const cyc = a.drawOnCycler ? ', drawn after the cycler ends' : '';
+  switch (a.state) {
+    case 'refuse': return `PD, IV vancomycin: ${a.refuse.word}.`;
+    case 'load': return `PD, IV vancomycin: loading dose ${fmtDose(a.load.mg)} IV. First level ${fmtClock(a.load.firstLevelH)}${cyc}.`;
+    case 'first-level': return `PD, IV vancomycin: draw the first level ${fmtClock(a.nextDrawH)}${cyc}.`;
+    case 'need-level': return `PD, IV vancomycin: ${a.provisional ? `give ${fmtDose(a.provisional.mg)} IV (provisional; no decline measured yet)` : 'draw a level first'}. Next level ${fmtClock(a.nextDrawH)}.`;
+    case 'dose': { const row = a.rows.find(x => x.mg === a.pick.mg);
+      return `PD, IV vancomycin: Give ${fmtDose(a.pick.mg)} IV${a.giveIsNow === false ? ` at ${fmtClock(a.giveAtH)}` : ''}; expected ${r(row.atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}${cyc}.`; }
+    default: return `PD, IV vancomycin: no dose today; expected ${r(a.rows[0].atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}${cyc}.`;
+  }
+}
+// The chart: levels, the chosen option's projected range to the next draw, the
+// goal, cycler nights and doses, on clock time. SVG coloured by CSS tokens only.
+function pdChartSVG(a, input, nowH) {
+  const c = (input && input.course) || {}, goal = a.goal || (input && input.goal);
+  const levels = (c.levels || []).slice().sort((x, y) => x.timeH - y.timeH), doses = (c.doses || []).slice().sort((x, y) => x.timeH - y.timeH);
+  if (!levels.length || !a.curve || !a.curve.length) return '';
+  const t0 = Math.min(doses.length ? doses[0].timeH : Infinity, levels[0].timeH) - 6, t1 = a.nextDrawH + 6;
+  const W = 600, H = 220, P = { l: 34, r: 10, t: 14, b: 28 };
+  const yMax = Math.max(goal ? goal.max : 0, ...levels.map(l => l.conc), ...a.curve.map(p => p.hi)) * 1.15;
+  const x = (t) => P.l + (t - t0) / (t1 - t0) * (W - P.l - P.r), y = (v) => P.t + (1 - v / yMax) * (H - P.t - P.b);
+  const f = (n) => n.toFixed(1), yb = y(0);
+  let g = '';
+  if (goal) g += `<rect class="pd-goal" x="${f(P.l)}" y="${f(y(goal.max))}" width="${f(W - P.l - P.r)}" height="${f(y(goal.min) - y(goal.max))}"/>`;
+  for (const ss of pdSessions(c.schedule, t0, t1)) {
+    const a0 = Math.max(t0, ss.startH), a1 = Math.min(t1, ss.endH);
+    g += `<rect class="pd-cycler" x="${f(x(a0))}" y="${P.t}" width="${f(x(a1) - x(a0))}" height="${f(yb - P.t)}"><title>Cycler ${escHtml(fmtClock(ss.startH))}–${escHtml(localTimeStr(new Date(ss.endH * 3600000)))}</title></rect>`;
+  }
+  g += `<line class="pd-base" x1="${P.l}" x2="${W - P.r}" y1="${f(yb)}" y2="${f(yb)}"/>`;
+  for (let d = new Date(t0 * 3600000); ; ) {
+    const mid = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0), mh = mid.getTime() / 3600000;
+    if (mh > t1) break;
+    g += `<line class="pd-tick" x1="${f(x(mh))}" x2="${f(x(mh))}" y1="${f(yb)}" y2="${f(yb + 4)}"/><text class="pd-axl" x="${f(x(mh))}" y="${f(yb + 16)}" text-anchor="middle">${mid.getDate()} ${MONTH_ABBR[mid.getMonth()]}</text>`;
+    d = mid;
+  }
+  if (goal) g += `<text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.max) + 4)}" text-anchor="end">${goal.max}</text><text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.min) + 4)}" text-anchor="end">${goal.min}</text>`;
+  if (nowH > t0 && nowH < t1) g += `<line class="pd-now" x1="${f(x(nowH))}" x2="${f(x(nowH))}" y1="${P.t}" y2="${f(yb)}"/><text class="pd-axl" x="${f(x(nowH))}" y="${P.t - 3}" text-anchor="middle">now</text>`;
+  g += `<line class="pd-draw" x1="${f(x(a.nextDrawH))}" x2="${f(x(a.nextDrawH))}" y1="${P.t}" y2="${f(yb)}"/>`;
+  const up = a.curve.map(p => `${f(x(p.t))},${f(y(p.hi))}`), dn = a.curve.slice().reverse().map(p => `${f(x(p.t))},${f(y(p.lo))}`);
+  g += `<path class="pd-band" d="M${up.join(' L')} L${dn.join(' L')} Z"/>`;
+  for (const d of doses) if (d.timeH >= t0) g += `<line class="pd-dose" x1="${f(x(d.timeH))}" x2="${f(x(d.timeH))}" y1="${f(yb)}" y2="${f(yb - 10)}"/><text class="pd-dl" x="${f(x(d.timeH) + 3)}" y="${f(yb - 12)}">${escHtml(fmtDose(d.mg))}</text>`;
+  for (const l of levels) g += `<circle class="pd-lv" cx="${f(x(l.timeH))}" cy="${f(y(l.conc))}" r="4.5"/><text class="pd-lvv" x="${f(x(l.timeH) + 7)}" y="${f(y(l.conc) - 6)}">${l.conc.toFixed(1)}</text>`;
+  return `<svg class="pd-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escHtml('Levels and the projected range to the next draw. ' + pdSummaryText(a))}">${g}</svg>`;
+}
+function pdResultsHTML(a, input, nowH) {
+  const inp = input || {}, c = inp.course || {}, sc = c.schedule || {}, goal = a.goal || inp.goal;
+  const range = (r) => `${r[0].toFixed(1)}–${r[1].toFixed(1)} mg/L`, when = (h) => escHtml(fmtClock(h));
+  const onCycler = (sc.modality === 'ccpd' || sc.modality === 'nipd') && !(sc.stoppedAtH != null && sc.stoppedAtH <= nowH);
+  const nextLine = (label, h, note) => `<p class="vx-next"><span class="vx-k">${label}</span> ${when(h)} <span class="vx-muted">with AM labs${a.drawOnCycler ? ', while the cycler is running: see below' : onCycler ? ', after the cycler' : ''}${note ? ` · ${note}` : ''}</span></p>`;
+  const course = pdCourseSection(inp, nowH);
+  const wrap = (verdict, figure, sections) => `
+    <div class="tx-result pd-result">
+      <h2 class="sr-only">Peritoneal dialysis result</h2>
+      <div class="tx-top">${verdict}${figure || ''}</div>
+      ${txNotesHTML(a.cautions)}
+      ${sections && sections.length ? `<div class="vx-evidence">${sections.join('')}</div>` : ''}
+    </div>`;
+  if (a.state === 'refuse') return wrap(`
+    <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
+      <p class="vx-hold">${a.refuse.html}</p>
+    </section>`);
+  const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k95">Copy summary</button></div>`;
+  const method = txEvHTML('pd-method', 'How this works', 'Level-based, not a model', `
+    <p class="ev-note">Every level is read against the one before it (or against the first dose, when no vancomycin came before it): the elimination rate that carries the earlier level, plus every dose in between, onto the measured one, one-compartment with V = ${c.vdPerKg === MATZKE_VD_GROUP3 ? 'Matzke group III 0.90' : 'Bauer 0.70'} L/kg × the weight at the load. The projection is the range those rates give. No population PD model drives a dose: none is validated, and ISPD 2022 gives no IV vancomycin dose.</p>
+    <p class="ev-note">A redose is sized by where it puts the next level you will draw, inside your goal: the step whose expected level lands closest to the goal's middle, ties to the smaller. The loading dose (${PD_LOAD_MG_PER_KG} mg/kg, actual body weight) is institutional convention (e.g. Northwestern 2026), capped at the Rybak 2020 Rec 11 loading maximum.</p>`, false);
+  if (a.state === 'load') {
+    const L = a.load;
+    return wrap(`
+    <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen" id="tx-regimen"><span class="rec-dose">${fmtDose(L.mg)}</span> IV <span class="vx-freq">loading dose</span></h3>
+      <p class="vx-inf">Infuse over ${fmtHrs(autoTinf(L.mg))} · ${PD_LOAD_MG_PER_KG} mg/kg × ${(+c.nowKg).toFixed(1)} kg actual body weight, rounded to 250 mg${L.capped ? ` · capped at ${fmtDose(L.cap)}` : ''}</p>
+      ${nextLine('First level', L.firstLevelH, 'about 48 h after the load (institutional convention)')}
+      ${actions}
+    </section>`, '', [course, method]);
+  }
+  if (a.state === 'first-level' || (a.state === 'need-level' && !a.provisional)) return wrap(`
+    <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen vx-regimen-hd" id="tx-regimen">${a.state === 'first-level' ? 'Draw the first level' : a.hasLevel ? 'No dose now' : 'Draw a level first'}</h3>
+      ${a.message ? `<p class="vx-hold">${escHtml(a.message)}</p>` : ''}
+      ${nextLine(a.state === 'first-level' ? 'First level' : 'Next level', a.nextDrawH, a.state === 'first-level' ? 'about 48 h after the dose (institutional convention)' : '')}
+      ${actions}
+    </section>`, '', [course, method]);
+  if (a.state === 'need-level') return wrap(`
+    <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen" id="tx-regimen">Give <span class="rec-dose">${fmtDose(a.provisional.mg)}</span> IV <span class="vx-freq">provisional</span></h3>
+      <p class="vx-hold">${escHtml(a.message)} Peak about ${a.provisional.peak.toFixed(1)} mg/L.</p>
+      ${nextLine('Next level', a.nextDrawH)}
+      ${actions}
+    </section>`, '', [course, method]);
+  // 'dose' or 'no-dose'
+  const pickRow = a.pick ? a.rows.find(r => r.mg === a.pick.mg) : a.rows[0];
+  const vs = (m) => m < goal.min ? 'below the goal' : m > goal.max ? 'above the goal' : 'within the goal';
+  const head = a.state === 'dose'
+    ? `Give <span class="rec-dose">${fmtDose(a.pick.mg)}</span> IV <span class="vx-freq">${a.giveIsNow ? 'now' : `at ${when(a.giveAtH)}`}</span>`
+    : 'No dose today';
+  const verdict = `
+    <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen${a.state === 'dose' ? '' : ' vx-regimen-hd'}" id="tx-regimen">${head}</h3>
+      ${a.state === 'dose' ? `<p class="vx-inf">Infuse over ${fmtHrs(autoTinf(a.pick.mg))}</p>` : ''}
+      <p class="vx-sub"><span class="vx-k">Expected</span> ${range(pickRow.atDraw)} at ${when(a.nextDrawH)} <span class="vx-muted">· goal ${goal.min}–${goal.max} mg/L</span></p>
+      ${a.pick && a.pick.closest ? `<p class="vx-sub tone-caution">No step reaches the goal by then; the closest is shown.</p>` : ''}
+      ${a.reachTopH ? `<p class="vx-sub">Projected to fall to the top of the goal (${goal.max} mg/L) about ${when(a.reachTopH)}.</p>` : ''}
+      <p class="vx-sub vx-muted">From ${a.rate.n} interval${a.rate.n === 1 ? '' : 's'} of this patient's own levels; the range is how much they disagree.</p>
+      ${nextLine('Draw the next level', a.nextDrawH)}
+      ${actions}
+    </section>`;
+  const figure = `
+    <figure class="tx-curve pd-figure">
+      ${pdChartSVG(a, inp, nowH)}
+      <figcaption class="tx-legend profile-legend">
+        <span class="legend-item"><i class="lg pd-lg-lv"></i>Measured level</span>
+        <span class="legend-item"><i class="lg pd-lg-band"></i>${a.pick ? `Projected with ${fmtDose(a.pick.mg)}` : 'Projected, no dose'}</span>
+        <span class="legend-item"><i class="lg pd-lg-goal"></i>Goal</span>
+        ${onCycler ? '<span class="legend-item"><i class="lg pd-lg-cyc"></i>Cycler night</span>' : ''}
+      </figcaption>
+    </figure>`;
+  const tp = a.targetPeak;
+  const options = txEvHTML('pd-options', 'Options', `${a.rows.length} doses, ${a.giveIsNow ? 'given now' : `given ${when(a.giveAtH)}`}`, `
+    <table class="ev-table pd-opt-table">
+      <caption>The peak, and the level at ${when(a.nextDrawH)}, as a range from this patient's decline</caption>
+      <thead><tr><th scope="col">Dose</th><th scope="col">Peak</th><th scope="col">Level at ${when(a.nextDrawH)}</th><th scope="col">Against the goal</th></tr></thead>
+      <tbody>${a.rows.map(r => `<tr${(a.pick ? r.mg === a.pick.mg : r.mg === 0) ? ' class="is-rec"' : ''}>
+        <th scope="row">${r.mg ? fmtDose(r.mg) : 'No dose'}</th><td>${range(r.peak)}</td><td>${range(r.atDraw)}</td><td>${vs(r.mid)}</td></tr>`).join('')}
+        ${tp ? `<tr class="pd-tp"><th scope="row">${fmtDose(tp.mg)} <span class="vx-muted">to a ${tp.peakTarget} mg/L peak (your setting)</span></th><td>—</td><td>${range(tp.atDraw)}</td><td>${vs((tp.atDraw[0] + tp.atDraw[1]) / 2)}</td></tr>`
+          : `<tr class="pd-tp"><td colspan="4" class="vx-muted">Set a target peak under Your settings to compare the target-peak calculation, V × (peak − level now).</td></tr>`}
+      </tbody>
+    </table>`, true);
+  const t12 = (k) => (Math.LN2 / k).toFixed(0), ctx = a.context || {};
+  const decline = txEvHTML('pd-decline', 'The decline', `${a.rate.n} interval${a.rate.n === 1 ? '' : 's'} · half-life ${t12(a.rate.kMax)}–${t12(a.rate.kMin)} h`, `
+    <table class="ev-table">
+      <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Half-life</th><th scope="col">Cycler nights</th><th scope="col">Notes</th></tr></thead>
+      <tbody>${a.intervals.map(i => `<tr${i.used ? '' : ' class="pd-unused"'}>
+        <td>${i.anchor === 'dose' ? `first dose, ${when(i.fromH)}` : `level, ${when(i.fromH)}`}</td>
+        <td>${i.conc.toFixed(1)} mg/L, ${when(i.toH)}</td><td>${i.t12 ? `${i.t12.toFixed(0)} h` : '—'}</td>
+        <td>${i.nightsDone}${i.nightsHeld ? ` (+${i.nightsHeld} held)` : ''}</td><td>${escHtml(pdFlagWords(i)) || '—'}</td></tr>`).join('')}</tbody>
+    </table>
+    <p class="ev-note"><strong>Published APD/CAPD values (context only)</strong>, never used for a dose: ${escHtml(ctx.label || '')}${ctx.dailyFactor != null ? `: about ${((1 - ctx.dailyFactor) * 100).toFixed(0)}% lower each day on this schedule (half-life ≈ ${ctx.t12Equiv.toFixed(0)} h).` : '.'}</p>`, false);
+  return wrap(verdict, figure, [options, decline, course, method]);
+}
+// What was entered, on screen (closed) and on paper (print opens every section).
+function pdCourseSection(inp, nowH) {
+  const c = (inp && inp.course) || {}, sc = c.schedule || {}, when = (h) => escHtml(fmtClock(h));
+  const name = { ccpd: 'CCPD', nipd: 'NIPD', capd: 'CAPD' }[sc.modality] || '—';
+  const cyc = (sc.modality === 'ccpd' || sc.modality === 'nipd') ? `, cycler ${escHtml(sc.startClock || '')} for ${sc.hours} h` : '';
+  const ex = sc.exchanges > 0 ? ` · ${sc.exchanges} × ${sc.fillL > 0 ? sc.fillL : '?'} L` : '';
+  const doses = (c.doses || []).slice().sort((x, y) => x.timeH - y.timeH), levels = (c.levels || []).slice().sort((x, y) => x.timeH - y.timeH);
+  const row = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  return txEvHTML('pd-course', 'Schedule and course', `${name}${cyc ? ` · ${escHtml(sc.startClock || '')}, ${sc.hours} h` : ''} · ${doses.length} dose${doses.length === 1 ? '' : 's'}, ${levels.length} level${levels.length === 1 ? '' : 's'}`, `
+    <dl class="ev-dl">
+      ${row('PD schedule', `${name}${cyc}${ex}`)}
+      ${row('Held cycler nights', (sc.heldDates || []).length ? (sc.heldDates || []).map(escHtml).join(', ') : 'none')}
+      ${row('PD stopped', sc.stoppedAtH != null ? when(sc.stoppedAtH) : 'no')}
+      ${row('Vancomycin before the first dose', escHtml({ no: 'no', yes: 'yes', unknown: 'unknown' }[c.prior] || '—'))}
+      ${row('Residual urine output', escHtml({ anuric: 'anuric', lt100: 'under 100 mL/day', '100to500': '100–500 mL/day', gt500: 'over 500 mL/day' }[inp.urine] || '—'))}
+      ${row('Weight', `${(+c.nowKg || 0).toFixed(1)} kg now${c.loadKg && c.loadKg !== c.nowKg ? `, ${(+c.loadKg).toFixed(1)} kg at the load` : ''} (actual body weight)`)}
+      ${row('Volume', `${c.vdPerKg === MATZKE_VD_GROUP3 ? '0.90 L/kg (Matzke 1984, CrCl < 10)' : '0.70 L/kg (Bauer)'}`)}
+      ${row('Goal', inp.goal ? `${inp.goal.min}–${inp.goal.max} mg/L` : '—')}
+      ${row('Doses', doses.length ? doses.map(d => `${escHtml(fmtDose(d.mg))} over ${fmtHrs(d.tinfH)} at ${when(d.timeH)}`).join('<br>') : 'none')}
+      ${row('Levels', levels.length ? levels.map(l => `${l.conc.toFixed(1)} mg/L at ${when(l.timeH)}`).join('<br>') : 'none')}
+    </dl>`, false);
+}
+function renderPdResults(a, input, nowH) {
+  const rc = document.getElementById('results-content');
+  if (!rc) return;
+  rc.innerHTML = pdResultsHTML(a, input, nowH);
+  state.pdSummary = pdSummaryText(a);
 }
 
 // ── AKI Detection (RenalGuard) ──
@@ -4684,8 +5209,8 @@ function openEvidence(id) {
   const s = d.querySelector('summary'); if (s) s.focus({ preventScroll: true });
 }
 
-function copyResultSummary(btn) {
-  const text = (bState && bState.summaryText) || '';
+function copyResultSummary(btn, summary) {
+  const text = summary != null ? summary : (bState && bState.summaryText) || '';
   const done = (ok) => { if (!btn) return; const old = btn.textContent; btn.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { btn.textContent = old; }, 1600); };
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
@@ -5655,6 +6180,9 @@ function calcVd(model, age, tbw, crcl) {
 const MATZKE_VD_CRCL_BREAK = 60;
 // n-weighted mean Vd across all 56 Matzke patients (see calcVd).
 const MATZKE_VD_POOLED = 0.8752;
+// Matzke 1984 group III, CrCl < 10 (n = 36): Vd 0.90 +/- 0.21 L/kg (see calcVd). Offered
+// as the alternative volume for patients on peritoneal dialysis (D23).
+const MATZKE_VD_GROUP3 = 0.90;
 function nearMatzkeBreak(crcl) { return Math.abs(crcl - MATZKE_VD_CRCL_BREAK) <= 5; }
 
 // 1-compartment IV infusion equations — steady state
@@ -6214,6 +6742,8 @@ function calculate() {
     if (rc) rc.innerHTML = troughHdNoticeHTML();
     return;
   }
+  // D23: the PD mode needs no age, height or SCr — its answer comes from levels.
+  if (state.calcMode === 'pd') { beginFormRun('trough'); runPd(); return; }
   const age = v('age'), tbw = v('tbw'), ht = v('height'), scr = v('scr');
   const troughMin = v('trough-min'), troughMax = v('trough-max'), mic = v('mic');
   const clModel = s('cl-model'), vdModel = s('vd-model');
@@ -8358,8 +8888,306 @@ function hdViewFor(r, gapH, giveAtH) {
   const rec = hdNextDose(r, nowH);
   return { nowH, rec: rec.need ? hdOneTimeDose(r, nowH, gapH, giveAtH) : rec };
 }
+// ══════════════════════════════════════════
+//  PERITONEAL DIALYSIS — IV vancomycin by level (D23, v3.12.0)
+// ══════════════════════════════════════════
+// No population model drives a dose here. No validated PD model exists (the one
+// adult model, Hartinger 2023, is CAPD and intraperitoneal, single-centre and
+// unvalidated), and ISPD 2022 gives no IV vancomycin dose. The patient's own
+// levels measure the decline; the cycler schedule says where each level sits.
+//
+// Loading dose: institutional convention, not a guideline value. Northwestern
+// Medicine IV vancomycin protocol (2026, public): 20 mg/kg actual body weight.
+const PD_LOAD_MG_PER_KG = 20;
+// PREFERENCE (rule 8): a level drawn this soon after a dose ended may still be
+// falling through distribution, so its interval can overstate the decline
+// (Montañés-Pauls 2012: apparent half-life 29 h over 4–24 h, 62 h over 24–48 h).
+// It labels an interval; it never changes a dose.
+const PD_EARLY_LEVEL_H = 24;
+// Context only, never a dose: IV vancomycin half-life on APD, on the cycler and
+// off it (Manley HJ et al., Perit Dial Int 2001; PMID 11587401).
+const PD_APD_T12_ON_H  = 11.6;
+const PD_APD_T12_OFF_H = 62.8;
+// Context only: the CAPD half-life range in Lam E et al., Perit Dial Int 2020 (PMC9847573).
+const PD_CAPD_T12_MIN_H = 66;
+const PD_CAPD_T12_MAX_H = 115;
+// PREFERENCE (rule 8): two levels closer than this measure assay rounding, not a
+// decline (two levels 30 min apart would set k from the third digit). It excludes an
+// interval from the range; it never changes a dose by itself.
+const PD_MIN_INTERVAL_H = 12;
+// Search bounds for an interval's elimination rate (half-life 2 h to ~290 days):
+// numerical, not clinical.
+const PD_K_SEARCH = [1e-4, 0.35];
+
+// Every nominal cycler night overlapping [fromH, toH), held or not. A night starts
+// at the same wall-clock time on each calendar day, across a DST change (no
+// "+24 h" arithmetic, SUITE 19), and runs its hours of real time. Nothing starts
+// once PD has stopped. CAPD has no cycler.
+function pdNominalSessions(schedule, fromH, toH) {
+  const sc = schedule || {};
+  if (!(sc.modality === 'ccpd' || sc.modality === 'nipd') || !isClock24(sc.startClock) || !(sc.hours > 0)) return [];
+  const [hh, mm] = sc.startClock.split(':').map(Number);
+  const held = new Set(sc.heldDates || []);
+  const d0 = new Date((fromH - sc.hours - 24) * 3600000);
+  const out = [];
+  for (let i = 0; i < 400; i++) {
+    const day = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i, hh, mm);
+    const startH = day.getTime() / 3600000, endH = startH + sc.hours;
+    if (startH >= toH || (sc.stoppedAtH != null && startH >= sc.stoppedAtH)) break;
+    if (endH > fromH) { const dateKey = localDateStr(day); out.push({ startH, endH, dateKey, held: held.has(dateKey) }); }
+  }
+  return out;
+}
+// The cycler nights that ran (held nights omitted).
+function pdSessions(schedule, fromH, toH) {
+  return pdNominalSessions(schedule, fromH, toH).filter(x => !x.held).map(({ startH, endH, dateKey }) => ({ startH, endH, dateKey }));
+}
+// The decline between consecutive levels, from the patient's own data. Each
+// interval runs from an anchor (a measured level, or the first dose when the
+// patient had no vancomycin before it) to the next level; k is the elimination
+// rate that carries the anchor, plus every dose in between, onto the measured
+// level, one-compartment with V = vdPerKg x the weight at the load.
+function pdIntervals(course) {
+  const c = course || {};
+  const doses  = (c.doses  || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const levels = (c.levels || []).slice().sort((a, b) => a.timeH - b.timeH);
+  for (const l of levels) for (const d of doses) {
+    if (l.timeH > d.timeH && l.timeH < d.timeH + d.tinfH)
+      throw new Error(`The level at ${fmtClock(l.timeH)} was drawn during the infusion of ${fmtDose(d.mg)}. A level has to follow the end of the infusion.`);
+  }
+  const vL = (c.vdPerKg || 0) * (c.loadKg || c.nowKg || 0);
+  const sc = c.schedule || {};
+  const out = [];
+  let anchor = doses.length && (!levels.length || doses[0].timeH < levels[0].timeH)
+    ? { kind: 'dose', timeH: doses[0].timeH, conc: 0 } : null;
+  for (const l of levels) {
+    if (anchor) out.push(pdInterval(anchor, l, doses, vL, sc, c.prior === 'no'));
+    anchor = { kind: 'level', timeH: l.timeH, conc: l.conc };
+  }
+  return out;
+}
+function pdInterval(anchor, level, doses, vL, sc, naive) {
+  const t = level.timeH, ta = anchor.timeH, flags = [];
+  const nights = pdNominalSessions(sc, ta, t).filter(x => x.startH >= ta && x.startH < t);
+  const nightsDone = nights.filter(x => !x.held).length, nightsHeld = nights.length - nightsDone;
+  if (nightsHeld) flags.push('held-night');
+  if (pdSessions(sc, t, t + 1e-6).some(x => x.startH <= t && t < x.endH)) flags.push('on-cycler');
+  const ends = doses.map(d => d.timeH + d.tinfH).filter(e => e <= t);
+  if (ends.length && t - Math.max(...ends) < PD_EARLY_LEVEL_H) flags.push('early');
+  if (sc.stoppedAtH != null && t <= sc.stoppedAtH) flags.push('before-stop');
+  if (sc.stoppedAtH != null && ta < sc.stoppedAtH && t > sc.stoppedAtH) flags.push('spans-stop');
+  const base = { fromH: ta, toH: t, anchor: anchor.kind, conc: level.conc, hours: t - ta, nightsDone, nightsHeld, vL };
+  const none = (flag) => Object.assign(base, { k: null, t12: null, flags: flags.concat(flag), used: false });
+  // Drug from before the first dose entered may still be on board: the first
+  // dose cannot be treated as a start from zero (builder-check answer 1).
+  if (anchor.kind === 'dose' && !naive) return none('prior-drug');
+  // Two levels this close together measure assay rounding, not a decline.
+  if (anchor.kind === 'level' && t - ta < PD_MIN_INTERVAL_H) return none('too-short');
+  const dosesIn = doses.filter(d => d.timeH < t && (anchor.kind === 'dose' || d.timeH >= ta));
+  const pred = (k) => anchor.conc * Math.exp(-k * (t - ta)) + (vL > 0 ? predictConc1comp(dosesIn, t, k, vL) : 0);
+  let [lo, hi] = PD_K_SEARCH;
+  if (!(vL > 0) || pred(lo) < level.conc) return none('unexplained-high');
+  if (pred(hi) > level.conc) return none('unexplained-low');
+  for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pred(m) > level.conc) lo = m; else hi = m; }
+  const k = (lo + hi) / 2;
+  return Object.assign(base, { k, t12: Math.LN2 / k, flags, used: true });
+}
+
+// The loading dose: PD_LOAD_MG_PER_KG x the weight now, rounded to the 250 mg step,
+// capped at the Rybak 2020 Rec 11 loading maximum (HD_LOADING_MAX_MG, which applies
+// to any loading dose) or the user's lower local maximum.
+function pdLoadingDose(kg, localMaxMg) {
+  const cap = Math.min(HD_LOADING_MAX_MG, localMaxMg > 0 ? localMaxMg : Infinity);
+  const raw = roundDose250(PD_LOAD_MG_PER_KG * kg);
+  const mg = Math.min(raw, cap);
+  return { mg, mgPerKg: mg / kg, capped: raw > cap, cap };
+}
+// The AM-labs instant on the calendar day after afterH (local wall clock).
+function pdNextAmLabs(afterH, amLabs) {
+  const [hh, mm] = (isClock24(amLabs) ? amLabs : '06:00').split(':').map(Number);
+  const d = new Date(afterH * 3600000);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, hh, mm).getTime() / 3600000;
+}
+// The first level after a dose: the AM-labs morning nearest 48 h after it
+// (Northwestern 2026; Lam 2020); with residual urine of 100 mL/day or more, the
+// first AM labs at least 24 h after it (Glasgow draws earlier with residual
+// function). Institutional convention, labelled as such in the UI.
+function pdFirstLevelH(doseH, amLabs, residual) {
+  const [hh, mm] = (isClock24(amLabs) ? amLabs : '06:00').split(':').map(Number);
+  const d = new Date(doseH * 3600000), mornings = [];
+  for (let i = 0; i <= 4; i++) mornings.push(new Date(d.getFullYear(), d.getMonth(), d.getDate() + i, hh, mm).getTime() / 3600000);
+  if (residual) return mornings.find(t => t >= doseH + 24);
+  return mornings.reduce((b, t) => (Math.abs(t - doseH - 48) < Math.abs(b - doseH - 48) ? t : b));
+}
+// Published APD/CAPD values for the entered schedule: context beside the patient's
+// own decline, never a dose. Once PD has stopped there is no published value.
+function pdPublishedContext(schedule, nowH) {
+  const sc = schedule || {};
+  if (sc.stoppedAtH != null && sc.stoppedAtH <= nowH) return { dailyFactor: null, t12Range: null, label: 'PD stopped: no published value for this state' };
+  if (sc.modality === 'capd') return { dailyFactor: null, t12Range: [PD_CAPD_T12_MIN_H, PD_CAPD_T12_MAX_H], label: `CAPD: half-life ${PD_CAPD_T12_MIN_H}–${PD_CAPD_T12_MAX_H} h (Lam 2020)` };
+  if ((sc.modality === 'ccpd' || sc.modality === 'nipd') && sc.hours > 0) {
+    const kOn = Math.LN2 / PD_APD_T12_ON_H, kOff = Math.LN2 / PD_APD_T12_OFF_H, h = Math.min(24, sc.hours);
+    const kDay = kOn * h + kOff * (24 - h);
+    return { dailyFactor: Math.exp(-kDay), t12Range: null, t12Equiv: 24 * Math.LN2 / kDay,
+      label: `APD: half-life ${PD_APD_T12_ON_H} h on the cycler, ${PD_APD_T12_OFF_H} h off it (Manley 2001)` };
+  }
+  return { dailyFactor: null, t12Range: null, label: 'No published value for this schedule' };
+}
+
+// The answer for the PD mode. input = { course (pdIntervals' shape), goal {min,max},
+// urine 'anuric'|'lt100'|'100to500'|'gt500', ipToo, hd, giveAtH, settings
+// { maxDoseMg, targetPeak, amLabs } }. Pure: the UI reads the form into it.
+function pdAnswer(input, nowH) {
+  const inp = input || {}, c = inp.course || {}, st = inp.settings || {}, goal = inp.goal;
+  const refuse = (word, html) => ({ state: 'refuse', refuse: { word, html } });
+  if (inp.hd) return refuse('On haemodialysis, not PD', 'This mode is for peritoneal dialysis. For intermittent haemodialysis use AUC Precision with Goti 2018 · HD.');
+  if (inp.ipToo) return refuse('Intraperitoneal vancomycin as well', 'Serum levels cannot separate two routes at once, so no IV dose is sized while IP vancomycin is also given.');
+  if (!(c.nowKg > 0)) return refuse('Weight now missing', 'Enter the actual body weight now; the volume and the doses are sized from it.');
+  if (!goal || !(goal.min > 0) || !(goal.max > goal.min)) return refuse('Choose a goal range', 'Pick 10–15 or 15–20 mg/L, or enter a range with the lower number first. There is no answer without a goal.');
+  const sc = c.schedule || {}, amLabs = st.amLabs, cautions = [];
+  // A local maximum below one dispensing step cannot be honoured: ignored, and said.
+  const localMax = st.maxDoseMg >= MATRIX_DOSE_STEP ? st.maxDoseMg : null;
+  if (st.maxDoseMg > 0 && !localMax) cautions.push({ tier: 'caution', word: 'Local maximum ignored', html: `Your maximum single dose (${st.maxDoseMg} mg) is below one ${MATRIX_DOSE_STEP} mg step, so it is ignored. Change it under Your settings.` });
+  // A dose is never placed before now (D20's rule for a chosen time).
+  let giveAt = inp.giveAtH != null ? inp.giveAtH : nowH;
+  if (giveAt < nowH - 1e-9) { cautions.push({ tier: 'info', word: 'Give-at time', html: `The time entered (${fmtClock(giveAt)}) has passed; the options are for now, not before now.` }); giveAt = nowH; }
+  const giveIsNow = Math.abs(giveAt - nowH) < 5 / 60;
+  const residual = inp.urine === '100to500' || inp.urine === 'gt500';
+  if (residual) cautions.push({ tier: 'caution', word: 'Residual urine output', html: 'Residual kidney function can carry 39–84% of vancomycin clearance when GFR is above 5 mL/min (Lam 2020), so levels may fall faster. No dose adjustment for it is evidence-based (ISPD 2016, 2022); draw the first level at 24–48 h rather than later.' });
+  if (c.loadKg > 0 && Math.abs(c.loadKg - c.nowKg) > 1e-9) cautions.push({ tier: 'info', word: 'Weight changed since the load', html: `Past intervals use ${(+c.loadKg).toFixed(1)} kg; today's options use ${(+c.nowKg).toFixed(1)} kg.` });
+  const doses = (c.doses || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const levels = (c.levels || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const naive = c.prior === 'no';
+  // The first level, never a time already past.
+  const firstLevelAt = (fromH) => {
+    let h = pdFirstLevelH(fromH, amLabs, residual);
+    if (h < nowH) { cautions.push({ tier: 'caution', word: 'First level overdue', html: `It was due ${fmtClock(h)}, the AM labs nearest 48 h after the dose; draw it at the next AM labs.` }); h = pdAmLabsAtOrAfter(nowH, amLabs); }
+    return h;
+  };
+  if (!doses.length && !levels.length) {
+    if (!naive) return { state: 'need-level', nextDrawH: pdNextAmLabs(nowH, amLabs), message: 'Vancomycin given before the first dose entered may still be on board. Draw a level before the first IV dose; the dose is sized from it.', cautions };
+    const load = pdLoadingDose(c.nowKg, localMax);
+    const firstH = firstLevelAt(giveAt), drawOnCycler = pdDrawCaution(sc, firstH, cautions);
+    return { state: 'load', drawOnCycler, load: Object.assign(load, { firstLevelH: firstH }), giveAtH: giveAt, giveIsNow, cautions };
+  }
+  let intervals;
+  try { intervals = pdIntervals(c); } catch (e) { return refuse('Level timing', escHtml(e.message)); }
+  if (!levels.length) {
+    if (!naive) return { state: 'need-level', nextDrawH: pdNextAmLabs(nowH, amLabs), message: 'Vancomycin given before the first dose entered may still be on board, so the first dose cannot be read as a start from zero. Draw a level; the decline is measured from it.', cautions, intervals };
+    const firstH = firstLevelAt(doses[doses.length - 1].timeH), drawOnCycler = pdDrawCaution(sc, firstH, cautions);
+    return { state: 'first-level', nextDrawH: firstH, drawOnCycler, cautions, intervals };
+  }
+  const vNow = (c.vdPerKg || 0) * c.nowKg;
+  const last = levels[levels.length - 1];
+  // A dose started at the level's own minute follows the level (as pdIntervals reads it).
+  const after = doses.filter(d => d.timeH >= last.timeH);
+  const concAt = (t, k, extra) => last.conc * Math.exp(-k * (t - last.timeH)) + predictConc1comp(after.concat(extra || []).filter(d => d.timeH < t), t, k, vNow);
+  const stopped = sc.stoppedAtH != null && sc.stoppedAtH <= nowH;
+  let used = intervals.filter(i => i.used);
+  if (stopped) {
+    const post = used.filter(i => i.fromH >= sc.stoppedAtH);
+    if (post.length) used = post;
+    else if (used.length) cautions.push({ tier: 'caution', word: 'Decline measured before PD stopped', html: 'No interval has run wholly after PD stopped. Without peritoneal clearance the level may fall more slowly than shown; the next level will tell.' });
+  }
+  const capRows = Math.min(DOSE_MAX_PER_DOSE_MG, localMax || Infinity);
+  const context = pdPublishedContext(sc, nowH);
+  const next0 = pdNextAmLabs(giveAt, amLabs);
+  const heldAhead = pdNominalSessions(sc, last.timeH, next0).filter(x => x.held && x.startH >= last.timeH);
+  if (heldAhead.length && used.length) cautions.push({ tier: 'caution', word: 'Held cycler night ahead', html: 'The decline was measured over nights on the cycler; with a night held, the level will likely fall more slowly than projected.' });
+  if (!used.length) {
+    // No decline measured yet (one level after earlier drug, or none of the intervals
+    // could be explained). The level now is carried with essentially no decline (the
+    // search floor), which overstates it, and below the goal the dose is the 250 mg
+    // step at or under what brings the PEAK to the goal's top: it cannot overshoot it.
+    const cNow = concAt(giveAt, PD_K_SEARCH[0]);
+    const below = cNow < goal.min;
+    const mg = below ? Math.min(capRows, Math.floor(vNow * (goal.max - cNow) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP) : 0;
+    const drawOnCycler = pdDrawCaution(sc, next0, cautions);
+    return { state: 'need-level', hasLevel: true, nextDrawH: next0, drawOnCycler, giveAtH: giveAt, giveIsNow,
+      provisional: below && mg > 0 ? { mg, peak: cNow + mg / vNow } : null,
+      message: below && mg > 0 ? 'No decline has been measured yet, so the next level cannot be projected. Until it is, the dose shown brings the peak to the top of the goal, no further.'
+        : below ? 'No decline has been measured yet. The level is below the goal by less than one 250 mg step can add without passing its top: no dose now; the next level measures the decline.'
+        : 'No decline has been measured yet. The level is at or above the goal: no dose now; the next level measures the decline.',
+      lastLevel: last, cautions, intervals, context };
+  }
+  const kMin = Math.min(...used.map(i => i.k)), kMax = Math.max(...used.map(i => i.k));
+  if (used.length === 1) cautions.push({ tier: 'info', word: 'One interval', html: 'The decline rests on one interval; the next level will tell how steady it is.' });
+  const rowsAt = (drawH) => {
+    const out = [];
+    for (let mg = 0; mg <= capRows; mg += MATRIX_DOSE_STEP) {
+      const dose = mg ? [{ mg, tinfH: autoTinf(mg), timeH: giveAt }] : [];
+      const tPeak = giveAt + (mg ? dose[0].tinfH : 0);
+      const atDraw = [concAt(drawH, kMax, dose), concAt(drawH, kMin, dose)];
+      out.push({ mg, peak: [concAt(tPeak, kMax, dose), concAt(tPeak, kMin, dose)], atDraw, mid: (atDraw[0] + atDraw[1]) / 2 });
+    }
+    return out;
+  };
+  const m = (t) => (concAt(t, kMax) + concAt(t, kMin)) / 2;
+  let draw = next0, rows = rowsAt(next0), state = 'no-dose', pick = null, reachTopH = null;
+  if (rows[0].mid > goal.max) {
+    // Above the goal: no dose. The draw is the first AM labs at which the projection
+    // has come down to the goal's top, and every number shown is for that morning.
+    let lo = giveAt, hi = giveAt + 24 * 60;
+    if (m(hi) <= goal.max) { for (let i = 0; i < 100; i++) { const x = (lo + hi) / 2; if (m(x) > goal.max) lo = x; else hi = x; } reachTopH = hi; }
+    for (let d = next0, i = 0; i < 60; i++, d = pdNextAmLabs(d, amLabs)) { if (m(d) <= goal.max) { draw = d; break; } }
+    if (draw !== next0) rows = rowsAt(draw);
+    if (rows[0].mid < goal.min) cautions.push({ tier: 'caution', word: 'Below the goal by then', html: `By ${fmtClock(draw)} the level is projected below ${goal.min} mg/L: a dose will likely be due after that level.` });
+  } else if (rows[0].mid < goal.min) {
+    // PREFERENCE (rule 8): the step whose expected level lands closest to the middle of
+    // the goal, ties to the smaller. It orders the 250 mg steps; it never invents a dose.
+    // When no step lands inside, the closest to the goal of all, giving nothing included.
+    const mid = (goal.min + goal.max) / 2, inGoal = (r) => r.mid >= goal.min && r.mid <= goal.max;
+    const ok = rows.filter(r => r.mg > 0 && inGoal(r));
+    const dist = (r) => (ok.length ? Math.abs(r.mid - mid) : (r.mid < goal.min ? goal.min - r.mid : r.mid - goal.max));
+    const best = (ok.length ? ok : rows).reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
+    if (best.mg) { state = 'dose'; pick = { mg: best.mg, closest: !ok.length }; }
+    else cautions.push({ tier: 'caution', word: 'No step reaches the goal', html: 'Every 250 mg step lands further from the goal than giving nothing; no dose is the closest. Recheck at the next draw.' });
+  }
+  // The chosen option's projected range, sampled for the chart (and its breakpoints).
+  const optMg = pick ? pick.mg : 0, optDose = optMg ? [{ mg: optMg, tinfH: autoTinf(optMg), timeH: giveAt }] : [];
+  const ts = [];
+  for (let i = 0; i <= 60; i++) ts.push(last.timeH + (draw - last.timeH) * i / 60);
+  if (optMg) ts.push(giveAt, giveAt + optDose[0].tinfH);
+  const curve = ts.filter(t => t >= last.timeH && t <= draw).sort((x, y) => x - y)
+    .map(t => ({ t, lo: concAt(t, kMax, optDose), hi: concAt(t, kMin, optDose) }));
+  const drawOnCycler = pdDrawCaution(sc, draw, cautions);
+  let targetPeak = null;
+  if (st.targetPeak > 0) {
+    // V x (target peak - level at the give time), to the nearest step; nothing when the
+    // level is already at or above the target (no 250 mg floor here).
+    const cGive = (concAt(giveAt, kMax) + concAt(giveAt, kMin)) / 2, raw = vNow * (st.targetPeak - cGive);
+    const tmg = raw <= 0 ? 0 : Math.min(capRows, Math.round(raw / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP);
+    const dose = tmg ? [{ mg: tmg, tinfH: autoTinf(tmg), timeH: giveAt }] : [];
+    targetPeak = { mg: tmg, peakTarget: st.targetPeak, atDraw: [concAt(draw, kMax, dose), concAt(draw, kMin, dose)] };
+  }
+  return { state, pick, rows, nextDrawH: draw, reachTopH, rate: { kMin, kMax, n: used.length }, intervals, context, cautions,
+    targetPeak, lastLevel: last, vNowL: vNow, giveAtH: giveAt, giveIsNow, goal, curve, drawOnCycler };
+}
+// The AM-labs instant on or after h: today's if it is still ahead, else tomorrow's.
+function pdAmLabsAtOrAfter(h, amLabs) {
+  const [hh, mm] = (isClock24(amLabs) ? amLabs : '06:00').split(':').map(Number);
+  const d = new Date(h * 3600000);
+  const today = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 0, hh, mm).getTime() / 3600000;
+  return today >= h ? today : pdNextAmLabs(h, amLabs);
+}
+// A draw time that falls while the cycler is running reads low (Lam 2020: sample
+// after the cycler series). Said once, with the time the session ends.
+function pdDrawCaution(schedule, drawH, cautions) {
+  const on = pdSessions(schedule, drawH - 24, drawH + 1e-6).find(x => x.startH <= drawH && drawH < x.endH);
+  if (!on) return false;
+  cautions.push({ tier: 'caution', word: 'Draw after the cycler', html: `AM labs at ${fmtClock(drawH)} fall while the cycler is running; it ends at ${localTimeStr(new Date(on.endH * 3600000))}. A level drawn on the cycler reads low: draw after it ends.` });
+  return true;
+}
+
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
+// AUC Precision guard (D23): a PD patient gets this notice, never a fitted number.
+function bayesPdNoticeHTML() {
+  return noteHTML({ tier: 'caution', word: 'On peritoneal dialysis — use the PD mode', html:
+    `None of the models here has been evaluated in peritoneal dialysis, and no guideline gives an AUC target for it.
+     Use Trough-based · Peritoneal dialysis: it doses IV vancomycin by level, against the cycler schedule.
+     <button type="button" class="vx-act" data-onclick="k93">Open Trough-based · Peritoneal dialysis</button>` });
+}
 // Trough-module guard (D16): an HD patient gets this notice, never a number.
 function troughHdNoticeHTML() {
   return noteHTML({ tier: 'caution', word: 'On haemodialysis — use AUC Precision', html:
@@ -10639,6 +11467,13 @@ function computeGuidelineDose(tbw, crcl) {
 // ─── Main Bayesian runner ───
 function runBayesian() {
   beginFormRun('auc');   // forget the last refusal and its field marks
+  // D23: no model here is evaluated in peritoneal dialysis. Refuse before anything
+  // is parsed or fitted, and point to the level-based PD mode.
+  if ((document.getElementById('b-pd') || {}).checked) {
+    const area = formArea('auc');
+    if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = bayesPdNoticeHTML(); }
+    return;
+  }
   const { doses, levels, sessions, errors } = parseBayesCourse();
   bState.hdGiveAtH = null;   // a give-at time belongs to the answer it was set on (final review I4)
   bState.firstDoseAtH = null; // so does a first-dose time (v3.9.0)
@@ -12027,7 +12862,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <li>Anticipate very long intervals (q24h–q72h or longer); avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
         <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
-        <li>If patient is actually on RRT (HD/CRRT/PD), switch model to <strong>Goti 2018</strong> and check the dialysis box — none of the other models handles RRT</li>
+        <li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>; for peritoneal dialysis use Trough-based · Peritoneal dialysis. CRRT is not modelled here.</li>
       </ul>` });
   }
 
@@ -13515,6 +14350,7 @@ function saveCurrentProfile() {
   const snapshot = snapshotBayesForm();
   // The core is what makes a profile usable from either module.
   snapshot.core = snapshotPatientCore();
+  snapshot.pd = snapshotPdForm();   // the PD mode's fields (D23); older profiles have none
   // "Is anything entered" must look at the CORE, not only the Bayesian form — a
   // profile saved from the Trough-Based module has no dose history and its
   // demographics live in the other set of inputs.
@@ -13558,6 +14394,11 @@ function loadProfileIntoForm(id) {
     scr: s.demographics?.scr, sex: s.demographics?.sex,
     aucTarget: s.target?.auc, mic: s.target?.mic,
   });
+  // The PD mode's fields (D23). A PD profile ticks AUC Precision's PD box, so its
+  // course never reaches the fit.
+  applyPdForm(s.pd || null);
+  const bpd = document.getElementById('b-pd');
+  if (bpd) bpd.checked = !!(s.pd && s.pd.modality);
 
   // Skip empties: resetBayesian() has already cleared the form, and the patient
   // core was applied above. A profile saved from the Trough-Based module carries

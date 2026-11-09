@@ -1256,6 +1256,123 @@ predated the release.
 - engine parity 0 differences against v3.10.0; phase3 21/21; phase4 49/49; the comprehensive suite
   unchanged from v3.10.0.
 
+## D23 — IV vancomycin for patients on peritoneal dialysis, dosed by level (2026-11-09, v3.12.0)
+
+**Asked.** The user doses IV vancomycin for patients on PD from a pharmacy workstation and wanted a PD
+module: "guidance and tool for what dose to give, when to redose, when to obtain levels, contingent on
+PD schedule". IV, not IP. Not Bayesian; "dosing by levels is fine".
+
+**Researched first.** The private report `…/Vancomycin /reports/Vancomycin peritoneal dialysis
+dosing.md` (outside this repo) read the guidelines, the PK, the outcome cohorts and 15 public
+institutional protocols.
+- **Guidelines:** ISPD 2022 gives no IV vancomycin dose and drops ISPD 2016's "keep levels above
+  15 mg/L" (2C).
+- **Models:** the one adult PD population model (Hartinger 2023) is CAPD-only, intraperitoneal,
+  single-centre and unvalidated. No APD model exists, no vendor documents one, and every public AUC
+  programme routes PD to level-based dosing.
+- **Kinetics:** on APD after IV dosing the half-life is 11.6 h on the cycler and 62.8 h off it
+  (Manley 2001). Residual kidney function can carry 39–84% of clearance (Lam 2020).
+- **Level timing:** a level drawn in the first day after a dose falls faster than later
+  (Montañés-Pauls 2012). A level drawn on the cycler reads low (Lam 2020).
+
+**Designed with the user** (spec `docs/superpowers/specs/2026-11-08-pd-iv-dosing-design.md`, plan
+`docs/superpowers/plans/2026-11-08-pd-iv-dosing.md`):
+- **The redose:** sized by where it puts the next level the pharmacist will draw, inside the goal they
+  choose. The target-peak calculation, V × (peak − level now), is shown alongside, never as the answer.
+  The user's own institution redoses to a target peak; a real case they brought showed a target-peak
+  dose overshooting an SSTI goal at the next draw. That case is kept out of the repo; tests use
+  fictional data.
+- **The goal:** chosen per patient, from the presets 10–15 and 15–20 (Rybak 2009) or a custom range.
+  No goal, no answer.
+- **The decline:** measured from the patient's own levels, interval by interval, and shown as a range
+  with the reason. The user's case could not be fitted by one half-life and one volume (a level within
+  a day of a redose fell faster), so the tool never presents a single rate as certain.
+- **PD stopped** (catheter out): in scope, the user's answer in the builder check. Drug from before the
+  first IV dose means the tool asks for a level first.
+
+**Built** (a fifth Trough-module mode, "Peritoneal dialysis"):
+- **Engine** (pure, Node-tested):
+  - `pdSessions` / `pdNominalSessions`: wall-clock cycler nights, held nights, nothing after PD stops.
+  - `pdIntervals`: k per interval by bisection on the existing `predictConc1comp`, with V = 0.70
+    (Bauer) or 0.90 L/kg (Matzke group III) × the load weight. Flags: early (< 24 h after a dose, a
+    PREFERENCE), on-cycler, held-night, before-stop, prior-drug, unexplained-high/low.
+  - `pdAnswer`:
+    - refusals (HD, IP as well, no weight, no or bad goal, a level inside an infusion);
+    - the load: 20 mg/kg, institutional (Northwestern 2026), capped at Rec 11's 3,000 mg or a lower
+      local maximum;
+    - the first level: the AM labs nearest 48 h, earlier with residual urine ≥ 100 mL/day;
+    - the rows per 250 mg to `DOSE_MAX_PER_DOSE_MG`;
+    - the pick: closest to the goal's middle, ties smaller; "closest, flagged" when out of reach;
+    - above goal: no dose until the projection reaches the top;
+    - the published APD/CAPD context, which never enters a row;
+    - a draw on the cycler is flagged, and the verdict defers to it.
+- **UI:**
+  - The mode's own section. The PK model and trough target are hidden.
+  - Course-table rows.
+  - Local settings kept in the browser only (maximum single dose, target peak, AM-labs time).
+  - The verdict by state, an SVG chart (levels, projected range, goal, cycler nights; CSS tokens),
+    the options, the decline in words, and Copy summary.
+  - Print through the existing Trough path.
+- **AUC Precision:**
+  - A "Patient on peritoneal dialysis" box refuses before anything is fitted, with a link to the mode.
+  - The severe-renal advisory no longer sends PD to Goti.
+  - Profiles carry the PD fields, and a PD profile ticks the box.
+
+**Rulings** (from the plan ledger):
+- "PD stopped" is a stop time on the schedule, not a fourth modality.
+- Drug before the first dose with no level is guidance ("draw a level first"), not a refusal.
+- With a level but no measured decline, a level below the goal gets a provisional dose that brings the
+  peak to the goal's top.
+- SUITE 19's clock-only test names the two recurring times of day (the cycler start and the AM-labs
+  time) and proves that they become instants only calendar day by calendar day.
+
+**Declined:**
+- Intraperitoneal dosing.
+- AUC or Bayesian output for PD.
+- Hartinger 2023 as a prior (its typical V2 contradicts its own equation; no external validation).
+- A dose uplift for residual function (ISPD 2016 and 2022 give none for vancomycin).
+
+**Final review** (a fresh reviewer, all gates re-run plus its own probes): no flaw in the core
+arithmetic, but two Critical paths would show a misleading answer. Fixed in one pass, each with a test
+that failed first (41.16–41.27):
+- **Critical:**
+  - A dose started at the same minute as the last level was left out of the projection, so the tool
+    recommended a second dose on top of it.
+  - Above the goal, the expected level was quoted for a different morning from the one the draw was set
+    for. The draw is now the first AM labs at which the projection reaches the goal's top, and every
+    number is for that morning.
+- **Important, and Minors re-graded by effect:**
+  - The provisional path decided on NaN (k = 0). It now uses the search floor, and it floors to the step
+    so it cannot pass the goal's top.
+  - Two levels minutes apart counted as a decline. Intervals under 12 h are not used (PREFERENCE).
+  - A give-at time in the past was accepted; it is now never before now.
+  - The target-peak row offered 250 mg above the target.
+  - A local maximum under 250 mg left a blank result.
+  - A first level could be a time already past.
+  - The closest pick ignored giving nothing.
+  - An interval across the PD stop was unflagged; it is now `spans-stop`.
+  - The heading asked for a level already drawn.
+  - Print and Copy summary missed the schedule, the give-at time and the cycler caution. A "Schedule and
+    course" section now carries them.
+- **Pinned by new tests:** the before-stop caution, the held-night-ahead caution, and AM labs across
+  DST were right but untested.
+- **Standing rulings:** the 20 mg/kg load, the 24 h early cut-off and the 100 mL/day threshold stay
+  as labelled institutional or preference values. Flagged intervals stay in the range with their flag.
+  Ticking the PD box marks an earlier AUC result stale only at the next run (like the CrCl override).
+
+**Not clinically validated.** The numbers follow from the patient's levels and stated sources; the tool
+has not been validated against PD outcomes.
+
+**Tests and gates:**
+- phase2d **440/440** (SUITE 41: sessions, intervals and flags, prior drug, DST, the load, refusals,
+  the range, the recommendation branches, the target-peak row, the context, the mode's wiring, the
+  rendered answer and chart, the AUC refusal and profiles);
+- browser flows **84/84** (the fictional CCPD patient typed in on a fixed clock: the answer, the early
+  flag, the marked option, the cycler bands, the weight caution, print, goal 15–20, the IP refusal,
+  AUC Precision's refusal and link, 375 px);
+- engine parity 0 against v3.11.0; phase3 21/21; phase4 49/49; the comprehensive suite unchanged;
+- rendered contrast of the new text 5.0–13.9:1, light and dark.
+
 ## Known gaps
 
 - **Three near-duplicate dose-explorer tables** remain in the Trough-Based module

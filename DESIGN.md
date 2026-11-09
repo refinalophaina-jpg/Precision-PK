@@ -169,6 +169,7 @@ The system is mirrored, not invented: its primitives come from the live ainadara
 
 **Key Characteristics:**
 - Answer first: the regimen in DM Serif Display at 40px, at the "now" end of the course.
+- Peritoneal dialysis (v3.12.0): the Trough grammar. The verdict is "Give 500 mg IV now" (or "No dose today", or "Draw the first level"), then the expected level at the next draw as a range, then "Draw the next level <time> with AM labs, after the cycler". The chart is SVG in the course strip's idiom: measured levels in `--series-measured`, the projected range as a `--series-projection` band, the goal on `--paper-deep`, cycler nights as the neutral session band (8% ink, as HD), doses as ink ticks. The options table marks the recommended row with the `paper-deep` step and a `terracotta-ink` head. Unused intervals are muted ink.
 - Said once (v3.11.0): the chart's summary is the canvas's accessible name, not a paragraph; AUC/MIC appears only when MIC ≠ 1; evidence sections with nothing to show yet are one muted line (`.ev-empty`) naming what each needs. On Goti-HD, Regimens is closed and follows Haemodialysis, with no guideline line or projection row.
 - One shared time axis and one cursor across the course strip and the curve.
 - Hairlines (`rule`) and a paper-to-paper-deep step do all the separating.

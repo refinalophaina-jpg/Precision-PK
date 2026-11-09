@@ -644,6 +644,68 @@ async function enterCourse(page) {
     results.problems.push(...sAttr.kept);
     await sctx.close();
   }
+
+  // v3.12.0 (D23): IV vancomycin on peritoneal dialysis, typed in. A fictional CCPD patient
+  // (61 kg at the load, 63 kg now, cycler 21:00 x 9.5 h), on a fixed clock (today 10:00) so the
+  // answer cannot depend on the time of day.
+  {
+    const pctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const pd = await pctx.newPage();
+    const pdProblems = watch(pd, 'pd');
+    await pd.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await pd.goto(BASE + '?v=pwpd-' + Date.now(), { waitUntil: 'networkidle' });
+    await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await pd.locator('#mode-btn-pd').click();
+    await typeInto(pd, '#tbw', '63');
+    await pd.selectOption('#pd-modality', 'ccpd');
+    await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
+    await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
+    await typeInto(pd, '#pd-load-kg', '61');
+    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
+    const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
+    await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
+    await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
+    const pdRun = async () => { await pd.locator('[data-onclick="k31"]').click(); await pd.waitForSelector('#results-content .pd-verdict', { timeout: 20000 }); await pd.waitForTimeout(250); };
+    const pdRead = () => pd.evaluate(() => {
+      const t = (s) => ((document.querySelector(s) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const rec = document.querySelector('#results-content tr.is-rec th');
+      return { verdict: t('#results-content .pd-verdict'), rec: rec ? rec.textContent.replace(/\s+/g, ' ').trim() : '',
+        decline: t('#pd-decline'), notes: t('#results-content .tx-notes'),
+        cyc: document.querySelectorAll('#results-content svg .pd-cycler').length, lv: document.querySelectorAll('#results-content svg .pd-lv').length };
+    });
+    const mgOf = (v) => { const m = v.match(/Give ([\d.]+) (g|mg) IV/); return m ? (m[2] === 'g' ? +m[1] * 1000 : +m[1]) : 0; };
+    await pdRun();
+    const p1 = await pdRead();
+    ok('PD: the fictional CCPD patient gets an answer — a dose or none, the expected level at the next draw, and when to draw it',
+       /^(Give [\d.]+ (g|mg) IV|No dose today)/.test(p1.verdict) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(p1.verdict) && /Draw the next level/.test(p1.verdict), p1.verdict.slice(0, 300));
+    ok('PD: the second interval is flagged early; the options mark the recommendation; the chart shows the levels and cycler nights',
+       /within 24 h of a dose ending/.test(p1.decline) && (mgOf(p1.verdict) ? p1.rec.startsWith(p1.verdict.match(/Give ([\d.]+ (?:g|mg))/)[1]) : p1.rec === 'No dose') && p1.lv === 2 && p1.cyc >= 1, JSON.stringify(p1).slice(0, 400));
+    const printed = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).innerHTML || ''; });
+    ok('PD: the weight change is said; print carries the answer and its chart',
+       /Weight changed since the load/.test(p1.notes) && /pd-verdict/.test(printed) && /pd-chart/.test(printed), p1.notes.slice(0, 200));
+    await pd.locator('[data-onclick="k85"][data-arg="15|20"]').click(); await pdRun();
+    const p2 = await pdRead();
+    ok('PD: a 15–20 goal asks for more than 10–15', mgOf(p2.verdict) > mgOf(p1.verdict), `${mgOf(p1.verdict)} → ${mgOf(p2.verdict)}`);
+    await pd.locator('#pd-ip').check(); await pdRun();
+    ok('PD: intraperitoneal vancomycin as well is refused', /Intraperitoneal vancomycin as well/.test((await pdRead()).verdict));
+    await pd.locator('#pd-ip').uncheck();
+    await pd.setViewportSize({ width: 375, height: 812 }); await pdRun();
+    const pw = await pd.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth }));
+    ok('PD at 375 px: no horizontal overflow', pw.sw <= pw.iw, JSON.stringify(pw));
+    await pd.setViewportSize({ width: 1280, height: 900 });
+    await pd.locator('.module-tab', { hasText: 'AUC' }).first().click();
+    await pd.locator('#b-pd').check();
+    await pd.locator('[data-onclick="k47"]').click(); await pd.waitForTimeout(300);
+    const refusal = await pd.evaluate(() => ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' '));
+    await pd.locator('#b-results [data-onclick="k93"]').click(); await pd.waitForTimeout(200);
+    const opened = await pd.evaluate(() => ({ on: document.getElementById('mode-btn-pd').classList.contains('active'), shown: !!document.getElementById('section-pd').offsetParent }));
+    ok('AUC Precision refuses a PD patient; its link opens the PD mode', /On peritoneal dialysis/.test(refusal) && opened.on && opened.shown, refusal.slice(0, 160) + ' ' + JSON.stringify(opened));
+    const pAttr = await attributeInjected(pd, pdProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + pAttr.injected;
+    results.problems.push(...pAttr.kept);
+    await pctx.close();
+  }
   await browser.close();
 
   results.checks = checks;
