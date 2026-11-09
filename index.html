@@ -3813,6 +3813,7 @@
           <input type="checkbox" id="b-dial" data-onchange="k41" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
           <label for="b-dial" style="display:inline-flex;align-items:center;min-height:44px;font-size:var(--fs-xs);color:var(--text-secondary);cursor:pointer">Haemodialysis patient (HD)</label>
         </div>
+        <label class="hd-flag"><input type="checkbox" id="b-pd"> Patient on peritoneal dialysis</label>
       </div>
     </div>
 
@@ -4108,6 +4109,7 @@ const __ACT = {
   k91: (el, ev, arg) => { removePdRow('held', arg); },
   k92: (el, ev, arg) => { savePdLocalSettings(); },
   k94: (el, ev, arg) => { pdToggleFields(); },
+  k93: (el, ev, arg) => { switchModule('trough'); setCalcMode('pd'); },   /* AUC Precision PD guard → the PD mode (D23) */
   k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
@@ -4543,6 +4545,34 @@ function readPdForm() {
       schedule: { modality, startClock, hours, heldDates, stoppedAtH, exchanges: num('pd-exchanges'), fillL: num('pd-fill') } },
     goal, urine, ipToo: !!(document.getElementById('pd-ip') || {}).checked, hd: !!(document.getElementById('t-hd') || {}).checked,
     giveAtH: give.h != null ? give.h : null, settings: pdLocalSettings() } };
+}
+// Saved profiles carry the PD fields as entered (strings), and restore them.
+function snapshotPdForm() {
+  const v = (id) => String((document.getElementById(id) || {}).value || '');
+  const rows = (kind, fields) => [...document.querySelectorAll(`#pd-${kind}-tbody tr[data-n]`)]
+    .map(tr => Object.fromEntries(fields.map(f => [f, v(`pd-${kind}-${f}-${tr.dataset.n}`)])));
+  return { modality: v('pd-modality'), start: v('pd-start'), hours: v('pd-hours'), exchanges: v('pd-exchanges'), fill: v('pd-fill'),
+    held: rows('held', ['date']).map(r => r.date), stopped: !!(document.getElementById('pd-stopped') || {}).checked,
+    stoppedDate: v('pd-stopped-date'), stoppedTime: v('pd-stopped-time'), prior: v('pd-prior'), urine: v('pd-urine'),
+    ip: !!(document.getElementById('pd-ip') || {}).checked, loadKg: v('pd-load-kg'), vd: v('pd-vd'),
+    goalMin: v('pd-goal-min'), goalMax: v('pd-goal-max'),
+    doses: rows('dose', ['mg', 'tinf', 'date', 'time']), levels: rows('lvl', ['conc', 'date', 'time']),
+    giveDate: v('pd-give-date'), giveTime: v('pd-give-time') };
+}
+function applyPdForm(pd) {
+  if (typeof document === 'undefined' || !document.getElementById('section-pd')) return;
+  const o = pd || {}, set = (id, x) => { const e = document.getElementById(id); if (e) e.value = x == null ? '' : x; };
+  const chk = (id, x) => { const e = document.getElementById(id); if (e) e.checked = !!x; };
+  set('pd-modality', o.modality); set('pd-start', o.start); set('pd-hours', o.hours); set('pd-exchanges', o.exchanges); set('pd-fill', o.fill);
+  chk('pd-stopped', o.stopped); set('pd-stopped-date', o.stoppedDate); set('pd-stopped-time', o.stoppedTime);
+  set('pd-prior', o.prior); set('pd-urine', o.urine); chk('pd-ip', o.ip); set('pd-load-kg', o.loadKg); set('pd-vd', o.vd || 'bauer');
+  set('pd-goal-min', o.goalMin); set('pd-goal-max', o.goalMax); set('pd-give-date', o.giveDate); set('pd-give-time', o.giveTime);
+  ['dose', 'lvl', 'held'].forEach(k => { const tb = document.getElementById(`pd-${k}-tbody`); if (tb) tb.innerHTML = ''; });
+  const fill = (kind, list, fields) => (list || []).forEach(r => { addPdRow(kind); const n = pdRowN[kind]; fields.forEach(f => set(`pd-${kind}-${f}-${n}`, r[f])); });
+  fill('dose', o.doses, ['mg', 'tinf', 'date', 'time']); fill('lvl', o.levels, ['conc', 'date', 'time']);
+  fill('held', (o.held || []).map(d => ({ date: d })), ['date']);
+  pdSetGoal(`${o.goalMin || ''}|${o.goalMax || ''}`); set('pd-goal-min', o.goalMin); set('pd-goal-max', o.goalMax);
+  pdToggleFields();
 }
 function runPd() {
   const r = readPdForm();
@@ -9082,6 +9112,13 @@ function pdDrawCaution(schedule, drawH, cautions) {
 
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
+// AUC Precision guard (D23): a PD patient gets this notice, never a fitted number.
+function bayesPdNoticeHTML() {
+  return noteHTML({ tier: 'caution', word: 'On peritoneal dialysis — use the PD mode', html:
+    `None of the models here has been evaluated in peritoneal dialysis, and no guideline gives an AUC target for it.
+     Use Trough-based · Peritoneal dialysis: it doses IV vancomycin by level, against the cycler schedule.
+     <button type="button" class="vx-act" data-onclick="k93">Open Trough-based · Peritoneal dialysis</button>` });
+}
 // Trough-module guard (D16): an HD patient gets this notice, never a number.
 function troughHdNoticeHTML() {
   return noteHTML({ tier: 'caution', word: 'On haemodialysis — use AUC Precision', html:
@@ -11361,6 +11398,13 @@ function computeGuidelineDose(tbw, crcl) {
 // ─── Main Bayesian runner ───
 function runBayesian() {
   beginFormRun('auc');   // forget the last refusal and its field marks
+  // D23: no model here is evaluated in peritoneal dialysis. Refuse before anything
+  // is parsed or fitted, and point to the level-based PD mode.
+  if ((document.getElementById('b-pd') || {}).checked) {
+    const area = formArea('auc');
+    if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = bayesPdNoticeHTML(); }
+    return;
+  }
   const { doses, levels, sessions, errors } = parseBayesCourse();
   bState.hdGiveAtH = null;   // a give-at time belongs to the answer it was set on (final review I4)
   bState.firstDoseAtH = null; // so does a first-dose time (v3.9.0)
@@ -12749,7 +12793,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <li>Anticipate very long intervals (q24h–q72h or longer); avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
         <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
-        <li>If patient is actually on RRT (HD/CRRT/PD), switch model to <strong>Goti 2018</strong> and check the dialysis box — none of the other models handles RRT</li>
+        <li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>; for peritoneal dialysis use Trough-based · Peritoneal dialysis. CRRT is not modelled here.</li>
       </ul>` });
   }
 
@@ -14237,6 +14281,7 @@ function saveCurrentProfile() {
   const snapshot = snapshotBayesForm();
   // The core is what makes a profile usable from either module.
   snapshot.core = snapshotPatientCore();
+  snapshot.pd = snapshotPdForm();   // the PD mode's fields (D23); older profiles have none
   // "Is anything entered" must look at the CORE, not only the Bayesian form — a
   // profile saved from the Trough-Based module has no dose history and its
   // demographics live in the other set of inputs.
@@ -14280,6 +14325,11 @@ function loadProfileIntoForm(id) {
     scr: s.demographics?.scr, sex: s.demographics?.sex,
     aucTarget: s.target?.auc, mic: s.target?.mic,
   });
+  // The PD mode's fields (D23). A PD profile ticks AUC Precision's PD box, so its
+  // course never reaches the fit.
+  applyPdForm(s.pd || null);
+  const bpd = document.getElementById('b-pd');
+  if (bpd) bpd.checked = !!(s.pd && s.pd.modality);
 
   // Skip empties: resetBayesian() has already cleared the form, and the patient
   // core was applied above. A profile saved from the Trough-Based module carries

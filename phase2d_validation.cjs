@@ -5393,6 +5393,20 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const refused = sandbox.pdResultsHTML(ask(fict(), { goal: null }), { course: fict() }, H(3, '09:00'));
     assert(/Choose a goal range/.test(refused) && !/pd-options/.test(refused), 'a refusal shows no options');
   });
+  test('41.15 AUC Precision refuses a PD patient and points to the PD mode; the RRT advisory no longer sends PD to Goti; profiles carry PD', () => {
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const body = (n) => { const c = script.slice(script.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
+    assert(/<input type="checkbox" id="b-pd"/.test(src), 'the box in the AUC renal area');
+    const rb = body('runBayesian');
+    assert(rb.indexOf("getElementById('b-pd')") > 0 && rb.indexOf("getElementById('b-pd')") < rb.indexOf('parseBayesCourse()'), 'checked before anything is parsed or fitted');
+    assert(/data-onclick="k93"/.test(body('bayesPdNoticeHTML')) && /Trough-based · Peritoneal dialysis/.test(body('bayesPdNoticeHTML')), 'the refusal links to the PD mode');
+    assert(/\n  k93: [^\n]*switchModule\('trough'\)[^\n]*setCalcMode\('pd'\)/.test(script), 'k93 opens it');
+    assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /for peritoneal dialysis use Trough-based · Peritoneal dialysis/.test(src), 'the advisory no longer sends PD to Goti');
+    assert(/snapshot\.pd = snapshotPdForm\(\);/.test(body('saveCurrentProfile')), 'saved');
+    assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /getElementById\('b-pd'\)/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');
+    assert(/const PROFILE_SCHEMA\s+=\s+1;/.test(src), 'the profile schema is unchanged: older profiles load with no pd block');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
