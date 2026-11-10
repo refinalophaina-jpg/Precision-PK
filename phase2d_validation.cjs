@@ -2113,7 +2113,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const clockOnly = [...body.matchAll(/<input[^>]*(?:placeholder="HH:MM"|pattern="\[0-2\]\[0-9\]:\[0-5\]\[0-9\]"|data-time24)[^>]*>/g)].map(m => m[0]);
     assert(clockOnly.length >= 3, `expected the dose, level and SCr time fields, found ${clockOnly.length}`);
     // The HD session start time (D15) sits beside its own date input too.
-    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-|id="b-hds-time"|id="b-hd-give-time"|id="b-first-time"/;   // b-hd-give-time sits beside b-hd-give-date (v3.8.0)
+    const paired = /id="b-dose-time-|id="b-lvl-time-|class="b-scr-time"|id="b-hd-time-|id="b-hds-time"|id="b-hd-give-time"|id="b-first-time"|id="(?:time-dose-given|time-level-drawn|tl-dose-time|tl-t1-time|tl-t2-time|rl-dose-time|rl-draw-time)-time"/;   // b-hd-give-time sits beside b-hd-give-date (v3.8.0); the Trough pairs (v3.13.0, D24)
+    for (const id of ['time-dose-given', 'time-level-drawn', 'tl-dose-time', 'tl-t1-time', 'tl-t2-time', 'rl-dose-time', 'rl-draw-time'])
+      assert(new RegExp(`id="${id}-date"[^>]*>\\s*<input[^>]*id="${id}-time"`).test(body), `${id}: the time is paired with its date`);
     assert(/id="b-hds-date"[^>]*><\/label>\s*<label>Start <input[^>]*id="b-hds-time"/.test(body), 'the schedule start time sits beside its date');
     assert(/id="b-hd-date-\$\{id\}"[^>]*>\s*<input[^>]*id="b-hd-time-\$\{id\}"/.test(body), 'the HD start time is paired with its date');
     // D23 (v3.12.0): the PD dose, level, stop and give-at times each sit beside their own date.
@@ -2134,14 +2136,20 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
   });
 
-  test('every Trough-Based timing field is a datetime-local on the shared class', ()=>{
+  // v3.13.0 (D24): each Trough instant is entered as a date and a 24-hour time (the AUC
+  // grammar) and composed by one function, dtPairValue, into the full datetime the engine
+  // reads under the old id. Still one full instant per field: never a clock-only value.
+  test('every Trough-Based timing field is one full instant, composed from its date and time', ()=>{
     for (const id of ['tl-dose-time','tl-t1-time','tl-t2-time','time-dose-given',
                       'time-level-drawn','rl-dose-time','rl-draw-time']) {
       const m = body.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`));
       assert(m, `${id} is missing`);
-      assert(/type="datetime-local"/.test(m[0]), `${id} is not a datetime-local: ${m[0].slice(0,120)}`);
-      assert(/class="dt-input"/.test(m[0]),      `${id} does not use the shared .dt-input class`);
+      assert(/type="hidden"/.test(m[0]), `${id} is not the composed instant: ${m[0].slice(0,120)}`);
+      assert(new RegExp(`data-dt-for="${id}"`).test(body), `${id} has no date-and-time pair`);
     }
+    assert(sandbox.dtPairValue('2026-09-11', '23:30') === '2026-09-11T23:30', 'a full instant');
+    const r = elapsedHours(sandbox.dtPairValue('2026-09-11', '22:00'), sandbox.dtPairValue('2026-09-12', '10:00'));
+    assert(r.ok && Math.abs(r.hours - 12) < 1e-9, 'across midnight, through the one helper');
   });
 
   test('the 24-hour wrap idiom is gone from the script', ()=>{
@@ -3365,8 +3373,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/class="section-label"/.test(markup), 'a static .section-label eyebrow is still in the input panels');
     const h2 = [...markup.matchAll(/<h2 class="form-h2[^"]*"[^>]*>([^<]*)</g)].map(m => m[1].trim());
     assert(h2.length >= 24, `${h2.length} form <h2> headings, expected every section (24)`);
-    for (const want of ['Patient demographics', 'Renal function', 'Regimen preferences', 'Current regimen',
-                        'Loading dose', 'Drug level', 'PK model', 'Therapeutic target', 'Dosing course history']) {
+    // v3.13.0 (D24): "Patient" and "Dosing course", and AUC Precision's model is its own section.
+    for (const want of ['Patient', 'Renal function', 'Regimen preferences', 'Current regimen',
+                        'Loading dose', 'Drug level', 'PK model', 'Therapeutic target', 'Dosing course', 'Model']) {
       assert(h2.includes(want), `missing section heading "${want}"`);
     }
     // Sentence case: after the first letter, a capital starts only an acronym or a name.
@@ -4115,12 +4124,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(stripes.length === 0, 'side stripes in: ' + stripes.map(r => r.sel).join(' | '));
   });
   test('print action: one per page, labelled, quiet, and only for the module on screen', ()=>{
-    assert((src.match(/class="print-fab"/g) || []).length === 1 && (src.match(/data-onclick="k0"/g) || []).length === 1, 'exactly one print action');
-    assert(/class="print-fab"[^>]*>[\s\S]{0,700}Print or save as PDF/.test(src), 'label');
-    const fab = rules.find(r => r.sel === '.print-fab');
-    assert(fab && !/terracotta/.test(fab.body), 'terracotta belongs to the recommendation, not the print button');
-    assert(rules.some(r => /max-width:\s*768px/.test(enclosing(r.at).join(' ')) && /body\.has-results \.print-fab/.test(r.sel) && /position:\s*static/.test(r.body)),
-      'on a phone the print action must sit in the flow, not over the results');
+    // v3.13.0 (D24): Print is one of the answer's actions (.vx-act), so it exists only with a
+    // result, only in the module on screen, and never floats over the results.
+    const staticBody = src.slice(src.indexOf('<body>'), src.indexOf('<script>'));
+    assert(!/data-onclick="k0"/.test(staticBody), 'no print action outside a result');
+    const prints = src.match(/<button type="button" class="vx-act" data-onclick="k0">[^<]*<\/button>/g) || [];
+    assert(prints.length === 3 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, AUC): ${prints.length}`);
+    const act = rules.find(r => /\.vx-act\b/.test(r.sel) && /color/.test(r.body));
+    assert(act && /terracotta-ink/.test(act.body) && !/background:\s*var\(--terracotta\)/.test(act.body), 'a text action, not a filled button');
     const prevGet = sandbox.document.getElementById;
     const els = { 'app-shell-bayesian': { style: { display: 'none' } },
                   'results-content':    { style: { display: 'none' }, children: [] },
@@ -4810,7 +4821,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/if \(sel\.changedAcrossFit\) \{/.test(rb), 'the renal-change caution is not suppressed wholesale');
     const run = bodyOf37('runBayesian');
     assert(/scrLabel: scrSelUsed \? scrSelUsed\.label : null/.test(run), 'the printed SCr label is the reading used');
-    assert(/if \(e\.type === 'input' && t\.hasAttribute && t\.hasAttribute\('data-time24'\)\) formatTime24Input\(t, e\);\s*\n\s*if \(!t\.closest\('\.course-row'\)\) return;/.test(script37), 'the 24-hour formatter runs outside course rows too');
+    assert(/if \(e\.type === 'input' && t\.hasAttribute && t\.hasAttribute\('data-time24'\)\) formatTime24Input\(t, e\);\s*\n(?:\s*const pair = t\.closest\('\.dt-pair'\);\s*\n\s*if \(pair\) \{ syncDtPair\(pair, e\); return; \}\s*\n)?\s*if \(!t\.closest\('\.course-row'\)\) return;/.test(script37), 'the 24-hour formatter runs outside course rows too');
     assert(/k79:[^\n]*b-hd-give-msg/.test(script37), 'a bad give-at time is said, not silently reset');
     const h = sandbox.hdNextDoseHTML(sandbox.hdOneTimeDose(hd37({ CL_ind: pk37.TVCL * 2 }), 20, 48), false, 20);
     assert(/Next HD at<\/span>/.test(h) && /after session 1 began<\/span>/.test(h), 'the gap control says what it counts from');
@@ -5156,7 +5167,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('40.5 Goti-HD: Regimens closed and placed after Haemodialysis; no guideline line; no projection row', () => {
     const rb = bodyOf40('renderBayesianResults');
-    assert(/regimensSec = ev\('ev-regimens', 'Regimens', gist, body, !isHD\);/.test(rb), 'closed on HD, open otherwise');
+    // v3.13.0 (D24): closed everywhere now, its gist naming the band count and the recommendation (42.8).
+    assert(/regimensSec = ev\('ev-regimens', 'Regimens', gist, body, false\);/.test(rb), 'closed on HD (and, since D24, everywhere)');
     const before = rb.indexOf('if (!isHD) html += regimensSec;'), hdAt = rb.indexOf("ev('ev-hd'"), after = rb.indexOf('if (isHD) html += regimensSec;');
     assert(before > 0 && hdAt > before && after > hdAt, `order: ${before} < ${hdAt} < ${after}`);
     assert(/if \(p2c\.guidDose && !isHD\)/.test(rb), 'no weight-based q-interval line beside an HD answer');
@@ -5387,12 +5399,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert((svg.match(/<circle[^>]*class="pd-lv"/g) || []).length === 2 && /<path[^>]*class="pd-band"/.test(svg) && (svg.match(/<rect[^>]*class="pd-cycler"/g) || []).length >= 1 && /class="pd-goal"/.test(svg), svg.slice(0, 400));
     assert(!/#[0-9a-f]{3,6}\b|rgba?\(/i.test(svg), 'no colour literals: CSS tokens only');
     assert(/Give 500 mg|Give [\d.]+ g|Give \d+ mg/.test(sandbox.pdSummaryText(b)), sandbox.pdSummaryText(b));
+    // D24 (v3.13.0, the user's ruling 2026-11-10: "not too much attention to cycler ending for
+    // levels"): the next draw is the AM labs, said plainly. A draw that falls on the cycler is
+    // still known (drawOnCycler) but raises no caution, and the verdict does not discuss the cycler.
+    // A level drawn on the cycler keeps its flag in "The decline" (41.28).
     const early = ask(fict(), { settings: { maxDoseMg: null, targetPeak: null, amLabs: '05:00' } });
-    assert(early.cautions.some(c => /cycler/i.test(c.word) && /06:30/.test(c.html)), JSON.stringify(early.cautions));
-    // ...and the verdict never says "after the cycler" for a draw that falls on it.
+    assert(early.drawOnCycler === true && !early.cautions.some(c => /cycler/i.test(c.word + c.html)), JSON.stringify(early.cautions));
     const verdictOf = (h) => h.slice(h.indexOf('pd-verdict'), h.indexOf('</section>', h.indexOf('pd-verdict')));
-    assert(early.drawOnCycler === true && !/after the cycler/.test(verdictOf(sandbox.pdResultsHTML(early, { course: fict() }, H(3, '09:00')))), 'no contradiction with the caution');
-    assert(/after the cycler/.test(verdictOf(html)), 'a 07:00 draw after a cycler that ends at 06:30 says so');
+    assert(!/cycler|see below/i.test(verdictOf(sandbox.pdResultsHTML(early, { course: fict() }, H(3, '09:00')))), 'a draw on the cycler: the verdict says the AM labs, nothing more');
+    assert(!/cycler/i.test(verdictOf(html)) && /with AM labs/.test(verdictOf(html)), 'a draw after the cycler: the same plain words');
     const refused = sandbox.pdResultsHTML(ask(fict(), { goal: null }), { course: fict() }, H(3, '09:00'));
     assert(/Choose a goal range/.test(refused) && !/pd-options/.test(refused), 'a refusal shows no options');
   });
@@ -5444,7 +5459,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const later = ask(fict(), { goal: { min: 15, max: 20 }, giveAtH: now + 3 }, now);
     assert(new RegExp(`at ${sandbox.fmtClock(now + 3)}`).test(sandbox.pdSummaryText(later)), sandbox.pdSummaryText(later));
     const onCyc = ask(fict(), { goal: { min: 15, max: 20 }, settings: settingsAt('05:00') }, now);
-    assert(/after the cycler/i.test(sandbox.pdSummaryText(onCyc)), sandbox.pdSummaryText(onCyc));
+    // D24: the summary names the draw time, not the cycler (the user's ruling, 41.14).
+    assert(onCyc.drawOnCycler === true && !/cycler/i.test(sandbox.pdSummaryText(onCyc)), sandbox.pdSummaryText(onCyc));
   });
   test('41.21 the target-peak row offers nothing when the level is already at or above the target peak', () => {
     const lvT = H(3, '07:15');
@@ -5494,6 +5510,162 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const html = sandbox.pdResultsHTML(a, { course: c, goal: { min: 10, max: 15 }, urine: 'anuric' }, H(3, '09:00'));
     const sec = html.slice(html.indexOf('id="pd-course"'));
     assert(/CCPD/.test(sec) && /21:00/.test(sec) && /9\.5 h/.test(sec) && /5 × 2 L/.test(sec) && /1\.25 g/.test(sec) && /14\.8 mg\/L/.test(sec) && /held/i.test(sec) && /0\.70 L\/kg/.test(sec), sec.slice(0, 600));
+  });
+  test('41.28 D24: a level drawn while the cycler runs keeps its flag in The decline; the answer carries Print; the dose and its unit never part', () => {
+    const c = fict({ levels: [{ conc: 12.4, timeH: H(2, '07:00') }, { conc: 14.8, timeH: H(3, '05:00') }] });
+    const a = ask(c, { goal: { min: 10, max: 15 } });
+    const html = sandbox.pdResultsHTML(a, { course: c, goal: { min: 10, max: 15 }, urine: 'anuric' }, H(3, '09:00'));
+    const dec = html.slice(html.indexOf('id="pd-decline"'));
+    assert(a.intervals.some(i => i.flags.includes('on-cycler')) && /cycler/i.test(dec), dec.slice(0, 500));
+    assert(/class="vx-act"[^>]*data-onclick="k0"/.test(html), 'Print is one of the answer\'s actions');
+    const svg = sandbox.pdChartSVG(a, { course: c, goal: { min: 10, max: 15 } }, H(3, '09:00'), 420);
+    assert(/viewBox="0 0 420 /.test(svg), 'the chart is drawn at the width it is shown, so its text is 12 px on screen');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 42 — the workstation (v3.13.0, D24)
+//
+// The 2026-11-10 critique: at a workstation the inputs and the answer were never on
+// screen together; Enter in a result field rebuilt the result; what bears on the dose
+// sat in closed sections; the input column read in a different grammar. Presentation
+// only: every number, citation, caveat and refusal keeps its meaning (engine parity).
+// The behaviour is driven for real in docs/audit/browser-flows.cjs; this suite holds the
+// structure and the pure functions.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 42 — the workstation (v3.13.0, D24)');
+  console.log(`${'─'.repeat(60)}`);
+  const src42 = fs.readFileSync(htmlPath, 'utf8');
+  const css42 = src42.slice(0, src42.indexOf('</style>'));
+  const body42 = src42.slice(src42.indexOf('<body>'), src42.indexOf('<script>'));
+  const code42 = src42.match(/<script>([\s\S]*?)<\/script>/)[1].split('\n')
+    .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const trough42 = body42.slice(body42.indexOf('<div class="app-shell">'), body42.indexOf('id="app-shell-bayesian"'));
+  const auc42 = body42.slice(body42.indexOf('id="app-shell-bayesian"'));
+  test('42.1 from 1001 px the input column scrolls on its own beside the answer, with its run action pinned at its foot', () => {
+    const wide = css42.slice(css42.indexOf('@media (min-width: 1001px)'));
+    assert(wide.length > 30, 'a min-width 1001px block exists');
+    const blk = wide.slice(0, wide.indexOf('\n  }\n') + 4);
+    assert(/\.panel-left\s*\{[^}]*position:\s*sticky[^}]*top:\s*var\(--header-h\)[^}]*height:\s*calc\(100dvh - var\(--header-h\)\)[^}]*overflow-y:\s*auto/.test(blk), blk.slice(0, 400));
+    assert(/\.panel-actions\s*\{[^}]*position:\s*sticky[^}]*bottom:\s*0/.test(blk), 'the run action is pinned to the foot of the column');
+    for (const [name, part, k] of [['Trough', trough42, 'k31'], ['AUC', auc42, 'k47']]) {
+      const m = part.match(/<div class="panel-actions">([\s\S]*?)<\/div>/);
+      assert(m && new RegExp(`data-onclick="${k}"`).test(m[1]), `${name}: the run button sits in .panel-actions`);
+      assert(!/k32|k48/.test(m[1]), `${name}: clearing the form is not beside the run button`);
+    }
+  });
+  test('42.2 Print is one of the answer\'s actions, never a floating button', () => {
+    assert(!/class="print-fab"/.test(body42) && !/\.print-fab\b/.test(css42), 'the floating print button is gone');
+    const tv = sandbox.txVerdictHTML({ dose: 1000, tau: 12, tinf: 1, auc: 480, trough: 12, troughMin: 10, troughMax: 20, peak: 30, mic: 1, basis: 'x' });
+    assert(/<div class="vx-actions">[\s\S]*data-onclick="k0"[\s\S]*Print/.test(tv), tv.slice(-400));
+    assert(/<div class="vx-actions">[\s\S]{0,600}data-onclick="k0"/.test(code42.slice(code42.indexOf('data-arg="ev-why">Why this dose'))), 'AUC Precision: Print beside Copy summary');
+  });
+  test('42.3 Enter in a result field or the profile name does that field\'s own job, never a recalculation', () => {
+    const h = code42.slice(code42.indexOf("document.addEventListener('keydown', function (e)"));
+    const hb = h.slice(0, h.indexOf('\n});') + 4);
+    assert(/closest\('\[data-enter-scope\]'\)/.test(hb) && /\[data-enter-default\]/.test(hb), 'a field in an enter scope presses its default button');
+    assert(/#results-content, #b-results, \.profile-section/.test(hb), 'nothing in a result or the profiles recalculates');
+    assert(/class="profile-section" data-enter-scope/.test(trough42) && /class="profile-section" data-enter-scope/.test(auc42), 'both profile sections are enter scopes');
+    assert((body42 + code42).match(/data-onclick="k37"[^>]*data-enter-default|data-enter-default[^>]*data-onclick="k37"/g).length === 2, 'Save is the default in both');
+    assert(/class="tinkerer-row" data-enter-scope[\s\S]{0,900}data-onclick="k66" data-enter-default/.test(code42), 'Explore: Enter previews');
+    assert(/class="tinkerer-row" data-enter-scope[\s\S]{0,900}data-onclick="k59" data-arg="\$\{suffix\}" data-enter-default/.test(code42), 'Try another regimen: Enter predicts');
+    assert(!/k58/.test(code42.slice(code42.indexOf('function tinkererHTML'), code42.indexOf('function tinkererHTML') + 1200)), 'the old per-field Enter handler is gone, so Enter predicts once');
+  });
+  test('42.4 a picked Regimens cell opens Explore, is announced, and says "trying" in words and to a screen reader', () => {
+    const f = code42.slice(code42.indexOf('function pickMatrixCell('), code42.indexOf('function runBayesTinkerer('));
+    assert(/ev-explore/.test(f) && /\.open = true/.test(f), 'Explore opens');
+    assert(/announceResult\(/.test(f), 'the result is announced');
+    assert(/aria-pressed/.test(f) && /mx-trying/.test(f), 'the picked cell is pressed and named');
+    assert(/aria-pressed="false"/.test(code42.slice(code42.indexOf('data-onclick="k71"') - 200, code42.indexOf('data-onclick="k71"') + 400)), 'every cell starts unpressed');
+    assert(/\.mx-cell\.is-picked\s*\{[^}]*background:\s*var\(--paper-deep\)/.test(css42) && !/\.mx-cell\.is-picked\s*\{[^}]*border-color/.test(css42), 'a paper step, not an outline like Recommended');
+  });
+  test('42.5 a model that does not fit the patient is said in one line; a level count is not a mismatch', () => {
+    const mm = sandbox.modelMismatchText;
+    const rec = (o) => sandbox.getModelRecommendation(o.n || 0, !!o.icu, o.tbw, o.ht, !!o.hd);
+    const c3 = rec({ tbw: 140, ht: 180 });                       // BMI 43.2
+    assert(/Hughes 2024/.test(mm(c3, 'buelga')) && /43\.2/.test(mm(c3, 'buelga')) && /Buelga 2005/.test(mm(c3, 'buelga')), mm(c3, 'buelga'));
+    assert(mm(c3, 'hughes') === null, 'Hughes on a class-3 patient fits');
+    const c1 = rec({ tbw: 100, ht: 175 });                       // BMI 32.7
+    assert(/BMI ≥ 40|40 or more/.test(mm(c1, 'hughes') || '') && /32\.7/.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
+    assert(mm(rec({ n: 2, tbw: 70, ht: 175 }), 'buelga') === null, 'two levels suggest Goti, but that is not a population mismatch');
+    assert(mm(rec({ tbw: 70, ht: 175, hd: true }), 'buelga') === null, 'dialysis has its own handling (D16)');
+    const v = code42.slice(code42.indexOf('const confBlock = `'), code42.indexOf('const nextBlock'));
+    assert(/modelMismatchText\(/.test(code42) && /vx-mismatch/.test(v), 'the line sits in the confidence slot');
+  });
+  test('42.6 the suggested model is marked on its tile as soon as height and weight are known, and never chosen for you', () => {
+    const f = code42.slice(code42.indexOf('function markSuggestedModel('), code42.indexOf('\nfunction ', code42.indexOf('function markSuggestedModel(') + 10));
+    assert(/getModelRecommendation\(/.test(f) && /is-suggested/.test(f) && !/setBModel\(/.test(f), f.slice(0, 300));
+    assert(/markSuggestedModel\(\)/.test(code42.slice(code42.indexOf('function updateBayesCrCl('), code42.indexOf('function updateBayesCrCl(') + 4000)), 'updated with the patient fields');
+  });
+  test('42.7 a long note shows three lines and a link that names the rest', () => {
+    const word = 'Dose given during dialysis';
+    const long = sandbox.noteHTML({ tier: 'caution', word, html: 'x '.repeat(260) });
+    assert(/note-long/.test(long) && new RegExp(`data-onclick="k96"[^>]*aria-expanded="false"[^>]*>Read the rest: ${word}<`).test(long), long.slice(-300));
+    assert(!/note-long|k96/.test(sandbox.noteHTML({ tier: 'caution', word, html: 'A short note.' })), 'a short note is whole');
+    assert(/\.note-long:not\(\.is-open\) \.note-body\s*\{[^}]*-webkit-line-clamp:\s*3/.test(css42), 'clamped to three lines');
+    const pr = css42.slice(css42.indexOf('@media print'));
+    assert(/\.note-long \.note-body\s*\{[^}]*-webkit-line-clamp:\s*none/.test(pr) && /\.note-more\s*\{[^}]*display:\s*none/.test(pr), 'print shows every note whole');
+  });
+  test('42.8 Regimens opens closed with what it holds in its gist; the guideline comparison lives in Show the math', () => {
+    assert(/regimensSec = ev\('ev-regimens', 'Regimens', gist, body, false\)/.test(code42), 'closed by default');
+    assert(/gist = `\$\{inBandCount\} within \$\{mx\.bandMin\}–\$\{mx\.bandMax\}\$\{recDose \? ` · recommended \$\{fmtRegimen\(recDose, recTau\)\}` : ''\}`/.test(code42), 'the gist names the band count and the recommendation');
+    const math = code42.slice(code42.indexOf("html += ev('ev-math'"), code42.indexOf("html += ev('ev-math'") + 6000);
+    assert(/guidelineLine/.test(math), 'the guideline line is in Show the math');
+    const reg = code42.slice(code42.indexOf("let regimensSec = '';"), code42.indexOf("regimensSec = ev('ev-regimens'"));
+    assert(!/body \+= `<div class="ev-sub guideline-line">/.test(reg), 'and no longer in Regimens');
+  });
+  // Profiles sit at the foot of both columns, above the run action: between the patient and
+  // the creatinine they cost five Tab stops, and at the top they pushed the patient below the fold.
+  test('42.9 the input column reads mode, patient, creatinine, course, target, then profiles, in both modules', () => {
+    const at = (part, x) => part.indexOf(x);
+    assert(at(trough42, 'class="calc-mode-bar"') < at(trough42, '>Patient<') && at(trough42, '>Patient<') < at(trough42, '>Renal function<')
+      && at(trough42, '>Renal function<') < at(trough42, '>Therapeutic target<') && at(trough42, '>Therapeutic target<') < at(trough42, 'class="profile-section"')
+      && at(trough42, 'class="profile-section"') < at(trough42, 'class="panel-actions"'), 'Trough');
+    assert(at(auc42, '>Patient<') < at(auc42, '>Renal function<')
+      && at(auc42, '>Renal function<') < at(auc42, 'id="b-model-toggle"') && at(auc42, 'id="b-model-toggle"') < at(auc42, '>Dosing course<') && at(auc42, '>Dosing course<') < at(auc42, '>Therapeutic target<')
+      && at(auc42, '>Therapeutic target<') < at(auc42, 'class="profile-section"') && at(auc42, 'class="profile-section"') < at(auc42, 'class="panel-actions"'), 'AUC Precision: the model after the patient it is chosen for');
+  });
+  test('42.10 the PD mode shows only what it reads: no amputation, creatinine or loading-dose blocks; the HD box only if ticked', () => {
+    for (const id of ['amp-section', 'section-renal', 'section-ld']) assert(new RegExp(`id="${id}"[^>]*class="[^"]*not-pd`).test(trough42), `${id} is marked not-pd`);
+    assert(/\.panel-left\[data-mode="pd"\] \.not-pd\s*\{\s*display:\s*none/.test(css42), 'hidden in PD');
+    assert(/\.panel-left\[data-mode="pd"\] #section-renal:has\(#t-hd:checked\)/.test(css42), 'a ticked HD box stays visible, so the refusal it causes can be undone');
+    assert(/dataset\.mode = mode/.test(code42.slice(code42.indexOf('function setCalcMode('), code42.indexOf('function setCalcMode(') + 2500)), 'setCalcMode marks the panel');
+  });
+  test('42.11 every Trough time is one date and one 24-hour time with a read-back, composed into the one instant the engine reads', () => {
+    for (const id of ['time-dose-given', 'time-level-drawn', 'tl-dose-time', 'tl-t1-time', 'tl-t2-time', 'rl-dose-time', 'rl-draw-time']) {
+      const re = new RegExp(`<span class="dt-pair" data-dt-for="${id}">\\s*<input type="date" id="${id}-date"[^>]*>\\s*<input type="text"[^>]*data-time24[^>]*id="${id}-time"[^>]*>\\s*<span class="course-readback" id="${id}-rb"[^>]*></span>\\s*</span>\\s*<input type="hidden" id="${id}"`);
+      assert(re.test(trough42), `${id}: ${(trough42.match(new RegExp(`[^\\n]*id="${id}"[^\\n]*`)) || [''])[0].slice(0, 160)}`);
+    }
+    assert(sandbox.dtPairValue('2026-09-11', '08:05') === '2026-09-11T08:05', 'both halves → the datetime the engine reads');
+    assert(sandbox.dtPairValue('2026-09-11', '8:5') === '' && sandbox.dtPairValue('', '08:05') === '' && sandbox.dtPairValue('2026-9-1', '08:05') === '', 'anything half-typed → blank, never guessed');
+    assert(!/type="datetime-local"/.test(body42), 'no datetime-local left');
+  });
+  test('42.12 a row added by hand takes the focus; native confirm() dialogs are gone; clearing a form offers Undo', () => {
+    assert(!/\bconfirm\(/.test(code42), 'no native confirm()');
+    assert(/k43: \(el, ev, arg\) => \{ addBayesDose\(\); focusNewRow\(/.test(code42) && /k46: \(el, ev, arg\) => \{ addBayesLevel\(\); focusNewRow\(/.test(code42), 'AUC rows');
+    assert(/k86: \(el, ev, arg\) => \{ addPdRow\('dose'\); focusNewRow\(/.test(code42) && /k88: \(el, ev, arg\) => \{ addPdRow\('lvl'\); focusNewRow\(/.test(code42), 'PD rows');
+    assert(/function offerUndo\(/.test(code42) && /k32: \(el, ev, arg\) => \{ clearWithUndo\('trough'\)/.test(code42) && /k48: \(el, ev, arg\) => \{ clearWithUndo\('auc'\)/.test(code42), 'Undo after clearing');
+    assert(/class="text-action"[^>]*data-onclick="k32"/.test(trough42) && /class="text-action"[^>]*data-onclick="k48"/.test(auc42), 'clearing is a text action');
+  });
+  test('42.13 the input column in the result\'s grammar: sentence case, q12h, no amber for a plain value', () => {
+    for (const t of ['Calculate Regimen', 'Reset All Fields', 'Run Bayesian Analysis', 'Reset Bayesian Form', 'Save Current', '+ Add Dose', '+ Add Level',
+      'Dosing Weight for CrCl', 'Serum Creatinine', 'Preferred Interval', 'Infusion Duration', 'Measured Concentration', 'Current Dosing Interval',
+      'Clearance Model', 'Volume of Distribution Model', 'Trough Target Range', 'Steady State?', 'ICU / Critically Ill / Complex PK'])
+      assert(!body42.includes(t), `title case left: "${t}"`);
+    assert(!/>Q\d+H</.test(body42), 'intervals read q12h, as the answer writes them');
+    for (const id of ['crcl-result', 'tl-t1-display', 'tl-t2-display', 'rl-t-display'])
+      assert(!new RegExp(`id="${id}"[^>]*accent-amber`).test(body42), `${id} is a value, not a caution`);
+  });
+  test('42.14 legibility: the dose and its unit never part, the Regimens grid passes contrast with blocked cells in words, no 1–3 px radii or 11 px text', () => {
+    assert(/\.vx-regimen \.rec-dose\s*\{[^}]*white-space:\s*nowrap/.test(css42), 'Give 500 mg on one line');
+    assert(!/\.mx-blocked\s*\{[^}]*opacity/.test(css42), 'no faded blocked cell');
+    assert(/over limit/.test(code42.slice(code42.indexOf('if (c.blocked) {'), code42.indexOf('if (c.blocked) {') + 400)), 'a blocked cell says so in words');
+    assert(!/border-radius:\s*[123]px/.test(css42) && !/font-size:\s*(9|10|11)px/.test(css42), 'radii are 4px, pill or circle; text 12 px or more');
+  });
+  test('42.15 the version', () => {
+    assert(/const APP_VERSION = '3\.13\.0';/.test(src42), 'v3.13.0');
   });
 }
 

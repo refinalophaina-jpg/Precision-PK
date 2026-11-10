@@ -1386,3 +1386,88 @@ has not been validated against PD outcomes.
   attribution: 1-comp for stable renal function and few or trough-only levels; 2-comp for
   unstable patients with ≥2 levels at different times, explicitly naming amputees, fluid
   overload, sepsis and vasopressors.
+
+## D24 — The workstation: inputs beside the answer, local Enter, what bears on the dose in view (2026-11-10, v3.13.0)
+
+**Asked.** `/impeccable` critique of the whole calculator (snapshot
+`.impeccable/critique/2026-11-10T04-10-27Z__index-html.md`, 24/40). The user chose to fix all four
+areas: workstation layout; Enter and regimen trials; what bears on the dose; the input panel and
+leftovers. Two rulings came with it:
+- **Model choice:** "You choose, mismatch flagged". The model is never switched for the clinician.
+- **PD draw time:** "not too much attention to cycler ending for levels".
+
+**Presentation only.** Engine parity against v3.12.0 (`3997992`): 225 calls, 0 differences. The one
+engine-side change is in the PD mode, which parity does not cover. It is the user's ruling, and
+SUITE 41 records it.
+
+**Built.**
+- **Workstation layout.** From 1001 px the input column sticks under the header, scrolls on its own and
+  pins Calculate or Run at its foot. Its children never shrink: a fixed-height flex column collapsed the
+  mode bar to nothing until `flex-shrink: 0`, a defect found by the browser flows, not by eye. A run moves
+  the window only when the answer's top is off screen; it used to glide to the top for about a second.
+- **Print** is "Print or save as PDF" among each answer's actions: Trough, PD and AUC. The floating pill
+  covered "Show the math" and "Copy summary" at 1280 × 800.
+- **The mode bar** wraps whole labels instead of breaking "Steady-state trough" over two lines.
+- **Enter.** The global handler skips results and profiles. A field in a `[data-enter-scope]` presses
+  its `[data-enter-default]`: Preview in Explore, Predict in "Try another regimen", Save for a profile.
+  Before, Enter in a result field rebuilt the result, closing the section and losing the trial, and
+  Enter in the profile name ran the calculation. The per-field `k58` is gone, so Predict runs once.
+- **The Regimens pick** opens Explore and is announced. The picked cell takes the paper step, the word
+  "trying" and `aria-pressed`. The old blue outline looked like the Recommended border.
+- **The model.**
+  - `markSuggestedModel` marks the suggested tile once weight and height are known.
+  - `modelMismatchText` gives one line in the confidence slot and leads the Models gist, for population
+    mismatches only: class-3 obesity off Hughes, or Hughes below BMI 40.
+  - A level count or ICU suggesting Goti is not a mismatch. Dialysis keeps its own handling (D16).
+- **Notes.** A note over `NOTE_CLAMP_CHARS` (300 characters) shows three lines and "Read the rest:
+  <word>". The number is a preference (rule 8); print shows every note whole.
+- **Regimens** opens closed, with the gist "N within 400–600 · recommended X". It was 745 px and about
+  90 numbers open. The weight-based guideline regimen moved into Show the math, so the first screen no
+  longer carries a third regimen.
+- **The input column.**
+  - Order: mode, patient, creatinine, course, target, then profiles, the same in both modules. AUC
+    Precision's model now follows the patient it is chosen for.
+  - Profiles sit at the foot. Between the patient and the creatinine they cost five Tab stops; at the
+    top they pushed the patient below the fold.
+  - The PD mode hides amputation, creatinine and the loading dose (`.not-pd`). A ticked HD box stays in
+    view, because the refusal it causes must be undoable.
+- **One time grammar.** The seven Trough datetime-local fields are now each a date and a 24-hour time
+  with a read-back ("9 Nov 19:30"). `dtPairValue` composes them into the hidden input that keeps the old
+  id, so `elapsedHours` reads what it always read; SUITE 19 is re-pointed, not loosened. Date inputs take
+  the field style everywhere: the PD stop and give-at dates had shown the browser's white box since
+  v3.12.0.
+- **Clear all fields** is a text action at the top of each column, with Undo (`clearWithUndo`). It
+  restores every field, row and toggle; the browser flows prove the restored AUC form gives the same
+  answer.
+- **No native `confirm()` remains.**
+  - Clearing the comparison and deleting a profile offer Undo.
+  - Saving with a stale fit saves without the fit and says so.
+  - An empty profile is refused inline.
+  - Rows added by hand take the focus.
+- **Legibility.**
+  - The dose and its unit never part ("Give 500 mg").
+  - The PD chart is drawn at its shown width, so its 12 px text is 12 px on screen (it was 8–9 px).
+  - Regimens trough figures are at 4.8:1 or better.
+  - Blocked cells say "over limit" instead of fading to 2.2:1.
+  - No 1–3 px radii and no 11 px text remain.
+- **The PD draw (the user's ruling).**
+  - The next draw reads "with AM labs" and no more.
+  - The "Draw after the cycler" caution and the summary's cycler wording are gone.
+  - `drawOnCycler` is still computed.
+  - A level drawn on the cycler keeps its flag in "The decline".
+  - This reverses a v3.12.0 choice.
+
+**Rulings made in the build.**
+- **Profiles at the foot, not the top:** the first build put them at the top, which pushed the patient
+  below the fold at 1280 × 800. If wrong, it costs a move of one block.
+- **Clearing the Trough form** still clears every number field in both modules, as before. Undo
+  restores both, and the scope was left alone. If wrong, a narrower clear is a one-line change.
+- **The model mismatch** is said for population mismatches only, so two levels on Buelga is not called
+  a mismatch. If wrong, it adds a line to more verdicts.
+
+**Verified.**
+- Unit suites: phase2d 456/456, phase3 21/21, phase4 49/49.
+- Engine parity: 0 differences.
+- Browser flows: 99/99, including 15 new D24 checks driven by real clicks and keys under the CSP.
+- `impeccable detect`: 9 findings. The 7 low-contrast ones are dark-theme tokens measured against
+  white; the rest are the stripes and em-dash advisories. The radius and 11 px findings are gone.

@@ -270,6 +270,8 @@ The results panel is a container (`results`), and the results grammar responds t
 - **Wide (Trough):** the same frame with the curve over the loading dose on the left and the verdict (260–330px) on the right.
 - **At ≤760px container width:** one column in the direction contract's order: strip, verdict, curve (Trough: verdict, loading dose, curve), each block closed by a hairline. Chart legends and summaries lose their axis-aligned left inset (46px Bayesian, 54px Trough).
 
+**The workstation (D24, v3.13.0).** From 1001 px the input panel is sticky under the header at `100dvh − --header-h`, scrolls on its own (its children never shrink), and pins the run button in a paper band with a top hairline at its foot (`.panel-actions`). The answer scrolls with the page; a run moves the window only when the answer's top is off screen. The input column reads mode, patient, creatinine, course, target, then saved profiles (a hairline section, not a card); "Clear all fields" is a text action at the top with an Undo line. The five Trough modes wrap as whole labels. Every instant is a date field and a 24-hour time field with a read-back in the result's grammar ("9 Nov 19:30").
+
 Below the top: at most two inline notes (a "N more notes" link leads to the rest), then evidence sections as `<details>` rows, each a hairline-bottomed band with a 16px summary and a 19px-inset body.
 
 Rhythm: 4 · 8 · 14 · 18 · 28 · 32px, with 14px the usual gap inside a group, 18px the padding of a band between hairlines, and 32px the gap between the chart and the verdict. Touch targets are 44px, and nothing scrolls horizontally at 375px.
@@ -299,9 +301,9 @@ Three values, mirrored from ainadara.com: a 4px rectangle for every field, butto
 Quiet and square; one filled button per panel.
 - **Shape:** gently squared (4px), 44px minimum height.
 - **Primary (calculate):** terracotta-ink fill, paper text, Outfit 600 at 14px, 14px padding, full width. Hover darkens toward ink (86% mix) and lifts 2px; press settles 1px.
-- **Secondary (reset):** transparent with terracotta-ink text and a terracotta-quiet border; hover takes the paper-deep step.
+- **Clear all fields / Undo:** a text action in soft ink (underline at 30% ink), at the top of the column, never beside the run button (D24).
 - **Text action:** the verdict's actions are underlined terracotta-ink text (Outfit 500, 13px), underline at 45% terracotta, full colour on hover, 44px tall with no box.
-- **Print action:** a fixed pill at the bottom right in paper with a paper-edge border and a drawn printer icon, shown only when the module on screen has a result.
+- **Print action:** a text action, "Print or save as PDF", among each answer's actions (D24). It exists only with a result; nothing floats over the results.
 - **Focus:** a 2px outline (terracotta-ink on fields, terracotta on buttons) offset 1–2px. No glow.
 
 ### Segmented Controls
@@ -309,7 +311,7 @@ Quiet and square; one filled button per panel.
 - **State:** the selected option steps up to paper with terracotta-ink text. The module switch uses the same grammar but fills the active tab with terracotta-ink and paper text.
 
 ### Model Options
-A 2×2 grid (one column at ≤420px) of 4px tiles on the input ground with a paper-edge border: name in 12px Outfit 600, a muted sub-line. Hover borders in terracotta-quiet; the selected tile steps to paper and its name turns terracotta-ink.
+A 2×2 grid (one column at ≤420px) of 4px tiles on the input ground with a paper-edge border: name in 12px Outfit 600, a muted sub-line. Hover borders in terracotta-quiet; the selected tile steps to paper and its name turns terracotta-ink. The model suggested for this patient carries the words "suggested for this patient" (12px Outfit 600, ink) once weight and height are known; it is never selected for the clinician (D24).
 
 ### Inputs / Fields
 - **Style:** input ground, 1px paper-edge border, 4px radius, 10px/14px padding, 16px text, tabular figures, spinners stripped. Course rows name their own units inside the field.
@@ -328,7 +330,10 @@ A column with no box: the regimen in Display with the interval in terracotta-ink
 `<details>` bands closed by a hairline: a drawn chevron, a Headline title (terracotta-ink on hover) and a muted gist on one baseline. Bodies hold hairline tables (right-aligned tabular figures, the active row in ink 600), definition grids, forest plots (muted ranges, the active one terracotta) and numbered math in soft ink.
 
 ### Notes
-Unboxed. A signal word in Outfit 600 beside a drawn 16px icon (`alarm`, `caution`, `info`), the body indented 24px beneath at 13px soft ink, max 78ch. Alarm words take the alarm hue, caution words amber, info ink with a muted icon.
+Unboxed. A signal word in Outfit 600 beside a drawn 16px icon (`alarm`, `caution`, `info`), the body indented 24px beneath at 13px soft ink, max 78ch. Alarm words take the alarm hue, caution words amber, info ink with a muted icon. A note over 300 characters shows three lines and a terracotta-ink text action, "Read the rest: <word>"; print shows it whole (D24).
+
+### Regimens grid
+Steady-state AUC₂₄ by dose and interval, closed by default with a gist ("12 within 400–600 · recommended 1.25 g IV q12h"). The trough figure is soft ink (4.8:1 or better on every band); a blocked cell says "over limit" with its AUC struck through, never faded. The recommendation has a 2px terracotta border; the regimen being tried takes the paper-deep step and the word "trying" in terracotta-ink, with `aria-pressed` (D24).
 
 ## Do's and Don'ts
 

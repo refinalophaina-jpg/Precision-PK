@@ -378,7 +378,9 @@
     gap: 8px;
     align-items: center;
   }
-  input[type="number"], input[type="text"], select {
+  /* Dates take the field style too (D24): a bare date input painted the browser's white
+     box and 2 px black border on the paper (the PD stop and give-at dates since v3.12.0). */
+  input[type="number"], input[type="text"], input[type="date"], select {
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -1175,7 +1177,7 @@
   /* ─── SCROLLBAR ─── */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: var(--radius-pill); }
   ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
   /* ─── LEVEL SECTION ─── */
@@ -1259,6 +1261,13 @@
   }
   /* On a phone four modes in one row leave ~85px each: "Steady-state trough"
      broke over three lines. Two by two, every label sits on one. */
+  /* Five modes in rows of whole labels (D24): one row of five broke "Steady-state
+     trough" and "Peritoneal dialysis" over two lines each in a 400 px column. They wrap
+     as words, in order, and each row fills its width. */
+  @media (min-width: 421px) {
+    .calc-mode-bar { flex-wrap: wrap; }
+    .calc-mode-bar > .calc-mode-btn { flex: 1 1 auto; white-space: nowrap; padding-inline: 8px; }
+  }
   @media (max-width: 420px) {
     .calc-mode-bar { display: grid; grid-template-columns: 1fr 1fr; }
   }
@@ -1305,34 +1314,42 @@
      button below. */
   .pdf-print-stamp { display: none; }
 
-  /* ═══ PRINT ACTION — one per module, shown once that module has a result ═══
-     Quiet: paper, ink and a hairline, because terracotta belongs to the
-     recommendation and nothing may compete with it. On desktop it floats
-     bottom-right and the page gains room beneath it, so the last line can
-     always scroll clear; on a phone it joins the end of the page instead of
-     floating over the results. */
-  .print-fab {
-    position: fixed; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 50;
-    display: none; align-items: center; gap: 8px;
-    min-height: 40px; padding: 8px 16px 8px 13px; border-radius: var(--radius-pill);
-    background: var(--paper); color: var(--ink);
-    border: 1px solid var(--paper-edge);
-    font: 500 var(--fs-sm)/1.2 var(--font-body); letter-spacing: 0; cursor: pointer;
-    transition: transform .18s ease, background-color .18s ease, border-color .18s ease;
-  }
-  .print-fab:hover { transform: translateY(-1px); background: var(--paper-deep); border-color: var(--ink-faint); }
-  .print-fab:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
-  .print-fab svg { width: 16px; height: 16px; flex: none; color: var(--ink-soft); }
-  body.has-results .print-fab { display: inline-flex; }
-  body.has-results { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
-  @media (max-width: 768px) {
-    body.has-results { padding-bottom: 0; }
-    body.has-results .print-fab {
-      position: static; order: 99; align-self: center;
-      min-height: 44px; margin: 4px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  /* ═══ THE WORKSTATION (v3.13.0, D24) ═══
+     At a pharmacy workstation the inputs and the answer were never on screen
+     together: one document scroll, the input column 3–5 screens tall, every run
+     scrolling the window to the top and the focus left ~2,000 px below (critique
+     2026-11-10). From 1001 px the input column scrolls on its own under the header
+     and its run action is pinned at its foot; the answer scrolls with the page.
+     Print is one of the answer's actions (.vx-act, k0) — the floating pill covered
+     "Show the math" and "Copy summary" at 1280 × 800. */
+  .panel-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  @media (min-width: 1001px) {
+    .panel-left {
+      position: sticky; top: var(--header-h); align-self: start;
+      height: calc(100dvh - var(--header-h)); overflow-y: auto;
+      overscroll-behavior: contain; scrollbar-gutter: stable;
+      padding-bottom: 0;
     }
-    .print-fab:hover { transform: none; }
+    /* A fixed-height flex column shrinks its children to fit: the mode bar (overflow
+       hidden) collapsed to nothing. The column scrolls instead. */
+    .panel-left > * { flex-shrink: 0; }
+    .panel-actions {
+      position: sticky; bottom: 0; z-index: 2; margin: auto -26px 0;
+      padding: 12px 26px 16px; background: var(--glass-bg); border-top: 1px solid var(--rule);
+    }
   }
+  /* A quiet action in words: clearing a form, undo. Never beside the run button. */
+  .text-action {
+    font: 500 var(--fs-sm)/1.2 var(--font-body); color: var(--ink-soft);
+    background: none; border: 0; border-radius: 0; padding: 10px 0; min-height: 44px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 4px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 30%, transparent);
+    display: inline-flex; align-items: center;
+  }
+  .text-action:hover { color: var(--ink); text-decoration-color: currentColor; }
+  .panel-tools { display: flex; justify-content: flex-end; align-items: center; gap: 4px 18px; flex-wrap: wrap; margin: -10px 0 -6px; }
+  .undo-line { font-size: var(--fs-sm); color: var(--ink-soft); display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; }
+  .undo-line:empty { display: none; }
 
   /* Print-only header/footer (hidden on screen) */
   .print-header, .print-footer { display: none; }
@@ -1415,6 +1432,8 @@
 
     /* Tiered notes print in the screen's grammar: signal word + drawn icon. */
     #print-report .note { font-size: var(--fs-xs); line-height: 1.5; color: var(--ink-soft); margin: 0 0 6px; break-inside: avoid; }
+    .note-long .note-body { -webkit-line-clamp: none; line-clamp: none; display: block; overflow: visible; }
+    .note-more { display: none !important; }
     #print-report .note-word { gap: 6px; margin-bottom: 1px; }
     #print-report .note-body { padding-left: 19px; max-width: none; }
     #print-report .ic { width: 13px; height: 13px; }
@@ -1537,13 +1556,16 @@
   .mx-in    { background:color-mix(in srgb, var(--success) 13%, transparent); }
   .mx-sub-b { background:color-mix(in srgb, var(--ink-faint) 12%, transparent); color:var(--text-secondary); }
   .mx-supra { background:color-mix(in srgb, var(--warning) 17%, transparent); }
-  .mx-blocked { background:none; color:var(--text-muted); cursor:not-allowed;
-                text-decoration:line-through; opacity:0.55; }
+  /* A blocked cell says so in words and keeps readable ink (2.2:1 faded, critique 2026-11-10). */
+  .mx-blocked { background:none; color:var(--ink-muted); cursor:not-allowed; }
+  .mx-blocked .mx-auc { text-decoration:line-through; }
   .mx-cell.is-rec    { border-color:var(--terracotta); border-width:2px; }
-  .mx-cell.is-picked { border-color:var(--accent-blue); border-width:2px; }
+  /* The regimen being tried (D24): a paper step and the word, never an outline like Recommended. */
+  #b-results .mx-cell.is-picked { background: var(--paper-deep); }
+  .mx-trying { display:block; font: 600 var(--fs-xs)/1.2 var(--font-body); color: var(--terracotta-ink); margin-top: 1px; }
   .mx-key   { display:flex; gap:14px; flex-wrap:wrap; padding:9px 14px;
               border-top:1px solid var(--rule); font-size:var(--fs-xs); color:var(--text-muted); }
-  .mx-key i { display:inline-block; width:11px; height:11px; border-radius:2px;
+  .mx-key i { display:inline-block; width:11px; height:11px; border-radius:0;
               margin-right:5px; vertical-align:-1px; border:1px solid var(--border); }
   /* A 13% tint reads in a 60px cell and vanishes in an 11px swatch, so the key
      gets its own stronger mix of the SAME tokens. Never a different hue. */
@@ -1634,7 +1656,7 @@
   }
   .profile-legend { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
   .legend-item { display:flex; align-items:center; gap:6px; font-size:var(--fs-xs); color:var(--text-muted); }
-  .legend-line { width:22px; height:2px; border-radius:1px; flex-shrink:0; }
+  .legend-line { width:22px; height:2px; border-radius:0; flex-shrink:0; }
   /* Dashed series get a dashed swatch, so the key matches the stroke. */
   .legend-line-dashed { background:none; height:0; border-top:2px dashed currentColor; }
   .legend-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
@@ -1777,9 +1799,10 @@
   }
 
   /* ═══ PHASE 3 — SAVED PROFILES ═══ */
+  /* A hairline section like the rest of the column, not a card (D24). */
   .profile-section {
-    background:var(--glass-bg); border:1px solid var(--border);
-    border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:4px;
+    background:none; border:0; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+    border-radius:0; padding:12px 0; margin-bottom:4px;
   }
   .profile-save-row { display:flex; gap:8px; align-items:center; margin-top:6px; }
   .profile-save-row input[type="text"] {
@@ -2080,6 +2103,9 @@
   /* Selection is a ground step plus terracotta ink, as the sex control does —
      never a terracotta border (CLAUDE.md; design review 2026-09-29). */
   .model-opt.active { background: var(--paper); color: var(--ink); }
+  .model-opt-tag { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--ink); margin-top: 2px; }
+  .vx-conf .vx-mismatch { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; }
+  .vx-conf .vx-mismatch .ic { flex: none; width: 1.05em; height: 1.05em; margin-top: .2em; }
   .model-opt.active .model-opt-name { color: var(--terracotta-ink); }
   .model-opt-name { font-size:var(--fs-xs); font-weight: 600; line-height: 1.2; }
   .model-opt-sub  { font-size:var(--fs-xs); color: var(--text-muted); line-height: 1.25; }
@@ -2149,8 +2175,8 @@
   .course .future { fill: var(--paper-deep); }
   .course .hd { fill: color-mix(in srgb, var(--ink) 8%, transparent); }   /* haemodialysis session (D15) */
   .course .tick { stroke: var(--ink-faint); stroke-width: 1; }
-  .course .axl  { font-size: 11px; fill: var(--ink-muted); }
-  .course .nowl { font-size: 11px; font-weight: 500; fill: var(--ink-soft); }
+  .course .axl  { font-size: 12px; fill: var(--ink-muted); }
+  .course .nowl { font-size: 12px; font-weight: 500; fill: var(--ink-soft); }
   .course .cursor { stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
   svg.course { touch-action: pan-y; cursor: crosshair; }   /* a sideways drag scrubs; a vertical one still scrolls */
 
@@ -2161,7 +2187,7 @@
     line-height: 1.05; letter-spacing: -0.005em; color: var(--ink); margin: 0 0 6px;
     text-wrap: balance;
   }
-  .vx-regimen .rec-dose { font: inherit; color: inherit; letter-spacing: inherit; }
+  .vx-regimen .rec-dose { font: inherit; color: inherit; letter-spacing: inherit; white-space: nowrap; }
   .vx-freq { color: var(--terracotta-ink); }
   .vx-regimen-hold { font-size: var(--fs-xl); color: var(--alarm); }
   .vx-regimen-hd   { font-size: var(--fs-xl); color: var(--ink); }   /* an HD answer (D16): not an alarm */
@@ -2280,6 +2306,11 @@
   .note-word { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
   .note-body { padding-left: 24px; max-width: 78ch; }
   .note-body strong { color: var(--ink); }
+  .note-long:not(.is-open) .note-body { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+  .note-more { margin-left: 24px; font: 500 var(--fs-sm)/1.2 var(--font-body); color: var(--terracotta-ink); background: none; border: 0;
+    border-radius: 0; padding: 10px 0; min-height: 44px; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;
+    text-decoration-color: color-mix(in srgb, var(--terracotta) 45%, transparent); }
+  .note-more:hover { text-decoration-color: currentColor; }
   .ic { width: 16px; height: 16px; flex: none; }
   .ic-line { display: inline-flex; align-items: flex-start; gap: 6px; }
   .ic-line > .ic, .model-rec-banner > .ic, #aki-banner .ic { width: 1.05em; height: 1.05em; margin-top: .18em; vertical-align: -0.18em; }
@@ -2358,6 +2389,7 @@
   #b-results .mx-in    { background: color-mix(in srgb, var(--ink) 11%, transparent); }
   #b-results .mx-in .mx-auc { color: var(--ink); }
   #b-results .mx-sub-b { background: none; color: var(--ink-muted); }
+  #b-results .mx-tr { color: var(--ink-soft); }   /* the trough figure at 4.5:1 or better on every band (D24) */
   #b-results .mx-supra { background: color-mix(in srgb, var(--amber) 15%, transparent); }
   #b-results .mx-key { padding: 0; border: 0; font-size: var(--fs-xs); color: var(--ink-muted); }
   #b-results .mx-key i.mx-in    { background: color-mix(in srgb, var(--ink) 28%, transparent); }
@@ -2566,6 +2598,20 @@
   }
   .course-n { color: var(--ink); font-weight: 500; }
   .course-readback { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  /* One date and one 24-hour time, read back in the result's grammar ("7 Nov 08:00"),
+     wherever an instant is entered (v3.13.0, D24): the Trough modes used datetime-local,
+     a second time grammar that overflowed its column. */
+  .dt-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .dt-pair input[type="date"] { flex: 1 1 10em; min-width: 0; }
+  .dt-pair input[data-time24] { flex: 0 0 6.5em; width: 6.5em; }
+  .dt-pair .course-readback { flex: 1 0 100%; font-size: var(--fs-xs); min-height: 1.2em; }
+  .form-grid-2 > .field-group:has(.dt-pair) { grid-column: 1 / -1; }
+  /* The PD mode reads levels, the schedule and weight (D23): no amputation, creatinine or
+     loading-dose blocks (D24). A ticked HD box stays in view, alone, because the refusal it
+     causes must be undoable where it was set. */
+  .panel-left[data-mode="pd"] .not-pd { display: none; }
+  .panel-left[data-mode="pd"] #section-renal:has(#t-hd:checked) { display: block; }
+  .panel-left[data-mode="pd"] #section-renal:has(#t-hd:checked) > :not(h2):not(.hd-flag) { display: none; }
   .course-what { grid-area: what; display: flex; align-items: center; gap: 8px; }
   .course-when {
     grid-area: when; display: grid; gap: 8px;
@@ -2638,7 +2684,7 @@
   .pd-chart .pd-now    { stroke: var(--ink-faint); stroke-dasharray: 4 4; }
   .pd-chart .pd-draw   { stroke: var(--series-projection); stroke-dasharray: 2 3; }
   .pd-chart .pd-base, .pd-chart .pd-tick { stroke: var(--rule); }
-  .pd-chart .pd-axl    { font-size: 11px; fill: var(--ink-muted); }
+  .pd-chart .pd-axl    { font-size: 12px; fill: var(--ink-muted); }
   .lg.pd-lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--series-measured); }
   .lg.pd-lg-band { background: color-mix(in srgb, var(--series-projection) 22%, transparent); border: 1px solid var(--series-projection); }
   .lg.pd-lg-goal { background: var(--paper-deep); border: 1px solid var(--rule); }
@@ -2773,19 +2819,9 @@
 <body>
 <div id="sr-announce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-<!-- ═══ PRINT — the one print action. Hidden until the module on screen has a
-     result (updatePrintFabVisibility); prints that module's report. ═══ -->
-<button type="button" class="print-fab" data-onclick="k0">
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="6 9 6 2 18 2 18 9"/>
-    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-    <rect x="6" y="14" width="12" height="8"/>
-  </svg>
-  <span>Print or save as PDF</span>
-</button>
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.12.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.13.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2816,7 +2852,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.12.0</div>
+  <div class="header-tag">Vancomycin TDM v3.13.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -2837,7 +2873,7 @@
 <div class="app-shell">
 
   <!-- ═══ LEFT PANEL — INPUTS ═══ -->
-  <div class="panel-left">
+  <div class="panel-left" data-mode="initial">
 
     <!-- Calc Mode Selector -->
     <div class="calc-mode-bar" role="group" aria-label="Calculation mode">
@@ -2849,9 +2885,15 @@
     </div>
     <p class="calc-mode-hint" id="calc-mode-hint">Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady-state trough</strong> once a steady-state level is available.</p>
 
+    <!-- Clearing the form: a text action away from the run button, with Undo (D24) -->
+    <div class="panel-tools"><span class="undo-line" id="undo-trough" aria-live="polite"></span><button type="button" class="text-action" data-onclick="k32">Clear all fields</button></div>
+
+
+
+
     <!-- Patient Demographics -->
     <div>
-      <h2 class="form-h2">Patient demographics</h2>
+      <h2 class="form-h2">Patient</h2>
       <div style="display:flex;flex-direction:column;gap:12px">
 
         <div class="form-grid-2">
@@ -2874,7 +2916,7 @@
 
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label" for="tbw">Total Body Weight</label>
+            <label class="field-label" for="tbw">Total body weight</label>
             <div class="input-row">
               <input type="number" id="tbw" placeholder="—" min="30" max="340" data-oninput="k11">
               <span class="unit-badge">kg</span>
@@ -2890,7 +2932,7 @@
         </div>
 
         <!-- Auto-calculated weights -->
-        <div id="weight-display" style="display:none;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;">
+        <div id="weight-display" style="display:none;border-left:2px solid var(--rule);padding:2px 0 2px 12px;">
           <h3 class="form-h3">Calculated weights</h3>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
             <div>
@@ -2912,21 +2954,7 @@
       </div>
     </div>
 
-    <!-- Saved profiles — one store, both modules -->
-    <div class="profile-section">
-      <h2 class="form-h2" style="margin:0">Saved profiles</h2>
-      <div class="profile-save-row">
-        <input type="text" class="profile-label-input" aria-label="Profile label" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
-        <button class="profile-save-btn" data-onclick="k37">Save Current</button>
-      </div>
-      <div class="profile-list"></div>
-      <div class="profile-privacy-note">
-        Profiles are stored in this browser only (localStorage). Use de-identified labels — do not enter patient names, MRNs, or other PHI.
-      </div>
-    </div>
-
-    <hr class="section-divider">
-
+    <div id="amp-section" class="not-pd">
     <!-- Amputation — hidden until it applies, so the panel stays uncluttered -->
     <label class="amp-toggle">
       <input type="checkbox" id="amp-enabled" data-onchange="ampToggleEnabled">
@@ -2979,15 +3007,16 @@
       <div id="amp-note" class="amp-note" style="display:none"></div>
     </div>
 
-    <hr class="section-divider">
+    </div>
+    <hr class="section-divider not-pd">
 
     <!-- Renal Function -->
-    <div>
+    <div id="section-renal" class="not-pd">
       <h2 class="form-h2">Renal function</h2>
       <label class="hd-flag"><input type="checkbox" id="t-hd"> Patient receives intermittent haemodialysis</label>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label" for="scr">Serum Creatinine</label>
+          <label class="field-label" for="scr">Serum creatinine</label>
           <div class="input-row">
             <input type="number" id="scr" placeholder="—" min="0.1" max="25" step="0.1" data-oninput="k12">
             <span class="unit-badge">mg/dL</span>
@@ -3007,7 +3036,7 @@
         </div>
         <div id="cysc-result" style="display:none;font-family:var(--font-num);font-size:var(--fs-sm);color:var(--accent-blue);line-height:1.5"></div>
         <div class="field-group">
-          <span class="field-label" id="dosing-wt-label">Dosing Weight for CrCl</span>
+          <span class="field-label" id="dosing-wt-label">Dosing weight for CrCl</span>
           <div class="toggle-group" id="dosingwt-toggle" role="group" aria-labelledby="dosing-wt-label">
             <button class="toggle-opt active" data-onclick="k73" aria-pressed="true" title="TBW, or AdjBW when TBW is more than 20% above IBW">Auto</button>
             <button class="toggle-opt" data-onclick="k14" aria-pressed="false">TBW</button>
@@ -3017,7 +3046,7 @@
           <input type="hidden" id="dosing-wt" value="auto">
           <p class="field-hint" id="crcl-hint" style="margin-top:4px">Cockcroft-Gault • Auto uses AdjBW when TBW is &gt;20% above IBW</p>
         </div>
-        <div id="crcl-result" style="display:none;font-family:var(--font-num);font-size:var(--fs-sm);color:var(--accent-amber)"></div>
+        <div id="crcl-result" style="display:none;font-family:var(--font-num);font-size:var(--fs-sm);color:var(--ink-soft)"></div>
         <div id="crcl-advisory" style="display:none;font-size:var(--fs-xs);color:var(--warning);line-height:1.45"></div>
 
         <label class="amp-toggle" style="margin-top:10px">
@@ -3065,20 +3094,20 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="form-grid-2">
             <div class="field-group">
-              <label class="field-label" for="init-interval">Preferred Interval</label>
+              <label class="field-label" for="init-interval">Preferred interval</label>
               <select id="init-interval" data-onchange="k18">
-                <option value="6">Q6H</option>
-                <option value="8">Q8H</option>
-                <option value="12" selected>Q12H</option>
-                <option value="18">Q18H</option>
-                <option value="24">Q24H</option>
-                <option value="36">Q36H</option>
-                <option value="48">Q48H</option>
+                <option value="6">q6h</option>
+                <option value="8">q8h</option>
+                <option value="12" selected>q12h</option>
+                <option value="18">q18h</option>
+                <option value="24">q24h</option>
+                <option value="36">q36h</option>
+                <option value="48">q48h</option>
               </select>
               <p class="field-hint" id="interval-hint" style="color:var(--accent-amber)"></p>
             </div>
             <div class="field-group">
-              <label class="field-label" for="init-tinf">Infusion Duration</label>
+              <label class="field-label" for="init-tinf">Infusion duration</label>
               <div class="input-row">
                 <input type="number" id="init-tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
                 <span class="unit-badge">hr</span>
@@ -3108,18 +3137,18 @@
             <div class="field-group">
               <label class="field-label" for="interval">Interval</label>
               <select id="interval">
-                <option value="6">Q6H</option>
-                <option value="8">Q8H</option>
-                <option value="12" selected>Q12H</option>
-                <option value="18">Q18H</option>
-                <option value="24">Q24H</option>
-                <option value="36">Q36H</option>
-                <option value="48">Q48H</option>
+                <option value="6">q6h</option>
+                <option value="8">q8h</option>
+                <option value="12" selected>q12h</option>
+                <option value="18">q18h</option>
+                <option value="24">q24h</option>
+                <option value="36">q36h</option>
+                <option value="48">q48h</option>
               </select>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label" for="tinf">Infusion Duration</label>
+            <label class="field-label" for="tinf">Infusion duration</label>
             <div class="input-row">
               <input type="number" id="tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
               <span class="unit-badge">hr</span>
@@ -3130,10 +3159,10 @@
       </div>
     </div>
 
-    <hr class="section-divider">
+    <hr class="section-divider not-pd">
 
     <!-- Loading Dose -->
-    <div>
+    <div id="section-ld" class="not-pd">
       <div class="level-toggle-row">
         <h2 class="form-h2" id="ld-heading" style="margin-bottom:0">Loading dose</h2>
         <label class="toggle-switch">
@@ -3180,7 +3209,7 @@
 
         <!-- Steady State toggle -->
         <div class="field-group">
-          <span class="field-label" id="is-ss-label">Steady State?</span>
+          <span class="field-label" id="is-ss-label">Steady state?</span>
           <div class="toggle-group" role="group" aria-labelledby="is-ss-label">
             <button class="toggle-opt active" data-onclick="k21" aria-pressed="true">Yes (≥3 doses)</button>
             <button class="toggle-opt" data-onclick="k22" aria-pressed="false">No (1st/2nd dose)</button>
@@ -3200,7 +3229,7 @@
 
         <!-- Measured concentration -->
         <div class="field-group">
-          <label class="field-label" for="level-val">Measured Concentration</label>
+          <label class="field-label" for="level-val">Measured concentration</label>
           <div class="input-row">
             <input type="number" id="level-val" placeholder="—" min="0.1" max="100" step="0.1">
             <span class="unit-badge">mg/L</span>
@@ -3208,25 +3237,35 @@
         </div>
 
         <!-- Timing block — clock times -->
-        <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;flex-direction:column;gap:10px">
           <h3 class="form-h3" style="margin-bottom:2px">Level timing</h3>
 
-          <div class="form-grid-2">
+          <div style="display:flex;flex-direction:column;gap:10px">
             <div class="field-group">
-              <label class="field-label" for="time-dose-given">Last dose given</label>
-              <input type="datetime-local" id="time-dose-given" data-oninput="k23" data-onchange="k23" class="dt-input">
+              <label class="field-label" for="time-dose-given-date">Last dose given</label>
+              <span class="dt-pair" data-dt-for="time-dose-given">
+                <input type="date" id="time-dose-given-date" aria-label="Last dose given, date">
+                <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="time-dose-given-time" aria-label="Last dose given, time (24-hour)">
+                <span class="course-readback" id="time-dose-given-rb"></span>
+              </span>
+              <input type="hidden" id="time-dose-given" data-oninput="k23">
               <p class="field-hint">Date &amp; start of infusion</p>
             </div>
             <div class="field-group">
-              <label class="field-label" for="time-level-drawn">Level drawn at</label>
-              <input type="datetime-local" id="time-level-drawn" data-oninput="k23" data-onchange="k23" class="dt-input">
+              <label class="field-label" for="time-level-drawn-date">Level drawn at</label>
+              <span class="dt-pair" data-dt-for="time-level-drawn">
+                <input type="date" id="time-level-drawn-date" aria-label="Level drawn, date">
+                <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="time-level-drawn-time" aria-label="Level drawn, time (24-hour)">
+                <span class="course-readback" id="time-level-drawn-rb"></span>
+              </span>
+              <input type="hidden" id="time-level-drawn" data-oninput="k23">
               <p class="field-hint">Date &amp; time of blood draw</p>
             </div>
           </div>
 
           <!-- Auto-calculated delta display -->
-          <div id="time-delta-display" style="display:none;font-size:var(--fs-sm);font-family:var(--font-num);padding:8px 10px;background:var(--bg-input);border-radius:4px;border:1px solid var(--border)">
-            <span id="time-delta-val" style="color:var(--accent-amber)"></span>
+          <div id="time-delta-display" style="display:none;font-size:var(--fs-sm);font-family:var(--font-num);padding:2px 0 2px 12px;border-left:2px solid var(--rule)">
+            <span id="time-delta-val" style="color:var(--ink)"></span>
             <span id="time-delta-label" style="color:var(--text-muted);font-size:var(--fs-xs);margin-left:6px"></span>
           </div>
 
@@ -3269,7 +3308,7 @@
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label" for="tl-tinf">Infusion Duration</label>
+              <label class="field-label" for="tl-tinf">Infusion duration</label>
               <div class="input-row">
                 <input type="number" id="tl-tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
                 <span class="unit-badge">hr</span>
@@ -3277,8 +3316,13 @@
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label" for="tl-dose-time">Dose start time</label>
-            <input type="datetime-local" id="tl-dose-time" data-oninput="k26" data-onchange="k26" class="dt-input">
+            <label class="field-label" for="tl-dose-time-date">Dose start time</label>
+            <span class="dt-pair" data-dt-for="tl-dose-time">
+              <input type="date" id="tl-dose-time-date" aria-label="Dose start, date">
+              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="tl-dose-time-time" aria-label="Dose start, time (24-hour)">
+              <span class="course-readback" id="tl-dose-time-rb"></span>
+            </span>
+            <input type="hidden" id="tl-dose-time" data-oninput="k26">
           </div>
         </div>
       </div>
@@ -3297,11 +3341,16 @@
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label" for="tl-t1-time">Drawn at</label>
-              <input type="datetime-local" id="tl-t1-time" data-oninput="k26" data-onchange="k26" class="dt-input">
+              <label class="field-label" for="tl-t1-time-date">Drawn at</label>
+              <span class="dt-pair" data-dt-for="tl-t1-time">
+                <input type="date" id="tl-t1-time-date" aria-label="Level 1 drawn, date">
+                <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="tl-t1-time-time" aria-label="Level 1 drawn, time (24-hour)">
+                <span class="course-readback" id="tl-t1-time-rb"></span>
+              </span>
+              <input type="hidden" id="tl-t1-time" data-oninput="k26">
             </div>
           </div>
-          <div id="tl-t1-display" style="display:none;font-size:var(--fs-xs);font-family:var(--font-num);color:var(--accent-amber)"></div>
+          <div id="tl-t1-display" style="display:none;font-size:var(--fs-xs);font-family:var(--font-num);color:var(--ink-soft)"></div>
         </div>
       </div>
 
@@ -3319,11 +3368,16 @@
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label" for="tl-t2-time">Drawn at</label>
-              <input type="datetime-local" id="tl-t2-time" data-oninput="k26" data-onchange="k26" class="dt-input">
+              <label class="field-label" for="tl-t2-time-date">Drawn at</label>
+              <span class="dt-pair" data-dt-for="tl-t2-time">
+                <input type="date" id="tl-t2-time-date" aria-label="Level 2 drawn, date">
+                <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="tl-t2-time-time" aria-label="Level 2 drawn, time (24-hour)">
+                <span class="course-readback" id="tl-t2-time-rb"></span>
+              </span>
+              <input type="hidden" id="tl-t2-time" data-oninput="k26">
             </div>
           </div>
-          <div id="tl-t2-display" style="display:none;font-size:var(--fs-xs);font-family:var(--font-num);color:var(--accent-amber)"></div>
+          <div id="tl-t2-display" style="display:none;font-size:var(--fs-xs);font-family:var(--font-num);color:var(--ink-soft)"></div>
           <div id="tl-warning" style="display:none;font-size:var(--fs-xs);color:var(--amber);padding:6px 10px;background:color-mix(in srgb, var(--amber) 8%, transparent);border-radius:4px;border:1px solid color-mix(in srgb, var(--amber) 25%, transparent)"></div>
         </div>
       </div>
@@ -3334,12 +3388,12 @@
         <h2 class="form-h2" id="tl-cur-tau-heading">Interval the levels were drawn on</h2>
         <select id="tl-cur-tau" class="dt-input" aria-labelledby="tl-cur-tau-heading" style="font-family:'Outfit',sans-serif">
           <option value="">— choose —</option>
-          <option value="8">Q8H</option>
-          <option value="12">Q12H</option>
-          <option value="18">Q18H</option>
-          <option value="24">Q24H</option>
-          <option value="36">Q36H</option>
-          <option value="48">Q48H</option>
+          <option value="8">q8h</option>
+          <option value="12">q12h</option>
+          <option value="18">q18h</option>
+          <option value="24">q24h</option>
+          <option value="36">q36h</option>
+          <option value="48">q48h</option>
         </select>
         <p class="field-hint" style="margin-top:6px">The regimen the patient was ON when both levels were drawn.
           At steady state the volume depends on it; the target interval below does not change it.</p>
@@ -3348,12 +3402,12 @@
       <div>
         <h2 class="form-h2" id="tl-tau-heading">Target maintenance interval</h2>
         <select id="tl-tau" aria-labelledby="tl-tau-heading">
-          <option value="8">Q8H</option>
-          <option value="12" selected>Q12H</option>
-          <option value="18">Q18H</option>
-          <option value="24">Q24H</option>
-          <option value="36">Q36H</option>
-          <option value="48">Q48H</option>
+          <option value="8">q8h</option>
+          <option value="12" selected>q12h</option>
+          <option value="18">q18h</option>
+          <option value="24">q24h</option>
+          <option value="36">q36h</option>
+          <option value="48">q48h</option>
         </select>
         <p class="field-hint" style="margin-top:6px">Dose will be auto-calculated to target AUC 400–600 mg·h/L</p>
       </div>
@@ -3389,7 +3443,7 @@
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label" for="rl-tinf">Infusion Duration</label>
+              <label class="field-label" for="rl-tinf">Infusion duration</label>
               <div class="input-row">
                 <input type="number" id="rl-tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
                 <span class="unit-badge">hr</span>
@@ -3398,20 +3452,25 @@
           </div>
           <div id="rl-interval-row" style="display:none">
             <div class="field-group">
-              <label class="field-label" for="rl-interval">Current Dosing Interval</label>
+              <label class="field-label" for="rl-interval">Current dosing interval</label>
               <select id="rl-interval" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:var(--fs-base);padding:9px 12px;width:100%;outline:none">
-                <option value="8">Q8H</option>
-                <option value="12" selected>Q12H</option>
-                <option value="18">Q18H</option>
-                <option value="24">Q24H</option>
-                <option value="36">Q36H</option>
-                <option value="48">Q48H</option>
+                <option value="8">q8h</option>
+                <option value="12" selected>q12h</option>
+                <option value="18">q18h</option>
+                <option value="24">q24h</option>
+                <option value="36">q36h</option>
+                <option value="48">q48h</option>
               </select>
             </div>
           </div>
           <div class="field-group">
-            <label class="field-label" for="rl-dose-time">Dose start date &amp; time</label>
-            <input type="datetime-local" id="rl-dose-time" data-oninput="k29" data-onchange="k29" class="dt-input">
+            <label class="field-label" for="rl-dose-time-date">Dose start date &amp; time</label>
+            <span class="dt-pair" data-dt-for="rl-dose-time">
+              <input type="date" id="rl-dose-time-date" aria-label="Dose start, date">
+              <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="rl-dose-time-time" aria-label="Dose start, time (24-hour)">
+              <span class="course-readback" id="rl-dose-time-rb"></span>
+            </span>
+            <input type="hidden" id="rl-dose-time" data-oninput="k29">
             <p class="field-hint">Enter date + time to support cross-day intervals</p>
           </div>
         </div>
@@ -3431,11 +3490,16 @@
               </div>
             </div>
             <div class="field-group">
-              <label class="field-label" for="rl-draw-time">Level drawn (date &amp; time)</label>
-              <input type="datetime-local" id="rl-draw-time" data-oninput="k29" data-onchange="k29" class="dt-input">
+              <label class="field-label" for="rl-draw-time-date">Level drawn (date &amp; time)</label>
+              <span class="dt-pair" data-dt-for="rl-draw-time">
+                <input type="date" id="rl-draw-time-date" aria-label="Level drawn, date">
+                <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" maxlength="5" inputmode="numeric" data-time24 id="rl-draw-time-time" aria-label="Level drawn, time (24-hour)">
+                <span class="course-readback" id="rl-draw-time-rb"></span>
+              </span>
+              <input type="hidden" id="rl-draw-time" data-oninput="k29">
             </div>
           </div>
-          <div id="rl-t-display" style="display:none;font-size:var(--fs-xs);font-family:var(--font-num);color:var(--accent-amber)"></div>
+          <div id="rl-t-display" style="display:none;font-size:var(--fs-xs);font-family:var(--font-num);color:var(--ink-soft)"></div>
           <div id="rl-warning" style="display:none;font-size:var(--fs-xs);color:var(--amber);padding:6px 10px;background:color-mix(in srgb, var(--amber) 8%, transparent);border-radius:4px;border:1px solid color-mix(in srgb, var(--amber) 25%, transparent)"></div>
         </div>
       </div>
@@ -3445,12 +3509,12 @@
       <div>
         <h2 class="form-h2" id="rl-tau-heading">Target maintenance interval</h2>
         <select id="rl-tau" aria-labelledby="rl-tau-heading" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:'Outfit',sans-serif;font-size:var(--fs-base);padding:9px 12px;width:100%;outline:none">
-          <option value="8">Q8H</option>
-          <option value="12" selected>Q12H</option>
-          <option value="18">Q18H</option>
-          <option value="24">Q24H</option>
-          <option value="36">Q36H</option>
-          <option value="48">Q48H</option>
+          <option value="8">q8h</option>
+          <option value="12" selected>q12h</option>
+          <option value="18">q18h</option>
+          <option value="24">q24h</option>
+          <option value="36">q36h</option>
+          <option value="48">q48h</option>
         </select>
         <p class="field-hint" style="margin-top:6px">Dose will be auto-calculated to target AUC 400–600 mg·h/L</p>
       </div>
@@ -3531,7 +3595,7 @@
       <div>
         <h2 class="form-h2">Dosing weight and volume</h2>
         <div style="display:flex;flex-direction:column;gap:10px">
-          <p class="field-hint">Weight now is the Total Body Weight above (actual body weight).</p>
+          <p class="field-hint">Weight now is the total body weight above (actual body weight).</p>
           <div class="field-group">
             <label class="field-label" for="pd-load-kg">Weight at the load, if different</label>
             <div class="input-row"><input type="number" id="pd-load-kg" min="25" max="300" step="0.1" placeholder="—"><span class="unit-badge">kg</span></div>
@@ -3603,7 +3667,7 @@
       <h2 class="form-h2">PK model</h2>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label" for="cl-model">Clearance Model</label>
+          <label class="field-label" for="cl-model">Clearance model</label>
           <select id="cl-model" data-onchange="k30">
             <option value="vancopk" selected>VancoPK (Default) — 0.75(CrCl) + 4</option>
             <option value="matzke">Matzke — 0.689(CrCl) + 3.66</option>
@@ -3612,7 +3676,7 @@
           </select>
         </div>
         <div class="field-group">
-          <label class="field-label" for="vd-model">Volume of Distribution Model</label>
+          <label class="field-label" for="vd-model">Volume of distribution model</label>
           <select id="vd-model" data-onchange="k30">
             <option value="vancopk" selected>VancoPK — 0.29(age) + 0.33(TBW) + 11</option>
             <option value="buelga">Buelga — 0.98 L/kg TBW</option>
@@ -3632,7 +3696,7 @@
       <h2 class="form-h2">Therapeutic target</h2>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <span class="field-label" id="trough-range-label">Trough Target Range</span>
+          <span class="field-label" id="trough-range-label">Trough target range</span>
           <div class="form-grid-2" role="group" aria-labelledby="trough-range-label">
             <div class="input-row">
               <input type="number" id="trough-min" value="10" min="5" max="25" aria-labelledby="trough-range-label trough-min-unit">
@@ -3657,10 +3721,23 @@
 
     </div><!-- /section-trough-shared -->
 
-    <!-- Buttons -->
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      <button class="calc-btn" data-onclick="k31">Calculate Regimen<kbd>⏎</kbd></button>
-      <button class="reset-btn" data-onclick="k32">Reset All Fields</button>
+    <!-- Saved profiles — one store, both modules; at the foot of the column, where saving happens (D24) -->
+    <div class="profile-section" data-enter-scope>
+      <h2 class="form-h2" style="margin:0">Saved profiles</h2>
+      <div class="profile-save-row">
+        <input type="text" class="profile-label-input" aria-label="Profile label" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
+        <button class="profile-save-btn" data-onclick="k37" data-enter-default>Save</button>
+      </div>
+      <div class="profile-list"></div>
+      <p class="undo-line profile-status" aria-live="polite"></p>
+      <div class="profile-privacy-note">
+        Profiles are stored in this browser only (localStorage). Use de-identified labels — do not enter patient names, MRNs, or other PHI.
+      </div>
+    </div>
+
+    <!-- The run action, pinned at the column's foot from 1001 px (D24) -->
+    <div class="panel-actions">
+      <button class="calc-btn" data-onclick="k31">Calculate regimen<kbd>⏎</kbd></button>
     </div>
 
   </div><!-- /panel-left -->
@@ -3673,7 +3750,7 @@
     <div class="results-placeholder" id="results-placeholder">
       <h2 class="rp-title">Results</h2>
       <p>Enter the patient's demographics and renal function, then press
-         <b>Calculate Regimen</b>.</p>
+         <b>Calculate regimen</b>.</p>
       <ul class="rp-list">
         <li><b>Population PK</b> — CrCl, clearance, volume, half-life</li>
         <li><b>A maintenance regimen</b> against an AUC<sub>24</sub> of 400–600 mg·h/L</li>
@@ -3706,56 +3783,14 @@
         <div class="bayes-model-badge" id="b-model-badge">Buelga 2005 · 1-compartment</div>
       </div>
     </div>
-    <div style="margin-top:8px">
-      <span class="field-label" id="b-model-label" style="display:block;margin-bottom:5px">Model</span>
-      <!-- A 2x2 grid rather than one flex row: four models in a 400px rail could
-           not fit side by side, so the last two sat off-screen behind a
-           horizontal scroll nobody discovers. Each cell now names the model and
-           the population it was fitted to, which is the thing you are choosing. -->
-      <div class="model-grid" id="b-model-toggle" role="group" aria-labelledby="b-model-label">
-        <button class="model-opt active" id="b-model-btn-buelga" data-onclick="k33" aria-pressed="true">
-          <span class="model-opt-name">Buelga 2005</span>
-          <span class="model-opt-sub">1-comp · general adult</span>
-        </button>
-        <button class="model-opt" id="b-model-btn-goti" data-onclick="k34" aria-pressed="false">
-          <span class="model-opt-name">Goti 2018</span>
-          <span class="model-opt-sub">2-comp · hospitalised</span>
-        </button>
-        <button class="model-opt" id="b-model-btn-hughes" data-onclick="k35" aria-pressed="false">
-          <span class="model-opt-name">Hughes 2024</span>
-          <span class="model-opt-sub">2-comp · BMI ≥ 40 only</span>
-        </button>
-        <button class="model-opt" id="b-model-btn-gotihd" data-onclick="k36" aria-pressed="false">
-          <span class="model-opt-name">Goti 2018 · HD</span>
-          <span class="model-opt-sub">2-comp · haemodialysis</span>
-        </button>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:var(--fs-xs);color:var(--text-secondary);cursor:pointer">
-        <input type="checkbox" id="b-icu" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
-        ICU / Critically Ill / Complex PK
-      </label>
-      <span style="font-size:var(--fs-xs);color:var(--text-muted)">(favors 2-comp Goti model)</span>
-    </div>
-    <div id="b-model-rec-banner" style="display:none"></div>
+    <div class="panel-tools"><span class="undo-line" id="undo-auc" aria-live="polite"></span><button type="button" class="text-action" data-onclick="k48">Clear all fields</button></div>
 
-    <!-- Saved profiles — one store, both modules -->
-    <div class="profile-section">
-      <h2 class="form-h2" style="margin:0">Saved profiles</h2>
-      <div class="profile-save-row">
-        <input type="text" class="profile-label-input" id="profile-label-input" aria-label="Profile label" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
-        <button class="profile-save-btn" data-onclick="k37">Save Current</button>
-      </div>
-      <div class="profile-list" id="profile-list"></div>
-      <div class="profile-privacy-note">
-        Profiles are stored in this browser only (localStorage). Use de-identified labels — do not enter patient names, MRNs, or other PHI.
-      </div>
-    </div>
+
+
 
     <!-- Patient Demographics -->
     <div>
-      <h2 class="form-h2">Patient demographics</h2>
+      <h2 class="form-h2">Patient</h2>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div class="form-grid-2">
           <div class="field-group">
@@ -3776,7 +3811,7 @@
         </div>
         <div class="form-grid-2">
           <div class="field-group">
-            <label class="field-label" for="b-tbw">Total Body Weight</label>
+            <label class="field-label" for="b-tbw">Total body weight</label>
             <div class="input-row">
               <input type="number" id="b-tbw" placeholder="—" min="30" max="340" data-oninput="k38">
               <span class="unit-badge">kg</span>
@@ -3800,7 +3835,7 @@
       <h2 class="form-h2">Renal function</h2>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
-          <label class="field-label" for="b-scr">Serum Creatinine</label>
+          <label class="field-label" for="b-scr">Serum creatinine</label>
           <div class="input-row">
             <input type="number" id="b-scr" placeholder="—" min="0.1" max="20" step="0.1" data-oninput="k38">
             <span class="unit-badge">mg/dL</span>
@@ -3836,9 +3871,49 @@
 
     <hr class="section-divider">
 
+    <!-- The model, chosen for the patient above (D24): the suggested one is marked, never picked for you -->
+    <div>
+      <h2 class="form-h2">Model</h2>
+    <div style="margin-top:8px">
+      <span class="sr-only" id="b-model-label">Model</span>
+      <!-- A 2x2 grid rather than one flex row: four models in a 400px rail could
+           not fit side by side, so the last two sat off-screen behind a
+           horizontal scroll nobody discovers. Each cell now names the model and
+           the population it was fitted to, which is the thing you are choosing. -->
+      <div class="model-grid" id="b-model-toggle" role="group" aria-labelledby="b-model-label">
+        <button class="model-opt active" id="b-model-btn-buelga" data-onclick="k33" aria-pressed="true">
+          <span class="model-opt-name">Buelga 2005</span>
+          <span class="model-opt-sub">1-comp · general adult</span>
+        </button>
+        <button class="model-opt" id="b-model-btn-goti" data-onclick="k34" aria-pressed="false">
+          <span class="model-opt-name">Goti 2018</span>
+          <span class="model-opt-sub">2-comp · hospitalised</span>
+        </button>
+        <button class="model-opt" id="b-model-btn-hughes" data-onclick="k35" aria-pressed="false">
+          <span class="model-opt-name">Hughes 2024</span>
+          <span class="model-opt-sub">2-comp · BMI ≥ 40 only</span>
+        </button>
+        <button class="model-opt" id="b-model-btn-gotihd" data-onclick="k36" aria-pressed="false">
+          <span class="model-opt-name">Goti 2018 · HD</span>
+          <span class="model-opt-sub">2-comp · haemodialysis</span>
+        </button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:var(--fs-xs);color:var(--text-secondary);cursor:pointer">
+        <input type="checkbox" id="b-icu" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
+        ICU, critically ill or complex PK
+      </label>
+      <span style="font-size:var(--fs-xs);color:var(--text-muted)">(favors 2-comp Goti model)</span>
+    </div>
+    <div id="b-model-rec-banner" style="display:none"></div>
+    </div>
+
+    <hr class="section-divider">
+
     <!-- Dosing Course History -->
     <div>
-      <h2 class="form-h2">Dosing course history</h2>
+      <h2 class="form-h2">Dosing course</h2>
 
       <!-- Doses -->
       <div style="margin-bottom:18px">
@@ -3846,11 +3921,11 @@
         <div class="course-table-wrap">
           <table class="course-table">
             <tbody id="b-dose-tbody">
-              <tr><td colspan="4" class="course-empty-msg">No doses — press + Add Dose</td></tr>
+              <tr><td colspan="4" class="course-empty-msg">No doses — press + Add dose</td></tr>
             </tbody>
           </table>
         </div>
-        <button class="course-add-btn" data-onclick="k43">+ Add Dose</button>
+        <button class="course-add-btn" data-onclick="k43">+ Add dose</button>
 
         <!-- Clinician override for the detected regimen.
              Affects PROJECTIONS and recommendation comparisons only. It never
@@ -3859,13 +3934,13 @@
           <label class="field-label" for="b-regimen-override">Current intended regimen</label>
           <select id="b-regimen-override" data-onchange="k44">
             <option value="auto" selected>Auto-detect from dose history</option>
-            <option value="6">Q6H</option>
-            <option value="8">Q8H</option>
-            <option value="12">Q12H</option>
-            <option value="18">Q18H</option>
-            <option value="24">Q24H</option>
-            <option value="36">Q36H</option>
-            <option value="48">Q48H</option>
+            <option value="6">q6h</option>
+            <option value="8">q8h</option>
+            <option value="12">q12h</option>
+            <option value="18">q18h</option>
+            <option value="24">q24h</option>
+            <option value="36">q36h</option>
+            <option value="48">q48h</option>
             <option value="custom">Custom…</option>
           </select>
           <div id="b-regimen-custom-wrap" style="display:none;margin-top:6px">
@@ -3886,11 +3961,11 @@
         <div class="course-table-wrap">
           <table class="course-table">
             <tbody id="b-level-tbody">
-              <tr><td colspan="3" class="course-empty-msg">No levels — press + Add Level</td></tr>
+              <tr><td colspan="3" class="course-empty-msg">No levels — press + Add level</td></tr>
             </tbody>
           </table>
         </div>
-        <button class="course-add-btn" data-onclick="k46">+ Add Level</button>
+        <button class="course-add-btn" data-onclick="k46">+ Add level</button>
         <p class="field-hint" style="margin-top:6px">Levels can be drawn at any time point (not restricted to trough). More levels → narrower AUC uncertainty.</p>
       </div>
 
@@ -3948,11 +4023,23 @@
       </div>
     </div>
 
-    <!-- Action buttons -->
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-      <button class="calc-btn" data-onclick="k47">
-        Run Bayesian Analysis<kbd>⏎</kbd></button>
-      <button class="reset-btn" data-onclick="k48">Reset Bayesian Form</button>
+    <!-- Saved profiles — one store, both modules; at the foot of the column, where saving happens (D24) -->
+    <div class="profile-section" data-enter-scope>
+      <h2 class="form-h2" style="margin:0">Saved profiles</h2>
+      <div class="profile-save-row">
+        <input type="text" class="profile-label-input" id="profile-label-input" aria-label="Profile label" placeholder="Label (e.g., 74M AKI Day 3)" maxlength="60">
+        <button class="profile-save-btn" data-onclick="k37" data-enter-default>Save</button>
+      </div>
+      <div class="profile-list" id="profile-list"></div>
+      <p class="undo-line profile-status" aria-live="polite"></p>
+      <div class="profile-privacy-note">
+        Profiles are stored in this browser only (localStorage). Use de-identified labels — do not enter patient names, MRNs, or other PHI.
+      </div>
+    </div>
+
+    <!-- The run action, pinned at the column's foot from 1001 px (D24) -->
+    <div class="panel-actions">
+      <button class="calc-btn" data-onclick="k47">Run Bayesian analysis<kbd>⏎</kbd></button>
     </div>
 
   </div><!-- /panel-left bayesian -->
@@ -3965,7 +4052,7 @@
     <div class="results-placeholder" id="b-placeholder">
       <h2 class="rp-title">Results</h2>
       <p>Enter the patient, the dosing history and any measured levels, then press
-         <b>Run Bayesian Analysis</b>.</p>
+         <b>Run Bayesian analysis</b>.</p>
       <ul class="rp-list">
         <li><b>An individualised fit</b> — MAP Bayesian, against the chosen population prior</li>
         <li><b>AUC<sub>24</sub> with its uncertainty</b>, and how far the fit moved from the prior</li>
@@ -3994,7 +4081,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.12.0';
+const APP_VERSION = '3.13.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -4053,7 +4140,7 @@ const __ACT = {
   k29: (el, ev, arg) => { calcRLDelta() },   /* calcRLDelta() */
   k30: (el, ev, arg) => { updateModelInfo(); try { updateCrCl(); } catch (e) {} },   /* updateModelInfo(); the Vd model drives an advisory */
   k31: (el, ev, arg) => { calculate() },   /* calculate() */
-  k32: (el, ev, arg) => { resetForm() },   /* resetForm() */
+  k32: (el, ev, arg) => { clearWithUndo('trough') },   /* clear the Trough form, with Undo (D24) */
   k33: (el, ev, arg) => { setBModel(el,'buelga') },   /* setBModel(this,'buelga') */
   k34: (el, ev, arg) => { setBModel(el,'goti') },   /* setBModel(this,'goti') */
   k35: (el, ev, arg) => { setBModel(el,'hughes') },   /* setBModel(this,'hughes') */
@@ -4063,20 +4150,19 @@ const __ACT = {
   k39: (el, ev, arg) => { setBSex(el,'M') },   /* setBSex(this,'M') */
   k40: (el, ev, arg) => { setBSex(el,'F') },   /* setBSex(this,'F') */
   k41: (el, ev, arg) => { bState.dial=el.checked;syncHdSection();updateBayesCrCl() },   /* bState.dial=this.checked;updateBayesCrCl() */
-  k42: (el, ev, arg) => { addScrRow() },   /* addScrRow() */
-  k43: (el, ev, arg) => { addBayesDose() },   /* addBayesDose() */
+  k42: (el, ev, arg) => { addScrRow(); focusNewRow('b-scr-tbody'); },   /* + Add SCr */
+  k43: (el, ev, arg) => { addBayesDose(); focusNewRow('b-dose-tbody'); },   /* + Add dose: the new row takes the focus (D24) */
   k44: (el, ev, arg) => { setRegimenOverride(el.value) },   /* setRegimenOverride(this.value) */
   k45: (el, ev, arg) => { setRegimenOverride('custom') },   /* setRegimenOverride('custom') */
-  k46: (el, ev, arg) => { addBayesLevel() },   /* addBayesLevel() */
+  k46: (el, ev, arg) => { addBayesLevel(); focusNewRow('b-level-tbody'); },   /* + Add level */
   k47: (el, ev, arg) => { runBayesian() },   /* runBayesian() */
-  k48: (el, ev, arg) => { resetBayesian() },   /* resetBayesian() */
+  k48: (el, ev, arg) => { clearWithUndo('auc') },   /* clear the AUC form, with Undo (D24) */
   k50: (el, ev, arg) => { autoFillTinf(el.value,'c-tinf') },   /* autoFillTinf(this.value,'c-tinf') */
   k53: (el, ev, arg) => { showResultTab('tab-initial') },   /* showResultTab('tab-initial') */
   k54: (el, ev, arg) => { showResultTab('tab-level') },   /* showResultTab('tab-level') */
   k55: (el, ev, arg) => { showResultTab('tab-twolevels') },   /* showResultTab('tab-twolevels') */
   k56: (el, ev, arg) => { showResultTab('tab-randomlevel') },   /* showResultTab('tab-randomlevel') */
   k57: (el, ev, arg) => { calcPRNDose() },   /* calcPRNDose() */
-  k58: (el, ev, arg) => { if(ev.key==='Enter')tinkerDose(String(arg)) },   /* if(event.key==='Enter')tinkerDose('${suffix}') */
   k59: (el, ev, arg) => { tinkerDose(String(arg)) },   /* tinkerDose('${suffix}') */
   k60: (el, ev, arg) => { autoFillTinf(el.value,('b-dose-tinf-'+arg)) },   /* autoFillTinf(this.value,'b-dose-tinf-${id}') */
   k61: (el, ev, arg) => { removeBayesDose(Number(arg)) },   /* removeBayesDose(${id}) */
@@ -4092,7 +4178,7 @@ const __ACT = {
   k71: (el, ev, arg) => { pickMatrixCell(String(arg)) },   /* pickMatrixCell('dose|tau') */
   k72: (el, ev, arg) => { matrixKeyNav(el, ev) },   /* arrow-key grid navigation */
   k73: (el, ev, arg) => { setDosingWt(el,'auto') },   /* setDosingWt(this,'auto') */
-  k74: (el, ev, arg) => { addBayesSession() },   /* + Add HD session (D15) */
+  k74: (el, ev, arg) => { addBayesSession(); focusNewRow('b-hd-tbody'); },   /* + Add HD session (D15) */
   k75: (el, ev, arg) => { removeBayesSession(Number(arg)) },   /* remove HD session row */
   k76: (el, ev, arg) => { addHdSchedule() },   /* recurring HD schedule (D16) */
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
@@ -4101,16 +4187,18 @@ const __ACT = {
   k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0) */
   k84: (el, ev, arg) => { setCalcMode('pd'); },   /* the PD mode (D23) */
   k85: (el, ev, arg) => { pdSetGoal(arg); },   /* a goal preset */
-  k86: (el, ev, arg) => { addPdRow('dose'); },
+  k86: (el, ev, arg) => { addPdRow('dose'); focusNewRow('pd-dose-tbody'); },
   k87: (el, ev, arg) => { removePdRow('dose', arg); },
-  k88: (el, ev, arg) => { addPdRow('lvl'); },
+  k88: (el, ev, arg) => { addPdRow('lvl'); focusNewRow('pd-lvl-tbody'); },
   k89: (el, ev, arg) => { removePdRow('lvl', arg); },
-  k90: (el, ev, arg) => { addPdRow('held'); },
+  k90: (el, ev, arg) => { addPdRow('held'); focusNewRow('pd-held-tbody'); },
   k91: (el, ev, arg) => { removePdRow('held', arg); },
   k92: (el, ev, arg) => { savePdLocalSettings(); },
   k94: (el, ev, arg) => { pdToggleFields(); },
   k93: (el, ev, arg) => { switchModule('trough'); setCalcMode('pd'); },   /* AUC Precision PD guard → the PD mode (D23) */
   k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
+  k97: (el, ev, arg) => { runUndo(); },   /* Undo (D24) */
+  k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
 // How a CrCl should be labelled wherever it is shown. The manual override is
@@ -4399,6 +4487,10 @@ function toggleLD() {
 
 function setCalcMode(mode) {
   state.calcMode = mode;
+  // The panel shows only what the mode reads (D24): PD hides amputation, creatinine and
+  // the loading-dose blocks (.not-pd in CSS).
+  const pl = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left');
+  if (pl && pl.dataset) pl.dataset.mode = mode;
   document.getElementById('mode-btn-initial').classList.toggle('active',      mode === 'initial');
   document.getElementById('mode-btn-level').classList.toggle('active',        mode === 'level');
   document.getElementById('mode-btn-twolevels').classList.toggle('active',    mode === 'twolevels');
@@ -4500,7 +4592,7 @@ function readPdForm() {
   const num = (id) => { const x = val(id).trim(); return x === '' ? NaN : Number(x); };
   const errors = [], ids = [], bad = (id, msg) => { errors.push(msg); ids.push(id); };
   const nowKg = num('tbw');
-  if (!(nowKg >= 25 && nowKg <= 300)) bad('tbw', 'Enter the weight now (Total Body Weight), 25–300 kg.');
+  if (!(nowKg >= 25 && nowKg <= 300)) bad('tbw', 'Enter the weight now (total body weight), 25–300 kg.');
   const loadKg = num('pd-load-kg');
   if (!isNaN(loadKg) && !(loadKg >= 25 && loadKg <= 300)) bad('pd-load-kg', 'Weight at the load: 25–300 kg, or leave it blank.');
   const modality = val('pd-modality'), cycler = modality === 'ccpd' || modality === 'nipd';
@@ -4602,25 +4694,26 @@ function pdFlagWords(i) {
 function pdSummaryText(a) {
   if (!a) return '';
   const r = (x) => `${x[0].toFixed(1)}–${x[1].toFixed(1)} mg/L`, g = a.goal ? ` (goal ${a.goal.min}–${a.goal.max})` : '';
-  const cyc = a.drawOnCycler ? ', drawn after the cycler ends' : '';
   switch (a.state) {
     case 'refuse': return `PD, IV vancomycin: ${a.refuse.word}.`;
-    case 'load': return `PD, IV vancomycin: loading dose ${fmtDose(a.load.mg)} IV. First level ${fmtClock(a.load.firstLevelH)}${cyc}.`;
-    case 'first-level': return `PD, IV vancomycin: draw the first level ${fmtClock(a.nextDrawH)}${cyc}.`;
+    case 'load': return `PD, IV vancomycin: loading dose ${fmtDose(a.load.mg)} IV. First level ${fmtClock(a.load.firstLevelH)}.`;
+    case 'first-level': return `PD, IV vancomycin: draw the first level ${fmtClock(a.nextDrawH)}.`;
     case 'need-level': return `PD, IV vancomycin: ${a.provisional ? `give ${fmtDose(a.provisional.mg)} IV (provisional; no decline measured yet)` : 'draw a level first'}. Next level ${fmtClock(a.nextDrawH)}.`;
     case 'dose': { const row = a.rows.find(x => x.mg === a.pick.mg);
-      return `PD, IV vancomycin: Give ${fmtDose(a.pick.mg)} IV${a.giveIsNow === false ? ` at ${fmtClock(a.giveAtH)}` : ''}; expected ${r(row.atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}${cyc}.`; }
-    default: return `PD, IV vancomycin: no dose today; expected ${r(a.rows[0].atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}${cyc}.`;
+      return `PD, IV vancomycin: Give ${fmtDose(a.pick.mg)} IV${a.giveIsNow === false ? ` at ${fmtClock(a.giveAtH)}` : ''}; expected ${r(row.atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}.`; }
+    default: return `PD, IV vancomycin: no dose today; expected ${r(a.rows[0].atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}.`;
   }
 }
 // The chart: levels, the chosen option's projected range to the next draw, the
 // goal, cycler nights and doses, on clock time. SVG coloured by CSS tokens only.
-function pdChartSVG(a, input, nowH) {
+// widthPx: the width the chart is shown at, so its 12 px text is 12 px on screen (D24). The
+// string builder has no DOM; renderPdResults measures the figure and draws it again.
+function pdChartSVG(a, input, nowH, widthPx) {
   const c = (input && input.course) || {}, goal = a.goal || (input && input.goal);
   const levels = (c.levels || []).slice().sort((x, y) => x.timeH - y.timeH), doses = (c.doses || []).slice().sort((x, y) => x.timeH - y.timeH);
   if (!levels.length || !a.curve || !a.curve.length) return '';
   const t0 = Math.min(doses.length ? doses[0].timeH : Infinity, levels[0].timeH) - 6, t1 = a.nextDrawH + 6;
-  const W = 600, H = 220, P = { l: 34, r: 10, t: 14, b: 28 };
+  const W = widthPx > 0 ? Math.round(Math.min(1200, Math.max(280, widthPx))) : 600, H = 220, P = { l: 34, r: 10, t: 14, b: 28 };
   const yMax = Math.max(goal ? goal.max : 0, ...levels.map(l => l.conc), ...a.curve.map(p => p.hi)) * 1.15;
   const x = (t) => P.l + (t - t0) / (t1 - t0) * (W - P.l - P.r), y = (v) => P.t + (1 - v / yMax) * (H - P.t - P.b);
   const f = (n) => n.toFixed(1), yb = y(0);
@@ -4650,7 +4743,9 @@ function pdResultsHTML(a, input, nowH) {
   const inp = input || {}, c = inp.course || {}, sc = c.schedule || {}, goal = a.goal || inp.goal;
   const range = (r) => `${r[0].toFixed(1)}–${r[1].toFixed(1)} mg/L`, when = (h) => escHtml(fmtClock(h));
   const onCycler = (sc.modality === 'ccpd' || sc.modality === 'nipd') && !(sc.stoppedAtH != null && sc.stoppedAtH <= nowH);
-  const nextLine = (label, h, note) => `<p class="vx-next"><span class="vx-k">${label}</span> ${when(h)} <span class="vx-muted">with AM labs${a.drawOnCycler ? ', while the cycler is running: see below' : onCycler ? ', after the cycler' : ''}${note ? ` · ${note}` : ''}</span></p>`;
+  // v3.13.0 (D24, the user's ruling): the draw is the AM labs, said plainly, with no
+  // cycler-end wording. A level that was drawn on the cycler is flagged in "The decline".
+  const nextLine = (label, h, note) => `<p class="vx-next"><span class="vx-k">${label}</span> ${when(h)} <span class="vx-muted">with AM labs${note ? ` · ${note}` : ''}</span></p>`;
   const course = pdCourseSection(inp, nowH);
   const wrap = (verdict, figure, sections) => `
     <div class="tx-result pd-result">
@@ -4664,7 +4759,7 @@ function pdResultsHTML(a, input, nowH) {
       <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
       <p class="vx-hold">${a.refuse.html}</p>
     </section>`);
-  const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k95">Copy summary</button></div>`;
+  const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k95">Copy summary</button><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
   const method = txEvHTML('pd-method', 'How this works', 'Level-based, not a model', `
     <p class="ev-note">Every level is read against the one before it (or against the first dose, when no vancomycin came before it): the elimination rate that carries the earlier level, plus every dose in between, onto the measured one, one-compartment with V = ${c.vdPerKg === MATZKE_VD_GROUP3 ? 'Matzke group III 0.90' : 'Bauer 0.70'} L/kg × the weight at the load. The projection is the range those rates give. No population PD model drives a dose: none is validated, and ISPD 2022 gives no IV vancomycin dose.</p>
     <p class="ev-note">A redose is sized by where it puts the next level you will draw, inside your goal: the step whose expected level lands closest to the goal's middle, ties to the smaller. The loading dose (${PD_LOAD_MG_PER_KG} mg/kg, actual body weight) is institutional convention (e.g. Northwestern 2026), capped at the Rybak 2020 Rec 11 loading maximum.</p>`, false);
@@ -4769,6 +4864,19 @@ function renderPdResults(a, input, nowH) {
   if (!rc) return;
   rc.innerHTML = pdResultsHTML(a, input, nowH);
   state.pdSummary = pdSummaryText(a);
+  state.pdView = { a, input, nowH };
+  fitPdChart();
+}
+// Redraw the PD chart at the width it is shown (on a result and when the window resizes).
+function fitPdChart() {
+  const v = state.pdView, fig = document.querySelector('#results-content .pd-figure'), svg = fig && fig.querySelector('svg.pd-chart');
+  if (!v || !svg) return;
+  const w = Math.round(fig.getBoundingClientRect().width);
+  if (w > 0 && Math.abs(w - Number((svg.getAttribute('viewBox') || '').split(' ')[2])) > 1) svg.outerHTML = pdChartSVG(v.a, v.input, v.nowH, w);
+}
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  let pdFitT = 0;
+  window.addEventListener('resize', () => { clearTimeout(pdFitT); pdFitT = setTimeout(() => { try { fitPdChart(); } catch (e) { /* the chart keeps its last width */ } }, 120); });
 }
 
 // ── AKI Detection (RenalGuard) ──
@@ -5165,6 +5273,13 @@ document.addEventListener('keydown', function (e) {
   const tag = t.tagName.toLowerCase();
   if (tag === 'textarea' || tag === 'button' || tag === 'a') return;
   if (tag !== 'input' && tag !== 'select') return;
+  // v3.13.0 (D24): a field with a job of its own does that job. Enter in Explore's dose,
+  // "Try another regimen" or the profile name used to rebuild the whole result (or run
+  // the calculation), closing the section and discarding the trial. Any other field in a
+  // result or the profiles does nothing on Enter.
+  const scope = t.closest && t.closest('[data-enter-scope]');
+  if (scope) { e.preventDefault(); const b = scope.querySelector('[data-enter-default]'); if (b) b.click(); return; }
+  if (t.closest && t.closest('#results-content, #b-results, .profile-section')) return;
   const inBayes = !!t.closest && !!t.closest('#app-shell-bayesian');
 
   try {
@@ -5185,6 +5300,14 @@ function scrollResultsIntoView(id) {
   if (typeof document === 'undefined' || !document.getElementById) return;
   const el = document.getElementById(id);
   if (!el) return;
+  // v3.13.0 (D24): from 1001 px the input column stays beside the answer, so the window
+  // moves only when the answer's top is off screen, and at once (the glide took ~1 s).
+  if (window.innerWidth > 1000 && el.getBoundingClientRect) {
+    const top = el.getBoundingClientRect().top, head = (document.querySelector('.header') || {}).offsetHeight || 64;
+    if (top >= head && top < window.innerHeight / 2) return;
+    try { el.scrollIntoView({ behavior: 'instant', block: 'start' }); } catch (e) { el.scrollIntoView(); }
+    return;
+  }
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   try { el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
 }
@@ -5746,11 +5869,12 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 }
 // clearComparison() wipes bState.tinkCompare outright with no undo, and its
 // control sits next to '+ Add to comparison' on a phone.
+// v3.13.0 (D24): cleared at once, with Undo, instead of a native confirm().
 function confirmClearComparison() {
-  const n = (bState && bState.tinkCompare) ? bState.tinkCompare.length : 0;
-  if (n > 1 && typeof confirm === 'function' &&
-      !confirm(`Remove all ${n} regimens from the comparison? This cannot be undone.`)) return;
+  const saved = (bState && bState.tinkCompare) ? bState.tinkCompare.slice() : [];
   clearComparison();
+  if (saved.length > 1) offerUndo([document.getElementById('undo-compare')], `Removed ${saved.length} regimens from the comparison.`,
+    () => { bState.tinkCompare = saved; renderComparisonSection(); });
 }
 function redrawAllCanvases() {
   // Guarded so a missing module never breaks the toggle — but never silently.
@@ -7740,13 +7864,12 @@ function tinkererHTML(suffix, tau) {
   return `
     <div class="tinkerer-box">
       <div class="tinkerer-header">Try an alternative dose &amp; interval</div>
-      <div class="tinkerer-row">
-        <input type="number" class="tinkerer-input" id="tinker-dose-${suffix}" placeholder="mg" step="250"
-          data-onkeydown="k58" data-arg="${suffix}">
+      <div class="tinkerer-row" data-enter-scope>
+        <input type="number" class="tinkerer-input" id="tinker-dose-${suffix}" placeholder="mg" step="250" aria-label="Dose to try (mg)">
         <select class="tinkerer-tau" id="tinker-tau-${suffix}" title="Dosing interval">
           ${tauOpts}
         </select>
-        <button class="tinkerer-btn" data-onclick="k59" data-arg="${suffix}">Predict</button>
+        <button class="tinkerer-btn" data-onclick="k59" data-arg="${suffix}" data-enter-default>Predict</button>
         <span style="font-size:var(--fs-xs);color:var(--text-muted);white-space:nowrap">Recommended ${tau ? fmtFreq(tau) : '—'}</span>
       </div>
       <div class="tinkerer-result" id="tinker-result-${suffix}"></div>
@@ -8020,6 +8143,83 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
 // ══════════════════════════════════════════
 //  RESET
 // ══════════════════════════════════════════
+// ── A row added by hand takes the focus (v3.13.0, D24) ──
+// + Add dose used to keep the focus, so every new row cost a click. A row added by code
+// (a profile, a schedule) never moves the focus: only the buttons call this.
+function focusNewRow(tbodyId) {
+  const tb = document.getElementById(tbodyId);
+  const rows = tb ? tb.querySelectorAll('tr') : [];
+  const f = rows.length ? rows[rows.length - 1].querySelector('input, select') : null;
+  if (f) { try { f.focus(); } catch (e) { /* not focusable: leave the focus where it is */ } }
+}
+
+// ── Clearing a form, with Undo (v3.13.0, D24) ──
+// "Reset" sat 8 px under the run button with no way back (re-entering an AUC course is
+// 17 clicks and 43 keys). Clearing is a text action at the top of the column now, and the
+// form as it was can be put back until the next clear or calculation. Native confirm()
+// dialogs are gone for the same reason: an inline line with Undo, never a modal.
+let _undo = null;
+function offerUndo(hosts, message, restore) {
+  clearUndo();
+  const els = (hosts || []).filter(Boolean);
+  _undo = { els, restore };
+  els.forEach(h => { h.innerHTML = `<span>${escHtml(message)}</span><button type="button" class="text-action" data-onclick="k97">Undo</button>`; });
+}
+function clearUndo() {
+  if (_undo) _undo.els.forEach(h => { h.innerHTML = ''; });
+  _undo = null;
+}
+function runUndo() {
+  const u = _undo;
+  clearUndo();
+  if (u && typeof u.restore === 'function') u.restore();
+}
+// Every field's value and every course row, as the user left them.
+function snapshotFormDOM(root) {
+  return {
+    rows: [...root.querySelectorAll('tbody[id]')].map(tb => [tb.id, tb.innerHTML]),
+    fields: [...root.querySelectorAll('input[id], select[id], textarea[id]')]
+      .map(e => [e.id, (e.type === 'checkbox' || e.type === 'radio') ? e.checked : e.value]),
+  };
+}
+function restoreFormDOM(snap) {
+  snap.rows.forEach(([id, html]) => { const tb = document.getElementById(id); if (tb) tb.innerHTML = html; });
+  snap.fields.forEach(([id, v]) => { const e = document.getElementById(id); if (!e) return; if (typeof v === 'boolean') e.checked = v; else e.value = v; });
+}
+function clearWithUndo(mod) {
+  const root = document.getElementById('main') || document.body;
+  const dom = snapshotFormDOM(root);
+  const sex = state.sex;
+  if (mod === 'auc') {
+    const b = Object.assign({}, bState), counts = [bDoseCount, bLevelCount, bScrCount, bHdCount];
+    resetBayesian();
+    offerUndo([document.getElementById('undo-auc')], 'Form cleared.', () => {
+      restoreFormDOM(dom);
+      [bDoseCount, bLevelCount, bScrCount, bHdCount] = counts;
+      const key = b.dial && b.model === 'goti' ? 'gotihd' : (b.model || 'buelga');
+      setBModel(document.getElementById(`b-model-btn-${key}`), key);
+      bState = Object.assign({}, b, { result: null, resultFingerprint: null, tinkCompare: [] });
+      setPatientSex(sex);
+      try { syncHdSection(); refreshCourseReadback(); updateScrTrendDisplay(); } catch (e) { /* display only */ }
+      updateBayesCrCl();
+      const f = document.getElementById('b-age'); if (f) f.focus();
+    });
+  } else {
+    const st = { calcMode: state.calcMode, rlMode: state.rlMode };
+    resetForm();
+    offerUndo([document.getElementById('undo-trough')], 'Form cleared.', () => {
+      restoreFormDOM(dom);
+      setCalcMode(st.calcMode);
+      if (st.calcMode !== 'pd') setRLMode(st.rlMode);
+      setPatientSex(sex);
+      toggleLevel(); toggleLD();
+      refreshDtPairs();
+      try { autoWeights(); updateCrCl(); checkAKI(); updateBayesCrCl(); } catch (e) { /* display only */ }
+      const f = document.getElementById('age'); if (f) f.focus();
+    });
+  }
+}
+
 function resetForm() {
   document.querySelectorAll('input[type="number"]').forEach(i=>i.value='');
   document.getElementById('results-placeholder').style.display = 'flex';
@@ -8040,8 +8240,7 @@ function resetForm() {
   document.getElementById('rl-tinf').value = '1';
   document.getElementById('rl-t-display').style.display = 'none';
   document.getElementById('rl-warning').style.display = 'none';
-  document.getElementById('rl-dose-time').value = '';
-  document.getElementById('rl-draw-time').value = '';
+  ['time-dose-given', 'time-level-drawn', 'tl-dose-time', 'tl-t1-time', 'tl-t2-time', 'rl-dose-time', 'rl-draw-time'].forEach(id => setDtPair(id, ''));
   document.getElementById('crcl-result').style.display = 'none';
   document.getElementById('scr-baseline').value = '';
   document.getElementById('aki-manual').checked = false;
@@ -8199,6 +8398,7 @@ function detectVeryLowCrCl(crclUncapped) {
 }
 
 function updateBayesCrCl() {
+  try { markSuggestedModel(); } catch (e) { /* advice only: never blocks the CrCl readout */ }
   const crcl = getBayesCrCl();
   const res  = document.getElementById('b-crcl-result');
   if (crcl) {
@@ -8307,7 +8507,7 @@ function removeBayesDose(id) {
   if (row) row.remove();
   const tbody = document.getElementById('b-dose-tbody');
   if (!tbody.querySelector('tr')) {
-    tbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add Dose</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add dose</td></tr>';
   }
   scheduleCourseReadback();   // every later row's "after dose N" may have changed
 }
@@ -8349,7 +8549,7 @@ function removeBayesLevel(id) {
   if (row) row.remove();
   const tbody = document.getElementById('b-level-tbody');
   if (!tbody.querySelector('tr')) {
-    tbody.innerHTML = '<tr><td colspan="3" class="course-empty-msg">No levels — press + Add Level</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="course-empty-msg">No levels — press + Add level</td></tr>';
   }
 }
 
@@ -9170,17 +9370,51 @@ function pdAmLabsAtOrAfter(h, amLabs) {
   const today = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 0, hh, mm).getTime() / 3600000;
   return today >= h ? today : pdNextAmLabs(h, amLabs);
 }
-// A draw time that falls while the cycler is running reads low (Lam 2020: sample
-// after the cycler series). Said once, with the time the session ends.
-function pdDrawCaution(schedule, drawH, cautions) {
-  const on = pdSessions(schedule, drawH - 24, drawH + 1e-6).find(x => x.startH <= drawH && drawH < x.endH);
-  if (!on) return false;
-  cautions.push({ tier: 'caution', word: 'Draw after the cycler', html: `AM labs at ${fmtClock(drawH)} fall while the cycler is running; it ends at ${localTimeStr(new Date(on.endH * 3600000))}. A level drawn on the cycler reads low: draw after it ends.` });
-  return true;
+// Whether a draw time falls while the cycler is running (a level drawn then can read low,
+// Lam 2020). Known, not said: v3.13.0 (D24) dropped the "Draw after the cycler" caution on
+// the user's ruling ("not too much attention to cycler ending for levels"); the AM labs
+// stand. A level that was drawn on the cycler keeps its flag in "The decline" (pdIntervals).
+// The cautions argument is kept so every caller reads the same.
+function pdDrawCaution(schedule, drawH, cautions) {   // eslint-disable-line no-unused-vars
+  return pdSessions(schedule, drawH - 24, drawH + 1e-6).some(x => x.startH <= drawH && drawH < x.endH);
 }
 
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
+
+// ── A date and a 24-hour time, composed into the one instant the engine reads (v3.13.0, D24) ──
+// The Trough modes' seven instants were datetime-local fields. Each is now a date and a
+// 24-hour time beside a read-back, writing "YYYY-MM-DDTHH:MM" into the hidden input that
+// keeps the old id, so calcTimeDelta / calcTLDeltas / calcRLDelta and elapsedHours read
+// exactly what they read before (SUITE 19). A half-typed time composes to blank, never a guess.
+function dtPairValue(date, time) {
+  const d = String(date || '').trim(), t = String(time || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && isClock24(t) ? `${d}T${t}` : '';
+}
+function syncDtPair(pair, ev) {
+  const id = pair && pair.getAttribute && pair.getAttribute('data-dt-for'), host = id && document.getElementById(id);
+  if (!host) return;
+  const v = dtPairValue((document.getElementById(id + '-date') || {}).value, (document.getElementById(id + '-time') || {}).value);
+  const rb = document.getElementById(id + '-rb');
+  if (rb) { const ms = v ? new Date(v).getTime() : NaN; rb.textContent = Number.isFinite(ms) ? fmtClock(ms / 3600000) : ''; }
+  if (host.value === v) return;
+  host.value = v;
+  const k = host.getAttribute('data-oninput');
+  if (k && __ACT[k]) __ACT[k](host, ev || null, host.getAttribute('data-arg'));
+}
+// Set a pair from code (a cleared form, Undo): both halves, the instant and the read-back.
+function setDtPair(id, value) {
+  const m = String(value || '').match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  const d = document.getElementById(id + '-date'), t = document.getElementById(id + '-time');
+  if (d) d.value = m ? m[1] : '';
+  if (t) t.value = m ? m[2] : '';
+  const pair = document.querySelector(`.dt-pair[data-dt-for="${id}"]`);
+  if (pair) syncDtPair(pair, null);
+}
+function refreshDtPairs() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  document.querySelectorAll('.dt-pair[data-dt-for]').forEach(p => syncDtPair(p, null));
+}
 // AUC Precision guard (D23): a PD patient gets this notice, never a fitted number.
 function bayesPdNoticeHTML() {
   return noteHTML({ tier: 'caution', word: 'On peritoneal dialysis — use the PD mode', html:
@@ -11450,6 +11684,39 @@ function renderModelBanner(rec, currentModel) {
   return lines.join('');
 }
 
+// v3.13.0 (D24): a model fitted to a different population from this patient's, said in one
+// line in the confidence slot (BMI 43 on Buelga used to be told only inside the closed
+// Models section). Population only: two levels or ICU suggesting Goti is advice for the
+// Models section, not a mismatch; dialysis has its own handling (D16). The clinician
+// chooses the model; nothing is switched for them.
+const MODEL_NAME = { buelga: 'Buelga 2005', goti: 'Goti 2018', hughes: 'Hughes 2024', gotihd: 'Goti 2018 · HD' };
+function modelMismatchText(rec, model) {
+  if (!rec || rec.recommended === 'gotihd' || model === 'gotihd') return null;
+  if (rec.isClass3 && model !== 'hughes')
+    return `Hughes 2024 is fitted to class 3 obesity (BMI ${rec.bmi.toFixed(1)}); this result uses ${MODEL_NAME[model] || model}.`;
+  if (model === 'hughes' && rec.bmi != null && !rec.isClass3)
+    return `Hughes 2024 was developed only in BMI ≥ ${HUGHES_MIN_BMI}; this patient's BMI is ${rec.bmi.toFixed(1)}.`;
+  return null;
+}
+// The suggested model's tile is marked as soon as the patient is known (weight and
+// height, or dialysis). Marked, never selected: the choice stays the clinician's.
+function markSuggestedModel() {
+  if (typeof document === 'undefined' || !document.getElementById || !document.querySelectorAll) return;
+  const num = (id) => parseFloat((document.getElementById(id) || {}).value);
+  const tbw = num('b-tbw'), ht = num('b-height');
+  const hd = !!(typeof bState !== 'undefined' && bState && bState.dial) || !!document.querySelector('[id^="b-hd-row-"]');
+  const nLev = document.querySelectorAll('[id^="b-level-row-"]').length;
+  const icu = !!(document.getElementById('b-icu') || {}).checked;
+  const rec = (tbw > 0 && ht > 0) || hd ? getModelRecommendation(nLev, icu, tbw > 0 ? tbw : 70, ht > 0 ? ht : null, hd) : null;
+  document.querySelectorAll('#b-model-toggle .model-opt').forEach(b => {
+    const on = !!rec && b.id === `b-model-btn-${rec.recommended}`;
+    b.classList.toggle('is-suggested', on);
+    const tag = b.querySelector('.model-opt-tag');
+    if (on && !tag) b.insertAdjacentHTML('beforeend', '<span class="model-opt-tag">suggested for this patient</span>');
+    if (!on && tag) tag.remove();
+  });
+}
+
 // ─── Weight-based guideline dose (ASHP/IDSA 2020) ───
 function computeGuidelineDose(tbw, crcl) {
   const rawDose = 15 * tbw;   // 15 mg/kg TBW
@@ -12319,10 +12586,18 @@ function cautionHTML(text) {
   return `<span class="ic-line">${ICON.caution}<span>${escHtml(text)}</span></span>`;
 }
 const NOTE_RANK = { alarm: 0, caution: 1, info: 2 };
+// v3.13.0 (D24): a long note shows three lines and a link that names the rest — a
+// 1,201-character note stood inline above the evidence. NOTE_CLAMP_CHARS is a PREFERENCE
+// (rule 8): about three lines at the results measure. It hides nothing from print, which
+// shows every note whole, and it changes no number.
+const NOTE_CLAMP_CHARS = 300;
 function noteHTML(n) {
-  return `<div class="note note-${n.tier}" role="note">
+  const len = String(n.html || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().length;
+  const long = len > NOTE_CLAMP_CHARS;
+  return `<div class="note note-${n.tier}${long ? ' note-long' : ''}" role="note">
     <div class="note-word">${ICON[n.tier]}<span>${escHtml(n.word)}</span></div>
     <div class="note-body">${n.html}</div>
+    ${long ? `<button type="button" class="note-more" data-onclick="k96" data-arg="${escHtml(n.word)}" aria-expanded="false">Read the rest: ${escHtml(n.word)}</button>` : ''}
   </div>`;
 }
 
@@ -13027,11 +13302,13 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC24 ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
   }
   const confReason = conf.reasons.find(x => !x.good) || conf.reasons[0];
+  const mismatch = p2c && p2c.modelRec ? modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model) : null;
   const confBlock = `
     <p class="vx-conf conf-${conf.rank < 0 ? 'info' : conf.rank === 0 ? 'ok' : conf.rank === 1 ? 'warn' : 'danger'}">
       <strong class="conf-level">${escHtml(conf.level)}${conf.rank >= 0 ? ' confidence' : ''}</strong>
       ${confReason ? `— ${escHtml(confReason.text)}` : ''}${lowConfSpan}
       <span class="vx-muted">${escHtml(modelLabel)}</span>
+      ${mismatch ? `<span class="vx-mismatch tone-caution">${ICON.caution}<span>${escHtml(mismatch)}</span></span>` : ''}
     </p>`;
   const nextBlock = nextStep ? `<p class="vx-next"><span class="vx-k">Next</span> ${escHtml(nextStep)}</p>` : '';
   // The fitted curve read at the start of the next planned session (D15). It
@@ -13065,6 +13342,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <a class="vx-act" href="#ev-why" data-onclick="k80" data-arg="ev-why">Why this dose</a>
           <a class="vx-act" href="#ev-math" data-onclick="k80" data-arg="ev-math">Show the math</a>
           <button type="button" class="vx-act" data-onclick="k81">Copy summary</button>
+          <button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button>
         </div>
       </section>
       <figure class="vx-curve profile-canvas-wrap">
@@ -13258,6 +13536,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.</p>
         ${caveats}`;
     }
+    if (p2c.modelRec && modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model))
+      gist = `Suggested: ${MODEL_NAME[p2c.modelRec.recommended]} · ${gist}`;
     const modelsEmpty = !body;   // no level to compare on and no model advice
     html += ev('ev-models', 'Models', gist, body, false, modelsEmpty ? 'a measured level' : null);
   }
@@ -13341,7 +13621,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // Goti-HD it is closed and follows Haemodialysis (v3.11.0, D22): the answer there
   // is a dose after a session, and an open q-interval grid beside "No dose now"
   // offered a second answer.
-  let regimensSec = '';
+  // The weight-based guideline regimen is a third regimen beside the answer; it is read
+  // in Show the math, as the basis it is compared against (v3.13.0, D24).
+  let regimensSec = '', guidelineLine = '';
   {
     let body = r.model === 'goti' && r.dial
       ? `<p class="ev-note">On haemodialysis the maintenance dose is given with each session (Rybak 2020); the q-interval regimens below are steady-state references, not an HD schedule.</p>`
@@ -13377,14 +13659,14 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           if (c.blocked) {
             return `<td><span class="mx-cell ${cls}" aria-label="${escHtml(label)}">
               <span class="mx-auc">${c.auc24.toFixed(0)}</span>
-              <span class="mx-tr">—</span></span></td>`;
+              <span class="mx-tr">over limit</span></span></td>`;
           }
           // Roving tabindex: the grid is ONE tab stop, then arrow keys move
           // within it. 32 separate stops would bury the rest of the page.
           const first = (rowIdx === firstNav.r && cIdx === firstNav.c);
           return `<td><button type="button"
               class="mx-cell ${cls}${isRec ? ' is-rec' : ''}"
-              data-onclick="k71" data-arg="${c.dose}|${c.tau}"
+              data-onclick="k71" data-arg="${c.dose}|${c.tau}" aria-pressed="false"
               data-onkeydown="k72"
               data-r="${rowIdx}" data-c="${cIdx}"
               tabindex="${first ? '0' : '-1'}"
@@ -13395,7 +13677,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         }).join('');
         return `<tr><th scope="row">${fmtDose(row.dose)}<span class="mx-inf">${fmtHrs(row.tinfH)} inf</span></th>${cells}</tr>`;
       }).join('');
-      gist = `${inBandCount} regimens within ${mx.bandMin}–${mx.bandMax}`;
+      // v3.13.0 (D24): closed by default (745 px, ~90 numbers open); the gist says what it holds.
+      gist = `${inBandCount} within ${mx.bandMin}–${mx.bandMax}${recDose ? ` · recommended ${fmtRegimen(recDose, recTau)}` : ''}`;
       body += `
         <div class="mx-wrap">
           <p class="ev-note">Steady-state AUC₂₄ · target ${targetAUC.toFixed(0)} · band ${mx.bandMin}–${mx.bandMax} mg·h/L · small figure is predicted trough</p>
@@ -13412,7 +13695,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             <span><i class="mx-sub-b"></i>Below band</span>
             <span><i class="mx-supra"></i>Above band</span>
             <span><i class="mx-rec"></i>Recommended</span>
-            <span class="vx-muted">struck through = exceeds a hard safety limit</span>
+            <span class="vx-muted">"over limit" = exceeds a hard safety limit</span>
           </div>
           <p class="ev-note"><strong>Reading this.</strong> At steady state AUC₂₄ is total daily dose divided by
             clearance, so it carries <strong>no interval term</strong> — 500 mg q12h and 1 g q24h
@@ -13430,7 +13713,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       const guSS = ssCurve(gd.dose, gd.tau, gd.tinfH, r.kel_pop, r.V_pop, 120);
       const guTr = guSS.length ? guSS[guSS.length - 1].c : null;
       const guidAUC24 = gd.dose * (24 / gd.tau) / r.CL_pop;
-      body += `<div class="ev-sub guideline-line">
+      guidelineLine = `<div class="ev-sub guideline-line">
         <p class="ev-note"><strong>Weight-based guideline comparison (ASHP/IDSA 2020):</strong>
           ${fmtRegimen(gd.dose, gd.tau)} — 15 mg/kg × ${(gd.rawDose / 15).toFixed(1)} kg = ${gd.rawDose} mg, rounded to ${fmtDose(gd.dose)};
           interval by CrCl ${r.crcl.toFixed(0)} mL/min; infuse over ${fmtHrs(gd.tinfH)}.
@@ -13438,7 +13721,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           Not individualised — the Bayesian regimen above is the one fitted to this patient.</p>
       </div>`;
     }
-    regimensSec = ev('ev-regimens', 'Regimens', gist, body, !isHD);
+    regimensSec = ev('ev-regimens', 'Regimens', gist, body, false);
   }
   if (!isHD) html += regimensSec;
 
@@ -13469,7 +13752,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // Explore — the Dose Tinkerer and the regimen comparison
   html += ev('ev-explore', 'Explore a regimen', 'Dose Tinkerer — individual PK', `
     <div class="tinkerer-box">
-      <div class="tinkerer-row">
+      <div class="tinkerer-row" data-enter-scope>
         <label for="b-tink-dose">Dose</label>
         <input type="number" class="tinkerer-input" id="b-tink-dose" value="${rec && !rec.noSolution ? rec.dose : 1000}" min="250" max="4500" step="250" inputmode="numeric">
         <span class="vx-muted">mg every</span>
@@ -13477,9 +13760,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <select id="b-tink-int" class="tinkerer-input">
           ${[6, 8, 12, 18, 24, 36, 48].map(t => `<option value="${t}">${t} h</option>`).join('')}
         </select>
-        <button type="button" class="tinkerer-btn" data-onclick="k66">Preview</button>
+        <button type="button" class="tinkerer-btn" data-onclick="k66" data-enter-default>Preview</button>
       </div>
       <div id="b-tink-result" style="margin-top:12px;display:none"></div>
+      <p class="undo-line" id="undo-compare" aria-live="polite"></p>
     </div>
     <div id="b-compare-section" class="compare-section" style="display:none">
       <div class="compare-header">
@@ -13545,7 +13829,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       ${!isHD && rec && !rec.noSolution ? `<li><strong>Exposure.</strong> At steady state AUC₂₄ = daily dose ÷ CL = ${rec.dose} mg × 24/${rec.tau} ÷ ${CL_ind.toFixed(2)} L/h = <strong>${rec.auc24.toFixed(0)} mg·h/L</strong>.</li>
       <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r)))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.${nLev === 0 ? ` One steady-state trough narrows it to ${escHtml(aucUncertaintyText(1, uncertaintyModelKey(r)))}; two to ${escHtml(aucUncertaintyText(2, uncertaintyModelKey(r)))}.` : ''}</li>` : ''}
       <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on 250 mg steps.</li>
-    </ol>`, false);
+    </ol>${guidelineLine}`, false);
 
   // All notes
   if (notes.length) {
@@ -13957,10 +14241,17 @@ function pickMatrixCell(arg) {
   if (!dEl || !tEl) return;
   dEl.value = String(dose);
   tEl.value = String(tau);
-  document.querySelectorAll('.mx-cell.is-picked').forEach(c => c.classList.remove('is-picked'));
+  // v3.13.0 (D24): the pick is pressed, says "trying" in words, opens Explore (it used to
+  // fill a closed section) and is announced.
+  document.querySelectorAll('.mx-cell.is-picked').forEach(c => {
+    c.classList.remove('is-picked'); c.setAttribute('aria-pressed', 'false');
+    const w = c.querySelector('.mx-trying'); if (w) w.remove();
+  });
   const cell = document.querySelector(`.mx-cell[data-arg="${dose}|${tau}"]`);
   if (cell) {
     cell.classList.add('is-picked');
+    cell.setAttribute('aria-pressed', 'true');
+    cell.insertAdjacentHTML('beforeend', '<span class="mx-trying">trying</span>');
     // Move the grid's single tab stop to what was just chosen, so returning to
     // the matrix lands where the user left it rather than back at cell one.
     const grid = cell.closest('.mx-grid');
@@ -13969,7 +14260,10 @@ function pickMatrixCell(arg) {
       cell.setAttribute('tabindex', '0');
     }
   }
+  const ex = document.getElementById('ev-explore');
+  if (ex) ex.open = true;
   runBayesTinkerer();
+  announceResult(`Trying ${fmtRegimen(dose, tau)} under Explore a regimen.${cell ? ' ' + (cell.getAttribute('aria-label') || '') : ''}`);
   const box = document.getElementById('b-tink-result');
   if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -14099,8 +14393,8 @@ function resetBayesian() {
   bHdCount    = 0;
   const hdTbody = document.getElementById('b-hd-tbody');
   if (hdTbody) hdTbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>';
-  document.getElementById('b-dose-tbody').innerHTML  = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add Dose</td></tr>';
-  document.getElementById('b-level-tbody').innerHTML = '<tr><td colspan="3" class="course-empty-msg">No levels — press + Add Level</td></tr>';
+  document.getElementById('b-dose-tbody').innerHTML  = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add dose</td></tr>';
+  document.getElementById('b-level-tbody').innerHTML = '<tr><td colspan="3" class="course-empty-msg">No levels — press + Add level</td></tr>';
   // Clear serial SCr table
   const scrTbody = document.getElementById('b-scr-tbody');
   if (scrTbody) scrTbody.innerHTML = '<tr><td colspan="3" class="course-empty-msg">No SCr entries — Bayesian uses baseline SCr above</td></tr>';
@@ -14334,17 +14628,18 @@ function applyPatientCore(core) {
 }
 
 function saveCurrentProfile() {
+  let savedWithoutFit = false;
   // CODEX F-003. A profile saved after editing demographics used to keep the
   // PREVIOUS fit, so a reloaded profile would consume an old CL/V as though it
   // belonged to the new patient data. Refuse to pair the two silently.
   if (typeof bayesFitIsStale === 'function' && bState && bState.result && bayesFitIsStale()) {
-    if (!confirm('The inputs have changed since the last calculation, so the stored '
-      + 'individual PK does not belong to these values.\n\nSave the profile WITHOUT '
-      + 'the fitted PK? (Recalculate first to store a matching fit.)')) return;
+    // v3.13.0 (D24): saved without the fit, and said so (a native confirm() asked).
     bState.result = null; bState.resultFingerprint = null;
+    savedWithoutFit = true;
   }
   const labelEls = [...document.querySelectorAll('.profile-label-input')];
   const labelEl  = labelEls.find(e => (e.value || '').trim()) || labelEls[0];
+  clearUndo();
   const label    = (labelEl?.value || '').trim();
   if (!label) { showFormErrors('profile', 'Enter a label before saving.', [labelEl]); return; }
   const snapshot = snapshotBayesForm();
@@ -14356,7 +14651,8 @@ function saveCurrentProfile() {
   // demographics live in the other set of inputs.
   const coreEmpty = !snapshot.core || !PATIENT_CORE_FIELDS.some(f => snapshot.core[f.key]);
   if (coreEmpty && !snapshot.doses.length && !snapshot.levels.length) {
-    if (!confirm('Nothing entered yet. Save an empty profile anyway?')) return;
+    showFormErrors('profile', 'Nothing entered yet: enter the patient before saving a profile.', [labelEl]);
+    return;
   }
   const profiles = loadProfiles();
   const entry = {
@@ -14368,15 +14664,28 @@ function saveCurrentProfile() {
   if (!persistProfiles(profiles)) return;
   labelEls.forEach(e => { e.value = ''; });
   renderProfileList();
+  profileStatus(savedWithoutFit
+    ? `Saved "${label}" without the fitted PK: the inputs changed since the last calculation. Run the analysis and save again to keep a matching fit.`
+    : `Saved "${label}".`);
+}
+// One polite line in each profile section (v3.13.0, D24).
+function profileStatus(msg) {
+  clearUndo();
+  document.querySelectorAll('.profile-status').forEach(p => { p.textContent = msg || ''; });
 }
 
 function deleteProfile(id) {
   const profiles = loadProfiles();
   const entry = profiles.find(p => p.id === id);
   if (!entry) return;
-  if (!confirm(`Delete profile "${entry.label}"? This cannot be undone.`)) return;
+  // v3.13.0 (D24): deleted at once, with Undo, instead of a native confirm().
+  const at = profiles.indexOf(entry);
   persistProfiles(profiles.filter(p => p.id !== id));
   renderProfileList();
+  profileStatus('');
+  offerUndo([...document.querySelectorAll('.profile-status')], `Deleted "${entry.label}".`, () => {
+    const ps = loadProfiles(); ps.splice(Math.min(at, ps.length), 0, entry); persistProfiles(ps); renderProfileList();
+  });
 }
 
 function loadProfileIntoForm(id) {
@@ -15034,6 +15343,7 @@ function formScrollTo(el) {
 function beginFormRun(scope) {
   const run = formRuns[scope];
   if (!run) return;
+  if (scope !== 'profile') clearUndo();   // an Undo is for the form as it was before this run
   formRunScope = scope;
   run.ok = true; run.errors = []; run.cautions = [];
   if (scope === 'trough') run.fp = troughInputFingerprint();
@@ -15066,6 +15376,12 @@ function withPatientSex(res, sex, fieldId) {
 // toggle group: focus goes to the first button, the group carries the mark.
 function formControlFor(el) {
   const tag = String(el.tagName || '').toUpperCase();
+  if (tag === 'INPUT' && el.type === 'hidden' && el.id && document.querySelector(`.dt-pair[data-dt-for="${el.id}"]`)) {
+    // A composed instant (D24): point at the half that is missing, the date first.
+    const d = document.getElementById(el.id + '-date'), t = document.getElementById(el.id + '-time');
+    const f = d && !/^\d{4}-\d{2}-\d{2}$/.test(d.value) ? d : t && !isClock24(t.value) ? t : d;
+    return { focus: f || null, mark: f || null };
+  }
   if (tag === 'INPUT' && el.type === 'hidden') {
     const group = el.parentNode && el.parentNode.querySelector ? el.parentNode.querySelector('.toggle-group') : null;
     const btn = group && group.querySelector ? group.querySelector('.toggle-opt') : null;
@@ -15615,6 +15931,8 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     // Every 24-hour field formats as typed ("1700" -> "17:00"), not only course rows:
     // a phone's numeric keypad has no colon (final review I3, v3.8.0).
     if (e.type === 'input' && t.hasAttribute && t.hasAttribute('data-time24')) formatTime24Input(t, e);
+    const pair = t.closest('.dt-pair');
+    if (pair) { syncDtPair(pair, e); return; }
     if (!t.closest('.course-row')) return;
     refreshCourseReadback();
   };
@@ -15695,6 +16013,7 @@ function txVerdictHTML(o) {
       ${o.flags ? `<div class="tx-flags">${o.flags}</div>` : ''}
       <p class="tx-basis">${o.basis}</p>
       ${o.next ? `<p class="vx-next"><span class="vx-k">Next</span> ${o.next}</p>` : ''}
+      <div class="vx-actions"><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>
     </section>`;
 }
 

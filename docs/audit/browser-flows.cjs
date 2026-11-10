@@ -108,7 +108,8 @@ async function enterCourse(page) {
     e => console.error('CSP violation: ' + e.violatedDirective + ' ' + e.blockedURI)));
   await page.goto(BASE + '?v=pw-' + Date.now(), { waitUntil: 'networkidle' });
 
-  ok('print action hidden before any result', !(await page.locator('.print-fab').isVisible()));
+  // v3.13.0 (D24): Print is one of the answer's actions; there is no floating button.
+  ok('print action hidden before any result', (await page.locator('[data-onclick="k0"]:visible').count()) === 0 && (await page.locator('.print-fab').count()) === 0);
 
   // Trough: refused without sex, then a real result.
   await typeInto(page, '#age', '60'); await typeInto(page, '#tbw', '80');
@@ -123,7 +124,7 @@ async function enterCourse(page) {
   const tText = (await page.locator('#results-content').innerText()).replace(/\s+/g, ' ');
   ok('Trough result renders a regimen', /\d(\.\d+)? ?g IV q\d+h|\d+ mg IV q\d+h/.test(tText), tText.slice(0, 160));
   ok('Trough error summary cleared', !(await page.locator('#fe-trough').isVisible()) || !(await page.locator('#fe-trough').innerText()).trim());
-  ok('print action shown with a result', await page.locator('.print-fab').isVisible());
+  ok('print action shown with a result, in its actions', await page.locator('#results-content .vx-actions [data-onclick="k0"]').isVisible());
   ok('disclaimer on screen under the Trough result', await page.locator('#panel-right .rp-disclaimer').isVisible());
   const tCaps = await page.evaluate(() => {
     const ds = [...document.querySelectorAll('#results-content details')]; const was = ds.map(d => d.open);
@@ -154,7 +155,7 @@ async function enterCourse(page) {
     male: document.querySelector('[data-onclick="k39"]').getAttribute('aria-pressed') }));
   ok('demographics carried into AUC Precision', carried.age === '60' && carried.tbw === '80' && carried.ht === '175' && carried.male === 'true', JSON.stringify(carried));
   if (!carried.scr) { await typeInto(page, '#b-scr', '1.0'); }
-  ok('print action hidden on a module with no result', !(await page.locator('.print-fab').isVisible()));
+  ok('print action hidden on a module with no result', (await page.locator('[data-onclick="k0"]:visible').count()) === 0);
 
   const course = await enterCourse(page);
   results.course = course;
@@ -190,7 +191,7 @@ async function enterCourse(page) {
   ok('result announced to screen readers', /Result|dose|AUC/i.test(v.announce), v.announce);
   const ink0 = await canvasInk(page, '#b-profile-canvas');
   ok('profile canvas drawn', ink0.painted > 500, JSON.stringify(ink0));
-  ok('print action shown after the AUC result', await page.locator('.print-fab').isVisible());
+  ok('print action shown after the AUC result, beside Copy summary', await page.locator('#b-results .vx-actions [data-onclick="k0"]').isVisible());
   // The design review's fixes (2026-09-29), each as behaviour.
   const look = await page.evaluate(() => {
     const cs = (el) => el && getComputedStyle(el);
@@ -250,10 +251,9 @@ async function enterCourse(page) {
   await page.evaluate(() => { const t = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + t.getBoundingClientRect().top - 72, behavior: 'instant' }); });
   await page.waitForTimeout(250);
   const fold = await page.evaluate(() => { const b = (s) => { const e = document.querySelector('#b-results ' + s); return e ? Math.round(e.getBoundingClientRect().bottom) : 99999; };
-    const fab = document.querySelector('.print-fab'), f = fab && fab.getBoundingClientRect(), n = document.querySelector('#b-results .vx-next').getBoundingClientRect();
-    return { conf: b('.vx-conf'), next: b('.vx-next'), h: innerHeight, clearOfFab: !f || n.bottom <= f.top || n.right <= f.left || n.top >= f.bottom }; });
-  ok('at 1280 × 800 confidence and Next sit on the first screen, clear of the Print button',
-     fold.conf <= fold.h && fold.next <= fold.h && fold.clearOfFab, JSON.stringify(fold));
+    return { conf: b('.vx-conf'), next: b('.vx-next'), h: innerHeight, inActions: !!document.querySelector('#b-results .vx-actions [data-onclick="k0"]'), fab: !!document.querySelector('.print-fab') }; });
+  ok('at 1280 × 800 confidence and Next sit on the first screen; Print is one of the answer\'s actions, nothing floats over it',
+     fold.conf <= fold.h && fold.next <= fold.h && fold.inActions && !fold.fab, JSON.stringify(fold));
   await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(400);
   // v3.9.0: the recommended regimen's first dose can be timed — typed "1200" (no colon) reads
   // 12:00; the line follows it with the level by then. v3.11.0: "change" opens the date and
@@ -398,8 +398,15 @@ async function enterCourse(page) {
   await page.locator('#interval').selectOption('12');
   await page.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
   await typeInto(page, '#level-val', '24');
-  await page.locator('#time-dose-given').fill(`${D2}T08:00`);
-  await page.locator('#time-level-drawn').fill(`${D2}T19:30`);
+  // v3.13.0 (D24): a date and a 24-hour time (typed without a colon), read back, composed
+  // into the one instant the engine reads.
+  await page.locator('#time-dose-given-date').fill(D2); await typeInto(page, '#time-dose-given-time', '0800');
+  await page.locator('#time-level-drawn-date').fill(D2); await typeInto(page, '#time-level-drawn-time', '1930');
+  const pair = await page.evaluate(() => { const pl = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left').getBoundingClientRect();
+    const t = document.getElementById('time-level-drawn-time').getBoundingClientRect();
+    return { v: document.getElementById('time-level-drawn').value, rb: document.getElementById('time-level-drawn-rb').textContent, fits: t.right <= pl.right + 0.5,
+      delta: (document.getElementById('time-delta-val') || {}).textContent || '' }; });
+  ok('D24: the steady-state level time is a date and a 24-hour time, read back, inside its column', pair.v === `${D2}T19:30` && /^\d{1,2} [A-Z][a-z]{2} 19:30$/.test(pair.rb) && pair.fits && /11/.test(pair.delta), JSON.stringify(pair));
   await page.locator('[data-onclick="k31"]').click();
   await page.waitForTimeout(600);
   const ssKey = await page.evaluate(() => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()));
@@ -419,6 +426,12 @@ async function enterCourse(page) {
   ok('Trough "Try another regimen" key: trying, current, population estimate, trough target',
      /^Trying 1\.25 g IV q8h/.test(txTink.key[0] || '') && txTink.key.some(t => /^Current 1 g IV q12h/.test(t)) && txTink.key.includes('Population estimate') && txTink.key.some(t => /^Trough target/.test(t)), JSON.stringify(txTink.key));
   ok('trying a regimen leaves the Trough chart and its key as they were', JSON.stringify(txTink.main) === JSON.stringify(ssKey), JSON.stringify(txTink.main));
+  // D24: Enter in "Try another regimen" predicts; it used to recalculate, closing the section.
+  await page.evaluate(() => { document.getElementById('tx-ev-tinker').dataset.mark = 'kept'; });
+  await typeInto(page, '#tinker-dose-ss', '1500'); await page.locator('#tinker-dose-ss').press('Enter'); await page.waitForTimeout(400);
+  const txEnter = await page.evaluate(() => { const d = document.getElementById('tx-ev-tinker'); return { kept: d && d.dataset.mark === 'kept', open: d && d.open,
+    key: ([...document.querySelectorAll('#tinker-result-ss .tink-legend .legend-item')][0] || {}).textContent || '' }; });
+  ok('D24: Enter in "Try another regimen" predicts and keeps the section open', txEnter.kept && txEnter.open && /^Trying 1\.5 g IV q8h/.test(txEnter.key.trim()), JSON.stringify(txEnter));
   const txInk = await canvasInk(page, '#tx-tink-canvas-ss');
   ok('the Trough comparison is drawn', txInk.w > 0 && txInk.painted > 0, JSON.stringify(txInk));
   await page.evaluate(() => { const el = document.getElementById('tinker-result-ss'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 80, behavior: 'instant' }); });
@@ -681,6 +694,13 @@ async function enterCourse(page) {
        /^(Give [\d.]+ (g|mg) IV|No dose today)/.test(p1.verdict) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(p1.verdict) && /Draw the next level/.test(p1.verdict), p1.verdict.slice(0, 300));
     ok('PD: the second interval is flagged early; the options mark the recommendation; the chart shows the levels and cycler nights',
        /within 24 h of a dose ending/.test(p1.decline) && (mgOf(p1.verdict) ? p1.rec.startsWith(p1.verdict.match(/Give ([\d.]+ (?:g|mg))/)[1]) : p1.rec === 'No dose') && p1.lv === 2 && p1.cyc >= 1, JSON.stringify(p1).slice(0, 400));
+    const pdD24 = await pd.evaluate(() => { const svg = document.querySelector('#results-content svg.pd-chart'), txt = svg && svg.querySelector('text');
+      return { px: svg && txt ? +(parseFloat(getComputedStyle(txt).fontSize) * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width).toFixed(1) : 0,
+        hidden: ['amp-section', 'section-renal', 'section-ld'].map(id => !document.getElementById(id).offsetParent),
+        verdict: document.querySelector('#results-content .pd-verdict').textContent.replace(/\s+/g, ' '),
+        notes: ((document.querySelector('#results-content .tx-notes') || {}).textContent || '') }; });
+    ok('D24 PD: chart text at 12 px on screen; no amputation, creatinine or loading-dose blocks; the draw is the AM labs, no cycler wording',
+       pdD24.px >= 11.9 && pdD24.hidden.every(Boolean) && !/cycler|see below/i.test(pdD24.verdict) && /with AM labs/.test(pdD24.verdict) && !/Draw after the cycler/.test(pdD24.notes), JSON.stringify(pdD24).slice(0, 300));
     const printed = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).innerHTML || ''; });
     ok('PD: the weight change is said; print carries the answer and its chart',
        /Weight changed since the load/.test(p1.notes) && /pd-verdict/.test(printed) && /pd-chart/.test(printed), p1.notes.slice(0, 200));
@@ -705,6 +725,102 @@ async function enterCourse(page) {
     results.cloudflareInjected = (results.cloudflareInjected || 0) + pAttr.injected;
     results.problems.push(...pAttr.kept);
     await pctx.close();
+  }
+
+  // v3.13.0 (D24): the workstation, 1280 × 800. A fictional class-3 obese patient (140 kg,
+  // 180 cm, BMI 43.2) on Buelga, so the model mismatch shows; the D1/D2 course above.
+  {
+    const wctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const w = await wctx.newPage();
+    const wProblems = watch(w, 'workstation');
+    await w.goto(BASE + '?v=pwws-' + Date.now(), { waitUntil: 'networkidle' });
+    await w.locator('[data-onclick="k2"]').click();
+    await typeInto(w, '#b-age', '55'); await typeInto(w, '#b-tbw', '140'); await typeInto(w, '#b-height', '180'); await typeInto(w, '#b-scr', '1.0');
+    await w.locator('[data-onclick="k39"]').click();
+    const tiles = () => w.evaluate(() => [...document.querySelectorAll('#b-model-toggle .model-opt')]
+      .map(b => b.id.replace('b-model-btn-', '') + ':' + b.classList.contains('is-suggested') + ':' + b.classList.contains('active')).join(','));
+    const t0 = await tiles();
+    ok('D24: BMI 43 marks Hughes 2024 as suggested on its tile and leaves Buelga chosen', t0 === 'buelga:false:true,goti:false:false,hughes:true:false,gotihd:false:false', t0);
+    await enterCourse(w);
+    await w.locator('[data-onclick="k43"]').click();
+    const f5 = await w.evaluate(() => document.activeElement && document.activeElement.id);
+    ok('D24: + Add dose puts the cursor in the new row', f5 === 'b-dose-mg-5', f5);
+    await w.locator('[data-onclick="k61"][data-arg="5"]').click();
+    const lay = await w.evaluate(() => { const pl = document.querySelector('#app-shell-bayesian > .panel-left'), run = pl.querySelector('.panel-actions [data-onclick="k47"]').getBoundingClientRect();
+      return { pos: getComputedStyle(pl).position, own: pl.scrollHeight > pl.clientHeight, runBottom: Math.round(run.bottom), h: innerHeight,
+        clearBesideRun: !pl.querySelector('.panel-actions [data-onclick="k48"]') }; });
+    ok('D24: the input column scrolls on its own; Run is pinned on screen at its foot; Clear is not beside it',
+       lay.pos === 'sticky' && lay.own && lay.runBottom <= lay.h && lay.clearBesideRun, JSON.stringify(lay));
+    await w.locator('[data-onclick="k47"]').click();
+    await w.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await w.waitForTimeout(600);
+    const a1 = await w.evaluate(() => { const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const reg = document.getElementById('ev-regimens');
+      return { dose: t('#b-results .vx-regimen'), y: Math.round(scrollY), mm: t('#b-results .vx-mismatch'), gist: t('#ev-models .ev-gist'),
+        regOpen: !!reg && reg.open, regGist: t('#ev-regimens .ev-gist'), mathGuide: !!document.querySelector('#ev-math .guideline-line'),
+        regGuide: !!document.querySelector('#ev-regimens .guideline-line'), print: !!document.querySelector('#b-results .vx-actions [data-onclick="k0"]') }; });
+    ok('D24: a run leaves the window where it was (the answer is beside the inputs)', a1.y === 0, a1.y);
+    ok('D24: the model mismatch is one line in the confidence slot and leads the Models gist',
+       /Hughes 2024 is fitted to class 3 obesity \(BMI 43\.2\); this result uses Buelga 2005\./.test(a1.mm) && /^Suggested: Hughes 2024 · /.test(a1.gist), JSON.stringify([a1.mm, a1.gist]));
+    ok('D24: Regimens opens closed, its gist naming the band count and the recommendation; the guideline line is in Show the math',
+       !a1.regOpen && /^\d+ within 400–600 · recommended [\d.]+ (g|mg) IV q\d+h$/.test(a1.regGist) && a1.mathGuide && !a1.regGuide, JSON.stringify(a1));
+    // The Regimens pick: a cell other than the recommendation.
+    await w.locator('#ev-regimens > summary').click();
+    const cell = w.locator('#b-results .mx-cell.mx-in:not(.is-rec)').first();
+    const arg = await cell.getAttribute('data-arg');
+    await cell.click(); await w.waitForTimeout(400);
+    const pick = await w.evaluate((arg) => { const c = document.querySelector(`.mx-cell[data-arg="${arg}"]`), r = document.getElementById('b-tink-result');
+      return { pressed: c.getAttribute('aria-pressed'), word: (c.querySelector('.mx-trying') || {}).textContent || '', explore: document.getElementById('ev-explore').open,
+        shown: !!r && r.style.display !== 'none' && r.offsetParent !== null, said: document.getElementById('sr-announce').textContent,
+        others: document.querySelectorAll('.mx-cell[aria-pressed="true"]').length, dose: document.getElementById('b-tink-dose').value }; }, arg);
+    ok('D24: a picked Regimens cell is pressed, says "trying", opens Explore with the result, and is announced',
+       pick.pressed === 'true' && pick.word === 'trying' && pick.explore && pick.shown && /^Trying /.test(pick.said) && pick.others === 1 && pick.dose === arg.split('|')[0], JSON.stringify(pick));
+    // Enter in Explore previews; it used to recalculate and close the section.
+    await w.evaluate(() => { document.getElementById('ev-explore').dataset.mark = 'kept'; });
+    await typeInto(w, '#b-tink-dose', '1250'); await w.locator('#b-tink-dose').press('Enter'); await w.waitForTimeout(400);
+    const ent = await w.evaluate(() => { const e = document.getElementById('ev-explore'); return { kept: !!e && e.dataset.mark === 'kept', open: !!e && e.open,
+      res: ((document.getElementById('b-tink-result') || {}).textContent || '').replace(/\s+/g, ' ').slice(0, 80) }; });
+    ok('D24: Enter in Explore previews the dose and keeps the section open', ent.kept && ent.open && /AUC/.test(ent.res), JSON.stringify(ent));
+    // Enter in the profile name saves.
+    await typeInto(w, '#profile-label-input', 'WS fictional'); await w.locator('#profile-label-input').press('Enter'); await w.waitForTimeout(300);
+    const prof = await w.evaluate(() => ({ kept: (document.getElementById('ev-explore') || {}).dataset?.mark === 'kept',
+      listed: [...document.querySelectorAll('#profile-list .profile-item')].some(e => /WS fictional/.test(e.textContent)),
+      status: ((document.querySelector('#app-shell-bayesian .profile-status') || {}).textContent || '').trim() }));
+    ok('D24: Enter in the profile name saves the profile and runs nothing', prof.kept && prof.listed && /^Saved/.test(prof.status), JSON.stringify(prof));
+    // The Regimens grid: the trough figure and a blocked cell read at 4.5:1 or better.
+    const cr = await w.evaluate(() => {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+      const rgba = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+      const over = (top, under) => top.slice(0, 3).map((v, i) => v * top[3] + under[i] * (1 - top[3]));
+      const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+      const paper = rgba(getComputedStyle(document.body).backgroundColor).slice(0, 3);
+      const out = {};
+      for (const k of ['mx-in', 'mx-sub-b', 'mx-supra', 'mx-blocked']) {
+        const c = document.querySelector(`#b-results .mx-cell.${k}`); if (!c) continue;
+        const bg = over(rgba(getComputedStyle(c).backgroundColor), paper), tr = c.querySelector('.mx-tr');
+        out[k] = +ratio(over(rgba(getComputedStyle(tr).color), bg), bg).toFixed(2);
+      }
+      return out; });
+    ok('D24: Regimens trough figures and blocked cells pass 4.5:1', Object.keys(cr).length >= 2 && Object.values(cr).every(x => x >= 4.5), JSON.stringify(cr));
+    // Clear, then Undo: the course comes back and gives the same answer.
+    await w.locator('[data-onclick="k48"]').click(); await w.waitForTimeout(200);
+    const cleared = await w.evaluate(() => ({ age: document.getElementById('b-age').value, rows: document.querySelectorAll('[id^="b-dose-row-"]').length,
+      undo: !!document.querySelector('#undo-auc [data-onclick="k97"]') }));
+    await w.locator('#undo-auc [data-onclick="k97"]').click(); await w.waitForTimeout(300);
+    const back = await w.evaluate(() => ({ age: document.getElementById('b-age').value, rows: document.querySelectorAll('[id^="b-dose-row-"]').length,
+      lvl: (document.getElementById('b-lvl-conc-1') || {}).value, male: document.querySelector('[data-onclick="k39"]').classList.contains('active'),
+      rb: ((document.getElementById('course-rb-dose-3') || {}).textContent || '').trim() }));
+    ok('D24: Clear all fields empties the form and offers Undo; Undo puts every row and value back',
+       cleared.age === '' && cleared.rows === 0 && cleared.undo && back.age === '55' && back.rows === 4 && back.lvl === '15.2' && back.male && /after dose/.test(back.rb), JSON.stringify([cleared, back]));
+    await w.locator('[data-onclick="k47"]').click();
+    await w.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await w.waitForTimeout(400);
+    const again = await w.evaluate(() => ((document.querySelector('#b-results .vx-regimen') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D24: the restored form gives the same answer', again === a1.dose, `${a1.dose} → ${again}`);
+    await w.screenshot({ path: path.join(OUT, 'desktop-1280-workstation.png') });
+    const wAttr = await attributeInjected(w, wProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + wAttr.injected;
+    results.problems.push(...wAttr.kept);
+    await wctx.close();
   }
   await browser.close();
 
