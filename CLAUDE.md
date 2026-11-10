@@ -48,8 +48,9 @@ git hash-object index.html
 > any of its identifiers return. Note the clinical `action:'continue'` (continue the
 > current regimen) is unrelated and must not be swept up with it.
 
-**One temporal model (v3).** Every instant a clinician enters is a full
-`datetime-local`, and exactly one helper — `elapsedHours()` — turns two of them into an
+**One temporal model (v3).** Every instant a clinician enters is a full date and time
+(since v3.13.0 a date and a 24-hour time, composed by `dtPairValue` into the hidden
+`YYYY-MM-DDTHH:MM` input that keeps the old id), and exactly one helper — `elapsedHours()` — turns two of them into an
 interval. Two-Level and steady-state-trough mode used to take clock-only `HH:MM` and wrap
 with `if (d < 0) d += 24*60`, which folds every interval into `[0,24)`. Real two-level
 sampling routinely spans midnight. Two failure modes, both reproduced in
@@ -146,6 +147,27 @@ Presentation only: engine parity 0 differences.
 - **AUC Precision** refuses a PD patient (`b-pd`) and links here.
 - Workplace protocols and real patients never enter this repo.
 
+**The workstation (D24, v3.13.0):** presentation only (engine parity 0).
+- **Layout:** from 1001 px the input column is its own scroller under the header, the run button pinned
+  at its foot (`.panel-actions`); a run moves the window only when the answer's top is off screen.
+- **Print** is a text action in each answer (`k0`); the floating button is gone.
+- **Enter** does the local job: a field in a `[data-enter-scope]` presses its `[data-enter-default]`
+  (Explore's Preview, Try another regimen's Predict, the profile Save); anything else in a result or the
+  profiles does nothing.
+- **Regimens** opens closed, its gist naming the band count and the recommendation. A picked cell is
+  pressed, says "trying", opens Explore and is announced. The guideline comparison is in Show the math.
+- **The model** stays the clinician's choice. The suggested tile is marked once weight and height are
+  known (`markSuggestedModel`); a population mismatch is one line in the confidence slot
+  (`modelMismatchText`).
+- **Notes** over `NOTE_CLAMP_CHARS` (300, a preference) show three lines and "Read the rest: <word>".
+- **The input column:** mode, patient, creatinine, course, target, then profiles. PD hides amputation,
+  creatinine and loading-dose blocks (`.not-pd`), keeping a ticked HD box in view. "Clear all fields" is a
+  text action with Undo (`clearWithUndo`), which snapshots its own module's column and re-derives the
+  CrCl override, weight basis and amputation from the restored fields; a profile load ends the Undo.
+  Clearing unticks the CrCl override. No native `confirm()` remains. Alarm notes are never clamped.
+- **PD (the user's ruling):** the next draw is the AM labs, said plainly, with no cycler-end caution;
+  `drawOnCycler` is still computed, and a level drawn on the cycler keeps its flag in "The decline".
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, intraperitoneal vancomycin dosing, AUC or Bayesian
 dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
@@ -202,12 +224,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **440/440 pass** |
+| `phase2d_validation.cjs` | **458/458 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **84/84** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **103/103** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
