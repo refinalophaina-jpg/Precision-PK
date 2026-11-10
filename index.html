@@ -3901,7 +3901,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:var(--fs-xs);color:var(--text-secondary);cursor:pointer">
-        <input type="checkbox" id="b-icu" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
+        <input type="checkbox" id="b-icu" data-onchange="k98" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
         ICU, critically ill or complex PK
       </label>
       <span style="font-size:var(--fs-xs);color:var(--text-muted)">(favors 2-comp Goti model)</span>
@@ -4198,6 +4198,7 @@ const __ACT = {
   k93: (el, ev, arg) => { switchModule('trough'); setCalcMode('pd'); },   /* AUC Precision PD guard → the PD mode (D23) */
   k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
   k97: (el, ev, arg) => { runUndo(); },   /* Undo (D24) */
+  k98: (el, ev, arg) => { markSuggestedModel(); },   /* ICU changes the suggested model (D24) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
@@ -7616,14 +7617,14 @@ function renderRandomLevel(d) {
   const prnBody = `
     <p class="ev-lead"><strong>Level-based / PRN dosing calculator.</strong></p>
     <p class="ev-note">Use when scheduling a fixed regimen is not appropriate — e.g. AKI with fluctuating renal function. Calculates the dose needed to reach a target peak, given the patient's current level and the time it will take to reach the redosing threshold.</p>
-    <div class="tx-prn-controls">
+    <div class="tx-prn-controls" data-enter-scope>
       <label for="prn-redose-thresh">Redose threshold
         <span class="tx-field"><input type="number" class="prn-ctrl-input" id="prn-redose-thresh" value="${d.troughMin}" min="5" max="20" step="1" inputmode="decimal"> <span class="vx-muted">mg/L</span></span></label>
       <label for="prn-target-peak">Target peak
         <span class="tx-field"><input type="number" class="prn-ctrl-input" id="prn-target-peak" value="28" min="15" max="45" step="1" inputmode="decimal"> <span class="vx-muted">mg/L</span></span></label>
       <label for="prn-tinf">Infusion over
         <span class="tx-field"><input type="number" class="prn-ctrl-input" id="prn-tinf" value="${d.rlTinf}" min="0.5" max="4" step="0.5" inputmode="decimal"> <span class="vx-muted">h</span></span></label>
-      <button type="button" class="prn-calc-btn" data-onclick="k57">Calculate PRN dose</button>
+      <button type="button" class="prn-calc-btn" data-onclick="k57" data-enter-default>Calculate PRN dose</button>
     </div>
     <div id="prn-result" class="tx-prn-result" aria-live="polite">
       <p class="ev-note">Current level: <strong>${d.rlC.toFixed(1)} mg/L</strong> at ${d.rlT.toFixed(1)} h after dose ·
@@ -8175,19 +8176,29 @@ function runUndo() {
   if (u && typeof u.restore === 'function') u.restore();
 }
 // Every field's value and every course row, as the user left them.
+// Row fields are kept by position within their table as well, because some (serial SCr)
+// carry no id; innerHTML alone keeps only the attributes, not what was typed.
+const _fieldVal = (e) => (e.type === 'checkbox' || e.type === 'radio') ? e.checked : e.value;
+function _setField(e, v) { if (typeof v === 'boolean') e.checked = v; else e.value = v; }
 function snapshotFormDOM(root) {
   return {
-    rows: [...root.querySelectorAll('tbody[id]')].map(tb => [tb.id, tb.innerHTML]),
-    fields: [...root.querySelectorAll('input[id], select[id], textarea[id]')]
-      .map(e => [e.id, (e.type === 'checkbox' || e.type === 'radio') ? e.checked : e.value]),
+    rows: [...root.querySelectorAll('tbody[id]')].map(tb => [tb.id, tb.innerHTML, [...tb.querySelectorAll('input, select, textarea')].map(_fieldVal)]),
+    fields: [...root.querySelectorAll('input[id], select[id], textarea[id]')].map(e => [e.id, _fieldVal(e)]),
   };
 }
 function restoreFormDOM(snap) {
-  snap.rows.forEach(([id, html]) => { const tb = document.getElementById(id); if (tb) tb.innerHTML = html; });
-  snap.fields.forEach(([id, v]) => { const e = document.getElementById(id); if (!e) return; if (typeof v === 'boolean') e.checked = v; else e.value = v; });
+  snap.rows.forEach(([id, html, vals]) => {
+    const tb = document.getElementById(id); if (!tb) return;
+    tb.innerHTML = html;
+    const els = [...tb.querySelectorAll('input, select, textarea')];
+    if (els.length === vals.length) els.forEach((e, i) => _setField(e, vals[i]));
+  });
+  snap.fields.forEach(([id, v]) => { const e = document.getElementById(id); if (e) _setField(e, v); });
 }
 function clearWithUndo(mod) {
-  const root = document.getElementById('main') || document.body;
+  // Each module snapshots and restores its own column only: a Trough Undo once put back the
+  // AUC rows without their counters (duplicate ids), and an AUC Undo reverted Trough edits.
+  const root = document.querySelector(mod === 'auc' ? '#app-shell-bayesian' : '.app-shell:not(#app-shell-bayesian)') || document.body;
   const dom = snapshotFormDOM(root);
   const sex = state.sex;
   if (mod === 'auc') {
@@ -8200,15 +8211,25 @@ function clearWithUndo(mod) {
       setBModel(document.getElementById(`b-model-btn-${key}`), key);
       bState = Object.assign({}, b, { result: null, resultFingerprint: null, tinkCompare: [] });
       setPatientSex(sex);
+      const ro = document.getElementById('b-regimen-override'), rw = document.getElementById('b-regimen-custom-wrap');
+      if (ro && rw) rw.style.display = ro.value === 'custom' ? 'block' : 'none';
       try { syncHdSection(); refreshCourseReadback(); updateScrTrendDisplay(); } catch (e) { /* display only */ }
       updateBayesCrCl();
       const f = document.getElementById('b-age'); if (f) f.focus();
     });
   } else {
-    const st = { calcMode: state.calcMode, rlMode: state.rlMode };
+    const st = { calcMode: state.calcMode, rlMode: state.rlMode, amp: Object.assign({}, ampState) };
     resetForm();
     offerUndo([document.getElementById('undo-trough')], 'Form cleared.', () => {
       restoreFormDOM(dom);
+      // State is re-derived from the restored fields, never left as it was: the final review
+      // found a CrCl override live behind an unticked box after an Undo (a different dose).
+      setCrclOverride();
+      const dw = (document.getElementById('dosing-wt') || {}).value || 'auto';
+      const dwBtn = document.querySelector(`[data-onclick="${{ auto: 'k73', TBW: 'k14', IBW: 'k15', AdjBW: 'k16' }[dw] || 'k73'}"]`);
+      if (dwBtn) setDosingWt(dwBtn, dw);
+      Object.keys(ampState).forEach(k => { ampState[k] = st.amp[k] || null; });
+      ampToggleEnabled(document.getElementById('amp-enabled'));
       setCalcMode(st.calcMode);
       if (st.calcMode !== 'pd') setRLMode(st.rlMode);
       setPatientSex(sex);
@@ -8221,7 +8242,15 @@ function clearWithUndo(mod) {
 }
 
 function resetForm() {
-  document.querySelectorAll('input[type="number"]').forEach(i=>i.value='');
+  // Its own column only (D24): it used to empty every number field in the document, the
+  // AUC form's included, while leaving that form's rows and dates.
+  const shell = document.querySelector('.app-shell:not(#app-shell-bayesian)') || document;
+  shell.querySelectorAll('input[type="number"]').forEach(i=>i.value='');
+  // A cleared form leaves no CrCl override active. The box stayed ticked with its value
+  // blanked while every model kept the old value (the final review, 2026-11-10).
+  const coBox = document.getElementById('crcl-override-on');
+  if (coBox) coBox.checked = false;
+  setCrclOverride();
   document.getElementById('results-placeholder').style.display = 'flex';
   document.getElementById('results-content').style.display = 'none';
   document.getElementById('results-content').innerHTML = '';
@@ -9415,6 +9444,9 @@ function refreshDtPairs() {
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
   document.querySelectorAll('.dt-pair[data-dt-for]').forEach(p => syncDtPair(p, null));
 }
+// Back and forward restore what was typed in the two halves but not the hidden instant.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function')
+  window.addEventListener('pageshow', () => { try { refreshDtPairs(); } catch (e) { /* the halves are re-read on the next edit */ } });
 // AUC Precision guard (D23): a PD patient gets this notice, never a fitted number.
 function bayesPdNoticeHTML() {
   return noteHTML({ tier: 'caution', word: 'On peritoneal dialysis — use the PD mode', html:
@@ -11695,7 +11727,7 @@ function modelMismatchText(rec, model) {
   if (rec.isClass3 && model !== 'hughes')
     return `Hughes 2024 is fitted to class 3 obesity (BMI ${rec.bmi.toFixed(1)}); this result uses ${MODEL_NAME[model] || model}.`;
   if (model === 'hughes' && rec.bmi != null && !rec.isClass3)
-    return `Hughes 2024 was developed only in BMI ≥ ${HUGHES_MIN_BMI}; this patient's BMI is ${rec.bmi.toFixed(1)}.`;
+    return `Hughes 2024 was developed only in BMI ≥ ${HUGHES_MIN_BMI}; this patient's BMI is ${rec.bmi.toFixed(1) === HUGHES_MIN_BMI.toFixed(1) ? (HUGHES_MIN_BMI - 0.1).toFixed(1) : rec.bmi.toFixed(1)}.`;   // never "40.0" below 40
   return null;
 }
 // The suggested model's tile is marked as soon as the patient is known (weight and
@@ -12586,14 +12618,15 @@ function cautionHTML(text) {
   return `<span class="ic-line">${ICON.caution}<span>${escHtml(text)}</span></span>`;
 }
 const NOTE_RANK = { alarm: 0, caution: 1, info: 2 };
-// v3.13.0 (D24): a long note shows three lines and a link that names the rest — a
-// 1,201-character note stood inline above the evidence. NOTE_CLAMP_CHARS is a PREFERENCE
+// v3.13.0 (D24): a long caution or info note shows three lines and a link that names the
+// rest — a 1,201-character note stood inline above the evidence. An alarm is never clamped:
+// the final review found a severe-renal "HOLD further doses" hidden behind the link. NOTE_CLAMP_CHARS is a PREFERENCE
 // (rule 8): about three lines at the results measure. It hides nothing from print, which
 // shows every note whole, and it changes no number.
 const NOTE_CLAMP_CHARS = 300;
 function noteHTML(n) {
   const len = String(n.html || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().length;
-  const long = len > NOTE_CLAMP_CHARS;
+  const long = n.tier !== 'alarm' && len > NOTE_CLAMP_CHARS;   // an alarm (a hold, a safety limit) is never clamped
   return `<div class="note note-${n.tier}${long ? ' note-long' : ''}" role="note">
     <div class="note-word">${ICON[n.tier]}<span>${escHtml(n.word)}</span></div>
     <div class="note-body">${n.html}</div>
@@ -14689,6 +14722,7 @@ function deleteProfile(id) {
 }
 
 function loadProfileIntoForm(id) {
+  clearUndo();   // a cleared form is never restored over a loaded profile (D24 review)
   const profiles = loadProfiles();
   const entry = profiles.find(p => p.id === id);
   if (!entry) return;
@@ -15855,6 +15889,7 @@ function courseReadback(doses, levels, nowMs, sessions) {
 
 // Write the read-back into every dose and level row.
 function refreshCourseReadback() {
+  try { markSuggestedModel(); } catch (e) { /* advice only */ }   // levels and sessions change the suggestion (D24)
   if (typeof document === 'undefined' || !document.querySelectorAll || !document.getElementById) return;
   const val = (x) => { const el = document.getElementById(x); return el && el.value != null ? String(el.value).trim() : ''; };
   const ids = (sel, prefix) => Array.from(document.querySelectorAll(sel) || []).map(r => String(r.id).replace(prefix, ''));

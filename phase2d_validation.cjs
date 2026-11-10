@@ -5590,6 +5590,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const c1 = rec({ tbw: 100, ht: 175 });                       // BMI 32.7
     assert(/BMI ≥ 40|40 or more/.test(mm(c1, 'hughes') || '') && /32\.7/.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
     assert(mm(rec({ n: 2, tbw: 70, ht: 175 }), 'buelga') === null, 'two levels suggest Goti, but that is not a population mismatch');
+    assert(/BMI is 39\.9\./.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
     assert(mm(rec({ tbw: 70, ht: 175, hd: true }), 'buelga') === null, 'dialysis has its own handling (D16)');
     const v = code42.slice(code42.indexOf('const confBlock = `'), code42.indexOf('const nextBlock'));
     assert(/modelMismatchText\(/.test(code42) && /vx-mismatch/.test(v), 'the line sits in the confidence slot');
@@ -5663,6 +5664,25 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!/\.mx-blocked\s*\{[^}]*opacity/.test(css42), 'no faded blocked cell');
     assert(/over limit/.test(code42.slice(code42.indexOf('if (c.blocked) {'), code42.indexOf('if (c.blocked) {') + 400)), 'a blocked cell says so in words');
     assert(!/border-radius:\s*[123]px/.test(css42) && !/font-size:\s*(9|10|11)px/.test(css42), 'radii are 4px, pill or circle; text 12 px or more');
+  });
+  // The final review (2026-11-10): an alarm hid its HOLD instruction behind "Read the rest";
+  // Undo could restore a form that disagreed with the state the dose is computed from.
+  test('42.16 an alarm is never clamped: every word of a hold or a safety limit stays on screen', () => {
+    const long = sandbox.noteHTML({ tier: 'alarm', word: 'Severe renal impairment', html: 'then HOLD further doses. '.repeat(20) });
+    assert(!/note-long|k96/.test(long), long.slice(0, 200));
+    assert(/note-long/.test(sandbox.noteHTML({ tier: 'caution', word: 'x', html: 'y '.repeat(200) })), 'a long caution still clamps');
+  });
+  test('42.17 clearing a form clears only that module, re-derives state on Undo, and Undo ends with a profile load', () => {
+    const rf = code42.slice(code42.indexOf('function resetForm()'), code42.indexOf('function resetForm()') + 2600);
+    assert(!/document\.querySelectorAll\('input\[type="number"\]'\)/.test(rf), 'the Trough clear no longer empties the AUC form');
+    assert(/crcl-override-on[\s\S]{0,80}\.checked = false/.test(rf) && /setCrclOverride\(\)/.test(rf), 'a cleared form leaves no CrCl override active (it kept 30 mL/min with the box blank)');
+    const cw = code42.slice(code42.indexOf('function clearWithUndo('), code42.indexOf('function resetForm()'));
+    assert(/#app-shell-bayesian/.test(cw) && /app-shell:not\(#app-shell-bayesian\)/.test(cw), 'each module snapshots its own column');
+    assert(/setCrclOverride\(\)/.test(cw) && /setDosingWt\(/.test(cw) && /ampState/.test(cw), 'Undo re-derives the override, the weight basis and the amputation');
+    const lp = code42.slice(code42.indexOf('function loadProfileIntoForm('), code42.indexOf('function loadProfileIntoForm(') + 300);
+    assert(/clearUndo\(\)/.test(lp), 'loading a profile ends the Undo');
+    const sn = code42.slice(code42.indexOf('function snapshotFormDOM('), code42.indexOf('function restoreFormDOM('));
+    assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
     assert(/const APP_VERSION = '3\.13\.0';/.test(src42), 'v3.13.0');

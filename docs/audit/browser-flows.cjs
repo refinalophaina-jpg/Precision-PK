@@ -816,6 +816,29 @@ async function enterCourse(page) {
     await w.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await w.waitForTimeout(400);
     const again = await w.evaluate(() => ((document.querySelector('#b-results .vx-regimen') || {}).textContent || '').replace(/\s+/g, ' ').trim());
     ok('D24: the restored form gives the same answer', again === a1.dose, `${a1.dose} → ${again}`);
+    // The final review's paths (2026-11-10). A serial SCr row (no ids) survives Clear and Undo.
+    await w.locator('[data-onclick="k42"]').click();
+    await w.locator('#b-scr-tbody tr:last-child .b-scr-val').fill('1.4');
+    await w.locator('[data-onclick="k48"]').click(); await w.locator('#undo-auc [data-onclick="k97"]').click(); await w.waitForTimeout(200);
+    const scrBack = await w.evaluate(() => (document.querySelector('#b-scr-tbody tr:last-child .b-scr-val') || {}).value);
+    ok('D24 review: a serial SCr value comes back with Undo', scrBack === '1.4', scrBack);
+    // Loading a profile ends the Undo, so a cleared form can never be restored over a loaded one.
+    await w.locator('[data-onclick="k48"]').click();
+    await w.locator('#app-shell-bayesian .profile-item-btn.load').first().click(); await w.waitForTimeout(300);
+    ok('D24 review: loading a profile ends the Undo', (await w.locator('[data-onclick="k97"]').count()) === 0);
+    // Trough: a cleared form leaves no CrCl override active; Undo brings it back consistent.
+    await w.locator('[data-onclick="k1"]').click();
+    await w.locator('#crcl-override-on').check(); await typeInto(w, '#crcl-override-val', '30');
+    const aucMg = await w.evaluate(() => (document.getElementById('b-dose-mg-1') || {}).value);
+    await w.locator('[data-onclick="k32"]').click(); await w.waitForTimeout(200);
+    const ov1 = await w.evaluate(() => ({ box: document.getElementById('crcl-override-on').checked, on: crclOverride.on, auc: (document.getElementById('b-dose-mg-1') || {}).value }));
+    await w.locator('#undo-trough [data-onclick="k97"]').click(); await w.waitForTimeout(200);
+    const ov2 = await w.evaluate(() => ({ box: document.getElementById('crcl-override-on').checked, on: crclOverride.on, v: crclOverride.value }));
+    ok('D24 review: Clear leaves no CrCl override active and leaves the AUC form alone; Undo restores the override with its box',
+       !ov1.box && !ov1.on && ov1.auc === aucMg && !!aucMg && ov2.box && ov2.on && ov2.v === 30, JSON.stringify({ ov1, ov2, aucMg }));
+    await w.locator('[data-onclick="k2"]').click(); await w.locator('[data-onclick="k43"]').click();
+    const dupes = await w.evaluate(() => { const ids = [...document.querySelectorAll('[id]')].map(e => e.id); return ids.filter((x, i) => ids.indexOf(x) !== i); });
+    ok('D24 review: a row added after the Trough Undo has a unique id', dupes.length === 0, JSON.stringify(dupes.slice(0, 5)));
     await w.screenshot({ path: path.join(OUT, 'desktop-1280-workstation.png') });
     const wAttr = await attributeInjected(w, wProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + wAttr.injected;

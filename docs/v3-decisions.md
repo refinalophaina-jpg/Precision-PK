@@ -1460,14 +1460,37 @@ SUITE 41 records it.
 **Rulings made in the build.**
 - **Profiles at the foot, not the top:** the first build put them at the top, which pushed the patient
   below the fold at 1280 × 800. If wrong, it costs a move of one block.
-- **Clearing the Trough form** still clears every number field in both modules, as before. Undo
-  restores both, and the scope was left alone. If wrong, a narrower clear is a one-line change.
+- **Clearing the Trough form** first kept its old reach (every number field in both modules). The final
+  review showed why that was wrong (below), so each module now clears and restores its own column.
 - **The model mismatch** is said for population mismatches only, so two levels on Buelga is not called
   a mismatch. If wrong, it adds a line to more verdicts.
 
+**Final review** (a fresh reviewer, 2026-11-10). One Critical, three Important, four Minor. Every
+Critical and Important fix began with a test that failed first.
+- **Critical: Undo after a profile load** restored patient A's fields while patient B's CrCl override
+  stayed live behind an unticked box. The answer changed from 1 g q12h to 750 mg q24h.
+  - Undo now re-derives the override, the weight basis and the amputation from the restored fields.
+  - A profile load ends the Undo.
+- **Important:**
+  - A Trough Undo restored the AUC rows without their counters, so the next row had duplicate ids and the
+    fit refused. Each module now snapshots its own column.
+  - Serial SCr values (no ids) were lost. Row fields are now kept by position.
+  - An alarm note's HOLD instruction was hidden behind "Read the rest". Alarms are never clamped.
+- **Found by the review, already live in v3.12.0:** Clear left the CrCl override ticked, with its value
+  box blanked, while every model kept the old value. The next patient got CrCl 30. Clearing now unticks
+  it. This is the one behaviour fix in this release; it changes no calculation, only what Clear clears.
+- **Minors, all fixed:**
+  - After back or forward, the hidden instant is re-composed on `pageshow`.
+  - A custom intended regimen shows after an AUC Undo.
+  - The suggested tile follows ICU, levels and sessions.
+  - A BMI just under 40 never reads "40.0".
+  - Enter in the PRN fields calculates the PRN dose.
+  - The `pageshow` and BMI-edge fixes were tested after the fix, not before.
+- **Left as it was:** Clear does not untick amputation. That box stays visible, so nothing is hidden.
+
 **Verified.**
-- Unit suites: phase2d 456/456, phase3 21/21, phase4 49/49.
+- Unit suites: phase2d 458/458, phase3 21/21, phase4 49/49.
 - Engine parity: 0 differences.
-- Browser flows: 99/99, including 15 new D24 checks driven by real clicks and keys under the CSP.
+- Browser flows: 103/103, including 19 new D24 checks driven by real clicks and keys under the CSP.
 - `impeccable detect`: 9 findings. The 7 low-contrast ones are dark-theme tokens measured against
   white; the rest are the stripes and em-dash advisories. The radius and 11 px findings are gone.
