@@ -5685,7 +5685,152 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.13\.0';/.test(src42), 'v3.13.0');
+    assert(/const APP_VERSION = '3\.1[34]\.0';/.test(src42), 'v3.13.0 or its successor');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 43 — continue the current regimen (v3.14.0, D25)
+//
+// Reported 2026-11-13: on 1250 mg q12h the fit gave AUC24 546 (within 400-600,
+// 14 of 20 plausible AUCs in range), yet AUC Precision recommended 1750 mg q24h at
+// AUC24 382 (7 of 20) because the target box read 400. The optimizer never saw the
+// current regimen, ranked on distance to one number, and let half a dose step of
+// rounding grace count a below-range regimen as "in band". The PK state below is
+// that case's posterior (Buelga, one level); the dose histories are fictional.
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 43 — continue the current regimen (v3.14.0, D25)');
+  console.log(`${'─'.repeat(60)}`);
+  const src43 = fs.readFileSync(htmlPath, 'utf8');
+  const code43 = src43.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const K43 = (() => { try { return __extractConsts(); } catch (e) { return { _err: e.message }; } })();
+  const fn43 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const CL = 4.58, V = 61.8;                       // the reported posterior (Buelga, 1 level)
+  const row1 = () => fn43('aucUncertaintyRow')(1, 'buelga');
+  const hist = (mg, tau, tinfH, n) => Array.from({ length: n || 4 }, (_, i) => ({ mg, tinfH, timeH: i * tau }));
+  const q12 = hist(1250, 12, 1.5);                 // 1250 mg q12h over 1.5 h
+  const decide = (target, doses, cl, v, bag, row) =>
+    fn43('regimenDecision')(cl || CL, v || V, target, bag || null, 1, doses, row || row1());
+  const dotsOf = (auc, row) => fn43('attainmentDots')(auc, row || row1());
+
+  test('43.0 the margin is a stated preference, parsed by the harness', () => {
+    assert(!K43._err, K43._err);
+    assert(K43.CONTINUE_MARGIN_DOTS === 2, `CONTINUE_MARGIN_DOTS is ${K43.CONTINUE_MARGIN_DOTS}`);
+    const i = code43.indexOf('const CONTINUE_MARGIN_DOTS');
+    assert(/PREFERENCE, not a literature constant/.test(code43.slice(Math.max(0, i - 1500), i)), 'rule 8: labelled where defined');
+  });
+  test('43.1 the reported case: an in-range 1250 mg q12h is continued at a target of 400', () => {
+    const r = decide(400, q12);
+    assert(r && r.action === 'continue', `action ${r && r.action}: ${r && r.dose} mg q${r && r.tau}h AUC ${r && r.auc24 && r.auc24.toFixed(0)}`);
+    assert(r.dose === 1250 && r.tau === 12 && r.tinfH === 1.5, `continued ${r.dose} mg q${r.tau}h over ${r.tinfH} h`);
+    assertClose(r.auc24, 545.9, 1, 'AUC24'); assertClose(r.Ctrough, 14.9, 0.2, 'trough');
+    assert(r.dots === 14, `dots ${r.dots}`);
+    assert(r.nearestTarget && r.nearestTarget.dose === 1000 && r.nearestTarget.tau === 12,
+      `what the target box alone gives is disclosed: ${JSON.stringify(r.nearestTarget)}`);
+    assert(!r.noSolution && r.regimen === r, 'keeps the rec contract (rec.regimen, rec.noSolution)');
+  });
+  test('43.2 the target box cannot dislodge an in-range regimen (400 to 600)', () => {
+    for (let t = 400; t <= 600; t += 25) {
+      const r = decide(t, q12);
+      assert(r.action === 'continue' && r.dose === 1250 && r.tau === 12, `target ${t}: ${r.action} ${r.dose} mg q${r.tau}h`);
+    }
+  });
+  test('43.3 one more dot of twenty is not worth a change: 750 mg q8h (15/20) does not displace 14/20', () => {
+    assert(dotsOf(750 * 3 / CL) === 15 && dotsOf(1250 * 2 / CL) === 14, 'the trap exists on this patient');
+    const r = decide(500, q12);
+    assert(r.action === 'continue', `${r.action} ${r.dose} mg q${r.tau}h`);
+  });
+  test('43.4 a below-range regimen changes to an in-range one that is better, keeping the nearest interval', () => {
+    const r = decide(400, hist(1750, 24, 2));
+    assert(r.action === 'change', `action ${r.action}`);
+    assert(r.auc24 >= K43.AUC24_TARGET_MIN && r.auc24 <= K43.AUC24_TARGET_MAX, `AUC ${r.auc24.toFixed(0)}`);
+    assert(r.dots > r.current.dots && r.current.dots === 7, `dots ${r.current.dots} -> ${r.dots}`);
+    assert(r.dose === 1250 && r.tau === 12, `chose ${r.dose} mg q${r.tau}h (q12h is one interval step from q24h; q8h is two)`);
+    assert(r.decisionReason === 'attainment', r.decisionReason);
+  });
+  test('43.5 never worse: a change never lowers attainment unless the current regimen is unsafe', () => {
+    let n = 0, cont = 0;
+    for (let cl = 1.5; cl <= 9.0001; cl += 0.5) for (const tau of [8, 12, 24, 48]) for (let mg = 250; mg <= 2000; mg += 250) {
+      const doses = hist(mg, tau, fn43('autoTinf')(mg));
+      for (const t of [400, 450, 500, 550, 600]) {
+        const r = decide(t, doses, cl, 49); if (!r || r.noSolution) continue;
+        n++;
+        if (r.action === 'continue') { cont++; assert(r.dose === mg && r.tau === tau, 'continue names the current regimen'); continue; }
+        assert(r.action === 'change' && r.current, `CL ${cl} ${mg} q${tau}h: action ${r.action}`);
+        if (r.decisionReason !== 'safety') assert(r.dots > r.current.dots,
+          `CL ${cl} ${mg} q${tau}h target ${t}: ${r.current.dots} -> ${r.dots} dots with ${r.dose} mg q${r.tau}h`);
+      }
+    }
+    assert(n > 2000 && cont > 100, `exercised ${n} decisions, ${cont} continues`);
+  });
+  test('43.6 strict band: no recommendation below 400 or above 600 while an in-range one exists', () => {
+    const r0 = decide(400, null);
+    assert(r0.action === 'start' && r0.dose === 1000 && r0.tau === 12, `first regimen at target 400: ${r0.dose} mg q${r0.tau}h AUC ${r0.auc24.toFixed(0)}`);
+    let bad = 0, n = 0;
+    for (let cl = 1.0; cl <= 9.0001; cl += 0.1) for (let t = 400; t <= 600; t += 10) {
+      const r = sandbox.bayesDoseOptimizer(cl, cl * 12, t, null, 1); if (!r || r.noSolution) continue; n++;
+      if (!r.outsideTargetBand && (r.auc24 < K43.AUC24_TARGET_MIN - 1e-9 || r.auc24 > K43.AUC24_TARGET_MAX + 1e-9)) bad++;
+    }
+    assert(bad === 0 && n > 1500, `${bad} of ${n} in-band recommendations sat outside 400-600`);
+  });
+  test('43.7 safety outranks attainment: an in-range regimen with a trough of 20 or more is changed, and says why', () => {
+    const ev = fn43('evalRegimen');
+    let found = null;
+    for (let cl = 1.0; cl <= 4 && !found; cl += 0.1) for (const tau of [8, 12, 24]) for (let mg = 250; mg <= 2000 && !found; mg += 250) {
+      const c = ev(mg, tau, fn43('autoTinf')(mg), cl, cl * 60, null, 1);
+      if (c && !c.hardFail.length && c.auc24 >= 400 && c.auc24 <= 600 && c.Ctrough >= 20) found = { cl, c };
+    }
+    assert(found, 'a long half-life gives an in-range AUC with a danger trough');
+    const r = decide(500, hist(found.c.dose, found.c.tau, found.c.tinfH), found.cl, found.cl * 60);
+    assert(r.action === 'change' && r.decisionReason === 'safety', `${r.action} / ${r.decisionReason}`);
+    assert(r.Ctrough < 20, `the change keeps a trough under 20: ${r.Ctrough.toFixed(1)}`);
+  });
+  test('43.8 a load alone, or an irregular history, is not a current regimen: the target box decides', () => {
+    const load = decide(450, [{ mg: 2000, tinfH: 2, timeH: 0 }]);
+    const opt = sandbox.bayesDoseOptimizer(CL, V, 450, null, 1);
+    assert(load.action === 'start' && load.dose === opt.dose && load.tau === opt.tau, `load only: ${load.action}`);
+    const irr = decide(450, [0, 7, 19, 22, 39].map(h => ({ mg: 1000, tinfH: 1, timeH: h })));
+    assert(irr.action === 'start', `irregular: ${irr.action}`);
+  });
+  test('43.9 two-compartment fits are judged the same way', () => {
+    const bag = { Vc: 40, Vp: 45, Q: Q_GOTI };
+    const row = fn43('aucUncertaintyRow')(2, 'goti');
+    const r = decide(400, hist(1000, 12, 1), 4.0, 40, bag, row);       // AUC24 500
+    assert(r.action === 'continue' && r.dose === 1000 && r.tau === 12, `${r.action} ${r.dose} q${r.tau}`);
+  });
+  test('43.10 every fit path decides through regimenDecision; dialysis and the severe-renal hold pass no current regimen', () => {
+    const calls = code43.match(/const rec = regimenDecision\(/g) || [];
+    assert(calls.length === 3, `${calls.length} of 3 fit paths`);
+    assert(!/const rec = bayesDoseOptimizer\(/.test(code43), 'no fit path calls the optimizer directly');
+    assert(/regimenDecision\([^;]*bState\.dial[^;]*\?\s*null/.test(code43) || /decisionDoses/.test(code43), 'dialysis passes no current regimen');
+  });
+  test('43.11 the answer says continue, or why it changes', () => {
+    const html = fn43('regimenActionHTML');
+    const c = decide(400, q12);
+    const h = html(c, 400);
+    assert(/Continue the current regimen/.test(h) && /14 of 20/.test(h), h);
+    assert(/target of 400 alone would give 1 g IV q12h/.test(h), 'the target box choice is disclosed: ' + h);
+    const ch = html(decide(400, hist(1750, 24, 2)), 400);
+    assert(/Change from 1\.75 g IV q24h/.test(ch) && /7 of 20/.test(ch) && /14 of 20/.test(ch), ch);
+    assert(html(decide(450, null), 450) === '', 'a first regimen carries no action line');
+  });
+  test('43.13 a change away from an in-range regimen delivers the whole margin, not just the trigger', () => {
+    // The margin decided to change; minimal change then picked a neighbour one dot better.
+    let n = 0;
+    for (let nl = 1; nl <= 3; nl++) for (let cl = 1.5; cl <= 9.0001; cl += 0.25)
+      for (const tau of [8, 12, 24, 48]) for (let mg = 250; mg <= 2000; mg += 250) {
+        const r = decide(450, hist(mg, tau, fn43('autoTinf')(mg)), cl, 49, null, fn43('aucUncertaintyRow')(nl, 'buelga'));
+        if (r.action !== 'change' || !r.current.inBand || r.current.unsafe) continue;
+        n++;
+        assert(r.dots - r.current.dots >= K43.CONTINUE_MARGIN_DOTS,
+          `CL ${cl} ${mg} mg q${tau}h (${r.current.dots}/20) -> ${r.dose} mg q${r.tau}h (${r.dots}/20)`);
+      }
+    assert(n > 100, `exercised ${n} changes from an in-range regimen`);
+  });
+  test('43.12 the version', () => {
+    assert(/const APP_VERSION = '3\.14\.0';/.test(src43), 'v3.14.0');
   });
 }
 

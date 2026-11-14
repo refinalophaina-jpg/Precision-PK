@@ -138,6 +138,10 @@ function extract() {
     PD_CAPD_T12_MIN_H:      num(src, 'PD_CAPD_T12_MIN_H'),
     PD_CAPD_T12_MAX_H:      num(src, 'PD_CAPD_T12_MAX_H'),
     MATZKE_VD_GROUP3:       num(src, 'MATZKE_VD_GROUP3'),
+
+    // v3.14.0 — continue the current regimen (D25)
+    CONTINUE_MARGIN_DOTS:   num(src, 'CONTINUE_MARGIN_DOTS'),
+    TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
   };
 }

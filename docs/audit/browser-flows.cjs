@@ -658,6 +658,62 @@ async function enterCourse(page) {
     await sctx.close();
   }
 
+  // v3.14.0 (D25): the regimen being given enters the decision. A fictional 55 M (72 kg,
+  // 176 cm, SCr 1.0) on 1250 mg q12h with the target box at 400 — where v3.13.0 traded an
+  // in-range regimen for whatever sat nearest 400. Then the same patient on 1750 mg q24h,
+  // below range, which must change and say why. Fixed clock: today 10:00.
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const c = await cctx.newPage();
+    const cProblems = watch(c, 'continue');
+    await c.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await c.goto(BASE + '?v=pwc-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.locator('[data-onclick="k2"]').click();
+    await typeInto(c, '#b-age', '55'); await typeInto(c, '#b-tbw', '72'); await typeInto(c, '#b-height', '176'); await typeInto(c, '#b-scr', '1.0');
+    await c.locator('[data-onclick="k39"]').click();
+    const course = async (mg, times, conc) => {
+      for (let n = 1; n <= times.length; n++) {
+        await c.locator('[data-onclick="k43"]').click();
+        await typeInto(c, `#b-dose-mg-${n}`, mg); await typeInto(c, `#b-dose-tinf-${n}`, mg > 1500 ? '2' : '1.5');
+        await c.locator(`#b-dose-date-${n}`).fill(times[n - 1][0]); await typeInto(c, `#b-dose-time-${n}`, times[n - 1][1]);
+      }
+      await c.locator('[data-onclick="k46"]').click();
+      await typeInto(c, '#b-lvl-conc-1', conc); await c.locator('#b-lvl-date-1').fill(day(0)); await typeInto(c, '#b-lvl-time-1', '07:30');
+      await typeInto(c, '#b-auc-target', '400');
+      await c.locator('[data-onclick="k47"]').click(); await c.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await c.waitForTimeout(300);
+      return c.evaluate(() => ({ act: document.querySelector('#b-results .vx-action')?.textContent || '',
+        reg: (document.getElementById('vx-regimen')?.textContent || '').replace(/\s+/g, ' ').trim(),
+        why: (document.querySelector('#b-results .vx-why')?.textContent || '').replace(/\s+/g, ' ').trim(),
+        delta: !!document.querySelector('#b-results .vx-delta'),
+        actFirst: (() => { const a = document.querySelector('#b-results .vx-action'), h = document.getElementById('vx-regimen');
+          return !!(a && h && (a.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING)); })(),
+        said: document.getElementById('sr-announce')?.textContent || '' }));
+    };
+    const q12 = await course(1250, [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']], 16);
+    ok('D25: an in-range 1.25 g q12h is continued at a target box of 400, said before the regimen, with why and the target-box alternative',
+       q12.act === 'Continue the current regimen' && q12.actFirst && q12.reg === '1.25 g IV q12h' && !q12.delta
+       && /^Within 400–600 at AUC₂₄ \d+ with \d+ of 20 plausible AUCs in range; no admissible regimen puts 2 or more further in range\. Your target of 400 alone would give .+ \(AUC₂₄ \d+, \d+ of 20 in range\)\.$/.test(q12.why),
+       JSON.stringify(q12));
+    ok('D25: the screen reader hears "continue"', /^Result: continue 1\.25 g IV q12h, AUC24 \d+/.test(q12.said), q12.said);
+    const printed = await c.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D25: the printed report says continue and why, as on screen', /Continue the current regimen\s*1\.25 g IV q12h/.test(printed) && /no admissible regimen puts 2 or more further in range/.test(printed),
+       printed.slice(printed.indexOf('Dose recommendation'), printed.indexOf('Dose recommendation') + 600));
+    await c.goto(BASE + '?v=pwc2-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.locator('[data-onclick="k2"]').click();
+    await typeInto(c, '#b-age', '55'); await typeInto(c, '#b-tbw', '72'); await typeInto(c, '#b-height', '176'); await typeInto(c, '#b-scr', '1.0');
+    await c.locator('[data-onclick="k39"]').click();
+    const q24 = await course(1750, [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']], 6);
+    ok('D25: a below-range 1.75 g q24h changes, naming what it changes from and the in-range gain',
+       /^Change from 1\.75 g IV q24h$/.test(q24.act) && q24.actFirst && q24.delta
+       && /^The current regimen gives AUC₂₄ (3\d\d) with (\d+) of 20 plausible AUCs in 400–600; this one puts (\d+) of 20 in range\./.test(q24.why)
+       && (m => !!m && +m[2] > +m[1])(q24.why.match(/with (\d+) of 20[\s\S]*puts (\d+) of 20/)),
+       JSON.stringify(q24));
+    const cAttr = await attributeInjected(c, cProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr.injected;
+    results.problems.push(...cAttr.kept);
+    await cctx.close();
+  }
+
   // v3.12.0 (D23): IV vancomycin on peritoneal dialysis, typed in. A fictional CCPD patient
   // (61 kg at the load, 63 kg now, cycler 21:00 x 9.5 h), on a fixed clock (today 10:00) so the
   // answer cannot depend on the time of day.

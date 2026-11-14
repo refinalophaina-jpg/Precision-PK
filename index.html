@@ -2210,6 +2210,9 @@
   .auc-range .ax   { font: 12px var(--font-body); fill: var(--ink-muted); text-anchor: middle; }
   .vx-dots  { font-size: var(--fs-xs); color: var(--ink-muted); margin: 0 0 12px; }
   .vx-sub, .vx-delta { font-size: var(--fs-sm); color: var(--ink-soft); margin: 0 0 6px; line-height: 1.5; }
+  /* v3.14.0 (D25): continue or change, said before the regimen; why, after it */
+  .vx-action { font-size: var(--fs-sm); font-weight: 600; color: var(--ink); margin: 0 0 2px; }
+  .vx-why { font-size: var(--fs-sm); color: var(--ink-soft); margin: 6px 0 0; line-height: 1.5; }
   #b-results .rec-lowconf { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 10px 0 0;
     padding: 0; background: none; border: 0; }
   .vx-conf { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft);
@@ -2821,7 +2824,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.13.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.14.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2852,7 +2855,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.13.0</div>
+  <div class="header-tag">Vancomycin TDM v3.14.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4081,7 +4084,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.13.0';
+const APP_VERSION = '3.14.0';
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -10363,7 +10366,6 @@ const INTERVAL_PREFERENCE  = [24, 12, 48, 8];
 
 function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   const mic = (Number.isFinite(micMgL) && micMgL > 0) ? micMgL : 1;   // guideline assumption
-  const kel  = CLind / Vind;
   const intervals = [8, 12, 24, 48];   // standard intervals for recommendation
   const results   = [];
 
@@ -10398,8 +10400,21 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
     const capped  = Math.floor(Math.min(DOSE_MAX_PER_DOSE_MG, DOSE_MAX_TDD_MG * tau / 24) / 250) * 250;
     const steps = [...new Set([nearest, other, capped])].filter(d => d >= 250);
     for (const dose of steps) {
+      const c = evalRegimen(dose, tau, autoTinf(dose), CLind, Vind, goti2comp, mic);
+      if (c) results.push(c);
+    }
+  }
+  return rankRegimenCandidates(results, targetAUC);
+}
 
-    const tinfH = autoTinf(dose);
+// One regimen at steady state: exposure, trough and peak, the hard rejects and the flags.
+// Moved out of bayesDoseOptimizer unchanged (v3.14.0, D25) so the decision layer judges
+// the CURRENT regimen and every lattice candidate with the same arithmetic (rule 2).
+// tinfH is the infusion actually used: autoTinf(dose) for a new regimen, the charted
+// infusion for the current one. Returns null where a 1-comp interval is degenerate.
+function evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL) {
+    const mic   = (Number.isFinite(micMgL) && micMgL > 0) ? micMgL : 1;   // guideline assumption
+    const kel   = CLind / Vind;
     const auc24 = dose * (24/tau) / CLind;   // exact at SS, model-independent
     const tdd   = dose * (24/tau);
 
@@ -10412,7 +10427,7 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
     } else {
       const R0      = dose / tinfH;
       const denom   = 1 - Math.exp(-kel * tau);
-      if (denom < 1e-10) continue;
+      if (denom < 1e-10) return null;
       const Cpeak_inf = (R0 / (kel * Vind)) * (1 - Math.exp(-kel * tinfH));
       Ctrough  = Cpeak_inf * Math.exp(-kel * (tau - tinfH)) / denom;
       Cpeak_ss = Cpeak_inf / denom;
@@ -10447,21 +10462,28 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
     if (auc24 < AUC24_TARGET_MIN - grace) flags.push({ level:'warning',
       text:`AUC24 ${auc24.toFixed(0)} is below the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} target band (Rybak 2020 Rec 1, at MIC 1 mg/L).` });
 
-    results.push({ tau, dose, tinfH, auc24, tdd, Cpeak: Cpeak_ss, Ctrough, flags, hardFail });
-    }
-  }
+    return { tau, dose, tinfH, auc24, tdd, Cpeak: Cpeak_ss, Ctrough, flags, hardFail };
+}
 
+// Tiers 2 and 3 of bayesDoseOptimizer: rank formed candidates against the target box.
+function rankRegimenCandidates(results, targetAUC) {
   if (!results.length) {
     return { regimen: null, noSolution: true, candidates: [],
              reason: 'No candidate dose could be formed for this clearance and target.' };
   }
 
   // ── Tier 2: acceptance band. Rank WITHIN it; never silently outside it.
+  // STRICT since v3.14.0 (D25). The band used to be widened by the rounding grace
+  // (half of one 250 mg step), which exists to keep the FLAGS quiet and was never
+  // meant to decide membership. As a filter it let a regimen the verdict itself
+  // labels "Modestly below target" count as in band: reported case, CL 4.58, target
+  // box 400 — 1750 mg q24h (AUC24 382, grace +/-27) beat 1000 mg q12h (437) on
+  // distance to 400. At q8h the grace was +/-82, so 318-682 all passed. Over a
+  // CL x target grid 158 of 1,701 "in-band" recommendations sat outside 400-600.
+  // Now a recommendation leaves the band only when nothing admissible is inside it,
+  // and then it says so (below).
   const admissible = results.filter(r => !r.hardFail.length);
-  const inBand = admissible.filter(r => {
-    const g = (250 * (24/r.tau) / CLind) / 2;      // same derived rounding grace
-    return r.auc24 >= AUC24_TARGET_MIN - g && r.auc24 <= AUC24_TARGET_MAX + g;
-  });
+  const inBand = admissible.filter(r => r.auc24 >= AUC24_TARGET_MIN && r.auc24 <= AUC24_TARGET_MAX);
   const pool = inBand.length ? inBand : admissible;
 
   // THE FALLBACK IS GONE. It used to be `viable.length ? viable : results`, which
@@ -10561,6 +10583,184 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   best.regimen = best;   // callers read rec.dose directly; keep that contract
   best.noSolution = false;
   return best;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  CONTINUE OR CHANGE — the current regimen enters the decision (v3.14.0, D25)
+// ══════════════════════════════════════════════════════════════════════════
+// THE CASE. On 1250 mg q12h a one-level Buelga fit gave AUC24 546 (within 400-600,
+// trough 14.9, 14 of 20 plausible AUCs in range). The answer was 1750 mg q24h at
+// AUC24 382 (7 of 20) because the target box read 400: bayesDoseOptimizer never saw
+// the regimen being given, built only the dose steps beside one target number, and
+// ranked on distance to it. Over a clearance grid with an in-range, safe current
+// regimen and every target 400-600, 31% of answers had FEWER in-range dots than
+// carrying on (docs/v3-decisions.md, D25).
+//
+// THE RULE, in the order a pharmacist asks it:
+//   1. Is the current regimen in 400-600 (point estimate, no rounding grace — this
+//      dose is not rounded) and safe (no hard reject, trough < TROUGH_HIGH_MGL)?
+//   2. If so, continue — unless some admissible regimen puts CONTINUE_MARGIN_DOTS or
+//      more further plausible AUCs in range. One dot is inside the resolution of the
+//      estimate: on the reported case 750 mg q8h scores 15 against 14, and is an
+//      extra dose a day with a trough over 15.
+//   3. Otherwise change. Candidates are the whole admissible lattice (every 250 mg
+//      step to the per-dose ceiling at q8/12/24/48 h), not only the target's
+//      neighbours. Danger troughs are set aside while a safe option exists; in-range
+//      AUCs are kept while any exists; and unless the current regimen is UNSAFE, only
+//      regimens with more in-range dots than it qualify — so a change can never lower
+//      attainment except for safety, and it says so. Among those within
+//      CONTINUE_MARGIN_DOTS of the best: the fewest interval steps from the current
+//      regimen, then the smallest change in daily dose, then the target box, then the
+//      ceiling yields, then INTERVAL_PREFERENCE.
+// "Plausible AUCs in range" is the 20-dot count the card already shows (Kay 2016
+// dotplot of AUC_UNCERTAINTY, simulated per model and level count), so the decision
+// is stated in the units the reader sees. The fit's confidence RATING does not gate
+// it: every regimen is read through the same uncertainty, so a weak fit cannot make
+// another regimen likelier to be in range; it makes another level worth drawing, and
+// the rating still marks the dose provisional (the user's ruling, 2026-11-13).
+// With no current regimen (a load alone, no consistent schedule, dialysis, or the
+// severe-renal hold) the target box decides, as before, inside the strict band.
+//
+// PREFERENCE, not a literature constant (CLAUDE.md rule 8). How many more of the
+// 20 plausible AUCs must land in 400-600 before an in-range regimen is changed.
+// Chosen by the pharmacist who uses the tool (2026-11-13) over "any gain", which
+// would move the reported case to q8h for one dot. It decides continue versus change
+// and nothing else: every dose it can lead to is already admissible and in range.
+const CONTINUE_MARGIN_DOTS = 2;   // PREFERENCE, of 20 plausible AUCs
+
+// How many of the 20 plausible AUCs (aucQuantileDots) fall within the band.
+function attainmentDots(auc24, row, bandMin, bandMax) {
+  const lo = bandMin != null ? bandMin : AUC24_TARGET_MIN, hi = bandMax != null ? bandMax : AUC24_TARGET_MAX;
+  if (!(auc24 > 0) || !row) return 0;
+  return aucQuantileDots(auc24, row, 20).filter(v => v >= lo && v <= hi).length;
+}
+
+// Where an interval sits on the q8/12/24/48 ladder, so "one step" means q12h to q24h
+// or q12h to q8h alike; an interval off the ladder (q6h, q18h, q36h) falls between.
+function intervalPosition(tau) {
+  const L = MATRIX_INTERVALS.map(Math.log), x = Math.log(tau), n = L.length;
+  if (x <= L[0]) return (x - L[0]) / (L[1] - L[0]);
+  for (let i = 1; i < n; i++) if (x <= L[i]) return i - 1 + (x - L[i - 1]) / (L[i] - L[i - 1]);
+  return n - 1 + (x - L[n - 1]) / (L[n - 1] - L[n - 2]);
+}
+
+// The regimen being given, judged like a candidate: only an established schedule
+// (or one the clinician set with the override) counts. Recency rules, as for the
+// projection (CLAUDE.md rule 3); the charted infusion time is kept. A
+// 'possible_transition' is NOT enough: detection grants it on a single recent
+// interval, so 0, 7, 19, 22, 39 h reads "Q18H" — and "continue 1 g q18h" on that
+// would be advice about a schedule nobody ordered. There the target box decides.
+function currentRegimenOf(doses, CLind, Vind, goti2comp, micMgL, row) {
+  if (!Array.isArray(doses) || doses.length < 2) return null;
+  const reg = applyRegimenOverride(detectRegimen(doses));
+  if (!reg || !(reg.status === 'established' || reg.overrideActive)) return null;
+  const last = doses.reduce((a, d) => (d.timeH > a.timeH ? d : a), doses[0]);
+  const tau = reg.intervalHours, tinfH = last.tinfH;
+  const dose = reg.maintenanceDoseMg != null ? reg.maintenanceDoseMg : last.mg;
+  if (!(tau > 0) || !(dose > 0) || !(tinfH > 0) || tau <= tinfH) return null;
+  const c = evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL);
+  if (!c) return null;
+  c.dots = attainmentDots(c.auc24, row);
+  c.inBand = c.auc24 >= AUC24_TARGET_MIN && c.auc24 <= AUC24_TARGET_MAX;
+  c.unsafeReasons = c.hardFail.slice();
+  if (Number.isFinite(c.Ctrough) && c.Ctrough >= TROUGH_HIGH_MGL)
+    c.unsafeReasons.push(`its predicted trough of ${c.Ctrough.toFixed(1)} mg/L is at or above ${TROUGH_HIGH_MGL}`);
+  c.unsafe = c.unsafeReasons.length > 0;
+  return c;
+}
+
+function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) {
+  const nearest = bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL);
+  const cur = row ? currentRegimenOf(doses, CLind, Vind, goti2comp, micMgL, row) : null;
+  if (!cur) {
+    if (nearest && !nearest.noSolution) nearest.action = 'start';
+    return nearest;
+  }
+  const brief = (c) => ({ dose: c.dose, tau: c.tau, auc24: c.auc24, Ctrough: c.Ctrough, dots: attainmentDots(c.auc24, row) });
+  const nearestBrief = nearest && !nearest.noSolution ? brief(nearest) : null;
+  const differs = (c) => nearestBrief && !(nearestBrief.dose === c.dose && nearestBrief.tau === c.tau) ? nearestBrief : null;
+
+  const lattice = [];
+  for (const tau of MATRIX_INTERVALS) {
+    for (let d = MATRIX_DOSE_MIN; d <= DOSE_MAX_PER_DOSE_MG; d += MATRIX_DOSE_STEP) {
+      const c = evalRegimen(d, tau, autoTinf(d), CLind, Vind, goti2comp, micMgL);
+      if (!c || c.hardFail.length) continue;
+      c.dots = attainmentDots(c.auc24, row);
+      c.inBand = c.auc24 >= AUC24_TARGET_MIN && c.auc24 <= AUC24_TARGET_MAX;
+      c.danger = Number.isFinite(c.Ctrough) && c.Ctrough >= TROUGH_HIGH_MGL;
+      lattice.push(c);
+    }
+  }
+  const safe = lattice.filter(c => !c.danger);
+  const best = safe.reduce((m, c) => Math.max(m, c.dots), 0);
+
+  const keep = (why) => {
+    const k = cur;
+    k.action = 'continue'; k.continueReason = why; k.nearestTarget = differs(k);
+    if (why === 'no-better') {
+      k.flags = (k.flags || []).concat([{ level: 'warning',
+        text: `The current regimen sits outside ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L (AUC₂₄ ${k.auc24.toFixed(0)}), and no admissible regimen puts more of its plausible AUCs in range, so it is not changed. Review before continuing; another level may settle it.` }]);
+    }
+    k.regimen = k; k.noSolution = false;
+    return k;
+  };
+  if (cur.inBand && !cur.unsafe && best - cur.dots < CONTINUE_MARGIN_DOTS) return keep('in-range');
+
+  let pool = safe.length ? safe : lattice;
+  if (pool.some(c => c.inBand)) pool = pool.filter(c => c.inBand);
+  // Leaving an in-range regimen must deliver the whole margin that justified leaving
+  // it — not merely one dot, which minimal change would otherwise pick (750 mg q8h at
+  // 12/20 was moved to 1000 mg q8h at 13/20). From outside the range any gain counts.
+  if (!cur.unsafe) pool = pool.filter(c => c.dots >= cur.dots + (cur.inBand ? CONTINUE_MARGIN_DOTS : 1));
+  // Nothing admissible at all while the current regimen is unsafe: never keep it —
+  // fall back to the optimizer's answer, which is then its refusal.
+  if (!pool.length) return cur.unsafe ? nearest : keep('no-better');
+  const top = pool.reduce((m, c) => Math.max(m, c.dots), 0);
+  const pos = intervalPosition(cur.tau);
+  const rankOf = t => { const i = INTERVAL_PREFERENCE.indexOf(t); return i < 0 ? INTERVAL_PREFERENCE.length : i; };
+  const pick = pool.filter(c => top - c.dots < CONTINUE_MARGIN_DOTS).sort((a, b) =>
+       Math.abs(intervalPosition(a.tau) - pos) - Math.abs(intervalPosition(b.tau) - pos)
+    || Math.abs(a.tdd - cur.tdd) - Math.abs(b.tdd - cur.tdd)
+    || Math.abs(a.auc24 - targetAUC) - Math.abs(b.auc24 - targetAUC)
+    || (a.dose >= DOSE_MAX_PER_DOSE_MG) - (b.dose >= DOSE_MAX_PER_DOSE_MG)
+    || rankOf(a.tau) - rankOf(b.tau))[0];
+  pick.action = 'change';
+  pick.current = cur;
+  pick.decisionReason = cur.unsafe ? 'safety' : 'attainment';
+  pick.nearestTarget = differs(pick);
+  if (!pick.inBand) {
+    pick.flags = (pick.flags || []).concat([{ level: 'warning',
+      text: `No admissible regimen reached the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L band. This is the closest; review before use.` }]);
+    pick.outsideTargetBand = true;
+  }
+  pick.regimen = pick; pick.noSolution = false;
+  return pick;
+}
+
+// The first lines of the answer when a regimen is being given: continue, or change
+// and why, in the 20-dot units the card shows. Empty for a first regimen. part:
+// 'head' (above the regimen), 'why' (below it), or both.
+function regimenActionHTML(rec, targetAUC, part) {
+  if (!rec || rec.noSolution || (rec.action !== 'continue' && rec.action !== 'change')) return '';
+  const band = `${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}`;
+  const n = rec.nearestTarget;
+  const alt = n && targetAUC > 0
+    ? ` Your target of ${Number(targetAUC).toFixed(0)} alone would give ${fmtRegimen(n.dose, n.tau)} (AUC₂₄ ${n.auc24.toFixed(0)}, ${n.dots} of 20 in range).` : '';
+  let head, why;
+  if (rec.action === 'continue') {
+    head = 'Continue the current regimen';
+    why = rec.continueReason === 'no-better'
+      ? `Outside ${band} at AUC₂₄ ${rec.auc24.toFixed(0)} with ${rec.dots} of 20 plausible AUCs in range, but no admissible regimen puts more in range.${alt}`
+      : `Within ${band} at AUC₂₄ ${rec.auc24.toFixed(0)} with ${rec.dots} of 20 plausible AUCs in range; no admissible regimen puts ${CONTINUE_MARGIN_DOTS} or more further in range.${alt}`;
+  } else {
+    const c = rec.current;
+    head = `Change from ${fmtRegimen(c.dose, c.tau)}`;
+    why = rec.decisionReason === 'safety'
+      ? `The current regimen is set aside because ${c.unsafeReasons.join('; ')}. This one puts ${rec.dots} of 20 plausible AUCs in ${band}${rec.dots < c.dots ? `, ${c.dots - rec.dots} fewer than now: safety comes first` : ''}.`
+      : `The current regimen gives AUC₂₄ ${c.auc24.toFixed(0)} with ${c.dots} of 20 plausible AUCs in ${band}; this one puts ${rec.dots} of 20 in range.${alt}`;
+  }
+  const h = `<p class="vx-action">${escHtml(head)}</p>`, w = `<p class="vx-why">${escHtml(why)}</p>`;
+  return part === 'head' ? h : part === 'why' ? w : h + w;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -11905,6 +12105,10 @@ function runBayesian() {
     crclUsed: crcl,
     isOnDial
   };
+  // v3.14.0 (D25): the regimen being given enters the decision — except on dialysis,
+  // where the answer is a dose after a session (D16), and under the severe-renal hold,
+  // where no maintenance regimen is offered. There the target box decides, as before.
+  const decisionDoses = (bState.dial || isOnDial || (lowCrClInfo.detected && filteredLevels.length === 0)) ? null : doses;
 
   let CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop, objFinal;
   let etaCL_opt=0, etaV_opt=0, etaVc_opt=0, etaVp_opt=0;
@@ -11953,7 +12157,8 @@ function runBayesian() {
       ? burtonObj3D(etaCL_opt,etaVc_opt,etaVp_opt, pk.TVCL,pk.TVVc,pk.TVVp, doses,filteredLevels)
       : null;
 
-    const rec = bayesDoseOptimizer(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_GOTI }, mic);
+    const rec = regimenDecision(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_GOTI }, mic,
+      decisionDoses, aucUncertaintyRow(filteredLevels.length, 'goti'));
 
     // A refusal is a first-class result: show it, do not silently proceed.
     if (rec && rec.noSolution) { bState.doseRefusal = rec.reason; } else { bState.doseRefusal = null; }
@@ -12027,7 +12232,8 @@ function runBayesian() {
       ? burtonObj3D_hughes(etaCL_opt,etaVc_opt,etaVp_opt, pk.TVCL,pk.TVVc,pk.TVVp, pk.TVQ, doses,filteredLevels)
       : null;
 
-    const rec = bayesDoseOptimizer(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_h }, mic);
+    const rec = regimenDecision(CL_ind, Vc_ind, targetAUC, { Vc: Vc_ind, Vp: Vp_ind, Q: Q_h }, mic,
+      decisionDoses, aucUncertaintyRow(filteredLevels.length, 'hughes'));
 
     const clRatio = CL_ind / CL_pop;
     let divergeMsg = null;
@@ -12088,7 +12294,8 @@ function runBayesian() {
       divergeMsg = `Individual CL is ${pct.toFixed(0)}% ${dir} than population average. ${why}.`;
     }
 
-    const rec = bayesDoseOptimizer(CL_ind, V_ind, targetAUC, null, mic);
+    const rec = regimenDecision(CL_ind, V_ind, targetAUC, null, mic,
+      decisionDoses, aucUncertaintyRow(filteredLevels.length, 'buelga'));
     bState.result = {
       model:'buelga', CL_ind, V_ind, CL_pop, V_pop, kel_ind, t12_ind, kel_pop, t12_pop,
       etaCL:etaCL_opt, etaV:etaV_opt, crcl, targetAUC, rec, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
@@ -12667,7 +12874,7 @@ function aucRangeSVG(auc, row, bandMin, bandMax) {
   const lo = auc * (1 - row.lo), hi = auc * (1 + row.hi);
   const d0 = Math.min(bandMin * 0.7, dots[0] * 0.92), d1 = Math.max(bandMax * 1.3, dots[dots.length - 1] * 1.05);
   const W = 320, L = 8, R = 8, x = v => L + (v - d0) / (d1 - d0) * (W - L - R);
-  const inBand = dots.filter(v => v >= bandMin && v <= bandMax).length;
+  const inBand = attainmentDots(auc, row, bandMin, bandMax);   // one count, shared with regimenDecision (D25)
   // Stack dots that would overlap (quantile dotplot binning at the dot pitch).
   const pitch = 7.2, stacks = [];
   const circles = dots.map(v => {
@@ -12935,7 +13142,7 @@ function resultSummary(r, rec, cur, row, conf) {
       + (cur.Ctrough != null ? ` with a steady-state trough of ${cur.Ctrough.toFixed(1)} mg/L` : '') + '.');
   }
   if (rec && !rec.noSolution && !r.lowCrClHold) {
-    parts.push(`${fmtRegimen(rec.dose, rec.tau)} is predicted to give ${rec.auc24.toFixed(0)} mg·h/L, likely `
+    parts.push(`${rec.action === 'continue' ? 'Continuing ' : ''}${fmtRegimen(rec.dose, rec.tau)} is predicted to give ${rec.auc24.toFixed(0)} mg·h/L, likely `
       + `${(rec.auc24 * (1 - row.lo)).toFixed(0)} to ${(rec.auc24 * (1 + row.hi)).toFixed(0)}.`);
   }
   parts.push(`${conf.level} confidence, ${(r.levels || []).length} measured level${(r.levels || []).length === 1 ? '' : 's'}.`);
@@ -13282,7 +13489,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <strong>${Math.min.apply(null, aucs).toFixed(0)}–${Math.max.apply(null, aucs).toFixed(0)}</strong> mg·h/L.`;
     }
     let delta = '';
-    if (cur && cur.auc24 != null) {
+    if (cur && cur.auc24 != null && rec.action !== 'continue') {
       const dAUC = rec.auc24 - cur.auc24;
       const dTr  = rec.Ctrough != null && cur.Ctrough != null ? rec.Ctrough - cur.Ctrough : null;
       delta = Math.abs(dAUC) < 0.5
@@ -13291,6 +13498,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     }
     verdict = `
       <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
+        ${regimenActionHTML(rec, targetAUC, 'head')}
         <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.dose)}</span> IV <span class="vx-freq">${fmtFreq(rec.tau)}</span></h3>
         <p class="vx-inf">Infuse over ${fmtHrs(rec.tinfH)}${derated ? ' · <span class="vx-prov">provisional</span>' : ''}</p>
         <div class="vx-auc">
@@ -13303,6 +13511,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <p class="vx-sub"><span class="vx-k">Trough</span> <span class="tone-${recTrTone}">${rec.Ctrough.toFixed(1)} mg/L</span> <span class="vx-muted">safety check, not a target</span>
           ${Math.abs(mic - 1) > 1e-9 ? `<span class="vx-nb"><span class="vx-k">AUC/MIC</span> ${(rec.auc24 / mic).toFixed(0)}</span>` : ''}</p>
         ${delta}
+        ${regimenActionHTML(rec, targetAUC, 'why')}
       </div>`;
     lowConfSpan = derated ? ` This dose was generated from a fit the tool itself does not trust.${span}` : '';
   } else if (rec && rec.noSolution) {
@@ -13876,7 +14085,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   bState.summaryText = summary;
   scrollResultsIntoView('b-results');
   announceResult(hdSentence ? `Result: ${hdSentence}` : rec && !rec.noSolution && !r.lowCrClHold
-    ? `Result: ${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
+    ? `Result: ${rec.action === 'continue' ? 'continue ' : rec.action === 'change' ? `change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ` : ''}${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
     : 'Result: no maintenance regimen offered. See the notes.');
 
   // ── Draw graph and pre-select tinkerer interval ──
@@ -16256,6 +16465,7 @@ function _prRecommendation(r, screen) {
   } else if (r.rec) {
     const best = r.rec;
     const tinf = best.tinfH ? best.tinfH : autoTinf(best.dose);
+    h += regimenActionHTML(best, r.targetAUC, 'head');   // v3.14.0 (D25): continue, or change and why — as on screen
     h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? '<span class="pr-prov">provisional</span>' : ''}</p>`;
     if (!r.lowCrClHold) { const fp = firstDosePlan(r, r.rec, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.firstDoseAtH, bState.curRegimen); if (fp) h += firstDoseHTML(fp, r.rec, true); }
     h += `<dl class="pr-dl">`
@@ -16265,6 +16475,7 @@ function _prRecommendation(r, screen) {
       + (best.Cpeak != null ? `<div><dt>Predicted peak</dt><dd>${best.Cpeak.toFixed(1)} mg/L</dd></div>` : '')
       + `<div><dt>Target AUC₂₄</dt><dd>${r.targetAUC} mg·h/L</dd></div>`
       + `</dl>`;
+    h += regimenActionHTML(best, r.targetAUC, 'why');
   }
   if (screen.summary) h += `<p class="pr-summary">${escHtml(screen.summary)}</p>`;
   if (screen.confHTML) h += `<p class="pr-conf">${screen.confHTML}</p>`;

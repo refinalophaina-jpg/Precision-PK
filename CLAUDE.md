@@ -70,6 +70,8 @@ at Q8H. On the reported case target 450 gives 1750 mg Q48H and target 475 gives 
 Q12H. `exposureMatrix()` replaces the pretence with the whole admissible space — dose x
 interval, banded against `AUC24_TARGET_MIN/MAX`, every cell clickable into the Tinkerer.
 It needs **no preference weights**, which is why it was chosen over a composite score.
+Since v3.14.0 (D25) the regimen being given is judged first (`regimenDecision`); the target box
+decides only a first regimen, inside a strict 400–600 band.
 
 Cross-cutting: KDIGO AKI staging from serial creatinine, ARC and very-low-CrCl advisories,
 cystatin C discordance check, print report, and **saved profiles that work in both
@@ -168,6 +170,30 @@ Presentation only: engine parity 0 differences.
 - **PD (the user's ruling):** the next draw is the AM labs, said plainly, with no cycler-end caution;
   `drawOnCycler` is still computed, and a level drawn on the cycler keeps its flag in "The decline".
 
+**Continue the current regimen (D25, v3.14.0):** a clinical change; the engine moves.
+- **The case:** an in-range 1250 mg q12h (AUC₂₄ 546, 14 of 20 in range) was told to change to 1750 mg
+  q24h (382, 7 of 20) because the target box read 400.
+- **`evalRegimen`** judges one regimen (exposure, trough, rejects, flags) for the optimizer and the
+  decision alike.
+- **`rankRegimenCandidates`:** band membership is strictly 400–600. The rounding grace keeps the flags
+  quiet and never selects.
+- **`regimenDecision`** (all three fit paths) reads the current regimen (`currentRegimenOf`: an
+  `established` schedule or the override, never a `possible_transition`). It continues when that
+  regimen is in range, safe (trough < 20, no hard reject) and no admissible regimen puts
+  `CONTINUE_MARGIN_DOTS` (2 of 20, a preference) more plausible AUCs in range.
+- **Otherwise it changes,** across the whole lattice: danger troughs set aside, in-range kept, more
+  dots than now (the full margin when leaving an in-range regimen) unless the current one is unsafe.
+  Then the fewest interval steps, the smallest daily-dose change, the target box, the ceiling and
+  `INTERVAL_PREFERENCE`.
+- **Never worse:** a change never has fewer in-range dots than the current regimen except for safety,
+  and then it says so.
+- **The answer line:** `regimenActionHTML` says "Continue the current regimen" or "Change from X" above
+  the regimen, and why below it, on screen, in print and aloud.
+- **Not gating the decision:** the confidence rating (the user's ruling). Dialysis and the severe-renal
+  hold pass no current regimen.
+- **Parity:** engine parity still reads 0, because its corpus never reaches these cases; SUITE 43 and
+  the D25 sweeps are the record.
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, intraperitoneal vancomycin dosing, AUC or Bayesian
 dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
@@ -224,12 +250,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **458/458 pass** |
+| `phase2d_validation.cjs` | **472/472 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **103/103** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **107/107** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -371,7 +397,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 84 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 107 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |

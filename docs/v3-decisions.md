@@ -1494,3 +1494,100 @@ Critical and Important fix began with a test that failed first.
 - Browser flows: 103/103, including 19 new D24 checks driven by real clicks and keys under the CSP.
 - `impeccable detect`: 9 findings. The 7 low-contrast ones are dark-theme tokens measured against
   white; the rest are the stripes and em-dash advisories. The radius and 11 px findings are gone.
+
+## D25 — Continue the current regimen: it enters the decision, and a change can never lower attainment (2026-11-13, v3.14.0)
+
+**Reported.** On 1250 mg q12h, a one-level Buelga fit gave CL 4.58 L/h and t½ 9.3 h. That put AUC₂₄ at
+546 mg·h/L and the trough at 14.9 mg/L: within 400–600, with 14 of 20 plausible AUCs in range. AUC
+Precision recommended 1750 mg q24h at AUC₂₄ 382 instead, with a trough of 6.2 and 7 of 20, and labelled
+it "Modestly below target". The user asked for an audit of the selection logic, a ranking that puts
+target attainment and minimal change first, and a guarantee: never recommend lower attainment than the
+current regimen unless safety requires it.
+
+**Reproduced** against the shipped engine (scratch probe, not committed). Only a target box of about
+400 gives 1750 mg q24h; the default 450 gives 1000 mg q12h (437). Four faults compounded:
+- **One target number, symmetric distance.** `bayesDoseOptimizer` minimised |AUC₂₄ − target|. At 400,
+  382 is 18 away and 437 is 37, so being below the band cost no more than being inside it.
+- **The rounding grace decided band membership.** Half a 250 mg step, meant to keep the flags quiet,
+  widened the Tier 2 filter. At CL 4.58 that was ±27 at q24h and ±82 at q8h, so 318–682 counted as
+  "in band". Over a CL × target grid, 158 of 1,701 "in-band" answers sat outside 400–600.
+- **The current regimen was never a candidate.** Only the steps beside the target were built, so 1250 mg
+  q12h was not even evaluated at 400. AUC Precision had no "continue".
+- **Uncertainty came after the ranking.** The 20-dot count was drawn for display only.
+- **Not the cause:** the q24h preference. It only breaks exact ties; 1750 mg q24h won on distance.
+
+**Scale.** Over in-range, safe current regimens (Buelga, 1–3 levels, CL 1.5–9 L/h, targets 400–600;
+3,861 decisions):
+- 31.2% recommended fewer in-range dots than continuing;
+- 153 recommended an AUC below 400.
+
+**The pasted guardrail was not enough.** `continue if inTarget and P_cur ≥ P_best` with attainment-first
+ranking moves the reported case to 750 mg q8h: 15/20 against 14/20, with a trough of 15.6. One dot in
+twenty is inside the estimate's resolution, and it costs an extra dose a day.
+
+**The user's rulings (2026-11-13).**
+- **Margin:** 2 of 20, `CONTINUE_MARGIN_DOTS`. It is a preference (rule 8).
+- **First regimen:** the target box decides, inside a strict band.
+- **Confidence rating:** does not gate continue versus change.
+
+**Built.**
+- **`evalRegimen`.** One regimen at steady state: exposure, trough, peak, hard rejects and flags. It is
+  lifted unchanged out of `bayesDoseOptimizer` (parity 0 after the move alone) so the current regimen
+  and every candidate are judged by one implementation (rule 2).
+- **The strict band.** In `rankRegimenCandidates`, band membership is now exactly 400–600. The grace
+  stays for flags only. The 158 out-of-band answers fall to 0.
+- **`regimenDecision`.** Called by all three fit paths, it does three things in order:
+  1. **Reads the current regimen** (`currentRegimenOf`), judged as a candidate with its charted infusion.
+  2. **Continues** when that regimen is in 400–600 at the point estimate, is safe (no hard reject, trough
+     below 20), and no admissible regimen beats it by 2 or more dots.
+  3. **Otherwise changes,** choosing from the whole admissible lattice (250 mg steps to 2 g, q8–48h):
+     - set aside danger troughs while a safe option exists;
+     - keep in-range AUCs while any exists;
+     - require more dots than the current regimen, or the full margin when leaving an in-range one,
+       unless the current regimen is unsafe;
+     - among those within the margin of the best: the fewest interval steps from the current regimen,
+       then the smallest change in daily dose, then the target box, then the ceiling yields, then
+       `INTERVAL_PREFERENCE`.
+- **`regimenActionHTML`.** "Continue the current regimen" or "Change from X" sits above the regimen,
+  with the reason in 20-dot units below it. When the target box alone would choose otherwise, the reason
+  names that choice. The same text goes into the print report, the screen-reader result and the summary.
+
+**Rulings made in the build** (each with what it costs if wrong):
+- **`possible_transition` is not a current regimen.** Detection grants it on one recent interval, so
+  0, 7, 19, 22, 39 h reads "Q18H". Only `established`, or the clinician's override, counts. *If wrong:* a
+  genuine order change one dose old gets the target-box answer, which is no worse than v3.13.0.
+- **A change away from an in-range regimen must deliver the whole margin.** The sweep caught minimal
+  change moving 750 mg q8h at 12/20 to 1000 mg q8h at 13/20. *If wrong:* a few edge regimens move one
+  step further than the nearest neighbour.
+- **Danger troughs are set aside before attainment ranks.** This matches the existing safety floor.
+  *If wrong:* a regimen with a trough of 20 or more and more dots is passed over.
+- **No current regimen on dialysis, or under the severe-renal hold.** Those answers have their own
+  rules (D16, the hold). *If wrong:* nothing; their answers are not q-interval regimens.
+- **A current regimen counts before any level.** Read from the prior, the never-worse rule still holds.
+  *If wrong:* a patient on an in-range empiric regimen is told to continue and draw a level, instead of
+  being moved toward the target box.
+- **A safe out-of-range regimen with nothing better is continued with a warning.** An unsafe one with
+  nothing admissible falls back to the refusal. *If wrong:* the warning is the only signal.
+
+**Measured after**, on the same grid as the Scale figures:
+- Fewer in-range dots than continuing: 31.2% → **0**.
+- Answers below 400: 153 → **0**.
+- 51.5% continue. Changes from an in-range regimen sit at its edges (400–449 and 550–600); 149 of 214
+  keep the interval.
+- First regimens: 9.3% of answers change, from the strict band alone.
+- Comprehensive scenario 6 dose attainment: unchanged at 75.2%.
+- Engine parity against v3.13.0: 0 differences. Its 225 calls never reach a target-edge case or a
+  current regimen, so the change is measured by the sweeps above and SUITE 43.
+
+**Verified.**
+- phase2d 472/472, including SUITE 43 (14 tests, each seen failing first); phase3 21/21; phase4 49/49.
+- Comprehensive: scenarios 3 and 4 still fail by design.
+- Browser flows 107/107: four new D25 checks under the CSP (continue at target 400; the screen-reader
+  result; the print report; a below-range q24h that changes).
+
+**Review focus (not covered by a test).**
+- The 20 dots read the model's simulated width for its level count. A poor fit does not widen them; the
+  confidence rating and the redraw advice carry that.
+- A rising SCr or AKI is not read by the decision; the AKI note still shows.
+- With a current regimen, the target box only breaks ties within the margin. The reason line names
+  what it alone would give.
