@@ -1580,10 +1580,33 @@ twenty is inside the estimate's resolution, and it costs an extra dose a day.
   current regimen, so the change is measured by the sweeps above and SUITE 43.
 
 **Verified.**
-- phase2d 472/472, including SUITE 43 (14 tests, each seen failing first); phase3 21/21; phase4 49/49.
+- phase2d 478/478, including SUITE 43 (20 tests, each seen failing first); phase3 21/21; phase4 49/49.
 - Comprehensive: scenarios 3 and 4 still fail by design.
 - Browser flows 107/107: four new D25 checks under the CSP (continue at target 400; the screen-reader
   result; the print report; a below-range q24h that changes).
+
+**The independent review (2026-11-13, a fresh reviewer on the strongest model).** Fixed, each test
+seen failing first (SUITE 43.9, 43.10, 43.14–43.19):
+- **The cap-bound alarm was lost** when a current regimen was continued or changed at high clearance.
+  It was down to a caution. `capBoundFlag` now carries the alarm whatever the answer.
+- **A safety change could name the current regimen,** differing only in infusion time (trough 20.05
+  against 19.78). The current regimen's lattice twin is no longer a candidate.
+- **Alternating doses continued their mean** ("1.125 g q12h"). They are no longer a current regimen.
+- **A continued q72h (override) or q4h** fell back to q6h in Explore's selects. `regimenIntervalChoices`
+  adds the interval.
+- **A safety change still at a trough of 20 or more** now says so in its reason.
+- **The Copy summary** says "Change from X to Y".
+- **An uncomputable (NaN) trough** counted as safe; it now makes the regimen unjudgeable.
+- **Two tests could not fail on what they named:** 43.10's dialysis gate and 43.9's two-compartment
+  check. Both are tightened.
+- **Ruled, not changed:** the override with a single charted dose is not a current regimen. That dose
+  may be the load. The comment now says so.
+- **Declined to judge (policy, for the user):**
+  - continuing a 15–20 trough when a lower one exists;
+  - deciding from the 0-level dots;
+  - nearest-interval-first reaching q8h;
+  - 19.9 counting as safe;
+  - HD sessions logged under a non-HD model.
 
 **Review focus (not covered by a test).**
 - The 20 dots read the model's simulated width for its level count. A poor fit does not widen them; the

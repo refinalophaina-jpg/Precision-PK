@@ -96,7 +96,7 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-11-13, v3.14.0) |
 |---|---|
-| `phase2d_validation.cjs` | **472 / 472 pass** |
+| `phase2d_validation.cjs` | **478 / 478 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |

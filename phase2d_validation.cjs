@@ -5794,17 +5794,63 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const irr = decide(450, [0, 7, 19, 22, 39].map(h => ({ mg: 1000, tinfH: 1, timeH: h })));
     assert(irr.action === 'start', `irregular: ${irr.action}`);
   });
-  test('43.9 two-compartment fits are judged the same way', () => {
+  test('43.9 two-compartment fits are judged on the two-compartment trough', () => {
     const bag = { Vc: 40, Vp: 45, Q: Q_GOTI };
     const row = fn43('aucUncertaintyRow')(2, 'goti');
     const r = decide(400, hist(1000, 12, 1), 4.0, 40, bag, row);       // AUC24 500
     assert(r.action === 'continue' && r.dose === 1000 && r.tau === 12, `${r.action} ${r.dose} q${r.tau}`);
+    const tr2 = ssCtrough2comp(1000, 12, 1, 4.0, 40, 45, Q_GOTI), tr1 = fn43('evalRegimen')(1000, 12, 1, 4.0, 40, null, 1).Ctrough;
+    assert(Number.isFinite(r.Ctrough) && Math.abs(r.Ctrough - tr2) < 1e-9 && Math.abs(tr2 - tr1) > 0.1,
+      `trough ${r.Ctrough} should be the 2-comp ${tr2}, not the 1-comp ${tr1}`);
+    // A trough that cannot be computed is not "safe": the regimen cannot be judged, so it is not continued.
+    const bad = decide(400, hist(1000, 12, 1), 4.0, 40, { Vc_ind: 40, Vp_ind: 45, Q: Q_GOTI }, row);
+    assert(bad.action !== 'continue', `a NaN trough was continued as safe: ${bad.action}`);
   });
   test('43.10 every fit path decides through regimenDecision; dialysis and the severe-renal hold pass no current regimen', () => {
-    const calls = code43.match(/const rec = regimenDecision\(/g) || [];
-    assert(calls.length === 3, `${calls.length} of 3 fit paths`);
+    const calls = code43.match(/const rec = regimenDecision\([^;]*\bdecisionDoses\b[^;]*aucUncertaintyRow\(filteredLevels\.length, '(goti|hughes|buelga)'\)\);/g) || [];
+    assert(calls.length === 3, `${calls.length} of 3 fit paths pass decisionDoses and their own model's row`);
     assert(!/const rec = bayesDoseOptimizer\(/.test(code43), 'no fit path calls the optimizer directly');
-    assert(/regimenDecision\([^;]*bState\.dial[^;]*\?\s*null/.test(code43) || /decisionDoses/.test(code43), 'dialysis passes no current regimen');
+    assert(/const decisionDoses = \(bState\.dial \|\| isOnDial \|\| \(lowCrClInfo\.detected && filteredLevels\.length === 0\)\) \? null : doses;/.test(code43),
+      'dialysis and the severe-renal hold pass no current regimen');
+  });
+  // The independent review (2026-11-13).
+  test('43.14 the cap-bound alarm survives a current regimen', () => {
+    for (const mg of [1500, 1250]) {
+      const r = decide(500, hist(mg, 8, fn43('autoTinf')(mg)), 13, 60);
+      assert((r.flags || []).some(f => f.level === 'danger' && /cannot be reached within the conventional ceilings/.test(f.text)),
+        `${mg} mg q8h at CL 13 -> ${r.action} ${r.dose} q${r.tau}h, flags: ${(r.flags || []).map(f => f.level).join(',')}`);
+    }
+  });
+  test('43.15 a change changes the dose or the interval; it never renames the current regimen', () => {
+    const r = decide(500, hist(750, 12, 2), 2.71, 100, null, fn43('aucUncertaintyRow')(2, 'buelga'));
+    assert(r.action === 'change' && r.decisionReason === 'safety', `${r.action} / ${r.decisionReason}`);
+    assert(!(r.dose === 750 && r.tau === 12), `"change" to the same 750 mg q12h (infusion ${r.tinfH} h)`);
+    const z = decide(500, hist(250, 48, 0.5), 0.2, 50);
+    assert(!(z.action === 'change' && z.dose === 250 && z.tau === 48), 'identical regimen offered as a change');
+  });
+  test('43.16 a safety change that still has a trough of 20 or more says so in its reason', () => {
+    const r = decide(500, hist(250, 12, 0.5), 0.18, 40);
+    if (r.action === 'change' && r.Ctrough >= 20) {
+      const h = fn43('regimenActionHTML')(r, 500);
+      assert(/also at or above 20/.test(h), h);
+    }
+  });
+  test('43.17 alternating doses are not a regimen to continue: nobody gives their mean', () => {
+    const alt = [1000, 1250, 1000, 1250, 1000, 1250].map((mg, i) => ({ mg, tinfH: 1.5, timeH: i * 12 }));
+    const r = decide(450, alt);
+    assert(r.action === 'start', `${r.action} ${r.dose} mg q${r.tau}h`);
+  });
+  test('43.18 an interval off the select lists is offered, not replaced by q6h', () => {
+    const ch = fn43('regimenIntervalChoices');
+    const a = ch(72), b = ch(12);
+    assert(a.includes(72) && a.join() === [...a].sort((x, y) => x - y).join(), JSON.stringify(a));
+    assert(b.join() === '6,8,12,18,24,36,48', JSON.stringify(b));
+    assert((code43.match(/regimenIntervalChoices\(/g) || []).length >= 3, 'both the projection and the Tinkerer selects use it');
+  });
+  test('43.19 the copy summary says what changes', () => {
+    const r = decide(400, hist(1750, 24, 2));
+    const s = fn43('resultSummary')({ levels: [{}] }, r, null, fn43('aucUncertaintyRow')(1, 'buelga'), { level: 'Moderate' });
+    assert(/Change from 1\.75 g IV q24h to 1\.25 g IV q12h/.test(s), s);
   });
   test('43.11 the answer says continue, or why it changes', () => {
     const html = fn43('regimenActionHTML');

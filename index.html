@@ -10573,8 +10573,7 @@ function rankRegimenCandidates(results, targetAUC) {
     const capBound = best.auc24 < AUC24_TARGET_MIN &&
       (best.dose >= DOSE_MAX_PER_DOSE_MG || best.tdd >= DOSE_MAX_TDD_MG - 1e-6);
     best.flags = (best.flags || []).concat([capBound
-      ? { level:'danger',
-          text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. This is the highest admissible regimen and it falls short at AUC₂₄ ${best.auc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` }
+      ? capBoundFlag(best.auc24, true)
       : { level:'warning',
           text:`No candidate reached the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L band. This is the closest admissible regimen; review before use.` }]);
     best.outsideTargetBand = true;
@@ -10583,6 +10582,15 @@ function rankRegimenCandidates(results, targetAUC) {
   best.regimen = best;   // callers read rec.dose directly; keep that contract
   best.noSolution = false;
   return best;
+}
+
+// The target is out of reach within the conventional ceilings. One flag, said of the
+// regimen that IS the highest admissible one (the optimizer's answer), or of the
+// highest admissible one when the answer is another regimen (D25: a current regimen
+// continued or changed at high clearance kept only a caution until the review).
+function capBoundFlag(highestAuc24, isThis) {
+  return { level:'danger',
+    text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. ${isThis ? 'This is the highest admissible regimen and it falls' : 'The highest admissible regimen falls'} short at AUC₂₄ ${highestAuc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` };
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -10650,16 +10658,21 @@ function intervalPosition(tau) {
 // 'possible_transition' is NOT enough: detection grants it on a single recent
 // interval, so 0, 7, 19, 22, 39 h reads "Q18H" — and "continue 1 g q18h" on that
 // would be advice about a schedule nobody ordered. There the target box decides.
+// The override counts only with two or more doses charted: a single dose may be the
+// load, and "continue 2 g q12h" from a load and an interval would be invented.
+// Alternating doses are not continued either: the projection uses their mean, a dose
+// nobody gives ("continue 1.125 g q12h" on 1 g / 1.25 g).
 function currentRegimenOf(doses, CLind, Vind, goti2comp, micMgL, row) {
   if (!Array.isArray(doses) || doses.length < 2) return null;
   const reg = applyRegimenOverride(detectRegimen(doses));
   if (!reg || !(reg.status === 'established' || reg.overrideActive)) return null;
+  if (reg.alternatingDosesMg) return null;
   const last = doses.reduce((a, d) => (d.timeH > a.timeH ? d : a), doses[0]);
   const tau = reg.intervalHours, tinfH = last.tinfH;
   const dose = reg.maintenanceDoseMg != null ? reg.maintenanceDoseMg : last.mg;
   if (!(tau > 0) || !(dose > 0) || !(tinfH > 0) || tau <= tinfH) return null;
   const c = evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL);
-  if (!c) return null;
+  if (!c || !Number.isFinite(c.Ctrough)) return null;   // a trough that cannot be computed cannot be judged safe
   c.dots = attainmentDots(c.auc24, row);
   c.inBand = c.auc24 >= AUC24_TARGET_MIN && c.auc24 <= AUC24_TARGET_MAX;
   c.unsafeReasons = c.hardFail.slice();
@@ -10684,7 +10697,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
   for (const tau of MATRIX_INTERVALS) {
     for (let d = MATRIX_DOSE_MIN; d <= DOSE_MAX_PER_DOSE_MG; d += MATRIX_DOSE_STEP) {
       const c = evalRegimen(d, tau, autoTinf(d), CLind, Vind, goti2comp, micMgL);
-      if (!c || c.hardFail.length) continue;
+      if (!c || c.hardFail.length || !Number.isFinite(c.Ctrough)) continue;
       c.dots = attainmentDots(c.auc24, row);
       c.inBand = c.auc24 >= AUC24_TARGET_MIN && c.auc24 <= AUC24_TARGET_MAX;
       c.danger = Number.isFinite(c.Ctrough) && c.Ctrough >= TROUGH_HIGH_MGL;
@@ -10693,6 +10706,9 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
   }
   const safe = lattice.filter(c => !c.danger);
   const best = safe.reduce((m, c) => Math.max(m, c.dots), 0);
+  // Out of reach within the ceilings: the alarm stays whatever the answer (review, D25).
+  const capNote = nearest && nearest.capBound ? capBoundFlag(nearest.auc24, false) : null;
+  const withCap = (x) => { if (capNote) x.flags = (x.flags || []).filter(f => !/cannot be reached within the conventional ceilings/.test(f.text)).concat([capNote]); return x; };
 
   const keep = (why) => {
     const k = cur;
@@ -10702,11 +10718,14 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
         text: `The current regimen sits outside ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L (AUC₂₄ ${k.auc24.toFixed(0)}), and no admissible regimen puts more of its plausible AUCs in range, so it is not changed. Review before continuing; another level may settle it.` }]);
     }
     k.regimen = k; k.noSolution = false;
-    return k;
+    return withCap(k);
   };
   if (cur.inBand && !cur.unsafe && best - cur.dots < CONTINUE_MARGIN_DOTS) return keep('in-range');
 
-  let pool = safe.length ? safe : lattice;
+  // A change changes the dose or the interval. The current regimen's lattice twin differs
+  // only in infusion time, and was "the change" for a trough of 20.05 (review, D25).
+  const twin = c => c.dose === cur.dose && Math.abs(c.tau - cur.tau) < 1e-9;
+  let pool = (safe.length ? safe : lattice).filter(c => !twin(c));
   if (pool.some(c => c.inBand)) pool = pool.filter(c => c.inBand);
   // Leaving an in-range regimen must deliver the whole margin that justified leaving
   // it — not merely one dot, which minimal change would otherwise pick (750 mg q8h at
@@ -10734,7 +10753,13 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
     pick.outsideTargetBand = true;
   }
   pick.regimen = pick; pick.noSolution = false;
-  return pick;
+  return withCap(pick);
+}
+
+// The interval choices of the projection and Tinkerer selects, with any interval the
+// answer names: a continued q72h (override) or q4h must not fall back to the first option.
+function regimenIntervalChoices(extra) {
+  return [...new Set([6, 8, 12, 18, 24, 36, 48].concat(extra > 0 ? [extra] : []))].sort((a, b) => a - b);
 }
 
 // The first lines of the answer when a regimen is being given: continue, or change
@@ -10757,6 +10782,7 @@ function regimenActionHTML(rec, targetAUC, part) {
     head = `Change from ${fmtRegimen(c.dose, c.tau)}`;
     why = rec.decisionReason === 'safety'
       ? `The current regimen is set aside because ${c.unsafeReasons.join('; ')}. This one puts ${rec.dots} of 20 plausible AUCs in ${band}${rec.dots < c.dots ? `, ${c.dots - rec.dots} fewer than now: safety comes first` : ''}.`
+        + (Number.isFinite(rec.Ctrough) && rec.Ctrough >= TROUGH_HIGH_MGL ? ` Its own predicted trough of ${rec.Ctrough.toFixed(1)} mg/L is also at or above ${TROUGH_HIGH_MGL}: no admissible regimen avoids that at this clearance.` : '')
       : `The current regimen gives AUC₂₄ ${c.auc24.toFixed(0)} with ${c.dots} of 20 plausible AUCs in ${band}; this one puts ${rec.dots} of 20 in range.${alt}`;
   }
   const h = `<p class="vx-action">${escHtml(head)}</p>`, w = `<p class="vx-why">${escHtml(why)}</p>`;
@@ -13142,7 +13168,10 @@ function resultSummary(r, rec, cur, row, conf) {
       + (cur.Ctrough != null ? ` with a steady-state trough of ${cur.Ctrough.toFixed(1)} mg/L` : '') + '.');
   }
   if (rec && !rec.noSolution && !r.lowCrClHold) {
-    parts.push(`${rec.action === 'continue' ? 'Continuing ' : ''}${fmtRegimen(rec.dose, rec.tau)} is predicted to give ${rec.auc24.toFixed(0)} mg·h/L, likely `
+    const lead = rec.action === 'continue' ? `Continuing ${fmtRegimen(rec.dose, rec.tau)} is predicted to give`
+      : rec.action === 'change' && rec.current ? `Change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ${fmtRegimen(rec.dose, rec.tau)}: predicted to give`
+      : `${fmtRegimen(rec.dose, rec.tau)} is predicted to give`;
+    parts.push(`${lead} ${rec.auc24.toFixed(0)} mg·h/L, likely `
       + `${(rec.auc24 * (1 - row.lo)).toFixed(0)} to ${(rec.auc24 * (1 + row.hi)).toFixed(0)}.`);
   }
   parts.push(`${conf.level} confidence, ${(r.levels || []).length} measured level${(r.levels || []).length === 1 ? '' : 's'}.`);
@@ -13608,7 +13637,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             <span class="vx-muted">mg every</span>
             <label class="sr-only" for="b-proj-tau">Projected interval</label>
             <select id="b-proj-tau" data-onchange="k65">
-              ${[6, 8, 12, 18, 24, 36, 48].map(t => `<option value="${t}" ${projDefaultTau === t ? 'selected' : ''}>${t} h</option>`).join('')}
+              ${regimenIntervalChoices(projDefaultTau).map(t => `<option value="${t}" ${projDefaultTau === t ? 'selected' : ''}>${t} h</option>`).join('')}
             </select>
             <span class="vx-muted">×</span>
             <label class="sr-only" for="b-proj-n">Number of projected doses</label>
@@ -14000,7 +14029,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <span class="vx-muted">mg every</span>
         <label class="sr-only" for="b-tink-int">Interval</label>
         <select id="b-tink-int" class="tinkerer-input">
-          ${[6, 8, 12, 18, 24, 36, 48].map(t => `<option value="${t}">${t} h</option>`).join('')}
+          ${regimenIntervalChoices(rec && !rec.noSolution ? rec.tau : null).map(t => `<option value="${t}">${t} h</option>`).join('')}
         </select>
         <button type="button" class="tinkerer-btn" data-onclick="k66" data-enter-default>Preview</button>
       </div>
