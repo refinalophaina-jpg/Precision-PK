@@ -7751,6 +7751,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // Print reads the screen's Next line and leads with the hold.
     const pr = fn44('_prRecommendation')(r, { next: 'Recheck a level before the next dose.' });
     assert(/Hold: recheck a level before the next dose/.test(pr) && !/would add little/.test(pr), pr.slice(0, 500));
+    // Wave 2 label fix: the readout's number is labelled by the value it is. On this basis-'both' hold the number
+    // shown is the carried measured level (49.9), never called "fitted level", on screen or in print.
+    assert(plan.holdBasis === 'both' && plan.holdCarried > plan.holdFitted && plan.holdPre === plan.holdCarried, JSON.stringify({ b: plan.holdBasis, c: plan.holdCarried, f: plan.holdFitted }));
+    const shown = plan.holdPre.toFixed(1), plain = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    for (const [k, h] of [['screen', plain(fn44('firstDoseReadoutHTML')(plan, r.rec, false))], ['print', plain(fn44('firstDoseReadoutHTML')(plan, r.rec, true))], ['rendered', text], ['printed', plain(pr)]]) {
+      assert(!new RegExp(`fitted level ${shown.replace('.', '\\.')}`, 'i').test(h), `${k}: "fitted level ${shown}" — ${h.slice(0, 400)}`);
+    }
+    assert(/measured level, carried down the fitted slope, 49\.9 mg\/L/i.test(plain(fn44('firstDoseReadoutHTML')(plan, r.rec, false))), plain(fn44('firstDoseReadoutHTML')(plan, r.rec, false)));
   });
 
   // I1, replaced by the user's ruling U1 (2026-11-15): the Hold reads the fitted OR the measured level.
@@ -7780,6 +7788,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/^Hold: next dose not before /.test(summary) && /carried down the fitted slope/.test(summary), summary);
     assert(/^Result: Hold: next dose not before /.test(said) && /carried down the fitted slope/.test(said), said);
     assert(/Hold: next dose not before/.test(fn44('_prRecommendation')(r, {})), 'print');
+    // Wave 2 label fix (minor): the time was set by the carried measured level, so "level by then" reads that value
+    // and names it, not the fitted value (which is well under 20 there).
+    const plainR = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const scr = plainR(fn44('firstDoseReadoutHTML')(plan, r.rec, false)), prt = plainR(fn44('firstDoseReadoutHTML')(plan, r.rec, true));
+    assert(Math.abs(plan.preCarried - carried(plan.firstH)) < 1e-9 && plan.preCarried > plan.pre, JSON.stringify({ pc: plan.preCarried, pre: plan.pre }));
+    // Shown on the number-shown rule (D21): just under 20 is never printed "20.0".
+    const pc = plan.preCarried, pcShown = pc < K44.TROUGH_HIGH_MGL && +pc.toFixed(1) >= K44.TROUGH_HIGH_MGL ? (Math.floor(pc * 100) / 100).toFixed(2) : pc.toFixed(1);
+    for (const h of [scr, prt]) assert(h.indexOf(`${pcShown} mg/L`) >= 0 && /measured, carried down the fitted slope/.test(h) && h.indexOf(`fitted ${plan.pre.toFixed(1)}`) >= 0, h);
     assert(src44.indexOf('function measuredHighSentence(') < 0 && src44.indexOf('measuredHigh') < 0, 'the alarm code is removed');
     // A fitted hold keeps the fitted wording (44.2's Buelga case: its fit reads the 48 mg/L higher).
     const { r: rC, rec: recC, nowH: nC, cur: curC } = c1Case();

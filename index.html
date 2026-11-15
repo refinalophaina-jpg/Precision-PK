@@ -10237,7 +10237,10 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     pre: predictFittedAt(rFit, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
     same: !!(given && given.dose === rec.dose && given.tau === rec.tau),
     hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH, holdBasis, holdFitted, holdCarried,
-    holdMeasured: hold && mh && holdCarried >= TROUGH_HIGH_MGL ? { conc: mh.conc, timeH: mh.timeH } : null };
+    holdMeasured: hold && mh && holdCarried >= TROUGH_HIGH_MGL ? { conc: mh.conc, timeH: mh.timeH } : null,
+    // The measured level carried down the fitted slope to the first dose (U1), beside the fitted `pre`:
+    // when it is the higher, it is what set the resume time, and the readout shows it (wave 2 label fix).
+    preCarried: mh && firstH >= mh.timeH ? mh.at(firstH) : null };
 }
 // The measured basis of the hold (the user's ruling U1, 2026-11-15). The newest level drawn
 // after the start of the last given dose, when it was drawn after the distribution phase, is
@@ -10429,13 +10432,21 @@ function firstDoseReadoutHTML(plan, rec, print) {
   // marked, and the level by then in the alarm tone.
   // Judged on the number shown (D21's rule): a level just under the threshold that one
   // decimal would round up to it is shown to two, rounded down, never "20.0" for 19.98.
-  const shown = plan.pre < TROUGH_HIGH_MGL && +plan.pre.toFixed(1) >= TROUGH_HIGH_MGL
-    ? (Math.floor(plan.pre * 100) / 100).toFixed(2) : plan.pre.toFixed(1);
+  // Under a hold whose time the carried measured level set (U1), "level by then" is that value,
+  // named, with the fitted one beside it (wave 2 label fix): the fitted 14.9 mg/L read as the
+  // level at a resume time the measured level put at about 20.
+  const byCarried = plan.hold && plan.preCarried != null && plan.preCarried > plan.pre;
+  const by = byCarried ? plan.preCarried : plan.pre;
+  const shown = by < TROUGH_HIGH_MGL && +by.toFixed(1) >= TROUGH_HIGH_MGL
+    ? (Math.floor(by * 100) / 100).toFixed(2) : by.toFixed(1);
   const lvl = `<strong${plan.hold ? ' class="tone-alarm"' : ''}>${shown} mg/L</strong>`;
+  const byWhat = byCarried ? ` (measured, carried down the fitted slope; fitted ${plan.pre.toFixed(1)})` : '';
   if (plan.holdNoTime) {
     const stays = `at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H} h on this fit`;
     const held = `<strong class="tone-alarm">${plan.holdPre.toFixed(1)} mg/L</strong>`;
-    const what = plan.holdBasis === 'measured' ? 'measured level, carried down the fitted slope,' : 'fitted level';
+    // The number is labelled by the value it is (wave 2 label fix): holdPre is the higher of the two
+    // bases, so on a 'both' hold it is usually the carried measured level, never "fitted level".
+    const what = plan.holdCarried != null && !(plan.holdFitted >= plan.holdCarried) ? 'measured level, carried down the fitted slope,' : 'fitted level';
     if (!print) return `Hold: recheck a level before the next dose${planned} · ${what} ${held}, ${stays}`;
     return `
       <p class="vx-sub vx-first"><span class="vx-k">${word}</span> Hold: recheck a level before the next dose${planned}</p>
@@ -10444,13 +10455,13 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const at = !plan.hold ? `${fmtClock(plan.firstH)}${when}`
     : plan.chosen ? `${fmtClock(plan.firstH)}${when} (Hold: not before ${fmtClock(plan.resumeH)})`
     : `not before ${fmtClock(plan.firstH)} (Hold)`;
-  if (!print) return `${at}${planned} · ${then} · level by then ${lvl}`;
+  if (!print) return `${at}${planned} · ${then} · level by then ${lvl}${byWhat}`;
   const a = plan.auc24First, an = a == null ? null : Math.round(a);   // judged on the number shown (D21's rule)
   const band = an == null ? '' : an < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
     : an > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
   return `
       <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${at}${rel ? ` · ${rel}` : ''}${planned} · ${then}</p>
-      <p class="vx-sub">Level by then ${lvl} <span class="vx-muted">fitted, before the ${plan.same ? 'next' : 'first'} dose</span></p>
+      <p class="vx-sub">Level by then ${lvl} <span class="vx-muted">${byCarried ? `measured, carried down the fitted slope; fitted ${plan.pre.toFixed(1)}` : 'fitted'}, before the ${plan.same ? 'next' : 'first'} dose</span></p>
       ${a != null ? `<p class="vx-sub">AUC₂₄ over the first 24 h <strong>${a.toFixed(0)}</strong> mg·h/L${band}</p>` : ''}
       <p class="vx-sub vx-muted">Steady-state AUC₂₄ and trough are unchanged; until then an earlier first dose raises exposure and a later one lowers it.</p>`;
 }

@@ -1347,7 +1347,9 @@ async function enterCourse(page) {
     ok('D26: final review (Review Focus 1): the anuric flat-levels patient — "Hold: recheck a level before the next dose" leads, and Next says it, never "would add little", on screen and in print',
        c1.head === 'Hold: recheck a level before the next dose' && c1.icon && c1.before && c1.next === 'Next Recheck a level before the next dose.'
        && !/would add little/.test(c1.all + c1p) && !incoherent(c1.all) && !incoherent(c1p) && /Recheck a level before the next dose/.test(c1.voi)
-       && !/not before/.test(c1.head + c1.summary + c1.said),
+       && !/not before/.test(c1.head + c1.summary + c1.said)
+       // Wave 2 label fix: the readout's 49.9 is the carried measured level, never called "fitted level", on screen or in print.
+       && !/fitted level 49\.9/i.test(c1.all + c1p) && /measured level, carried down the fitted slope, 49\.9 mg\/L/i.test(c1.all) && /Measured level, carried down the fitted slope, 49\.9 mg\/L/.test(c1p),
        JSON.stringify({ head: c1.head, next: c1.next, voi: c1.voi.slice(0, 80), little: /would add little/.test(c1.all + c1p) }));
     ok('D26: final review: the copy summary and the announcement carry the hold, with no clock time',
        /^Hold: recheck a level before the next dose/.test(c1.summary) && /^Result: Hold: recheck a level before the next dose/.test(c1.said)
