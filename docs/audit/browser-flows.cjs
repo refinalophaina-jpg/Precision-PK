@@ -778,6 +778,13 @@ async function enterCourse(page) {
     ok('D26: the printed report says Hold', /Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d/.test(printedH),
        printedH.slice(printedH.indexOf('Dose recommendation'), printedH.indexOf('Dose recommendation') + 600));
 
+    // Task 2 review: with "Project next doses" ticked under a hold, the projection is drawn
+    // (from the resume time; SUITE 44.5d checks the start) and its note and key are shown.
+    await h.locator('#b-proj-fwd').check(); await h.waitForTimeout(400);
+    const projH = await h.evaluate(() => ({ note: (document.getElementById('b-proj-auc-note') || {}).textContent || '',
+      key: (document.getElementById('b-proj-legend') || {}).style.display }));
+    ok('D26: under a hold the projection is drawn with its note and key', /^Projected AUC₂₄ \d+ mg·h\/L$/.test(projH.note) && projH.key === '', JSON.stringify(projH));
+
     // The Trough module, steady-state level mode: the same hold, timed from the fitted decline.
     await h.locator('[data-onclick="k1"]').click();
     await typeInto(h, '#age', '60'); await typeInto(h, '#tbw', '80'); await typeInto(h, '#height', '178'); await typeInto(h, '#scr', '1.0');

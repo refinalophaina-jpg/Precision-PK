@@ -6005,6 +6005,63 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(!/\d\d:\d\d/.test(h), `${k}: no clock time when there is no resume time: ${h.slice(0, 400)}`);
     }
   });
+  // Task 2 review fixes. (Sub-numbered: 44.6 onward belong to later tasks in the plan.)
+  test('44.5a a planned dose given while the fitted level is 20 mg/L or more is held, and named', () => {
+    // The reviewer's probe: the C1 fit plus a planned 1.5 g at 48 h (fitted 46.6 mg/L there).
+    const { r: r0, rec, nowH, cur } = c1Case();
+    const r = Object.assign({}, r0, { doses: r0.doses.concat([{ mg: 1500, tinfH: 2, timeH: 48 }]) });
+    const without = Object.assign({}, r0, { doses: r0.doses.slice() });   // the planned dose is what is held
+    assert(at44(r, 48) >= K44.TROUGH_HIGH_MGL, `fixture: fitted ${at44(r, 48)} at the planned dose`);
+    const plan = fn44('firstDosePlan')(r, rec, nowH, null, cur);
+    assert(plan.hold === true && plan.plannedN === 1, `hold ${plan.hold}, plannedN ${plan.plannedN}`);
+    assert(plan.holdPlannedH === 48 && plan.holdAtH === 48, `judged at the planned dose: ${plan.holdPlannedH}, ${plan.holdAtH}`);
+    assert(plan.resumeH > 48 && Number.isInteger((plan.resumeH - 48) / 0.25), `resumeH ${plan.resumeH} on the quarter-hour grid from the planned dose`);
+    assertLess(at44(without, plan.resumeH), K44.TROUGH_HIGH_MGL, 'below 20 at resumeH, without the planned dose');
+    assert(at44(without, plan.resumeH - 0.25) >= K44.TROUGH_HIGH_MGL, 'the first quarter hour below, on the curve without the planned dose');
+    assert(plan.firstH === plan.resumeH && plan.pre === at44(without, plan.firstH), `first dose at resumeH, its level without the held dose: ${plan.pre}`);
+    const head = fn44('holdHeadHTML')(plan), clk = fn44('fmtClock');
+    assert(head.indexOf(`Hold the planned dose at ${clk(48)}: next dose not before ${clk(plan.resumeH)}`) >= 0, head);
+    assert(/^Hold the planned dose at /.test(fn44('holdSentence')(plan)), fn44('holdSentence')(plan));
+    const line = fn44('firstDoseReadoutHTML')(plan, rec, false);
+    assert(/planned dose at .* held/.test(line) && !/after the 1 planned dose entered/.test(line), line);
+  });
+  test('44.5b a planned dose at a fitted level below 20 mg/L does not hold', () => {
+    const CL = 4.58, V = 61.8;
+    const given = Array.from({ length: 4 }, (_, i) => ({ mg: 1250, tinfH: 1.5, timeH: i * 12 }));
+    const rec = fn44('regimenDecision')(CL, V, 450, null, 1, given, fn44('aucUncertaintyRow')(1, 'buelga'));
+    const r = { model: 'buelga', CL_ind: CL, V_ind: V, doses: given.concat([{ mg: 1250, tinfH: 1.5, timeH: 48 }]), levels: [{ conc: 15, timeH: 45 }], fitNowH: 46 };
+    assert(at44(r, 48) < K44.TROUGH_HIGH_MGL, `fixture: ${at44(r, 48)}`);
+    const p = fn44('firstDosePlan')(r, rec, 46, null, { dose: 1250, tau: 12, tinfH: 1.5 });
+    assert(p.hold === false && p.resumeH === null && p.plannedN === 1 && p.firstH === 60 && p.dueH === 60, JSON.stringify({ hold: p.hold, firstH: p.firstH, dueH: p.dueH }));
+  });
+  test('44.5c Trough: a post-infusion level times the re-dose from the level itself, never early', () => {
+    // The reviewer's probe: 30 mg/L drawn 8.4 h after a 1.5 g (1.5 h) dose on q8h, Vd 56 L. The
+    // observed basis takes the level as the trough at 8 h; timing from 8 h was 0.4 h early.
+    const kel = fn44('fitKelFromLevel')(30, 8.4, 1500, 8, 1.5, 56).kel;
+    const exact = 8.4 + Math.log(30 / 20) / kel;                       // independent: first-order decline from the level
+    const start = new Date('2026-11-14T01:00').getTime() / 3600000;
+    const h = fn44('troughHold')(30, 8, kel, start, { c: 30, h: 8.4 });
+    assert(h && Math.abs(h.afterDoseH - exact) < 1e-9, `after dose ${h && h.afterDoseH} h, exact ${exact} h`);
+    const shownAfter = h.atH - start, lvl = 30 * Math.exp(-kel * (shownAfter - 8.4));
+    assert(shownAfter >= exact - 1e-9 && lvl < K44.TROUGH_HIGH_MGL, `shown ${shownAfter.toFixed(3)} h, level there ${lvl.toFixed(3)} mg/L`);
+    const calc = body44('calculate');
+    assert(/troughHold\(nextPre, tau, adjKel, doseStartHourOf\('time-dose-given'\), tDoseToLvl > tinf \? \{ c: levelVal, h: tDoseToLvl \} : null\)/.test(calc),
+      'level mode passes the level and its time to troughHold');
+    assert(/troughHold\([^;]*\{ c: tlC2, h: tlT2 \}\)/.test(calc), 'two-level mode times from level 2');
+  });
+  test('44.5d the projection: none under "recheck a level", and it starts at the resume time under a hold', () => {
+    const pd = fn44('projectedDoses');
+    const r4 = { model: 'buelga', CL_ind: 0.05, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [], fitNowH: 4 };
+    const none = fn44('firstDosePlan')(r4, { dose: 500, tau: 24, tinfH: 1 }, 4, null, null);
+    const p0 = pd(none, 500, 24, 4, 1, 24);
+    assert(p0.refused === true && p0.doses.length === 0, JSON.stringify(p0));
+    const { r, nowH, cur } = c1Case();
+    const fp = fn44('firstDosePlan')(r, { dose: 500, tau: 12, tinfH: 0.5 }, nowH, null, cur);
+    const p1 = pd(fp, 500, 12, 4, 0.5, 52);
+    assert(fp.hold && !p1.refused && p1.doses.length === 4 && p1.doses[0].timeH === fp.resumeH && p1.doses[1].timeH === fp.resumeH + 12, JSON.stringify(p1));
+    const rp = body44('refreshProfileGraph');
+    assert(/projectedDoses\(fpProj, /.test(rp) && /recheck a level/i.test(rp), 'refreshProfileGraph draws through projectedDoses and says why when it refuses');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

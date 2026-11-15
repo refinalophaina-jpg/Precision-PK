@@ -7009,7 +7009,7 @@ function calculate() {
     // D26: the fitted level when the next dose is due — on the interval the patient was on
     // (steady state), else the recommended one — from level 2 down the fitted decline.
     const tlDueH = state.tlBasis === 'steadystate' ? accumTau : tlTau;
-    const tlHold = troughHold(tlC2 * Math.exp(-tlPK.kel * (tlDueH - tlT2)), tlDueH, tlPK.kel, doseStartHourOf('tl-dose-time'));
+    const tlHold = troughHold(tlC2 * Math.exp(-tlPK.kel * (tlDueH - tlT2)), tlDueH, tlPK.kel, doseStartHourOf('tl-dose-time'), { c: tlC2, h: tlT2 });
 
     renderTwoLevels({
       age, sex:state.sex, tbw, ibw, adjbw, bmi, scr,
@@ -7169,7 +7169,7 @@ function calculate() {
     const nextPre = earlyLevel
       ? predictConc1comp(Array.from({ length: fitted.doseNumber }, (_, i) => ({ mg: dose, tinfH: tinf, timeH: i * tau })), fitted.doseNumber * tau, adjKel, vd)
       : trueTrough;
-    troughHoldInfo = troughHold(nextPre, tau, adjKel, doseStartHourOf('time-dose-given'));
+    troughHoldInfo = troughHold(nextPre, tau, adjKel, doseStartHourOf('time-dose-given'), tDoseToLvl > tinf ? { c: levelVal, h: tDoseToLvl } : null);
   } else {
     // Pure population — predict from regimen
     peak   = popPeak;
@@ -7723,11 +7723,17 @@ function timeToDecayTo(cCurrent, cTarget, kel) {
 // takes the level to it (timeToDecayTo — the one decay solver; no second one).
 // Longer than HOLD_SEARCH_MAX_H after the due time: no time, recheck a level, as in
 // AUC Precision. Returns null when there is no hold.
-function troughHold(cPre, dueH, kel, doseStartH) {
+// from: { c, h } — a measured level c, h hours after the dose started, on the decline
+// (after the infusion). The re-dose is then timed from it (Task 2 review): a level
+// drawn within half an hour of tau is taken as the trough AT tau (observed basis), and
+// timing the decline from tau put "not before" up to 0.4 h early (30 mg/L at 8.4 h on
+// q8h: 12.98 h shown, 13.38 h exact, 20.7 mg/L at the time shown).
+function troughHold(cPre, dueH, kel, doseStartH, from) {
   if (!(cPre >= TROUGH_HIGH_MGL) || !(kel > 0) || !(dueH > 0)) return null;
-  const waitH = timeToDecayTo(cPre, TROUGH_HIGH_MGL, kel);
-  const noTime = waitH > HOLD_SEARCH_MAX_H;
-  const afterDoseH = noTime ? null : dueH + waitH;
+  const ref = from && from.c > 0 && from.h > 0 ? from : { c: cPre, h: dueH };
+  const reachH = ref.h + timeToDecayTo(ref.c, TROUGH_HIGH_MGL, kel);
+  const noTime = reachH - dueH > HOLD_SEARCH_MAX_H;
+  const afterDoseH = noTime ? null : reachH;
   // The clock time is rounded up to the minute, so "not before" is never early; the
   // added millisecond keeps the float above the minute boundary, which Date truncates.
   return { cPre, dueH, kel, noTime, afterDoseH,
@@ -9703,6 +9709,13 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
 // there. A chosen time is honoured; at or above the threshold it stays a hold. No such
 // time within HOLD_SEARCH_MAX_H: holdNoTime, recheck a level. holdAtH / holdPre are
 // the time and the level that made it a hold.
+// Planned doses (Task 2 review; controller ruling): a planned dose given at a fitted
+// level at or above the threshold must itself be held, and the hold was judged only at
+// last planned + tau, past it. With planned rows entered the first one (earliest after
+// now) is judged first; at or above the threshold the hold names it (holdPlannedH), and
+// the resume time is searched from it on the fit WITHOUT the planned doses — they are
+// what is being held — as are the first dose's level and first-day AUC. Below it, the
+// check at the regimen's own time (with the planned rows) runs as before.
 // SEARCH MECHANICS, not clinical constants: the step is the resolution of the
 // "not before" time; the bound is how far the fitted curve is trusted to time a dose
 // before the answer becomes "recheck a level". Neither changes a dose or the threshold.
@@ -9711,18 +9724,30 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   if (!(r && (r.doses || []).length && rec && rec.tau > 0)) return null;
   const last = r.doses.reduce((a, b) => (b.timeH >= a.timeH ? b : a));
   const dueH = last.timeH + rec.tau;
-  const plannedN = r.doses.filter(d => d.timeH > nowH + 1e-9).length;
+  const plannedDoses = r.doses.filter(d => d.timeH > nowH + 1e-9);
+  const plannedN = plannedDoses.length;
   const chosen = Number.isFinite(atH);
   // Where it would go in: v3.13.0's first dose, keyed to the new regimen's interval
   // (written out, not via dueH, so that a later change to dueH leaves it alone; ruling R1).
   const fromH = chosen ? Math.max(atH, nowH) : Math.max(last.timeH + rec.tau, nowH);
-  const fromPre = predictFittedAt(r, fromH);
-  const hold = fromPre >= TROUGH_HIGH_MGL;
+  let hold = false, holdAtH = null, holdPre = null, holdPlannedH = null, rFit = r;
+  if (plannedN) {
+    const p1 = plannedDoses.reduce((a, b) => (b.timeH < a.timeH ? b : a)).timeH;
+    const c = predictFittedAt(r, p1);
+    if (c >= TROUGH_HIGH_MGL) {
+      hold = true; holdAtH = p1; holdPre = c; holdPlannedH = p1;
+      rFit = Object.assign({}, r, { doses: r.doses.filter(d => !(d.timeH > nowH + 1e-9)) });
+    }
+  }
+  if (!hold) {
+    const c = predictFittedAt(r, fromH);
+    if (c >= TROUGH_HIGH_MGL) { hold = true; holdAtH = fromH; holdPre = c; }
+  }
   let resumeH = null;
   if (hold) {
     for (let k = 1; k * HOLD_SEARCH_STEP_H <= HOLD_SEARCH_MAX_H + 1e-9; k++) {
-      const t = fromH + k * HOLD_SEARCH_STEP_H;
-      if (predictFittedAt(r, t) < TROUGH_HIGH_MGL) { resumeH = t; break; }
+      const t = holdAtH + k * HOLD_SEARCH_STEP_H;
+      if (predictFittedAt(rFit, t) < TROUGH_HIGH_MGL) { resumeH = t; break; }
     }
   }
   const holdNoTime = hold && resumeH == null;
@@ -9735,21 +9760,28 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   if (rec.dose > 0) {
     const tinfH = rec.tinfH || autoTinf(rec.dose), regimen = [];
     for (let k = 0; ; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
-    auc24First = fittedAUC(Object.assign({}, r, { doses: r.doses.concat(regimen) }), firstH, firstH + 24);
+    auc24First = fittedAUC(Object.assign({}, rFit, { doses: rFit.doses.concat(regimen) }), firstH, firstH + 24);
   }
   return { firstH, dueH, deltaH: firstH - dueH, duePassed: !chosen && dueH < nowH - 1e-9, chosen, clamped, plannedN,
-    pre: predictFittedAt(r, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
+    pre: predictFittedAt(rFit, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
     same: !!(cur && cur.dose === rec.dose && cur.tau === rec.tau),
-    hold, resumeH, holdNoTime, holdAtH: hold ? fromH : null, holdPre: hold ? fromPre : null };
+    hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH };
 }
 // The hold, said once and the same way everywhere (v3.14.0, D26): the verdict's
 // first line, the Copy summary and the announcement. '' when there is no hold.
 function holdSentence(plan) {
   if (!(plan && plan.hold)) return '';
   const at = `the fitted level at ${fmtClock(plan.holdAtH)} is ${plan.holdPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L`;
+  const lead = holdLead(plan);
   return plan.holdNoTime
-    ? `Hold: recheck a level before the next dose; the fitted level stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days.`
-    : `Hold: next dose not before ${fmtClock(plan.resumeH)}; ${at}.`;
+    ? `${lead}: recheck a level before the next dose; the fitted level stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days.`
+    : `${lead}: next dose not before ${fmtClock(plan.resumeH)}; ${at}.`;
+}
+// "Hold", or which planned dose to hold (Task 2 review): the planned rows are what is held.
+function holdLead(plan) {
+  if (plan.holdPlannedH == null) return 'Hold';
+  return plan.plannedN > 1 ? `Hold the ${plan.plannedN} planned doses from ${fmtClock(plan.holdPlannedH)}`
+    : `Hold the planned dose at ${fmtClock(plan.holdPlannedH)}`;
 }
 // k82's share of the hold (v3.14.0, D26): a chosen time can make or clear a hold, so
 // the verdict's hold line, the Copy summary and the curve's label follow it. Nothing
@@ -9772,10 +9804,10 @@ function refreshHoldSlots(r, plan) {
 // k82 replaces it (#b-hold) when a chosen time makes or clears a hold.
 function holdHeadHTML(plan) {
   if (!(plan && plan.hold)) return '';
-  const head = plan.holdNoTime ? 'Hold: recheck a level before the next dose' : `Hold: next dose not before ${fmtClock(plan.resumeH)}`;
-  const at = plan.chosen ? 'At the time chosen, ' : '';
+  const head = plan.holdNoTime ? `${holdLead(plan)}: recheck a level before the next dose` : `${holdLead(plan)}: next dose not before ${fmtClock(plan.resumeH)}`;
+  const at = plan.holdPlannedH != null ? 'At the planned dose, ' : plan.chosen ? 'At the time chosen, ' : '';
   const why = plan.holdNoTime
-    ? `The fitted level is ${plan.holdPre.toFixed(1)} mg/L ${plan.chosen ? 'at the time chosen' : 'when the next dose is due'} and stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days on this fit. Recheck a level before giving the regimen below.`
+    ? `The fitted level is ${plan.holdPre.toFixed(1)} mg/L ${plan.holdPlannedH != null ? 'at the planned dose' : plan.chosen ? 'at the time chosen' : 'when the next dose is due'} and stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days on this fit. Recheck a level before giving the regimen below.`
     : `${at}the fitted level is ${plan.holdPre.toFixed(1)} mg/L (${fmtClock(plan.holdAtH)}), at or above ${TROUGH_HIGH_MGL} mg/L; it falls below ${TROUGH_HIGH_MGL} by ${fmtClock(plan.resumeH)}. Resume with the regimen below.`;
   return holdLineHTML(head, why.charAt(0).toUpperCase() + why.slice(1));
 }
@@ -9796,7 +9828,9 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const list = (a) => a.length < 2 ? a[0] : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
   const then = plan.times ? `then ${list(plan.times)} daily` : `then every ${rec.tau} h (next ${fmtClock(plan.nextH)})`;
   const word = plan.same ? 'Next dose' : 'First dose';
-  const planned = plan.plannedN ? ` · after the ${plan.plannedN} planned dose${plan.plannedN === 1 ? '' : 's'} entered` : '';
+  const planned = plan.holdPlannedH != null
+    ? ` · ${plan.plannedN === 1 ? `the planned dose at ${fmtClock(plan.holdPlannedH)}` : `the ${plan.plannedN} planned doses from ${fmtClock(plan.holdPlannedH)}`} held`
+    : plan.plannedN ? ` · after the ${plan.plannedN} planned dose${plan.plannedN === 1 ? '' : 's'} entered` : '';
   const when = plan.clamped ? ` (not before ${fmtClock(plan.nowH)}, as of the calculation)` : plan.duePassed ? ` (was due ${fmtClock(plan.dueH)})` : '';
   // The hold (D26): no time at all when the fitted curve gives none; otherwise the time,
   // marked, and the level by then in the alarm tone.
@@ -14481,6 +14515,17 @@ function drawCompareCanvas(canvas, series) {
 }
 
 // ─── Refresh dosing profile graph (with optional projected doses) ───
+// The projected doses from the first-dose plan (v3.9.0: they start where the readout
+// says). Task 2 review: under a hold they start at the resume time (the plan's firstH);
+// with no time the fit allows (holdNoTime) none are drawn — refused, not approximated;
+// under a hold on a planned dose the planned rows are dropped from the drawing.
+function projectedDoses(fp, dose, tau, n, tinfH, fallbackStartH) {
+  if (fp && fp.holdNoTime) return { doses: [], refused: true, dropPlanned: false };
+  const startT = fp ? fp.firstH : fallbackStartH;
+  const doses = [];
+  for (let i = 0; i < n; i++) doses.push({ mg: dose, tinfH, timeH: startT + i * tau });
+  return { doses, refused: false, dropPlanned: !!(fp && fp.holdPlannedH != null) };
+}
 function refreshProfileGraph() {
   const r = bState.result;
   if (!r) return;
@@ -14488,7 +14533,7 @@ function refreshProfileGraph() {
   if (!canvas) return;
 
   const projEnabled = document.getElementById('b-proj-fwd')?.checked;
-  let projDoses = [];
+  let projDoses = [], projDropPlanned = false;
   if (projEnabled) {
     const projDose = parseFloat(document.getElementById('b-proj-dose')?.value) || (r.rec?.dose || 1000);
     const projTau  = parseFloat(document.getElementById('b-proj-tau')?.value)  || 12;
@@ -14497,16 +14542,22 @@ function refreshProfileGraph() {
     const lastDose = r.doses[r.doses.length-1];
     // The projection starts where the first-dose readout says (v3.9.0, final review).
     const fpProj   = firstDosePlan(r, { dose: projDose, tau: projTau, tinfH }, r.fitNowH, bState.firstDoseAtH, bState.curRegimen);
-    const startT   = fpProj ? fpProj.firstH : lastDose.timeH + projTau;
-    for (let i = 0; i < projN; i++) {
-      projDoses.push({ mg: projDose, tinfH, timeH: startT + i * projTau });
-    }
-    // Show AUC note
-    const aucProj = projDose * (24/projTau) / r.CL_ind;
+    const proj     = projectedDoses(fpProj, projDose, projTau, projN, tinfH, lastDose.timeH + projTau);
+    projDoses = proj.doses;
+    projDropPlanned = proj.dropPlanned;
     const noteEl  = document.getElementById('b-proj-auc-note');
-    if (noteEl) noteEl.textContent = `Projected AUC₂₄ ${aucProj.toFixed(0)} mg·h/L`;
     const legendEl = document.getElementById('b-proj-legend');
-    if (legendEl) legendEl.style.display = '';
+    if (proj.refused) {
+      // Refuse rather than approximate (Task 2 review): with no time the fit allows, the
+      // verdict says recheck a level, so no regimen is drawn as if it were being given.
+      if (noteEl) noteEl.textContent = `No projection: the fitted level stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days. Recheck a level.`;
+      if (legendEl) legendEl.style.display = 'none';
+    } else {
+      // Show AUC note
+      const aucProj = projDose * (24/projTau) / r.CL_ind;
+      if (noteEl) noteEl.textContent = `Projected AUC₂₄ ${aucProj.toFixed(0)} mg·h/L`;
+      if (legendEl) legendEl.style.display = '';
+    }
   } else {
     const noteEl = document.getElementById('b-proj-auc-note');
     if (noteEl) noteEl.textContent = '';
@@ -14514,7 +14565,8 @@ function refreshProfileGraph() {
     if (legendEl) legendEl.style.display = 'none';
   }
 
-  const allDoses  = [...r.doses, ...projDoses];
+  // Under a hold on a planned dose the projection replaces the planned rows it holds.
+  const allDoses  = [...(projDropPlanned ? r.doses.filter(d => !(d.timeH > (r.fitNowH != null ? r.fitNowH : Date.now() / 3600000) + 1e-9)) : r.doses), ...projDoses];
   // A new result arrives once; a redraw of the same one (theme, resize, a toggle) does not.
   const arrive = r !== _profileArrivedFor && profileMotionOK();
   _profileArrivedFor = r;
