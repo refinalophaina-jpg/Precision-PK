@@ -6492,6 +6492,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/Rec 12\b/.test(cmt) && /20 to 25 mg\/kg/.test(cmt) && /obese adult/.test(cmt) && /p\. ?11\b/.test(cmt), `Rec 12 with its page: ${cmt}`);
   });
 
+  // Task 12a (carried from the Task 4b review): the HD empiric table's caption wrote the Rec 11 maximum by
+  // hand ("at most 3,000 mg (Rec 11)"). One constant, one figure (rule 2): it reads HD_LOADING_MAX_MG.
+  test('44.9d the HD empiric caption renders the Rec 11 maximum from HD_LOADING_MAX_MG, with no hand-written figure', () => {
+    const LD = fn44('fmtDose')(K44.HD_LOADING_MAX_MG);
+    const src = body44('hdEmpiricHTML');
+    assert(!/3,?000|\b3 g\b/.test(src), `a hand-written maximum in hdEmpiricHTML: ${src.slice(src.indexOf('Rybak 2020, Rec 13'), src.indexOf('Rybak 2020, Rec 13') + 160)}`);
+    assert(/at most \$\{fmtDose\(HD_LOADING_MAX_MG\)\} \(Rec 11\)/.test(src), 'the caption reads fmtDose(HD_LOADING_MAX_MG)');
+    for (const kg of [78, 200]) {
+      const out = plain44(fn44('hdEmpiricHTML')(fn44('hdEmpiricDoses')(kg), kg, []));
+      assert(out.indexOf(`loading by actual body weight, at most ${LD} (Rec 11)`) >= 0, `${kg} kg caption: ${out.slice(out.indexOf('Rybak 2020'), out.indexOf('Rybak 2020') + 200)}`);
+    }
+  });
+
   // I3 (engine report): a level dated after the fit time can only be a wrong date, and a fit on it turned an
   // in-range regimen into a safety change. Refuse it, naming the row. A future DOSE row is a planned dose: kept.
   test('44.10 runBayesian refuses a level dated after the fit time (one-minute tolerance) and still accepts planned future doses', () => {

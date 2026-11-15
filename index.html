@@ -10316,7 +10316,7 @@ function hdEmpiricHTML(rows, abwKg, doses) {
         <tr><th scope="row">High permeability</th><td>${cell(at('after', 'high'))}</td><td>${cell(at('intradialytic', 'high'))}</td></tr>
         <tr><th scope="row">Low permeability</th><td>${cell(at('after', 'low'))}</td><td>${cell(at('intradialytic', 'low'))}</td></tr>
       </tbody></table>
-    <p class="vx-hold vx-muted">Rybak 2020, Rec 13 (rounded to 250 mg); loading by actual body weight, at most 3,000 mg (Rec 11)${rows.some(r => r.ldCapped) ? ' — * capped' : ''}${rows.some(r => r.mdOverCeiling) ? `; † above the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling` : ''}.
+    <p class="vx-hold vx-muted">Rybak 2020, Rec 13 (rounded to 250 mg); loading by actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rec 11)${rows.some(r => r.ldCapped) ? ' — * capped' : ''}${rows.some(r => r.mdOverCeiling) ? `; † above the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling` : ''}.
       Once a pre-HD level exists, it — not weight — drives the dose (Rec 14).</p>`;
 }
 
