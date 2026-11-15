@@ -6097,7 +6097,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     sandbox.setTimeout = (f) => { if (typeof f === 'function') f(); return 0; };   // announceResult's delay
     try {
       vm.runInContext(`state.calcMode = ${JSON.stringify(mode)}; state.dosingWt = 'auto'; state.isSS = true;
-        state.rlMode = 'firstdose'; state.tlBasis = 'firstdose'; crclOverride.on = false;`, sandbox);
+        state.rlMode = 'firstdose'; state.tlBasis = ${JSON.stringify((extra && extra.tlBasis) || 'firstdose')}; crclOverride.on = false;`, sandbox);
       fn44('setPatientSex')(sex);
       // Choosing the sex refreshes the CrCl readout, which suggests an initial interval and
       // overwrites the one typed; the pharmacist's choice comes after it, as on the page.
@@ -6734,6 +6734,34 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       }
     }
     assert(n > 1000 && ties > 20, `exercised ${n} changes, ${ties} on exposure`);
+  });
+
+  // Task 7 (engine report I6; ruling R14): on the steady-state basis a level later than the interval
+  // the patient was on, plus the module's trough-timing window, means another dose came in between
+  // (or the dose time is an earlier dose): the slope survives, the back-extrapolated peak, volume and
+  // clearance do not. Refuse. The first-dose basis legitimately takes late levels.
+  test('44.15 two levels, steady-state basis: a level later than the interval plus the timing window is refused, naming the times and the interval', () => {
+    const tl = (basis, t1, t2, c2, tau) => trough44('twolevels', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'tl-dose': 1000, 'tl-tinf': 1, 'tl-tau': 12,
+      'tl-cur-tau': tau || 12, 'tl-c1': 25.9, 'tl-c2': c2, 'tl-dose-time': '2026-11-14T00:00', 'tl-t1-time': '2026-11-14T02:00',
+      't': 0, 'tl-t2-time': '2026-11-14T08:00', 'tl-t1-hours': t1, 'tl-t2-hours': t2 }, { tlBasis: basis });
+    const refused = (r) => /id="fe-trough"/.test(r.h);
+    // The window is the module's existing trough-timing preference, parsed from the source.
+    assert(K44.TROUGH_TIMING_WINDOW_H === 0.5, `window ${K44.TROUGH_TIMING_WINDOW_H}`);
+    // The engine report's T6c: q12h, 1 g over 1 h, 25.9 mg/L at 2 h, 12.95 mg/L at 56 h.
+    const bad = tl('steadystate', 2, 56, 12.95);
+    assert(refused(bad), 'the 56 h level is refused: ' + bad.text.slice(0, 300));
+    assert(/56/.test(bad.text) && /12 ?h/.test(bad.text) && /before the next dose/.test(bad.text) && /Level 2/.test(bad.text), bad.text.slice(0, 400));
+    assert(!/class="rec-dose"|Vd 265/.test(bad.h), 'no regimen or volume shown');
+    // The same times on the first-dose basis are accepted.
+    const first = tl('firstdose', 2, 56, 12.95);
+    assert(!refused(first), 'first-dose basis accepts the late level: ' + first.text.slice(0, 300));
+    // The edge: tau + window is accepted, anything later is not.
+    assert(!refused(tl('steadystate', 2, 12 + K44.TROUGH_TIMING_WINDOW_H, 11)), 'level 2 at tau + window is accepted');
+    assert(refused(tl('steadystate', 2, 12 + K44.TROUGH_TIMING_WINDOW_H + 0.1, 11)), 'level 2 just past tau + window is refused');
+    // Either level: Level 1 late too, and a q24h interval takes a 20 h level that q12h refuses.
+    assert(refused(tl('steadystate', 13, 14, 12)), 'level 1 past the interval is refused');
+    assert(/Level 1/.test(tl('steadystate', 13, 14, 12).text), 'and named');
+    assert(refused(tl('steadystate', 2, 20, 8, 12)) && !refused(tl('steadystate', 2, 20, 8, 24)), 'the interval the patient was on decides');
   });
 }
 

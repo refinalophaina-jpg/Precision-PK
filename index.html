@@ -7104,6 +7104,18 @@ function calculate() {
         return;
       }
     }
+    // I6 (engine report; R14): on the steady-state basis a level later than the interval the patient
+    // was on (plus the trough-timing window) means another dose came in between, or the dose time
+    // entered is an earlier dose. The slope survives; the back-extrapolated peak, volume and
+    // clearance do not. The first-dose basis legitimately takes late levels.
+    if (state.tlBasis === 'steadystate') {
+      const lateIds = [[1, tlT1, 'tl-t1-time'], [2, tlT2, 'tl-t2-time']].filter(x => x[1] > accumTau + TROUGH_TIMING_WINDOW_H);
+      if (lateIds.length) {
+        const which = lateIds.length === 2 ? 'Both levels were' : `Level ${lateIds[0][0]} was`;
+        showFormErrors('trough', `${which} drawn later than the ${accumTau} h interval the patient was on (Level 1 at ${tlT1.toFixed(1)} h, Level 2 at ${tlT2.toFixed(1)} h after the dose start). On a steady-state basis both levels must be drawn before the next dose; a later level includes a dose given in between, and the volume and clearance would be wrong. Check the dose start time and the draw times, or choose "After the first dose".`, [lateIds.map(x => x[2])]);
+        return;
+      }
+    }
     const tlPK = solveTwoLevelsPK(tlDose, tlTinf, tlC1, tlT1, tlC2, tlT2, accumTau, state.tlBasis);
     if (!tlPK) { showFormErrors('trough', 'Could not solve PK — check that Level 2 is lower than Level 1 and both are post-infusion.', [['tl-c1', 'tl-c2', 'tl-t1-time', 'tl-t2-time']]); return; }
 
@@ -7258,7 +7270,7 @@ function calculate() {
     levelFitted = true;
 
     // Extrapolate observed level to true trough (end of interval)
-    // If drawn at true trough time (within 0.5h), no extrapolation needed
+    // If drawn at true trough time (within TROUGH_TIMING_WINDOW_H), no extrapolation needed
     const timeRemaining = tau - tDoseToLvl;
     if (earlyLevel) {
       // Extrapolating an early level to the end of ITS interval gives the
@@ -7275,7 +7287,7 @@ function calculate() {
       extrapolated = false;
       extrapDelta = 0;
       troughBasis = 'model';
-    } else if(Math.abs(timeRemaining) < 0.5) {
+    } else if(Math.abs(timeRemaining) < TROUGH_TIMING_WINDOW_H) {
       // True trough — level is at interval end
       trueTrough = levelVal;
       extrapolated = false;
@@ -10832,6 +10844,11 @@ const DOSE_MAX_PER_DOSE_MG = 2000; // conventional adult per-dose ceiling
 const DOSE_MAX_TDD_MG      = 4500; // adult empiric maintenance ceiling
 const TROUGH_WARN_MGL      = 15;   // AKI inflection stated as 15-20 (Rybak 2020)
 const TROUGH_HIGH_MGL      = 20;   // upper end of that inflection band
+// PREFERENCE, not a literature constant (CLAUDE.md rule 8). A level drawn within this many
+// hours of the end of the interval is taken as a trough as it stands (no extrapolation); and
+// a two-level steady-state level more than this much later than the interval is refused. The
+// ±0.5 h window the Trough module already used; one named value for both uses (rule 2).
+const TROUGH_TIMING_WINDOW_H = 0.5;
 // PREFERENCE, not a literature constant (CLAUDE.md rule 8). The order in which
 // an EXACT AUC24 tie between intervals is broken. At steady state AUC24 is total
 // daily dose / CL, so pharmacokinetics cannot choose between exposure-identical

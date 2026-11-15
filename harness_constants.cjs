@@ -142,6 +142,7 @@ function extract() {
     // v3.14.0 — continue the current regimen (D25)
     CONTINUE_MARGIN_DOTS:   num(src, 'CONTINUE_MARGIN_DOTS'),
     TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
+    TROUGH_TIMING_WINDOW_H: num(src, 'TROUGH_TIMING_WINDOW_H'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
     VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
     // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state

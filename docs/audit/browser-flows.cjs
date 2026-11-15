@@ -1059,6 +1059,39 @@ async function enterCourse(page) {
     await cctx.close();
   }
 
+  // v3.14.0 (D26), engine report I6 (ruling R14): two levels on the steady-state basis, q12h, 1 g over 1 h,
+  // 25.9 mg/L at 2 h and 12.95 mg/L at 56 h. A level later than the interval (plus the 0.5 h trough-timing
+  // window) means another dose came in between: refused, naming the times and the interval. The same times
+  // after the first dose are accepted. Fictional patient: 25 M, 95 kg, 185 cm, SCr 0.5.
+  {
+    const tctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const t = await tctx.newPage();
+    const tProblems = watch(t, 'two-level-late');
+    await t.goto(BASE + '?v=tll-' + Date.now(), { waitUntil: 'networkidle' });
+    await t.locator('[data-onclick="k1"]').click();
+    await typeInto(t, '#age', '25'); await typeInto(t, '#tbw', '95'); await typeInto(t, '#height', '185'); await typeInto(t, '#scr', '0.5');
+    await t.locator('[data-onclick="k9"]').first().click();
+    await t.locator('#mode-btn-twolevels').click();
+    await typeInto(t, '#tl-dose', '1000'); await typeInto(t, '#tl-tinf', '1'); await t.locator('#tl-tau').selectOption('12');
+    await typeInto(t, '#tl-c1', '25.9'); await typeInto(t, '#tl-c2', '12.95');
+    await t.locator('#tl-dose-time-date').fill(day(0)); await typeInto(t, '#tl-dose-time-time', '0000');
+    await t.locator('#tl-t1-time-date').fill(day(0)); await typeInto(t, '#tl-t1-time-time', '0200');
+    await t.locator('#tl-t2-time-date').fill(day(2)); await typeInto(t, '#tl-t2-time-time', '0800');
+    await t.locator('[data-onclick="k25"]').click();
+    await t.locator('#tl-cur-tau').selectOption('12');
+    await t.locator('[data-onclick="k31"]').click(); await t.waitForTimeout(500);
+    const fe = (await t.locator('#fe-trough').textContent().catch(() => '')).replace(/\s+/g, ' ');
+    ok('D26: two levels at steady state, Level 2 at 56 h on a q12h interval — refused, naming the times and the interval',
+       /Level 2 was drawn later than the 12 h interval/.test(fe) && /Level 2 at 56\.0 h/.test(fe) && /before the next dose/.test(fe), fe.slice(0, 500));
+    ok('D26: no regimen or volume is shown for the late level', (await t.locator('#results-content .rec-dose').count()) === 0);
+    await t.locator('[data-onclick="k24"]').click();
+    await t.locator('[data-onclick="k31"]').click(); await t.waitForTimeout(500);
+    const fe2 = await t.locator('#fe-trough').isVisible().catch(() => false);
+    ok('D26: the same levels on the first-dose basis are accepted', !fe2 && (await t.locator('#results-content .tx-verdict, #results-content .tx-regimen, #tx-regimen').count()) > 0);
+    results.problems.push(...tProblems);
+    await tctx.close();
+  }
+
   // v3.12.0 (D23): IV vancomycin on peritoneal dialysis, typed in. A fictional CCPD patient
   // (61 kg at the load, 63 kg now, cycler 21:00 x 9.5 h), on a fixed clock (today 10:00) so the
   // answer cannot depend on the time of day.
