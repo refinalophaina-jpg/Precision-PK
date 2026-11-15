@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v3.13.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
+**Status: Live · v3.14.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
 course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
@@ -47,17 +47,16 @@ git hash-object index.html   # must equal the deployed blob sha
 
 | Path | What it is |
 |---|---|
-| `index.html` | The application. ~9,000 lines: CSS to ~1,527, markup to ~2,506, one inline `<script>` after that |
-| `phase2d_validation.cjs` | Primary validation suite — 13 suites, traces, shrinkage, Monte Carlo, canvas rendering |
+| `index.html` | The application. ~17,700 lines: CSS to ~2,828, markup to ~4,090, one inline `<script>` after that |
+| `phase2d_validation.cjs` | Primary validation suite — 44 suites, traces, shrinkage, Monte Carlo, canvas rendering |
 | `phase3_simulation.cjs` | ~12,000 fits: per-model self-consistency, cross-model disagreement, stratified attainment |
 | `phase2d_comprehensive_validation.cjs` | 10,475 synthetic patients across 6 scenarios |
 | `Phase2_Plan.md` | The real architecture reference for the Bayesian engine |
 | `Vancomycin_TDM_Software_Instructions.md` | Clinical source-of-truth: guideline rationale, equations, special populations |
 | `validation_report.md` | Phase 1 validation, April 2026 — **predates the Bayesian engine** |
-| `archive/v0-march-2026-superseded.html` | The earlier March build. Not deployed, kept for reference |
 | `archive/react-branch-abandoned/` | An abandoned React/recharts rewrite (see below) |
 
-Reference PDFs (`Literature/`, `DoseMeRx/`, `Hermann Vanc/`, `Clin Calc/`, `VancoPk/`) live
+Reference PDFs (`Literature/`, `DoseMeRx/`, `Clin Calc/`, `VancoPk/`, and the user's institutional protocol, private) live
 one level up in the project folder and are deliberately **not** in this repo — it is
 public, and they are third-party copyrighted papers.
 
@@ -94,14 +93,14 @@ node phase2d_validation.cjs
 Each script extracts the math out of `index.html` in a Node `vm` sandbox, so it tests the
 shipped file rather than a copy.
 
-| Suite | Result (2026-11-10, v3.13.0) |
+| Suite | Result (2026-11-15, v3.14.0) |
 |---|---|
-| `phase2d_validation.cjs` | **458 / 458 pass** |
+| `phase2d_validation.cjs` | **554 / 554 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
-| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** — proves a presentation change left the engine untouched |
-| `docs/audit/browser-flows.cjs` | **103 / 103** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72, every one a deliberate D26 change listed in the decision record |
+| `docs/audit/browser-flows.cjs` | **161 / 161** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
@@ -177,4 +176,5 @@ the six releases after it; the table below reconstructs them from git (2026-10-0
 | 3.10.0 | 2026-10-29 | Before the first level, an obese patient's regimen is shown on IBW, AdjBW and TBW; SCr as measured; dose unchanged (D21) | `0b21a24` |
 | 3.11.0 | 2026-10-30 | The answer first: confidence and Next on the first screen, the first dose on one line; on Goti-HD the q-interval grid closed after Haemodialysis, no guideline line; duplicates and empty sections gone; "now" on the axis; HD model advice names Goti-HD (D22) | `32a9da4` |
 | 3.12.0 | 2026-11-09 | IV vancomycin for patients on peritoneal dialysis: a level-based Trough mode — what to give, whether today, when to draw next, from the patient's own levels and cycler schedule; AUC Precision refuses PD (D23) | `3997992` |
-| 3.13.0 | 2026-11-10 | The workstation: inputs scroll beside the answer with Run pinned; Print in the answer; Enter does the local job; Regimens closed, a pick says "trying"; the model mismatch in one line; long notes clamped; one date-and-time grammar; Clear with Undo; PD draw without cycler-end wording (D24) | |
+| 3.13.0 | 2026-11-10 | The workstation: inputs scroll beside the answer with Run pinned; Print in the answer; Enter does the local job; Regimens closed, a pick says "trying"; the model mismatch in one line; long notes clamped; one date-and-time grammar; Clear with Undo; PD draw without cycler-end wording (D24) | `edc5b53` |
+| 3.14.0 | 2026-11-15 | Continue the current regimen: AUC Precision judges the regimen being given first and continues it while in range unless another puts 2 more of 20 plausible AUCs in range; a change never lowers attainment except for safety, and says why; the band is strictly 400–600 when choosing (D25). The 2026-11-13 review's fixes: a fitted pre-dose level of 20 mg/L or more holds the next dose; the Trough module obeys the same ceilings and withholds in severe renal impairment; only sourced loading numbers; future and late levels refused; Low confidence keeps an in-range regimen and asks for a level; "was due" is the current regimen's; every print says not clinically validated; profiles cannot mix two patients (D26) | |

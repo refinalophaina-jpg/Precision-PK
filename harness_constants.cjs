@@ -138,7 +138,17 @@ function extract() {
     PD_CAPD_T12_MIN_H:      num(src, 'PD_CAPD_T12_MIN_H'),
     PD_CAPD_T12_MAX_H:      num(src, 'PD_CAPD_T12_MAX_H'),
     MATZKE_VD_GROUP3:       num(src, 'MATZKE_VD_GROUP3'),
+
+    // v3.14.0 — continue the current regimen (D25)
+    CONTINUE_MARGIN_DOTS:   num(src, 'CONTINUE_MARGIN_DOTS'),
+    TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
+    TROUGH_TIMING_WINDOW_H: num(src, 'TROUGH_TIMING_WINDOW_H'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
+    VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
+    // v3.14.0 (D26, final review I2) — the hold search horizon, a PREFERENCE (rule 8)
+    HOLD_SEARCH_MAX_H:      num(src, 'HOLD_SEARCH_MAX_H'),
+    // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state
+    CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
   };
 }
 

@@ -1494,3 +1494,707 @@ Critical and Important fix began with a test that failed first.
 - Browser flows: 103/103, including 19 new D24 checks driven by real clicks and keys under the CSP.
 - `impeccable detect`: 9 findings. The 7 low-contrast ones are dark-theme tokens measured against
   white; the rest are the stripes and em-dash advisories. The radius and 11 px findings are gone.
+
+## D25 — Continue the current regimen: it enters the decision, and a change can never lower attainment (2026-11-13, v3.14.0)
+
+**Reported.** On 1250 mg q12h, a one-level Buelga fit gave CL 4.58 L/h and t½ 9.3 h. That put AUC₂₄ at
+546 mg·h/L and the trough at 14.9 mg/L: within 400–600, with 14 of 20 plausible AUCs in range. AUC
+Precision recommended 1750 mg q24h at AUC₂₄ 382 instead, with a trough of 6.2 and 7 of 20, and labelled
+it "Modestly below target". The user asked for an audit of the selection logic, a ranking that puts
+target attainment and minimal change first, and a guarantee: never recommend lower attainment than the
+current regimen unless safety requires it.
+
+**Reproduced** against the shipped engine (scratch probe, not committed). Only a target box of about
+400 gives 1750 mg q24h; the default 450 gives 1000 mg q12h (437). Four faults compounded:
+- **One target number, symmetric distance.** `bayesDoseOptimizer` minimised |AUC₂₄ − target|. At 400,
+  382 is 18 away and 437 is 37, so being below the band cost no more than being inside it.
+- **The rounding grace decided band membership.** Half a 250 mg step, meant to keep the flags quiet,
+  widened the Tier 2 filter. At CL 4.58 that was ±27 at q24h and ±82 at q8h, so 318–682 counted as
+  "in band". Over a CL × target grid, 158 of 1,701 "in-band" answers sat outside 400–600.
+- **The current regimen was never a candidate.** Only the steps beside the target were built, so 1250 mg
+  q12h was not even evaluated at 400. AUC Precision had no "continue".
+- **Uncertainty came after the ranking.** The 20-dot count was drawn for display only.
+- **Not the cause:** the q24h preference. It only breaks exact ties; 1750 mg q24h won on distance.
+
+**Scale.** Over in-range, safe current regimens (Buelga, 1–3 levels, CL 1.5–9 L/h, targets 400–600;
+3,861 decisions):
+- 31.2% recommended fewer in-range dots than continuing;
+- 153 recommended an AUC below 400.
+
+**The pasted guardrail was not enough.** `continue if inTarget and P_cur ≥ P_best` with attainment-first
+ranking moves the reported case to 750 mg q8h: 15/20 against 14/20, with a trough of 15.6. One dot in
+twenty is inside the estimate's resolution, and it costs an extra dose a day.
+
+**The user's rulings (2026-11-13).**
+- **Margin:** 2 of 20, `CONTINUE_MARGIN_DOTS`. It is a preference (rule 8).
+- **First regimen:** the target box decides, inside a strict band.
+- **Confidence rating:** does not gate continue versus change. *[Amended 2026-11-15: replaced by the user's
+  ruling 3 of 2026-11-14. Low or Very low confidence now keeps an in-range, safe current regimen. See D26.]*
+
+**Built.**
+- **`evalRegimen`.** One regimen at steady state: exposure, trough, peak, hard rejects and flags. It is
+  lifted unchanged out of `bayesDoseOptimizer` (parity 0 after the move alone) so the current regimen
+  and every candidate are judged by one implementation (rule 2).
+- **The strict band.** In `rankRegimenCandidates`, band membership is now exactly 400–600. The grace
+  stays for flags only. The 158 out-of-band answers fall to 0.
+- **`regimenDecision`.** Called by all three fit paths, it does three things in order:
+  1. **Reads the current regimen** (`currentRegimenOf`), judged as a candidate with its charted infusion.
+  2. **Continues** when that regimen is in 400–600 at the point estimate, is safe (no hard reject, trough
+     below 20), and no admissible regimen beats it by 2 or more dots. *[Amended 2026-11-15 (D26, D-a): a
+     dose-ceiling breach is no longer a hard reject for the current regimen. It is not recommendable, not
+     unsafe.]*
+  3. **Otherwise changes,** choosing from the whole admissible lattice (250 mg steps to 2 g, q8–48h):
+     - set aside danger troughs while a safe option exists;
+     - keep in-range AUCs while any exists;
+     - require more dots than the current regimen, or the full margin when leaving an in-range one,
+       unless the current regimen is unsafe;
+     - among those within the margin of the best: the fewest interval steps from the current regimen,
+       then the smallest change in daily dose, then the target box, then the ceiling yields, then
+       `INTERVAL_PREFERENCE`.
+- **`regimenActionHTML`.** "Continue the current regimen" or "Change from X" sits above the regimen,
+  with the reason in 20-dot units below it. When the target box alone would choose otherwise, the reason
+  names that choice. The same text goes into the print report, the screen-reader result and the summary.
+
+**Rulings made in the build** (each with what it costs if wrong):
+- **`possible_transition` is not a current regimen.** Detection grants it on one recent interval, so
+  0, 7, 19, 22, 39 h reads "Q18H". Only `established`, or the clinician's override, counts. *If wrong:* a
+  genuine order change one dose old gets the target-box answer, which is no worse than v3.13.0.
+- **A change away from an in-range regimen must deliver the whole margin.** The sweep caught minimal
+  change moving 750 mg q8h at 12/20 to 1000 mg q8h at 13/20. *If wrong:* a few edge regimens move one
+  step further than the nearest neighbour.
+- **Danger troughs are set aside before attainment ranks.** This matches the existing safety floor.
+  *If wrong:* a regimen with a trough of 20 or more and more dots is passed over.
+- **No current regimen on dialysis, or under the severe-renal hold.** Those answers have their own
+  rules (D16, the hold). *If wrong:* nothing; their answers are not q-interval regimens.
+- **A current regimen counts before any level.** Read from the prior, the never-worse rule still holds.
+  *[Amended 2026-11-15 (D26, D-b, R17): it must have at least one given dose of the detected maintenance
+  amount. Planned rows alone, or a given load before planned maintenance, are a start.]*
+  *If wrong:* a patient on an in-range empiric regimen is told to continue and draw a level, instead of
+  being moved toward the target box.
+- **A safe out-of-range regimen with nothing better is continued with a warning.** An unsafe one with
+  nothing admissible falls back to the refusal. *If wrong:* the warning is the only signal. *[Amended
+  2026-11-15 (D26, R12): "nothing better" counted dots only, so at high clearance, where every regimen has
+  0 of 20, 1 g q12h at AUC₂₄ 133 was continued at High confidence while 1.5 g q8h gave 299. An
+  out-of-range regimen now changes to the admissible regimen nearest the band when that is nearer by more
+  than half a 250 mg step. Only a genuine exposure tie continues.]*
+
+**Measured after**, on the same grid as the Scale figures:
+- Fewer in-range dots than continuing: 31.2% → **0**.
+- Answers below 400: 153 → **0**.
+- 51.5% continue. Changes from an in-range regimen sit at its edges (400–449 and 550–600); 149 of 214
+  keep the interval.
+- First regimens: 9.3% of answers change, from the strict band alone.
+- Comprehensive scenario 6 dose attainment: unchanged at 75.2%.
+- Engine parity against v3.13.0: 0 differences. Its 225 calls never reach a target-edge case or a
+  current regimen, so the change is measured by the sweeps above and SUITE 43.
+
+**Verified.**
+- phase2d 478/478, including SUITE 43 (20 tests, each seen failing first); phase3 21/21; phase4 49/49.
+- Comprehensive: scenarios 3 and 4 still fail by design.
+- Browser flows 107/107: four new D25 checks under the CSP (continue at target 400; the screen-reader
+  result; the print report; a below-range q24h that changes).
+
+**The independent review (2026-11-13, a fresh reviewer on the strongest model).** Fixed, each test
+seen failing first (SUITE 43.9, 43.10, 43.14–43.19):
+- **The cap-bound alarm was lost** when a current regimen was continued or changed at high clearance.
+  It was down to a caution. `capBoundFlag` now carries the alarm whatever the answer.
+- **A safety change could name the current regimen,** differing only in infusion time (trough 20.05
+  against 19.78). The current regimen's lattice twin is no longer a candidate.
+- **Alternating doses continued their mean** ("1.125 g q12h"). They are no longer a current regimen.
+- **A continued q72h (override) or q4h** fell back to q6h in Explore's selects. `regimenIntervalChoices`
+  adds the interval.
+- **A safety change still at a trough of 20 or more** now says so in its reason.
+- **The Copy summary** says "Change from X to Y".
+- **An uncomputable (NaN) trough** counted as safe; it now makes the regimen unjudgeable.
+- **Two tests could not fail on what they named:** 43.10's dialysis gate and 43.9's two-compartment
+  check. Both are tightened.
+- **Ruled, not changed:** the override with a single charted dose is not a current regimen. That dose
+  may be the load. The comment now says so.
+- **Declined to judge (policy, for the user):**
+  - continuing a 15–20 trough when a lower one exists;
+  - deciding from the 0-level dots;
+  - nearest-interval-first reaching q8h;
+  - 19.9 counting as safe;
+  - HD sessions logged under a non-HD model.
+
+**Review focus (not covered by a test).**
+- The 20 dots read the model's simulated width for its level count. A poor fit does not widen them; the
+  confidence rating and the redraw advice carry that.
+- A rising SCr or AKI is not read by the decision; the AKI note still shows.
+- With a current regimen, the target box only breaks ties within the margin. The reason line names
+  what it alone would give.
+
+## D26 — The 2026-11-13 review's fixes: a hold at 20 mg/L, one set of ceilings, low confidence keeps an in-range regimen, profiles that cannot mix two patients (2026-11-15, v3.14.0)
+
+**Asked.** v3.14.0 (D25) was held for a whole-calculator review on 2026-11-13 by four fresh reviewers. The
+reports are in `docs/review/2026-11-13/`: engine, code, models and UI. Their finding numbers overlap, so
+this record names the report: "engine C1", "code C1", "UI I2", "models I4". The plan is
+`docs/superpowers/plans/2026-11-14-review-fixes-and-dialysis.md`, Release 1. This release is D25 and D26
+together. The engine moves.
+
+**The user's rulings (2026-11-13/14) that bind it.**
+1. **Hold threshold:** 20 mg/L (`TROUGH_HIGH_MGL`). A fitted pre-dose concentration at or above it means
+   "Hold".
+2. **Trough module limits** are AUC Precision's: 2 g a dose, 4.5 g a day, AUC₂₄ 700, the
+   augmented-clearance caution, and no empiric maintenance regimen at CrCl under 10 without a level.
+3. **Low or Very low confidence protects an in-range, safe current regimen:** it is continued and the
+   answer says to draw a level. Safety changes and changes from an out-of-range regimen still happen. This
+   replaces D25's ruling that confidence does not gate the decision.
+4. **Severe-renal advisory** (the plan's ruling 8): the guideline loading dose (Rybak 2020 Rec 11), then
+   dose by measured level, with no stated interval.
+5. **Earlier rulings stand:** a continue margin of 2 of 20 (`CONTINUE_MARGIN_DOTS`), and a first regimen
+   from the target box inside a strict 400–600 band.
+
+### What was fixed, and the tests that pin it
+
+New unit tests are SUITE 44 in `phase2d_validation.cjs` (59 tests; 70 after the final review's fixes; 76 after wave 2). New browser checks are the `D26:`
+checks in `docs/audit/browser-flows.cjs` (44 checks; 53 after the final review's fixes; 54 after wave 2, under the production CSP). Every fix began with a
+test seen failing. The task reports in `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/` hold the
+RED and GREEN output.
+
+- **Code C1: saving a profile un-marked a stale result** (Task 1). `saveCurrentProfile` no longer assigns
+  `bState.result` or `resultFingerprint`. "Saved without the fit" comes from `snapshot.dirty`. The
+  `clearUndo()` call now follows the empty-label check, which also fixes code M17 (a refused save threw
+  away a pending Undo).
+  - Pinned by 44.1 and "D26: saving while stale keeps the stale mark".
+- **Engine C1: a supratherapeutic patient was given a time for the next dose** (Task 2, ruling 1). The
+  48 mg/L case read "First dose … level by then 43.3 mg/L", with no hold.
+  - `firstDosePlan` now returns `hold`, `resumeH` and `holdNoTime`. The search runs from the unconstrained
+    first-dose time in 0.25 h steps for up to 14 days (`HOLD_SEARCH_STEP_H`, `HOLD_SEARCH_MAX_H`, commented
+    as search mechanics, not clinical constants).
+  - The answer leads with "Hold: next dose not before <time>". With no time in 14 days it reads "recheck a
+    level", draws no projection and gives no first-day AUC.
+  - A chosen time is honoured, and is still a hold while it is at or above 20.
+  - A planned dose at or above 20 is the dose held, and the resume time is searched on the fit without it
+    (R5).
+  - Copy summary, the announcement and print lead with the hold (engine E3).
+  - The Trough level and two-level modes hold too. `troughHold` times the re-dose from the level itself
+    through the one decay solver, `timeToDecayTo`.
+  - Pinned by 44.2–44.5d, "D26: a 48 mg/L level gives Hold" (four checks), "D26: under a hold the
+    projection is drawn with its note and key", and "D26: Trough level mode holds".
+- **Engine C2: the Trough module recommended doses AUC Precision hard-rejects** (Task 3, ruling 2). The
+  25 M at SCr 0.5 was given 2.5 g q8h (7.5 g a day).
+  - `findOptimalDose` builds candidates from 250 mg to `DOSE_MAX_PER_DOSE_MG` and judges each through
+    `evalRegimen(…, null)`, so the hard rejects have one implementation.
+  - When nothing admissible lands in 400–600 the answer is a refusal, "No regimen recommended". It names
+    every interval from q6h to q48h that works, with its regimen (R7). The cap-bound alarm is used only when
+    none works (R8).
+  - A current regimen over a limit leads with "Current regimen breaches a hard limit" at alarm tier,
+    whatever the assessment says.
+  - Explorer rows over a ceiling are marked `is-over`.
+  - The two-level and random-level modes render the same refusal.
+  - Pinned by 44.6–44.8g, "D26: Trough refuses 7.5 g a day", "D26: Trough shows the augmented-clearance
+    caution", "D26: Trough random level renders the refusal with the cap-bound alarm", and the three
+    "D26 review" checks (over-ceiling explorer row, a q24h refusal naming the intervals that work, a gap
+    refusal).
+- **Engine I1: severe renal impairment** (Task 3, ruling 2). At CrCl under 10 with no level the Trough
+  module shows "No empiric maintenance regimen" with the severe-renal alarm note. This holds in initial mode
+  and in steady-state mode with no level. The advisory now has one source, `severeRenalNote` and
+  `SEVERE_RENAL`, which both modules read.
+  - Pinned by 44.8 and "D26: Trough withholds at CrCl 6.5".
+- **Models I4 and engine M5: the severe-renal advisory's numbers had no source** (Task 4, ruling 4). The
+  advisory said "15–20 mg/kg, max 2 g", "24–48 h" and "q24h–q72h".
+  - Rybak 2020 Rec 11 (B-II, printed p. 10) gives actual body weight and a maximum of 3,000 mg, and no
+    mg/kg. Only that is shown: "actual body weight, at most 3 g" (from `HD_LOADING_MAX_MG` through
+    `fmtDose`), then "draw a level … later doses follow measured levels, not a schedule".
+  - The Trough copy never mentions the Bayesian fit.
+  - The print line reads `SEVERE_RENAL.follow`.
+  - `VERY_LOW_CRCL_THRESHOLD` (10) is not in Rybak 2020. The value is unchanged; a comment records its
+    provenance as open.
+  - Pinned by 44.9 and "D26 Task 4: the Trough severe-renal refusal names Rybak 2020 Rec 11".
+- **Added Task 4b (R10): the same defect class, found by the Task 4 review.**
+  - The Trough loading dose (`calcLoadingDose`) had no 3,000 mg cap, so a 130 kg patient was offered
+    3.25 g beside an advisory saying "at most 3 g". It is now capped at `HD_LOADING_MAX_MG`, and the capped
+    dose is modelled as given. The card says "Capped at the Rybak 2020 Rec 11 maximum of 3 g".
+  - `arcAdviceListHTML` lost "q6h–q8h", "25–30 mg/kg, max 3 g" and "within 24–48 h". None had a paper
+    behind it, and the 25–30 mg/kg traced only to a superseded institutional protocol.
+  - The severe-renal note now says "Rybak 2020 sets no loading dose by renal function, and none for CrCl
+    under 10 mL/min without dialysis" (R11).
+  - Task 12a: the HD empiric table's caption wrote the maximum by hand ("at most 3,000 mg (Rec 11)"). It
+    now reads `fmtDose(HD_LOADING_MAX_MG)`.
+  - Pinned by 44.9a–44.9d and "D26: the Trough loading dose is capped at 3 g".
+- **Engine I3: a level dated in the future was fitted** (Task 5). `runBayesian` refuses any level later
+  than the analysis by more than one minute. The refusal names its row ("Level row 1: dated …, after the
+  time of this analysis"). Planned dose rows are still allowed.
+  - Pinned by 44.10, "D26: a level dated 30 h ahead is refused", and "D26: the same level dated in the past
+    is fitted".
+- **Engine I2, UI I3 and engine M1: the Next line contradicted the fit** (Task 6). Every one-level Buelga
+  or Hughes fit read "a further level would add little", even beside a fit marked Low.
+  - `nextLevelValue(…, fit)` takes the fit's state from `nextLevelFit(r, conf)`. A conflicted fit (Low or
+    Very low, a level missed by 2 SD or more, or a second MAP solution) gives "A further level is
+    recommended" and never reaches the precision branch.
+  - Any cap-bound answer, whether continue, change or start, gives "Confirm the clearance with a level",
+    worded for each (Task 6 and 6b reviews).
+  - The Low line names the reason that set the rating (`confidenceLead`). Model disagreement names both
+    AUCs. "This dose was generated from a fit the tool itself does not trust" is gone.
+  - The Fit-vs-measured and Models panels point to the Next line and add no sentence of their own.
+  - Pinned by 44.11–44.14b and 44.14f, with the coherence predicate `incoherent44` and its browser twin.
+    The browser checks are "D26: the 76 M on Buelga never says both …", "D26: Low confidence names the
+    model disagreement with both AUCs", and "D26 review: a cap-bound continue just under 400 …".
+- **Added Task 6b (R12): a Critical D25 defect, found by the Task 6 review.** `regimenDecision` continued
+  an out-of-band regimen as "no-better" whenever every admissible candidate had the same dots. At high
+  clearance every regimen has 0 of 20: 1 g q12h at CL 15 (AUC₂₄ 133) was continued at High confidence while
+  1.5 g q8h gives 299.
+  - When the current regimen is out of band and safe, and the dots filter leaves nothing, the regimen whose
+    AUC₂₄ is nearest the band (with dots never fewer) is chosen. It must be nearer by more than half a
+    250 mg step (`roundingGraceAUC`, now the one helper for that grace).
+  - A genuine exposure tie still continues.
+  - The why line says "brings AUC₂₄ nearer the band, to 286" or "into the band".
+  - Pinned by 44.14c–44.14f and "D26: a 0-of-20 regimen at high clearance is changed, not continued".
+- **Engine I6: a two-level steady-state level later than the interval was accepted** (Task 7, R14).
+  Volume came out 265 L. Now either level later than the interval plus `TROUGH_TIMING_WINDOW_H` (0.5 h, a
+  preference, rule 8, now also the steady-state "observed trough" window) is refused. The message names
+  both times and the interval, and says both levels must be drawn before the next dose. The first-dose
+  basis still accepts late levels. No volume bound was added (D-d).
+  - Pinned by 44.15 and three D26 checks: the refusal, no regimen or volume shown, and the first-dose basis
+    accepted.
+- **UI I2: "was due" was computed on the new interval** (Task 8, R1, R15, R16). A change from q24h read as
+  a missed dose.
+  - `dueH` is the last dose plus the interval of the regimen being given (`regimenBeingGiven(rec)`, the
+    decision's own reading).
+  - The parenthesis prints only when the first dose is now because that time has passed, and names a
+    different interval: "(current q24h dose was due 13 Nov 08:00)".
+  - "Next dose" against "First dose", and the printed offset, read the same regimen. A start has no
+    schedule offset.
+  - The default first dose is unchanged, `max(last + new interval, now)` (R1).
+  - Pinned by 44.16 and 44.16a. 38.1, 38.3, 38.5 and 44.2 were re-pointed by R1 and R16, with every
+    original assertion kept. Browser: "D26: on a change from q24h to q12h …".
+- **UI I8 under ruling 3: a Low-confidence fit moved an in-range regimen** (Task 9). The Hughes case
+  changed 1.5 g q12h (13 of 20) to 1.25 g (15 of 20) on a fit labelled untrusted.
+  - The three fit paths store `decisionArgs`. `finalizeDecision(r, conf)` runs once, after the rating,
+    when all of these hold: the answer is an attainment change, the current regimen is in band, and the
+    rating is Low or Very low. It then re-decides with `protectInRange` and gives
+    `continueReason: 'low-confidence'`.
+  - The why line names the regimen set aside and the cause alone ("the models disagree by 32%"), and ends
+    "Draw a level.".
+  - Every reader reads the finalized answer: verdict, Next, Copy summary, announcement, print, the first
+    dose, k82 and Regimens.
+  - The confidence comment now states what the rating gates (rule 8).
+  - Pinned by 44.17 (real Hughes Low), 44.17a (Goti, model agreement on the current daily dose), 44.18,
+    44.19 (below-range, nearer-band, unsafe-trough and Task 2 safety changes still change), 44.20b, 44.22
+    (idempotent), and "D26: Low confidence keeps an in-range regimen and asks for a level". 43.5 now also
+    decides every case with protection, which strengthens it.
+- **Engine M4 and D-b, R17: planned rows were "the current regimen"** (Task 9). `currentRegimenOf` needs
+  at least one given dose of the detected maintenance amount from the schedule's opening dose. Planned
+  rows alone, or a given load before planned maintenance, are a start.
+  - Pinned by 44.20 and 44.20a.
+- **Engine Decision 3, D-a: a charted dose above a ceiling** (Task 9). `doseCeilingBreaches` is the one
+  check. For the current regimen a breach is *not recommendable*, not unsafe. A continue above a ceiling
+  adds a caution naming it. Unsafe stays AUC₂₄ above 700 or a trough of 20 or more.
+  - Pinned by 44.21.
+- **Engine M2: "no admissible regimen puts more in range" when one did** (Task 9). The line now says the
+  better regimens were set aside for a trough of 20 or more (`troughSetAside`).
+  - Pinned by 44.21.
+- **UI I4: nine of ten printed reports omitted "not clinically validated"** (Task 10). One constant,
+  `DISCLAIMER_TEXT`, and one footer writer, `_prFooter`, serve every print path, including the empty
+  ones. The two on-screen paragraphs carry the same sentence, pinned equal. The dead `.print-footer` is
+  removed.
+  - Pinned by 44.23 and six D26 print checks: Trough, AUC, HD, PD, an empty Trough and an empty AUC.
+- **Engine I4, I5; code I2, I5, M1, M2: profiles** (Task 11, D-e, R18–R22).
+  - `snapshotPatientCore(source)` reads the module on screen. A shared field that is filled in both
+    columns with different values refuses the save. The refusal names each field with both values and
+    offers one action, "Copy the <this module> values to <other module>" (`k99`), after which the user
+    saves again (R19).
+  - A save carries the other column's course (AUC doses, levels, SCr rows, HD sessions; or the Trough PD
+    form) only when that column's demographics are filled and agree. Otherwise the status line says it
+    was left out (R18, R22).
+  - `dial` is stored and loaded only with Goti (R21).
+  - `validProfile` checks every entry on read. Unreadable entries are kept and written back. Unparseable
+    JSON is copied to `ainadara.profiles.v1.bak` (or a timestamped key) before anything is written, and
+    the status line says so.
+  - A load validates first, then clears both columns, and an empty core value clears its field.
+  - `renderProfileList` uses `escHtml` on the label, date and id; the second escaper is gone.
+  - Trough Clear resets the weight basis, amputation (engine M3, R20), the HD flag and the whole PD form
+    (R22).
+  - Pinned by 44.24–44.26c, with a fixture of profiles saved by v3.13.0 and before the core
+    (`docs/audit/profile-fixtures-v3.13.0.json`), plus ten D26 browser checks: mixed patient, load clears
+    the Trough column, both values and the copy action, delete one of three, dialysis profile, older
+    profiles, `.bak`, Clear resets basis and amputation, the Trough-only HD profile, and the PD form.
+- **Added Task 11b (R23): Clear blanked the PD local settings.** The next setting change then saved the
+  blanks over the stored maximum dose, which removed the cap silently.
+  - `resetForm` skips `pd-set-*`.
+  - `savePdLocalSettings` never writes a blank or invalid value over a stored one, refills the field, and
+    says why (`#pd-set-status`).
+  - Pinned by 44.26d and "D26: Clear keeps the PD local settings".
+
+**Not in this release (the plan places them):**
+- In Release 2: code I1 (resize rebuilds the result), I3, I4, I6 and I7; models I1–I3; UI I1, I5, I6, I7
+  and the UI minors; the rest of the code minors.
+- In Release 3: engine I7 (CRRT and SLED).
+- Engine M3 is partly done: Clear now resets the weight basis and amputation, but not "steady state: No"
+  or the two-level basis. Those toggles are visible, and the decision is still open (engine Decision 7).
+
+### Defaults taken in Release 1, each with what it costs if wrong
+
+- **D-a.** A charted dose above 2 g, or above 4.5 g a day, is not recommendable but not unsafe. It does not
+  by itself force a change. *If wrong:* a patient on 2.25 g q48h in range is continued with a caution
+  instead of moved below the ceiling. At high clearance, an over-ceiling regimen below the band with
+  nothing nearer is now continued as `no-better`, where before it changed for "safety".
+- **D-b.** A schedule with no dose given is not a current regimen. R17 tightened this to a given
+  maintenance dose. *If wrong:* an ordered but unstarted regimen gets "start" wording and the target box.
+- **D-c.** The Trough module's CrCl is not capped at 150. No source for such a cap exists on its clearance
+  equations; the ceilings and the augmented-clearance caution carry the safety. *If wrong:* the Trough
+  readout shows a CrCl of 303 beside AUC Precision's 150. Both answers are now inside the same ceilings.
+- **D-d.** A two-level volume gets no plausibility bound, because no sourced number exists. The interval
+  guard is the fix. *If wrong:* an implausible volume from on-time levels is shown without comment.
+- **D-e.** A profile save is refused when the two modules hold different values for a shared patient
+  field. MIC counts, and so does a newly typed SCr in one column. *If wrong:* a same-patient follow-up
+  needs one extra click (R19's copy action).
+- **D-h.** The Trough module's own AKI check (`checkAKI`, code M4) is left as it is: it has no draw times to
+  apply KDIGO's windows to. This is recorded as a known gap. *If wrong:* the Trough AKI banner can fire on a
+  rise spread over weeks.
+
+### Controller rulings R1–R24, each with what it costs if wrong
+
+- **R1.** "Was due" moves to the current regimen's interval. The default first dose stays at
+  `max(last + new interval, now)`. *If wrong:* on an interval change the default first dose stays keyed to
+  the new interval, a one-line change.
+- **R2.** 44.17/44.18 may pass a constructed rating into `finalizeDecision`. A browser check still drives a
+  real Low fit. *If wrong:* that unit test is less end to end (44.17 uses a real Low fit in the end).
+- **R3.** Implementers and reviewers ran on the strong model for clinical tasks. *If wrong:* tokens.
+- **R4.** One subagent at a time. *If wrong:* time.
+- **R5.** A planned dose at a fitted 20 mg/L or more is the dose held. The resume time is searched without
+  it. *If wrong:* one rework of the planned-dose head line.
+- **R6.** When the first planned dose is below 20, the hold is still judged at the new regimen's start,
+  with the planned rows counted. *If wrong:* none found; it keeps the existing hold path.
+- **R7.** A Trough refusal at the chosen interval names the intervals q6h–q48h that reach 400–600 within
+  the ceilings. The specialist wording is kept only when none does. The initial-mode Next line does not ask
+  for a level when nothing has been given. *If wrong:* extra text in the refusal.
+- **R8.** With no working interval, initial mode keeps `capBoundFlag`'s "Confirm the clearance with a
+  level before acting on it". *If wrong:* one sentence reworded.
+- **R9.** The severe-renal advisory ships with no mg/kg figure. Rec 10's range is surfaced to the user (the
+  open question below). *If wrong:* the pharmacist works out the mg/kg.
+- **R10.** Task 4b was added for the uncapped Trough loading dose and the unsourced augmented-clearance
+  figures. *If wrong:* one extra task.
+- **R11.** "Rybak 2020 gives no mg/kg loading dose for CrCl under 10" over-reached. Rybak's mg/kg loads go
+  by patient group (Rec 10, Rec 12), not renal function. The text now reads "sets no loading dose by renal
+  function, and none for CrCl under 10 mL/min without dialysis". *If wrong:* one sentence.
+- **R12.** Task 6b was added: the exposure tie-break for an out-of-band regimen. *If wrong:* an extra change
+  on borderline ties.
+- **R13.** Task 6b's tests are numbered 44.14c–e. *If wrong:* none.
+- **R14.** "Later than the interval" means later than tau plus the module's trough-timing window (0.5 h).
+  *If wrong:* a held-dose level drawn more than 30 min late is refused, and the user re-enters it on the
+  first-dose basis.
+- **R15.** "Was due" reads the decision's current regimen (`regimenBeingGiven`), not the Tinkerer's
+  `bState.curRegimen`. *If wrong:* no "was due" on schedules the decision does not treat as current.
+- **R16.** One reading of the current regimen per screen ("Next dose", the offset, "was due"). "Was due"
+  prints only when the first dose is now, and names a different current interval. *If wrong:* no due time
+  beside a future first dose.
+- **R17.** A current regimen needs a given dose of the detected maintenance amount. *If wrong:* a patient
+  whose only given dose is the load gets "start" wording.
+- **R18.** A Trough save stores the AUC course only when the AUC demographics are filled and agree, and
+  says so when it leaves it out. *If wrong:* a course is not saved from Trough when the AUC demographics
+  are blank.
+- **R19.** The D-e refusal names both values, leads with making them match, and offers one copy action.
+  *If wrong:* one extra button.
+- **R20.** Trough Clear resets the weight basis and amputation. *If wrong:* the pharmacist re-selects the
+  basis after Clear.
+- **R21.** `dial` is stored only with Goti, and a stored dial beside another model is ignored on load. *If
+  wrong:* none found.
+- **R22.** Clear empties the PD form, and an AUC save keeps the PD form only for the same patient. *If
+  wrong:* a PD schedule is not saved from AUC when the Trough fields are blank.
+- **R23.** Task 11b was added: Clear must not touch the PD local settings, and a blank never overwrites a
+  stored one. *If wrong:* one small task.
+- **R24.** Task 12 is split. 12a is the docs, the HD caption and the gate. Then come the final review on
+  the strongest model, one fix wave, and 12b, the release mechanics; the user runs the production merge.
+  *If wrong:* none.
+
+### Engine parity against v3.13.0 (`edc5b53`)
+
+`node docs/audit/engine-parity.cjs --ref edc5b53`: **225 calls, 72 differences.** The script prints the
+first 40; the full list was taken with the print limit lifted. Every difference is a deliberate change:
+- **`findOptimalDose`, 64 fields in 6 of its 16 calls (Task 3, engine C2, R7).** The ceilings now bind:
+  - CL 4.2, V 60, q24h: 2,250 mg (AUC₂₄ 536, over 2 g) → 1,750 mg (417); the flag changes with it.
+  - CL 9.7, V 55, q8h: 1,750 mg (5.25 g a day) → 1,500 mg (464).
+  - CL 4.2 at q48h (3,500 mg), and CL 9.7 at q24h and q48h (4,000 mg), become cap-bound refusals. Each
+    carries `refused`, `capBound`, `highest` (2 g), `tau`, `why`, `reason`, `others` (the intervals that
+    work) and `highestAucAny`. The old dose, trough, peak, AUC and flag are gone.
+  - CL 0.9, V 85, q8h: 250 mg at AUC₂₄ 833 (over 700) becomes a refusal ("every dose … breaches a hard
+    limit"), naming q12h, q24h, q36h and q48h.
+- **`calcLoadingDose`, 8 fields in all 4 of its calls (Task 4b).** These are the two additive fields,
+  `capped: false` and `uncappedMg`. No dose changed, because the corpus never reaches 3,000 mg; 44.9a is
+  the record of the cap.
+- **No other function differs.** Tasks 2, 6, 6b, 8 and 9 change `firstDosePlan`, `regimenDecision`,
+  `currentRegimenOf`, `finalizeDecision` and `nextLevelValue` with a fit. The parity corpus reaches none of
+  them (`nextLevelValue` is called without a fit, which is unchanged). SUITE 44, SUITE 43 and the sweeps
+  below are their record.
+
+### Measured
+
+- **Trough ceilings (Task 3).** On a grid of CL 0.3–20 × V 30/50/70/90 × q6–q48h × three infusion times,
+  all 4,501 answers that were in band and within the ceilings before are identical. About 11,600 of 16,600
+  calls now refuse, mostly extreme clearances, long intervals and lattice gaps. Each refusal names the
+  intervals that work.
+- **The tie-break (Task 6b).** In a `regimenDecision` differential of 77,760 calls against `066071e`,
+  20,814 calls change from continue/no-better to change/attainment, every one to 1.5 g q8h, the highest
+  admissible exposure. 920 more differ only in the no-better wording, and nothing else moved. A wider sweep
+  found 145,296 changes: 145,287 to 1.5 g q8h and 9 from above the band. None changes against the
+  direction of the band, lowers dots, or starts from an in-band or unsafe regimen. 5,499 genuine ties still
+  continue. `evalRegimen` over 17,496 calls is unchanged by the grace refactor.
+- **Ruling 3 (Task 9).** Over 2,592 fictional Hughes one-level fits on 1.5 g q12h, 339 were Low-confidence
+  attainment changes from in range. All are now continued with "Draw a level".
+- **Comprehensive scenario 6:** dose attainment unchanged at 75.2%.
+
+### Verified (2026-11-15, Task 12a, branch head before the final review)
+
+- `node phase2d_validation.cjs`: **537/537**.
+- `node phase3_simulation.cjs`: **21/21**.
+- `node phase4_regimen_validation.cjs`: **49/49**.
+- `node phase2d_comprehensive_validation.cjs`: only scenarios 3 and 4 fail, by design. Those failures are
+  scenario 3's MAE 344.2 against 260, and scenario 4's MAE 351.3 against 200, improvement 14.6 against 15
+  and coverage 38.0% against 45%. Scenarios 1, 2, 5 and 6 pass.
+- Engine parity against `edc5b53`: the 72 differences above.
+- Browser flows under the CSP: **151/151**, 0 console problems.
+- JS syntax check: OK.
+
+### Recorded, not changed (for the final review and the user)
+
+- **Hold eligibility differs between modules.** AUC Precision can hold on a prior-only fit, because its
+  hold reads the fitted curve. The Trough module holds only on a measured level, because a population
+  prediction is not a pre-dose level.
+- **An interval change where only the opening dose of the new schedule is given counts as current.** A
+  dose change needs a dose of the new amount (R17's exact dose match). The two cases are asymmetric.
+- **A charted order change that has not started reads as a start**, for example old 1 g q12h given and new
+  1.25 g only planned. No note says the charted change has not started.
+- **An AUC re-save of a PD patient drops the PD form when the Trough column has no SCr.** The PD mode hides
+  that field. This fails safe, and the status line says so.
+- **Final-review candidates from the task reviews:**
+  - The Trough hold can give a resume time before the due time.
+  - Held planned rows are drawn on the curve when no projection is drawn.
+  - The no-interval alarm quotes `highestAucAny` while the reason quotes the chosen interval's highest.
+  - Refusals can name q6h, which the two-level and random-level selects do not offer.
+  - `fmtDT` omits the year, so a level mistyped a year ahead is refused with a date that looks current.
+  - The confidence line can hold two em dashes, and the cap-bound continue detail sentence is ungrammatical.
+  - The Copy summary carries neither "Draw a level" nor the ceiling caution.
+  - A capped 3 g load runs at 16.7 mg/min beside the infusion-rate caution (the clinical reviewer's list).
+  - The qualitative augmented-clearance prose is unsourced.
+  - There is no control to remove a stored PD cap, since a blank keeps it.
+  - The ledger lists the smaller code-health items.
+
+### The final review's fixes (2026-11-15, rulings R25–R27)
+
+A whole-branch review of `edc5b53..73a1936` on the most capable model found one Critical and six
+Important issues, mostly about the new Hold, and named the deferred minors. All were fixed in one wave,
+each test-first. The new unit tests are SUITE 44.27–44.36 (11 tests). The new browser checks are the nine
+`D26: … final review` checks. The RED and GREEN runs are under `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/t8/final-*`.
+
+**The rulings.**
+- **R25:** fix now with the safe minimum for the three questions the user owns (I1, I2, I6). Those
+  questions are listed below.
+- **R26:** fix the deferred minors before merge, and strip the scratch paths from the review reports.
+- **R27:** scrub the institution acronym, protocol filename and local paths from the two HD plan documents
+  in the current files. Rewriting git history is the user's call.
+
+**What changed, and what pins each change.**
+- **C1 (Critical): a Hold sat beside "A further level would add little".** The case was a fictional 70 M,
+  CrCl 8, on Goti, one 2 g dose, with flat levels of 52, 51 and 50.2 mg/L over three days. It got a
+  Moderate fit and "Hold: next dose not before …", with "Next: A further level would add little". Six of
+  nine hold scenarios reached that precision branch.
+  - `nextLevelFit(r, conf, plan)` now reads the finalized first-dose plan.
+  - Under any hold, the Next line is the hold's own instruction, "Recheck a level before the next dose",
+    ahead of every other branch.
+  - Copy summary and the announcement say it too.
+  - A first-dose time chosen through `k82` can make or clear a hold. The Next line and the further-level
+    panel follow it (`#b-next`, `#b-voi`, `bayesNextStep`).
+  - Two pairs join the coherence predicates in both suites: "Hold" with "would add little", and "Hold" with
+    "Give a … loading dose".
+  - Pinned by 44.27, the Review Focus 1 browser regression, and the chosen-time browser check.
+- **I1 (minimum): a newer measured level of 20 or more was not reflected when the fit read it lower.** A
+  fictional 70 M, CrCl 8, had levels of 35, 30.3 and 26.2 mg/L. The fit read the 26.2 as 19.5. The answer
+  was "250 mg q48h, first dose now", with no hold and High confidence.
+  - With no hold, the newest level measured after the last given dose leads the answer in the alarm tone
+    (`answerHeadHTML`, `measuredHighSentence`). It does so only when the level is at or above 20 mg/L and
+    the fit reads it lower.
+  - The alarm names the level and its time, the fitted value, and "recheck a level before the next dose".
+  - It shows on screen, in print, in Copy summary and in the announcement. The Next line says the same.
+  - When the Hold fires is unchanged (ruling 1).
+  - A time chosen past the fitted resume time clears the hold but not this alarm.
+  - Pinned by 44.28 and the I1 browser check.
+- **I2: "Recheck a level" could not be reached on real anuric fits.**
+  - `HOLD_SEARCH_MAX_H` (now the literal 336, 14 days, unchanged) is labelled a PREFERENCE (rule 8). It is
+    how far the fitted curve is trusted to time a dose.
+  - A refusal now leads with "Hold: recheck a level before the next dose" when either reading is at or
+    above 20 (`noSolutionHold`). The two readings are the fitted level at the next dose's due time and the
+    newest level measured after the last dose. This shows on screen, in print, in the summary and in the
+    announcement.
+  - 44.4 now runs a real anuric fit that reaches this hold. The CL 0.05 case stays as an extra unit case.
+  - Pinned by 44.4, 44.29, 44.29a and the I2 browser check.
+- **I3: a Trough "not before" time could fall before the due time.** The case was 20.5 mg/L at 08:36 on
+  q8h from 01:00, which read "not before 08:49" against a 09:00 due time.
+  - With a measured level, `troughHold` carries that level down the fitted decline to the due time. Below
+    20 there is no hold.
+  - Pinned by 44.30 and the I3 browser check.
+- **I4: random-level mode never held.**
+  - It now calls `troughHold` from the level, its time and the fitted Kel.
+  - The dose is due at the interval the patient is on (steady state), or at the interval chosen after a
+    first dose.
+  - The verdict, the refusal and the announcement carry the hold.
+  - Pinned by 44.31 and the I4 browser check.
+- **I5: the severe-renal note contradicted a Hold.**
+  - Once a dose is given or a level exists, its first bullet is "No further dose until a level is drawn",
+    with no loading-dose sentence. The Rec 11 basis and maximum go with the loading dose.
+  - The clamp sentence shows only when a clamp happened. It no longer says "used 8 mL/min, not the actual
+    8". It gives one decimal when the whole numbers agree.
+  - The pre-dose wording is unchanged, so 44.9–44.9d still hold.
+  - Pinned by 44.32 and the I5 browser check.
+- **I6 (minimum): an over-ceiling continue read differently in the two modules.**
+  - The AUC answer now leads with the ceiling caution, in the caution tone, naming the limit, before the
+    action and the why line (`ceilingCautionText`).
+  - Copy summary and the announcement carry it.
+  - The action chosen is unchanged.
+  - Pinned by 44.33. 44.21 still passes unchanged.
+- **R26 minors:**
+  - Copy summary and the announcement say "Draw a level." on a low-confidence continue (44.34).
+  - The cap-bound detail is one sentence: "Confirm the clearance with a level before considering a dose
+    beyond the ceiling or another agent" (44.35).
+  - The future-level refusal gives the year (`fmtDT(…, true)`), pinned by 44.36 and a browser check.
+- **Hygiene (R26, R27):**
+  - The scratch paths, which contained the OS username, are gone from the 2026-11-13 engine and UI reports.
+  - The HD plan documents say "the user's institutional protocol (private)" and use placeholder paths.
+  - The README no longer names the protocol folder.
+  - `phase4_regimen_validation.cjs` reads `index.html` beside itself, not an absolute local path.
+  - Three `.impeccable/critique` logs record `index.html` relatively.
+  - A repository-wide `git grep` for the username, the acronym and the folder name now finds nothing.
+
+**Tests re-pointed, not weakened (rule 9).**
+- 44.9 matched `severeRenalNote(crclTrue, cappingNote, 'auc')` literally. The call gained a fourth argument
+  (`dosed`), so the regex accepts it. The assertion still requires the AUC wording.
+- 44.4's hand-built fixture is now the extra unit case, beside the real fit the review asked for.
+- `fit44` was moved above 44.2, and now also records the announcement and Copy summary. When no regimen
+  is detected it reads model agreement on the recommended daily dose, as the render does.
+- `trough44` takes the random-level sub-mode.
+
+**Engine parity:** 0 differences against `73a1936`, and still 72 against `edc5b53`. The 225-call corpus
+reaches none of these paths. The units and browser checks above are the record.
+
+**Verified (2026-11-15, after the fix wave):**
+- Unit tests 548/548; phase3 21/21; phase4 49/49.
+- In the comprehensive suite only scenarios 3 and 4 fail, by design, with the figures above.
+- Browser flows under the CSP 160/160, with 0 console problems.
+- The JS syntax check passes.
+
+### Questions for the user from the final review (R25) — answered 2026-11-15 (U1–U3, wave 2 below)
+
+1. **Should a measured level hold?** The Hold fires on the fitted pre-dose level only (ruling 1). The I1
+   alarm says a newer measured level the fit reads lower, but it does not hold the dose or move it.
+2. **The hold horizon (`HOLD_SEARCH_MAX_H`, 14 days, a preference).** Past it the answer is "recheck a
+   level", with no time.
+3. **D-a, how the modules read an over-ceiling current regimen.** AUC Precision continues it, with the
+   caution leading. The Trough module calls it a breach at alarm tier. Which reading should both use?
+
+### Wave 2: the user's rulings U1–U4 and the re-review's residuals (2026-11-15)
+
+The re-review of the fix wave confirmed C1, I2, I3, I6 and deferred items 1–4. It found three Important
+breakages and an archive file the grep had missed:
+- The I1 alarm fired on routine peaks.
+- `troughHold` extrapolated upward for a level drawn after the due time.
+- The severe-renal verdict and Next line still said "Give one loading dose" while the note said "No further
+  dose until a level is drawn".
+- `archive/v0-march-2026-superseded.html` still named the institution.
+
+The user then ruled on the three open questions. These rulings replace ruling 1's "fitted level only", the
+default status of D-a, and R25's stop-gaps. Every change began with a test seen failing. RED and GREEN are
+in `t8/w2-*`.
+
+- **U1: the Hold reads the fitted OR the measured level.**
+  - **The rule.** The Hold also fires on the newest level drawn after the last given dose and after the
+    distribution phase, carried down the fitted terminal slope to the time the dose would go in, when that
+    is ≥ `TROUGH_HIGH_MGL`. The carry uses `measuredHoldLevel` and `fittedTerminalRate` (β for a
+    two-compartment fit, CL/V for a one-compartment fit).
+  - **The resume time** is the later of the two crossings below 20, on the same 0.25 h grid.
+  - **The hold line names its basis.** For example: "The measured 26.2 mg/L at 15 Nov 09:00, carried down
+    the fitted slope, is 26.0 mg/L at 15 Nov 10:00 …".
+  - **No new constant: "after the distribution phase" reuses the code's existing definitions.**
+    - `interpretLevelTiming` must not class the level 'during_infusion' or 'immediate_post_infusion'.
+      Immediate means under 0.5 h after the infusion ended, the level-timing narrative's own boundary.
+    - For a two-compartment fit, the level must also fall after the model's own redistribution window,
+      counted from the end of the infusion. That window is `hdRedistributionWindowH`:
+      `HD_POSTSESSION_HALF_LIVES` (3) × ln2/α, D15's "drug is still returning from the tissues". It is
+      about 5–6 h on Goti.
+    - A one-compartment model has no distribution phase to read, so its window is 0.
+  - **The I1 alarm is removed:** `measuredHigh`, `measuredHighSentence` and its head line.
+  - **The refusal's measured branch** uses the same rule.
+  - **Pinned by:**
+    - 44.28: the I1 case, a 70 M with CrCl 8 on Goti and levels of 35, 30.3 and 26.2 mg/L. It now holds
+      with a resume time about 44 h later, on the measured basis.
+    - 44.28a: the re-reviewer's peak cases hold neither on Buelga nor on Goti. These are troughs of 10–17
+      with peaks of 25–40, an hour after a 1.25 g q12h infusion. Neither do the augmented-clearance peaks
+      (20.5–26), and a level of 30 drawn during the infusion holds on neither basis.
+    - Browser: "D26: final review (U1) …", plus a routine-peak browser check.
+- **U2: the hold horizon is 72 h from the due time** (`HOLD_SEARCH_MAX_H = 72`, still a PREFERENCE under
+  rule 8, parsed by the harness).
+  - Past it the answer is "Hold: recheck a level before the next dose", with no clock time on any surface:
+    the head, the why line, the readout, print, Copy summary, the announcement and the refusal.
+  - The Trough module's closed-form cutoff uses the same constant.
+  - The anuric flat-levels patient (52, 51, 50.2) is now a hold with no time.
+  - Pinned by 44.37 (a 60 h crossing gives a time; an 80 h one gives "recheck"; the Trough cutoff falls
+    between 71 and 73 h), 44.27 and the browser checks.
+- **U3: an over-ceiling current regimen is continued with caution in both modules.**
+  - AUC Precision is unchanged; D-a is now the user's ruling.
+  - **The Trough module** now reads it the same way when the only hard fails are the dose ceilings:
+    - In range and safe, it reads "Continue current regimen", with the caution leading the verdict.
+      The caution is `ceilingCautionOf`, one wording shared with AUC Precision.
+    - Out of range, the assessment stands at caution tier, and never with "increase" wording.
+    - The announcement and the curve summary carry the caution.
+  - AUC₂₄ above 700, or a trough of 20 or more, stays alarm tier.
+  - Pinned by 44.38 (2 g q8h at CL 11 reads the same in both modules) and the re-pointed 44.8c and 44.8d.
+- **U4: the superseded March build is deleted.**
+  - It named the institution and transcribed its guideline table and notes. Nothing linked to it, so it was
+    deleted rather than scrubbed.
+  - README, CLAUDE.md and the review manifest no longer list it. History is untouched.
+  - A repository-wide case-insensitive `git grep` for the institution's name, its acronyms and the username
+    returns no hits in tracked files.
+- **N2:** `troughHold` judges at the later of the due time and the draw. A level drawn after the due time is
+  its own reading, and below 20 it is no hold. The sentence then says "drawn … h after the last dose
+  started, after the … h due time". Pinned by 44.39.
+- **N3:** once a dose has been given, the severe-renal verdict, Next line and print say "No further dose until
+  a level is drawn" (`SEVERE_RENAL.followDosed`/`nextDosed`, `severeRenalFollow`/`Next`). Before any dose
+  they keep the loading dose. The coherence predicates in both suites gain "No further dose until a level"
+  with "Give … loading dose", matched case-insensitively. Pinned by 44.40.
+- **N4:** the refusal's Next line now reads "Confirm the inputs; if they are right, seek specialist guidance."
+  Pinned by 44.41.
+
+**Re-pointed, not weakened (rule 9):**
+- 44.27: the C1 patient is now a hold with no time (U2).
+- 44.28: U1 replaces the I1 alarm.
+- 44.29a: the value is 72 h (U2).
+- 44.8c and 44.8d: Task 3's "never continue / alarm" was the default the user overruled in U3.
+- 44.9: the verdict and print read `severeRenalFollow`, which equals `SEVERE_RENAL.follow` before any dose.
+- 44.29's unit: a measured level holds only when it is post-distribution and carried down the fitted slope.
+- The browser checks for C1, I1 and the chosen time. The chosen-time check now uses the I1 patient, whose
+  hold has a resume time.
+
+**Parity:** 0 differences against `871234c`, and still 72 against `edc5b53`.
+
+**Wave 2 label fix (the wave-2 re-review; U1–U4 and N2–N4 were confirmed).**
+- **The defect.** On the C1 patient's no-time hold, set on both bases, the first-dose readout showed
+  `holdPre`, the higher of the two (49.9 mg/L, the carried measured level). It labelled that number
+  "fitted level" on screen and "Fitted level" in print.
+- **The label now follows the value.** When the carried level is the higher, the readout says "measured
+  level, carried down the fitted slope," followed by the number.
+- **"Level by then" on a timed hold whose time the carried measured level set.** It showed the fitted 14.9
+  mg/L. It now shows the carried value (19.99 mg/L) and names both: "(measured, carried down the fitted
+  slope; fitted 14.9)". This uses `plan.preCarried`.
+- **Pinned by** new assertions in 44.27 and 44.28 and in the C1 browser check. "Fitted level 49.9" never
+  appears on screen or in print.
+- **Rule 8 in CLAUDE.md** now lists the current preferences instead of "exactly two".
+
+**Verified:**
+- unit 554/554; phase3 21/21; phase4 49/49;
+- in the comprehensive suite only scenarios 3 and 4 fail, by design;
+- flows 161/161 with 0 console problems;
+- the JS syntax check passes.
+
+### Open question for the user
+
+**Should the severe-renal advisory show a loading range for CrCl under 10 mL/min without dialysis, and
+which one?** It now shows none (R9, R11): only Rec 11's basis (actual body weight) and maximum (3,000 mg),
+then measured levels. Rybak 2020 sets its mg/kg loading doses by patient group, not by renal function, and
+does not address this group. The two sourced options are:
+- **Rec 10** (B-II, printed p. 10): 20–35 mg/kg may be considered in critically ill patients with suspected
+  or documented serious MRSA infection.
+- **Rec 12** (B-II, printed p. 11): 20–25 mg/kg actual body weight, at most 3,000 mg, may be considered in
+  obese adults with serious infections.
+
+Either would be shown with its population named, beside Rec 11's maximum. Neither is shown until the user
+rules.

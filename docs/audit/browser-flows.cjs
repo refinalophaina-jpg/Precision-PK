@@ -22,6 +22,16 @@ const OUT = process.env.OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'vanco-flow
 fs.mkdirSync(OUT, { recursive: true });
 const checks = [];
 const ok = (name, pass, detail = '') => checks.push({ name, pass: !!pass, detail: String(detail).slice(0, 300) });
+// One sentence about a further level (D26): "would add little" never beside a sentence that asks for a
+// level ("Draw a level." included, Task 9) or beside a Hold (final review C1); the cap-bound alarm never
+// beside "a dose change is indicated" or "how large it needs to be" (Task 6b review); and a Hold never
+// beside the severe-renal note's "Give a … loading dose" (final review I5).
+const HOLD_RE = /Hold: |Hold the (?:\d+ )?planned dose/;
+const incoherent = (s) => (/would add little/.test(s) && (/is recommended|Confirm the clearance with a level|another level may settle it|Draw a level|Recheck a level/.test(s) || HOLD_RE.test(s)))
+  || (/cannot be reached within the conventional ceilings/.test(s) && /a dose change is indicated|how large it needs to be/.test(s))
+  || (HOLD_RE.test(s) && /Give (?:a|one) [^.]*?loading dose/.test(s))
+  // Wave 2 (N3): "No further dose until a level" never beside "Give … loading dose".
+  || (/no further dose until a level/i.test(s) && /give (?:a|one) [^.]*?loading dose/i.test(s));
 
 async function typeInto(page, sel, text) {
   const el = page.locator(sel);
@@ -141,6 +151,10 @@ async function enterCourse(page) {
   await page.waitForTimeout(200);
   await page.screenshot({ path: path.join(OUT, 'desktop-trough.png') });
 
+  {
+    const paper = await page.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+    ok('D26: print says not clinically validated (Trough result)', /not clinically validated/.test(paper) && /Clinician judgment required/.test(paper) && paper.length > 200, paper.slice(-300));
+  }
   // Stale marker on edit, cleared on revert.
   await typeInto(page, '#age', '61'); await page.waitForTimeout(250);
   ok('Trough result marked stale after an edit', await page.locator('#results-content .stale-line, .stale-line').first().isVisible().catch(() => false));
@@ -369,6 +383,11 @@ async function enterCourse(page) {
   const cards = () => page.evaluate(() => [...document.querySelectorAll('.model-grid .model-opt')]
     .map(b => b.id.replace('b-model-btn-', '') + ':' + b.classList.contains('active') + '/' + b.getAttribute('aria-pressed')).join(','));
   await page.locator('#b-model-btn-goti').click();
+  // The stale check above typed SCr 1.3 here only; the Trough column still holds this patient's
+  // 1.0. Since v3.14.0 (D26, D-e) a save is refused while the two columns disagree on a shared
+  // field, so the AUC value is put back to match before saving.
+  const troughScr = await page.evaluate(() => document.getElementById('scr').value);
+  if (troughScr) await typeInto(page, '#b-scr', troughScr);
   await typeInto(page, '#profile-label-input', 'Test A');
   await page.locator('[data-onclick="k37"]:visible').click();
   await page.waitForTimeout(200);
@@ -438,12 +457,14 @@ async function enterCourse(page) {
   await page.waitForTimeout(200);
   await page.locator('#tinker-result-ss').screenshot({ path: path.join(OUT, 'desktop-trough-tinker.png') });
   // The dose explorer marks the rows the chart draws with the chart key's line and word (D14):
-  // the current regimen on the fit's line, the recommendation on the projection's.
-  const xRows = await page.evaluate(() => [...document.querySelectorAll('#tx-ev-explorer tbody tr[class]')].map(r => ({
+  // the current regimen on the fit's line, the recommendation on the projection's. (Since D26 a
+  // row over a ceiling carries is-over too; the key's rows are the is-cur / is-rec / is-opt ones.)
+  const xRows = await page.evaluate(() => [...document.querySelectorAll('#tx-ev-explorer tbody tr.is-cur, #tx-ev-explorer tbody tr.is-rec, #tx-ev-explorer tbody tr.is-opt')].map(r => ({
     cls: r.className, key: (r.querySelector('.tx-row-tag .lg') || {}).className || '',
     text: r.querySelector('th').textContent.replace(/\s+/g, ' ').trim() })));
   ok('dose explorer keys the chart\'s regimens: current on the fit\'s line, recommended on the projection\'s',
-     xRows.length === 2 && xRows.some(r => r.cls === 'is-cur' && /lg-ind/.test(r.key) && r.text === '1 g q12h current') &&
+     // The fitted current 1 g q12h is over AUC24 700 here, so its row also says so (D26 review).
+     xRows.length === 2 && xRows.some(r => /^is-cur( is-over)?$/.test(r.cls) && /lg-ind/.test(r.key) && /^1 g q12h current( AUC₂₄ over 700)?$/.test(r.text)) &&
      xRows.some(r => r.cls === 'is-rec' && /lg-proj/.test(r.key) && / recommended$/.test(r.text)), JSON.stringify(xRows));
   const dAttr = await attributeInjected(page, dProblems);
   results.cloudflareInjected = dAttr.injected;
@@ -567,6 +588,10 @@ async function enterCourse(page) {
     sw: document.documentElement.scrollWidth, iw: innerWidth }));
   ok('HD one-time: no session ahead → a one-time answer, the missed post-HD dose flagged, fits 375 px',
      ot.oneTime && /IV now|No dose now|Planned/.test(ot.head) && ot.missed && ot.btns.join() === '24:false,48:true,72:false' && ot.sw <= ot.iw, JSON.stringify(ot));
+  {
+    const paper = await m.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+    ok('D26: print says not clinically validated (HD result)', /not clinically validated/.test(paper) && /Clinician judgment required/.test(paper) && paper.length > 200, paper.slice(-300));
+  }
   await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
   await m.waitForTimeout(250);
   await m.screenshot({ path: path.join(OUT, 'mobile-hd-onetime.png') });
@@ -658,6 +683,913 @@ async function enterCourse(page) {
     await sctx.close();
   }
 
+  // v3.14.0 (D25): the regimen being given enters the decision. A fictional 55 M (72 kg,
+  // 176 cm, SCr 1.0) on 1250 mg q12h with the target box at 400 — where v3.13.0 traded an
+  // in-range regimen for whatever sat nearest 400. Then the same patient on 1750 mg q24h,
+  // below range, which must change and say why. Fixed clock: today 10:00.
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const c = await cctx.newPage();
+    const cProblems = watch(c, 'continue');
+    await c.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await c.goto(BASE + '?v=pwc-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.locator('[data-onclick="k2"]').click();
+    await typeInto(c, '#b-age', '55'); await typeInto(c, '#b-tbw', '72'); await typeInto(c, '#b-height', '176'); await typeInto(c, '#b-scr', '1.0');
+    await c.locator('[data-onclick="k39"]').click();
+    const course = async (mg, times, conc) => {
+      for (let n = 1; n <= times.length; n++) {
+        await c.locator('[data-onclick="k43"]').click();
+        await typeInto(c, `#b-dose-mg-${n}`, mg); await typeInto(c, `#b-dose-tinf-${n}`, mg > 1500 ? '2' : '1.5');
+        await c.locator(`#b-dose-date-${n}`).fill(times[n - 1][0]); await typeInto(c, `#b-dose-time-${n}`, times[n - 1][1]);
+      }
+      await c.locator('[data-onclick="k46"]').click();
+      await typeInto(c, '#b-lvl-conc-1', conc); await c.locator('#b-lvl-date-1').fill(day(0)); await typeInto(c, '#b-lvl-time-1', '07:30');
+      await typeInto(c, '#b-auc-target', '400');
+      await c.locator('[data-onclick="k47"]').click(); await c.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await c.waitForTimeout(300);
+      return c.evaluate(() => ({ act: document.querySelector('#b-results .vx-action')?.textContent || '',
+        reg: (document.getElementById('vx-regimen')?.textContent || '').replace(/\s+/g, ' ').trim(),
+        why: (document.querySelector('#b-results .vx-why')?.textContent || '').replace(/\s+/g, ' ').trim(),
+        delta: !!document.querySelector('#b-results .vx-delta'),
+        actFirst: (() => { const a = document.querySelector('#b-results .vx-action'), h = document.getElementById('vx-regimen');
+          return !!(a && h && (a.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING)); })(),
+        said: document.getElementById('sr-announce')?.textContent || '' }));
+    };
+    const q12 = await course(1250, [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']], 16);
+    ok('D25: an in-range 1.25 g q12h is continued at a target box of 400, said before the regimen, with why and the target-box alternative',
+       q12.act === 'Continue the current regimen' && q12.actFirst && q12.reg === '1.25 g IV q12h' && !q12.delta
+       && /^Within 400–600 at AUC₂₄ \d+ with \d+ of 20 plausible AUCs in range; no admissible regimen puts 2 or more further in range\. Your target of 400 alone would give .+ \(AUC₂₄ \d+, \d+ of 20 in range\)\.$/.test(q12.why),
+       JSON.stringify(q12));
+    ok('D25: the screen reader hears "continue"', /^Result: continue 1\.25 g IV q12h, AUC24 \d+/.test(q12.said), q12.said);
+    const printed = await c.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: print says not clinically validated (AUC result)', /not clinically validated/.test(printed) && /Clinician judgment required/.test(printed) && !/Advisory only/.test(printed), printed.slice(-300));
+    ok('D25: the printed report says continue and why, as on screen', /Continue the current regimen\s*1\.25 g IV q12h/.test(printed) && /no admissible regimen puts 2 or more further in range/.test(printed),
+       printed.slice(printed.indexOf('Dose recommendation'), printed.indexOf('Dose recommendation') + 600));
+    await c.goto(BASE + '?v=pwc2-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.locator('[data-onclick="k2"]').click();
+    await typeInto(c, '#b-age', '55'); await typeInto(c, '#b-tbw', '72'); await typeInto(c, '#b-height', '176'); await typeInto(c, '#b-scr', '1.0');
+    await c.locator('[data-onclick="k39"]').click();
+    const q24 = await course(1750, [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']], 6);
+    ok('D25: a below-range 1.75 g q24h changes, naming what it changes from and the in-range gain',
+       /^Change from 1\.75 g IV q24h$/.test(q24.act) && q24.actFirst && q24.delta
+       && /^The current regimen gives AUC₂₄ (3\d\d) with (\d+) of 20 plausible AUCs in 400–600; this one puts (\d+) of 20 in range\./.test(q24.why)
+       && (m => !!m && +m[2] > +m[1])(q24.why.match(/with (\d+) of 20[\s\S]*puts (\d+) of 20/)),
+       JSON.stringify(q24));
+    // v3.14.0 (D26), UI report I2 (ruling R1): the last 1.75 g q24h dose went in yesterday 08:00, so
+    // the next was due today 08:00 — never "was due yesterday 20:00" (the new q12h's due time).
+    const dueRead = await c.evaluate(() => {
+      const first = (document.getElementById('b-first-readout') || {}).textContent || '';
+      window.dispatchEvent(new Event('beforeprint'));
+      const paper = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      const i = paper.indexOf('First dose');
+      return { first: first.replace(/\s+/g, ' ').trim(), paper: i < 0 ? '' : paper.slice(i, i + 200) };
+    });
+    const dd = (n) => { const d = new Date(`${day(n)}T12:00`);
+      return `${d.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]}`; };
+    ok('D26: on a change from q24h to q12h, "current q24h dose was due" today 08:00, on screen and in print, offset against the current q24h',
+       dueRead.first.startsWith(`${dd(0)} 10:00 (current q24h dose was due ${dd(0)} 08:00)`) && !dueRead.first.includes(`${dd(-1)} 20:00`)
+       && dueRead.paper.includes(`First dose ${dd(0)} 10:00 (current q24h dose was due ${dd(0)} 08:00)`) && /2 h after the current q24h schedule/.test(dueRead.paper),
+       JSON.stringify(dueRead));
+    // v3.14.0 (D26): saving while the result is stale keeps the stale mark. The 1.75 g q24h
+    // fit above is still on screen; change SCr so it is stale, then save with and without a label.
+    await typeInto(c, '#b-scr', '1.4'); await c.waitForTimeout(300);
+    const staleState = () => c.evaluate(() => ({
+      line: !!document.querySelector('#b-results .stale-line, .panel-right .stale-line'),
+      cls: document.getElementById('b-results').classList.contains('is-stale'),
+      result: !!bState.result }));
+    const stale0 = await staleState();
+    await c.locator('[data-onclick="k37"]:visible').first().click(); await c.waitForTimeout(200);
+    const staleA = await staleState();
+    await c.locator('.profile-label-input:visible').first().fill('D26 stale');
+    await c.locator('[data-onclick="k37"]:visible').first().click(); await c.waitForTimeout(300);
+    const staleB = await staleState();
+    const savedSnap = await c.evaluate(() => { const ps = loadProfiles(); const p = ps.find(x => x.label === 'D26 stale'); return p ? { has: true, fit: !!(p.snapshot && p.snapshot.fit) } : { has: false }; });
+    ok('D26: saving while stale keeps the stale mark (empty label, then labelled), and the profile holds no fit',
+       stale0.line && stale0.cls && stale0.result
+       && staleA.line && staleA.cls && staleA.result && staleB.line && staleB.cls && staleB.result
+       && savedSnap.has && !savedSnap.fit,
+       JSON.stringify({ stale0, staleA, staleB, savedSnap }));
+    const cAttr = await attributeInjected(c, cProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr.injected;
+    results.problems.push(...cAttr.kept);
+    await cctx.close();
+  }
+
+  // v3.14.0 (D26), engine report I3: a level dated in the future is refused, naming its row.
+  // A fictional 55 M (80 kg, 176 cm, SCr 1.0) on 1.25 g q12h x 4, the last 11 h ago, and a
+  // level of 15 mg/L dated 30 h ahead. A planned dose dated ahead is still allowed.
+  // Fixed clock: today 10:00.
+  {
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const f = await fctx.newPage();
+    const fProblems = watch(f, 'future-level');
+    await f.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await f.goto(BASE + '?v=fut-' + Date.now(), { waitUntil: 'networkidle' });
+    await f.locator('[data-onclick="k2"]').click();
+    await typeInto(f, '#b-age', '55'); await typeInto(f, '#b-tbw', '80'); await typeInto(f, '#b-height', '176'); await typeInto(f, '#b-scr', '1.0');
+    await f.locator('[data-onclick="k39"]').click();
+    const when = [[day(-2), '11:00'], [day(-2), '23:00'], [day(-1), '11:00'], [day(-1), '23:00']];
+    for (let n = 1; n <= when.length; n++) {
+      await f.locator('[data-onclick="k43"]').click();
+      await typeInto(f, `#b-dose-mg-${n}`, '1250'); await typeInto(f, `#b-dose-tinf-${n}`, '1.5');
+      await f.locator(`#b-dose-date-${n}`).fill(when[n - 1][0]); await typeInto(f, `#b-dose-time-${n}`, when[n - 1][1]);
+    }
+    await f.locator('[data-onclick="k46"]').click();
+    await typeInto(f, '#b-lvl-conc-1', '15'); await f.locator('#b-lvl-date-1').fill(day(1)); await typeInto(f, '#b-lvl-time-1', '16:00');
+    await f.locator('[data-onclick="k47"]').click(); await f.waitForTimeout(600);
+    const futState = () => f.evaluate(() => ({ err: (document.getElementById('fe-auc') || {}).textContent || '', result: !!bState.result,
+      rec: !!document.querySelector('#b-results .rec-dose'), invalid: ['b-lvl-date-1', 'b-lvl-time-1'].some(i => { const e = document.getElementById(i); return e.getAttribute('aria-invalid') === 'true' || e.classList.contains('fe-invalid'); }) }));
+    const fut = await futState();
+    ok('D26: a level dated 30 h ahead is refused, naming "Level row 1", with no result',
+       /Level row 1/.test(fut.err) && /future/.test(fut.err) && !fut.result && !fut.rec && fut.invalid, JSON.stringify({ result: fut.result, rec: fut.rec, invalid: fut.invalid, err: fut.err.replace(/\s+/g, ' ').trim().slice(0, 80) }));
+    ok('D26: the future-level refusal gives the year with the date (final review, R26)', fut.err.indexOf(day(1).slice(0, 4)) > 0, fut.err.replace(/\s+/g, ' ').trim().slice(0, 140));
+    await f.locator('#b-lvl-date-1').fill(day(0)); await typeInto(f, '#b-lvl-time-1', '07:30');
+    await f.locator('[data-onclick="k47"]').click(); await f.waitForSelector('#b-results .rec-dose', { timeout: 20000 });
+    const fixed = await futState();
+    ok('D26: the same level dated in the past is fitted', fixed.result && fixed.rec && !/Level row/.test(fixed.err), JSON.stringify(fixed));
+    const fAttr = await attributeInjected(f, fProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + fAttr.injected;
+    results.problems.push(...fAttr.kept);
+    await fctx.close();
+  }
+
+  // v3.14.0 (D26), saved profiles: engine report I4 (P1) and I5 (P2), code report I2 and I5, and
+  // Review Focus 2. Fictional patients A–D only; the v3.13.0 fixture is fictional too.
+  {
+    const sctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const s = await sctx.newPage();
+    const sProblems = watch(s, 'profiles');
+    await s.goto(BASE + '?v=prof-' + Date.now(), { waitUntil: 'networkidle' });
+    const KEY = 'ainadara.profiles.v1';
+    const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const save = async (label) => {
+      await s.locator('.profile-label-input:visible').first().fill(label);
+      await s.locator('[data-onclick="k37"]:visible').first().click(); await s.waitForTimeout(250);
+    };
+    const stored = () => s.evaluate((k) => JSON.parse(localStorage.getItem(k) || '[]'), KEY);
+    const profileErr = () => s.evaluate(() => ((document.querySelector('.fe-profile') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    const statusLine = () => s.evaluate(() => [...document.querySelectorAll('.profile-status')].map(p => p.textContent).join(' '));
+    // P1: patient A (80 F, 50 kg, 150 cm, SCr 2.5, two doses, one level) in AUC Precision.
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-age', '80'); await typeInto(s, '#b-tbw', '50'); await typeInto(s, '#b-height', '150'); await typeInto(s, '#b-scr', '2.5');
+    await s.locator('[data-onclick="k40"]').click();
+    for (const [n, d] of [[1, D1], [2, D2]]) {
+      await s.locator('[data-onclick="k43"]').click();
+      await typeInto(s, `#b-dose-mg-${n}`, '1000'); await typeInto(s, `#b-dose-tinf-${n}`, '1');
+      await s.locator(`#b-dose-date-${n}`).fill(d); await typeInto(s, `#b-dose-time-${n}`, '08:00');
+    }
+    await s.locator('[data-onclick="k46"]').click();
+    await typeInto(s, '#b-lvl-conc-1', '18'); await s.locator('#b-lvl-date-1').fill(D2); await typeInto(s, '#b-lvl-time-1', '07:30');
+    // Trough-Based: clear the column, type patient B (30 M, 90 kg, 185 cm, SCr 0.8) and save.
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await typeInto(s, '#age', '30'); await typeInto(s, '#tbw', '90'); await typeInto(s, '#height', '185'); await typeInto(s, '#scr', '0.8');
+    await s.locator('[data-onclick="k9"]').click();
+    await save('Patient B');
+    const p1Err = await profileErr(), p1Store = await stored();
+    // R18: empty only the AUC column's patient fields, by hand, leaving patient A's doses and level. The
+    // Trough save then holds patient B alone, without that course, and the status line says so.
+    await s.locator('[data-onclick="k2"]').click();
+    for (const id of ['#b-age', '#b-tbw', '#b-height', '#b-scr']) await s.locator(id).fill('');
+    await s.locator('[data-onclick="k1"]').click();
+    await save('Patient B');
+    const p1Ok = await stored(), pb = p1Ok[0] && p1Ok[0].snapshot, p1Status = await statusLine();
+    ok('D26: a Trough save refuses a mixed patient',
+       ['Age: Trough-Based 30, AUC Precision 80', 'Weight: Trough-Based 90, AUC Precision 50', 'Height: Trough-Based 185, AUC Precision 150',
+        'Serum creatinine: Trough-Based 0.8, AUC Precision 2.5'].every(x => p1Err.includes(x)) && !/Clear the column/.test(p1Err) && p1Store.length === 0
+       && p1Ok.length === 1 && !!pb && pb.core.age === '30' && pb.core.tbw === '90' && pb.core.height === '185' && pb.core.scr === '0.8' && pb.core.sex === 'M'
+       && pb.doses.length === 0 && pb.levels.length === 0 && /AUC Precision course not saved/.test(p1Status),
+       JSON.stringify({ p1Err, p1Store: p1Store.length, core: pb && pb.core, doses: pb && pb.doses.length, levels: pb && pb.levels.length, p1Status }));
+
+    // P2: patient C (45 F, 70 kg, 168 cm, SCr 0.9, no cystatin C) saved from AUC Precision; then
+    // patient D in Trough (82 F, 55 kg, 160 cm, SCr 1.9, cystatin C 2.4, baseline SCr 0.8, steady-state
+    // level mode, dose 1,500, level 31), and Patient C loaded from the Trough column's list.
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k48"]:visible').first().click();   // patient A's course goes too
+    await typeInto(s, '#b-age', '45'); await typeInto(s, '#b-tbw', '70'); await typeInto(s, '#b-height', '168'); await typeInto(s, '#b-scr', '0.9');
+    await s.locator('[data-onclick="k40"]').click();
+    await save('Patient C');
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await typeInto(s, '#age', '82'); await typeInto(s, '#tbw', '55'); await typeInto(s, '#height', '160'); await typeInto(s, '#scr', '1.9');
+    await s.locator('[data-onclick="k10"]').click();
+    await typeInto(s, '#cysc', '2.4'); await typeInto(s, '#scr-baseline', '0.8');
+    await s.locator('#mode-btn-level').click();
+    await typeInto(s, '#dose', '1500');
+    await s.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(s, '#level-val', '31');
+    await s.locator('#t-hd').check();   // patient D is on haemodialysis; patient C is not
+    const advisories = () => s.evaluate(() => {
+      const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none' && e.textContent.trim() !== ''; };
+      return { cys: shown('cysc-result'), aki: shown('aki-banner') };
+    });
+    const p2Before = await advisories();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Patient C' }).locator('.profile-item-btn.load').click();
+    await s.waitForTimeout(300);
+    const p2 = Object.assign(await s.evaluate(() => {
+      const v = (id) => document.getElementById(id).value;
+      return { cysc: v('cysc'), base: v('scr-baseline'), dose: v('dose'), level: v('level-val'), age: v('age'), bAge: v('b-age'), scr: v('scr'),
+        hasLevel: document.getElementById('has-level').checked, hd: document.getElementById('t-hd').checked };
+    }), await advisories());
+    ok('D26: a profile load clears the Trough column',
+       p2Before.cys && p2Before.aki
+       && p2.cysc === '' && p2.base === '' && p2.dose === '' && p2.level === '' && !p2.hasLevel && !p2.cys && !p2.aki && !p2.hd
+       && p2.age === '45' && p2.bAge === '45' && p2.scr === '0.9',
+       JSON.stringify({ p2Before, p2 }));
+
+    // R19: a same-patient follow-up. Today's SCr 1.4 typed in AUC Precision only: the save is refused with
+    // both values and one action, which copies only that field to Trough-Based; the second save succeeds.
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-scr', '1.4');
+    await save('Patient C day 2');
+    const r19Err = await profileErr(), r19Store = (await stored()).length;
+    const trough = () => s.evaluate(() => Object.fromEntries(['age', 'tbw', 'height', 'scr', 'cysc', 'mic', 'trough-min', 'trough-max', 'b-scr', 'b-mic', 'b-auc-target']
+      .map(id => [id, document.getElementById(id).value])));
+    const r19Before = await trough();
+    const copyBtn = s.locator('.fe-profile [data-onclick="k99"]:visible');
+    const copyText = (await copyBtn.textContent() || '').trim();
+    await copyBtn.click(); await s.waitForTimeout(200);
+    const r19After = await trough();
+    await s.locator('[data-onclick="k37"]:visible').first().click(); await s.waitForTimeout(250);
+    const r19Saved = (await stored())[0];
+    const changed = Object.keys(r19Before).filter(k => r19Before[k] !== r19After[k]);
+    ok('D26: a same-patient refusal names both values; its copy action changes only that field and the second save succeeds',
+       /Serum creatinine: Trough-Based 0\.9, AUC Precision 1\.4/.test(r19Err) && /match/.test(r19Err) && !/Clear the column/.test(r19Err)
+       && copyText === 'Copy the AUC Precision values to Trough-Based' && eq(changed, ['scr']) && r19After.scr === '1.4'
+       && !!r19Saved && r19Saved.label === 'Patient C day 2' && r19Saved.snapshot.core.scr === '1.4' && (await stored()).length === r19Store + 1,
+       JSON.stringify({ r19Err, copyText, changed, saved: r19Saved && r19Saved.label }));
+    await s.locator('[data-onclick="k1"]').click();
+
+    // Code report I5: delete removes one profile of three, and Undo puts it back where it was.
+    await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
+    for (const l of ['Profile one', 'Profile two', 'Profile three']) await save(l);
+    const labels = async () => ({ store: (await stored()).map(p => p.label),
+      list: (await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item-label').allTextContents()).map(x => x.trim()) });
+    const before3 = await labels();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Profile two' }).locator('.profile-item-btn.delete').click();
+    await s.waitForTimeout(200);
+    const after3 = await labels();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-status [data-onclick="k97"]').click();
+    await s.waitForTimeout(200);
+    const undone3 = await labels();
+    ok('D26: delete removes one profile of three',
+       eq(before3.store, ['Profile three', 'Profile two', 'Profile one']) && eq(after3.store, ['Profile three', 'Profile one'])
+       && eq(after3.list, ['Profile three', 'Profile one']) && eq(undone3.store, before3.store) && eq(undone3.list, before3.store),
+       JSON.stringify({ before3, after3, undone3 }));
+
+    // Review Focus 2: profiles saved by v3.13.0 (core and fit) and before the core (legacy fit) load.
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'profile-fixtures-v3.13.0.json'), 'utf8')).profiles;
+    await s.evaluate(([k, list]) => { localStorage.setItem(k, JSON.stringify(list)); renderProfileList(); }, [KEY, fixture]);
+    await s.locator('[data-onclick="k2"]').click();
+    const loadFix = async (label) => {
+      await s.locator('#app-shell-bayesian .profile-item', { hasText: label }).locator('.profile-item-btn.load').click();
+      await s.waitForTimeout(300);
+      return s.evaluate(() => ({ age: document.getElementById('b-age').value, tAge: document.getElementById('age').value, sex: bState.sex, model: bState.model,
+        doses: document.querySelectorAll('[id^="b-dose-row-"]').length, levels: document.querySelectorAll('[id^="b-level-row-"]').length,
+        icu: document.getElementById('b-icu').checked, result: !!bState.result, status: [...document.querySelectorAll('.profile-status')].map(p => p.textContent).join('') }));
+    };
+    const fx1 = await loadFix('Fixture 64F v3.13.0'), fx2 = await loadFix('Fixture 71M legacy');
+    const fx3 = await loadFix('Fixture 58M Goti-HD');
+    const fx3hd = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked }));
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k31"]:visible').first().click(); await s.waitForTimeout(300);
+    const fx3trough = await s.evaluate(() => ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' '));
+    ok('D26: a dialysis profile ticks the Trough haemodialysis flag, and the Trough module refuses (D16)',
+       fx3.age === '58' && fx3.model === 'goti' && fx3hd.tHd && fx3hd.bDial && /On haemodialysis/.test(fx3trough) && !/q\d+h/.test(fx3trough.slice(0, 200)),
+       JSON.stringify({ fx3, fx3hd, fx3trough: fx3trough.slice(0, 160) }));
+    await s.locator('[data-onclick="k2"]').click();
+    ok('D26: profiles saved by v3.13.0 and before the patient core load (Review Focus 2)',
+       fx1.age === '64' && fx1.tAge === '64' && fx1.sex === 'F' && fx1.model === 'goti' && fx1.doses === 3 && fx1.levels === 1 && !fx1.result
+       && fx2.age === '71' && fx2.tAge === '71' && fx2.sex === 'M' && fx2.model === 'buelga' && fx2.doses === 2 && fx2.levels === 0 && fx2.icu && !fx2.result
+       && !/could not be read/.test(fx1.status + fx2.status),
+       JSON.stringify({ fx1, fx2 }));
+
+    // R20 (engine report M3): Trough "Clear all fields" resets the weight basis and amputation, so a
+    // save afterwards does not carry the previous patient's.
+    await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k15"]').click();
+    await s.evaluate(() => { const c = document.getElementById('amp-enabled'); if (c && !c.checked) c.click(); });
+    await s.locator('#jt-RL-knee').click();
+    const r20Prev = await s.evaluate(() => ({ basis: state.dosingWt, amp: Object.assign({}, ampState) }));
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k48"]:visible').first().click();
+    await typeInto(s, '#b-age', '50'); await typeInto(s, '#b-tbw', '72'); await typeInto(s, '#b-height', '170'); await typeInto(s, '#b-scr', '1.0');
+    await s.locator('[data-onclick="k39"]').click();
+    await save('Patient E');
+    const pe = (await stored())[0];
+    const r20Ui = await s.evaluate(() => ({ auto: document.querySelector('[data-onclick="k73"]').classList.contains('active'), ampOn: document.getElementById('amp-enabled').checked }));
+    ok('D26: Trough "Clear all fields" resets the weight basis and amputation; the next save carries neither',
+       r20Prev.basis === 'IBW' && r20Prev.amp.RL === 'knee'
+       && !!pe && pe.label === 'Patient E' && pe.snapshot.core.dosingWt === 'auto' && Object.values(pe.snapshot.core.amputation).every(v => v === null)
+       && r20Ui.auto && !r20Ui.ampOn,
+       JSON.stringify({ r20Prev, core: pe && { dw: pe.snapshot.core.dosingWt, amp: pe.snapshot.core.amputation }, r20Ui }));
+
+    // R21: a Trough-only haemodialysis patient (58 M, SCr 6.8; the AUC column empty, on its default Buelga)
+    // loads with the Trough flag ticked and AUC Precision not on dialysis, so the severe-renal hold stays on.
+    await s.locator('[data-onclick="k48"]:visible').first().click();
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await typeInto(s, '#age', '58'); await typeInto(s, '#tbw', '77'); await typeInto(s, '#height', '174'); await typeInto(s, '#scr', '6.8');
+    await s.locator('[data-onclick="k9"]').click();
+    await s.locator('#t-hd').check();
+    await save('Patient F HD');
+    const pf = (await stored())[0];
+    await s.locator('#t-hd').uncheck();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Patient F HD' }).locator('.profile-item-btn.load').click();
+    await s.waitForTimeout(300);
+    const r21 = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked,
+      dial: bState.dial, model: bState.model, wrap: getComputedStyle(document.getElementById('b-dial-wrap')).display }));
+    ok('D26: a Trough-only haemodialysis profile loads with the Trough flag ticked and AUC Precision not on dialysis (R21)',
+       !!pf && pf.snapshot.core.hd === true && pf.snapshot.demographics.dial === false && pf.snapshot.model === 'buelga'
+       && r21.tHd && !r21.bDial && r21.dial === false && r21.model === 'buelga' && r21.wrap === 'none',
+       JSON.stringify({ stored: pf && { hd: pf.snapshot.core.hd, dial: pf.snapshot.demographics.dial, model: pf.snapshot.model }, r21 }));
+
+    // R22: patient A's PD form; Trough "Clear all fields" empties all of it.
+    await s.locator('#mode-btn-pd').click();
+    const pdFill = async () => {
+      await s.selectOption('#pd-modality', 'ccpd'); await typeInto(s, '#pd-start', '2100'); await typeInto(s, '#pd-hours', '9.5');
+      await s.selectOption('#pd-vd', { index: 1 });
+      await s.locator('[data-onclick="k86"]').click(); await s.locator('[data-onclick="k88"]').click();
+    };
+    await pdFill();
+    const pdForm = () => s.evaluate(() => ({ modality: document.getElementById('pd-modality').value, start: document.getElementById('pd-start').value,
+      hours: document.getElementById('pd-hours').value, vd: document.getElementById('pd-vd').value,
+      rows: document.querySelectorAll('#pd-dose-tbody tr, #pd-lvl-tbody tr, #pd-held-tbody tr').length, mode: state.calcMode }));
+    const pdBefore = await pdForm();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    const pdAfter = await pdForm();
+    // And an AUC save of another patient leaves out a PD form whose Trough patient fields are empty.
+    await s.locator('#mode-btn-pd').click();
+    await pdFill();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k48"]:visible').first().click();
+    await typeInto(s, '#b-age', '50'); await typeInto(s, '#b-tbw', '72'); await typeInto(s, '#b-height', '170'); await typeInto(s, '#b-scr', '1.0');
+    await s.locator('[data-onclick="k39"]').click();
+    await save('Patient G');
+    const pg = (await stored())[0], pgStatus = await statusLine();
+    ok('D26: Trough "Clear all fields" empties the PD form, and an AUC save leaves out another patient\'s PD form (R22)',
+       pdBefore.modality === 'ccpd' && pdBefore.rows === 2 && pdBefore.vd !== 'bauer'
+       && pdAfter.modality === '' && pdAfter.start === '' && pdAfter.hours === '' && pdAfter.vd === 'bauer' && pdAfter.rows === 0 && pdAfter.mode === 'initial'
+       && !!pg && pg.label === 'Patient G' && !(pg.snapshot.pd && pg.snapshot.pd.modality) && /Trough-Based PD form not saved/.test(pgStatus),
+       JSON.stringify({ pdBefore, pdAfter, pd: pg && pg.snapshot.pd && pg.snapshot.pd.modality, pgStatus }));
+
+    // R23: Clear all fields leaves the PD local settings alone, and a later change to another
+    // setting does not write a blank over the stored maximum dose or target peak.
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('#mode-btn-pd').click();
+    await s.evaluate(() => { document.querySelector('details.pd-settings').open = true; });
+    await s.locator('#pd-set-max').fill('1500'); await s.locator('#pd-set-max').blur();
+    await s.locator('#pd-set-peak').fill('30'); await s.locator('#pd-set-peak').blur();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    // Read straight after Clear, before re-entering PD mode refills the fields from storage.
+    const setAfterClear = await s.evaluate(() => ({ max: document.getElementById('pd-set-max').value, peak: document.getElementById('pd-set-peak').value }));
+    await s.locator('#mode-btn-pd').click();
+    await s.evaluate(() => { document.querySelector('details.pd-settings').open = true; });
+    const setShown = await s.evaluate(() => ({ max: document.getElementById('pd-set-max').value, peak: document.getElementById('pd-set-peak').value }));
+    await s.locator('#pd-set-amlabs').fill('05:30'); await s.locator('#pd-set-amlabs').blur();
+    await s.reload({ waitUntil: 'networkidle' });
+    const setStored = await s.evaluate(() => JSON.parse(localStorage.getItem('vanco.pd.local') || '{}'));
+    await s.locator('#mode-btn-pd').click();
+    await s.evaluate(() => { document.querySelector('details.pd-settings').open = true; });
+    const setReload = await s.evaluate(() => ({ max: document.getElementById('pd-set-max').value, peak: document.getElementById('pd-set-peak').value }));
+    ok('D26: Clear keeps the PD local settings (the maximum dose and target peak survive Clear, a later setting change and a reload)',
+       setAfterClear.max === '1500' && setAfterClear.peak === '30' && setShown.max === '1500' && setShown.peak === '30' && setStored.maxDoseMg === 1500 && setStored.targetPeak === 30 && setStored.amLabs === '05:30'
+       && setReload.max === '1500' && setReload.peak === '30',
+       JSON.stringify({ setAfterClear, setShown, setStored, setReload }));
+    await s.evaluate(() => localStorage.removeItem('vanco.pd.local'));
+
+    // Code report I2: truncated JSON in the store is copied to the backup key before anything is
+    // written over it, and the status line says so; a save afterwards starts a new list.
+    const trunc = '[{"id":"p_trunc1","label":"Truncated","savedAt":1762412400000,"snapshot":{"demographics":{"age":"5';
+    await s.evaluate(([k, t]) => { localStorage.setItem(k, t); localStorage.removeItem(k + '.bak'); }, [KEY, trunc]);
+    await s.reload({ waitUntil: 'networkidle' });
+    const bak = Object.assign(await s.evaluate((k) => ({ bak: localStorage.getItem(k + '.bak'), main: localStorage.getItem(k) }), KEY), { status: await statusLine() });
+    await typeInto(s, '#age', '60');
+    await save('After the backup');
+    const bak2 = Object.assign(await s.evaluate((k) => ({ bak: localStorage.getItem(k + '.bak'), list: JSON.parse(localStorage.getItem(k)).map(p => p.label) }), KEY),
+      { status: await statusLine() });
+    ok('D26: an unreadable profile store is kept under ainadara.profiles.v1.bak and the status line says so',
+       bak.bak === trunc && bak.main === trunc && /could not be read/.test(bak.status) && /ainadara\.profiles\.v1\.bak/.test(bak.status)
+       && bak2.bak === trunc && eq(bak2.list, ['After the backup']) && /ainadara\.profiles\.v1\.bak/.test(bak2.status),
+       JSON.stringify({ bak: Object.assign({}, bak, { bak: bak.bak && bak.bak.length, main: bak.main && bak.main.length }), bak2: Object.assign({}, bak2, { bak: bak2.bak && bak2.bak.length }) }));
+    const sAttr = await attributeInjected(s, sProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + sAttr.injected;
+    results.problems.push(...sAttr.kept);
+    await sctx.close();
+  }
+
+  // v3.14.0 (D26), engine report I2 and UI report I3: "Low confidence … a fit the tool itself does
+  // not trust" beside "A further level would add little" and "A further concentration is
+  // recommended". One sentence about a further level, in Next; the panels point to it. A fictional
+  // 76 M (70 kg, 175 cm, SCr 0.5) on Buelga, 1 g q12h x 4 over 1 h, one level of 19.9 mg/L 11.5 h
+  // after the last dose. Fixed clock: today 10:00.
+  {
+    const nctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const n = await nctx.newPage();
+    const nProblems = watch(n, 'next-level');
+    await n.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await n.goto(BASE + '?v=nlv-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '76'); await typeInto(n, '#b-tbw', '70'); await typeInto(n, '#b-height', '175'); await typeInto(n, '#b-scr', '0.5');
+    await n.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1000'); await typeInto(n, `#b-dose-tinf-${i}`, '1');
+      await n.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await n.locator('[data-onclick="k46"]').click();
+    await typeInto(n, '#b-lvl-conc-1', '19.9'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '07:30');
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const nl = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { all: t('#b-results'), next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf'), act: t('#b-results .vx-action'),
+        fit: t('#ev-fit'), models: t('#ev-models') };
+    });
+    const printedN = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    // incoherent(): the file-level coherence predicate (D26 review; Task 6b, Task 9 and the final review).
+    ok('D26: the 76 M on Buelga never says both "would add little" and "is recommended", on screen or in print',
+       !incoherent(nl.all) && !incoherent(printedN)
+       && /^Next A further level is recommended\.$/.test(nl.next),
+       JSON.stringify({ next: nl.next, little: /would add little/.test(nl.all), rec: (nl.all.match(/[^.]*is recommended[^.]*\./g) || []) }));
+    ok('D26: Low confidence names the model disagreement with both AUCs; "does not trust" is gone; Fit and Models point to Next',
+       /^Low confidence — The applicable models disagree by \d+% on exposure \(AUC₂₄ \d+ on Buelga 1-comp and \d+ on Goti 2-comp\)/.test(nl.conf)
+       && !/does not trust/.test(nl.all + printedN) && /the Next line/.test(nl.fit) && /the Next line/.test(nl.models)
+       && !/further concentration is recommended|next step above says|level panel further down/.test(nl.all),
+       JSON.stringify({ act: nl.act, conf: nl.conf.slice(0, 220), fitPtr: /the Next line/.test(nl.fit), modelsPtr: /the Next line/.test(nl.models) }));
+    // The Task 6 review: a cap-bound continue inside the rounding grace (AUC24 just under 400) fell to
+    // "would add little" beside the cap-bound alarm. A fictional 25 M (70 kg, 180 cm, SCr 0.5) on
+    // Buelga, 1.5 g q8h x 6 over 1.5 h, the last at 02:30 today; levels 25 mg/L at 04:30 and 5 mg/L now.
+    await n.goto(BASE + '?v=nlv2-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '25'); await typeInto(n, '#b-tbw', '70'); await typeInto(n, '#b-height', '180'); await typeInto(n, '#b-scr', '0.5');
+    await n.locator('[data-onclick="k39"]').click();
+    const capWhen = [[D1, '10:30'], [D1, '18:30'], [D2, '02:30'], [D2, '10:30'], [D2, '18:30'], [day(0), '02:30']];
+    for (let i = 1; i <= capWhen.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1500'); await typeInto(n, `#b-dose-tinf-${i}`, '1.5');
+      await n.locator(`#b-dose-date-${i}`).fill(capWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, capWhen[i - 1][1]);
+    }
+    for (const [i, conc, t] of [[1, '25', '04:30'], [2, '5', '10:00']]) {
+      await n.locator('[data-onclick="k46"]').click();
+      await typeInto(n, `#b-lvl-conc-${i}`, conc); await n.locator(`#b-lvl-date-${i}`).fill(day(0)); await typeInto(n, `#b-lvl-time-${i}`, t);
+    }
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const cg = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { all: t('#b-results'), next: t('#b-results .vx-next'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), conf: t('#b-results .vx-conf').slice(0, 40) };
+    });
+    const printedC = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26 review: a cap-bound continue just under 400 asks to confirm the clearance with a level, never "would add little", on screen or in print',
+       cg.act === 'Continue the current regimen' && cg.reg === '1.5 g IV q8h' && /cannot be reached within the conventional ceilings/.test(cg.all)
+       && /^Next Confirm the clearance with a level\.$/.test(cg.next) && !incoherent(cg.all) && !incoherent(printedC),
+       JSON.stringify({ act: cg.act, reg: cg.reg, conf: cg.conf, next: cg.next, little: /would add little/.test(cg.all) }));
+    // Task 6b (R12): at high clearance every admissible regimen has 0 of 20 in range, and "no better"
+    // continued 1 g q12h at AUC24 133 beside 1.5 g q8h at 299. A fictional 22 M (95 kg, 190 cm,
+    // SCr 0.4) on Buelga, 1 g q12h x 4 over 1 h, the last at 23:30 yesterday; levels 4, 1 and
+    // 0.3 mg/L at 01:30, 05:30 and 09:30 today.
+    await n.goto(BASE + '?v=nlv3-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '22'); await typeInto(n, '#b-tbw', '95'); await typeInto(n, '#b-height', '190'); await typeInto(n, '#b-scr', '0.4');
+    await n.locator('[data-onclick="k39"]').click();
+    const lowWhen = [[D1, '11:30'], [D1, '23:30'], [D2, '11:30'], [D2, '23:30']];
+    for (let i = 1; i <= lowWhen.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1000'); await typeInto(n, `#b-dose-tinf-${i}`, '1');
+      await n.locator(`#b-dose-date-${i}`).fill(lowWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, lowWhen[i - 1][1]);
+    }
+    for (const [i, conc, t] of [[1, '4', '01:30'], [2, '1', '05:30'], [3, '0.3', '09:30']]) {
+      await n.locator('[data-onclick="k46"]').click();
+      await typeInto(n, `#b-lvl-conc-${i}`, conc); await n.locator(`#b-lvl-date-${i}`).fill(day(0)); await typeInto(n, `#b-lvl-time-${i}`, t);
+    }
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const lo = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { all: t('#b-results'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), why: t('#b-results .vx-why'),
+        next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf').slice(0, 40), said: t('#sr-announce') };
+    });
+    const printedL = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: a 0-of-20 regimen at high clearance is changed, not continued',
+       lo.act === 'Change from 1 g IV q12h' && lo.reg === '1.5 g IV q8h' && /^High confidence/.test(lo.conf)
+       && /^The current regimen gives AUC₂₄ 133 with 0 of 20 plausible AUCs in 400–600, and no admissible regimen puts more in range; this one brings AUC₂₄ nearer the band, to 299, with 0 of 20 in range\./.test(lo.why)
+       && /cannot be reached within the conventional ceilings/.test(lo.all)
+       && !/Continue the current regimen/.test(lo.all + printedL) && /Change from 1 g IV q12h/.test(printedL)
+       && !/^Result: continue/.test(lo.said) && /^Next Confirm the clearance with a level\.$/.test(lo.next)
+       && !incoherent(lo.all) && !incoherent(printedL),
+       JSON.stringify({ act: lo.act, reg: lo.reg, conf: lo.conf, why: lo.why, next: lo.next, said: lo.said.slice(0, 80) }));
+    // Task 9, the user's ruling 3 (UI report I8): a Low-confidence fit moved an in-range regimen for two
+    // more of 20 plausible AUCs. A fictional 30 M (125 kg, 170 cm, BMI 43.3, SCr 0.9) on Hughes, 1.5 g
+    // q12h x 4 over 2 h, the last at 22:30 yesterday; one level of 14 mg/L now. The models disagree,
+    // so the rating is Low; the dots alone would move to 1.25 g q12h (15 of 20 against 13). A real fit.
+    await n.goto(BASE + '?v=nlv4-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '30'); await typeInto(n, '#b-tbw', '125'); await typeInto(n, '#b-height', '170'); await typeInto(n, '#b-scr', '0.9');
+    await n.locator('[data-onclick="k39"]').click();
+    await n.locator('#b-model-btn-hughes').click();
+    const lcWhen = [[D1, '10:30'], [D1, '22:30'], [D2, '10:30'], [D2, '22:30']];
+    for (let i = 1; i <= lcWhen.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1500'); await typeInto(n, `#b-dose-tinf-${i}`, '2');
+      await n.locator(`#b-dose-date-${i}`).fill(lcWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, lcWhen[i - 1][1]);
+    }
+    await n.locator('[data-onclick="k46"]').click();
+    await typeInto(n, '#b-lvl-conc-1', '14'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '10:00');
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const lc = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { model: bState.result && bState.result.model, all: t('#b-results'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), why: t('#b-results .vx-why'),
+        next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf'), delta: !!document.querySelector('#b-results .vx-delta'),
+        first: t('#b-first-readout'), firstK: t('#b-results .vx-first .vx-k'), said: t('#sr-announce'), summary: String(bState.summaryText || ''),
+        alt: bState.result && bState.result.rec.lowConfidenceAlt ? fmtRegimen(bState.result.rec.lowConfidenceAlt.dose, bState.result.rec.lowConfidenceAlt.tau) : '' };
+    });
+    const printedLC = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: Low confidence keeps an in-range regimen and asks for a level',
+       lc.model === 'hughes' && lc.act === 'Continue the current regimen' && lc.reg === '1.5 g IV q12h' && !lc.delta
+       && /^Low confidence — The applicable models disagree by \d+% on exposure/.test(lc.conf)
+       // Task 9 review: the regimen set aside is named (lowConfidenceAlt), the cause alone, no nested
+       // parentheses, and no target-box sentence after it.
+       && lc.alt === '1.25 g IV q12h'
+       && /^Within 400–600 at AUC₂₄ \d+ with 13 of 20 plausible AUCs in range\. 1\.25 g IV q12h would put 15 of 20 plausible AUCs in range, but confidence in this fit is Low \(the models disagree by \d+%\), so the regimen is not changed on it\. Draw a level\.$/.test(lc.why)
+       && lc.why.indexOf(`${lc.alt} would put`) > 0 && !/\([^)]*\(/.test(lc.why) && !/Your target of/.test(lc.why)
+       && /^Next A further level is recommended\.$/.test(lc.next) && lc.firstK === 'Next dose'
+       && /^Result: continue 1\.5 g IV q12h, AUC24 \d+, Low confidence\./.test(lc.said) && /Continuing 1\.5 g IV q12h is predicted to give/.test(lc.summary)
+       && /Continue the current regimen\s*1\.5 g IV q12h/.test(printedLC) && /so the regimen is not changed on it\. Draw a level\./.test(printedLC)
+       && !/Change from 1\.5 g/.test(lc.all + printedLC) && !incoherent(lc.all) && !incoherent(printedLC),
+       JSON.stringify({ model: lc.model, act: lc.act, reg: lc.reg, conf: lc.conf.slice(0, 60), why: lc.why, next: lc.next, firstK: lc.firstK, said: lc.said, summary: lc.summary.slice(0, 120) }));
+    const nAttr = await attributeInjected(n, nProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + nAttr.injected;
+    results.problems.push(...nAttr.kept);
+    await nctx.close();
+  }
+
+  // v3.14.0 (D26), engine report C1: a supratherapeutic patient was given a time for the next
+  // dose with no hold. The user's ruling: a fitted pre-dose level of 20 mg/L or more is a Hold.
+  // A fictional 60 M (80 kg, 178 cm, SCr 3.0) on Buelga, 1.5 g q8h x 6 over 2 h, the last
+  // dose 6 h ago and a 48 mg/L level 1 h ago. Then the Trough module, a steady-state level of
+  // 45 mg/L on 1.5 g q8h. Fixed clock: today 10:00.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const h = await hctx.newPage();
+    const hProblems = watch(h, 'hold');
+    await h.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await h.goto(BASE + '?v=pwh-' + Date.now(), { waitUntil: 'networkidle' });
+    await h.locator('[data-onclick="k2"]').click();
+    await typeInto(h, '#b-age', '60'); await typeInto(h, '#b-tbw', '80'); await typeInto(h, '#b-height', '178'); await typeInto(h, '#b-scr', '3.0');
+    await h.locator('[data-onclick="k39"]').click();
+    const times = [[day(-2), '12:00'], [day(-2), '20:00'], [day(-1), '04:00'], [day(-1), '12:00'], [day(-1), '20:00'], [day(0), '04:00']];
+    for (let n = 1; n <= times.length; n++) {
+      await h.locator('[data-onclick="k43"]').click();
+      await typeInto(h, `#b-dose-mg-${n}`, '1500'); await typeInto(h, `#b-dose-tinf-${n}`, '2');
+      await h.locator(`#b-dose-date-${n}`).fill(times[n - 1][0]); await typeInto(h, `#b-dose-time-${n}`, times[n - 1][1]);
+    }
+    await h.locator('[data-onclick="k46"]').click();
+    await typeInto(h, '#b-lvl-conc-1', '48'); await h.locator('#b-lvl-date-1').fill(day(0)); await typeInto(h, '#b-lvl-time-1', '09:00');
+    await h.locator('[data-onclick="k47"]').click(); await h.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await h.waitForTimeout(300);
+    const held = await h.evaluate(() => {
+      const v = document.querySelector('#b-results .vx-verdict'), a = v && v.querySelector('.vx-action'), reg = document.getElementById('vx-regimen');
+      const lvl = document.querySelector('#b-first-readout strong');
+      return { first: v ? v.innerText.trim().split('\n')[0].trim() : '',
+        act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', icon: !!(a && a.querySelector('svg.ic')), alarm: !!(a && a.classList.contains('tone-alarm')),
+        before: !!(a && reg && (a.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '',
+        readout: (document.getElementById('b-first-readout') || {}).textContent || '',
+        lvlCls: lvl ? lvl.className : '', said: (document.getElementById('sr-announce') || {}).textContent || '',
+        summary: (bState && bState.summaryText) || '' };
+    });
+    const whenM = held.first.match(/^Hold: next dose not before (\d{1,2} [A-Z][a-z]{2} \d\d:\d\d)$/);
+    ok('D26: a 48 mg/L level gives Hold — the verdict\'s first line, the alarm word and icon, before the regimen to resume with',
+       !!whenM && held.act === held.first && held.icon && held.alarm && held.before && /IV q\d+h/.test(held.reg), JSON.stringify(held));
+    ok('D26: the first dose is not before the hold\'s time, and the level by then is in the alarm tone',
+       !!whenM && held.readout.indexOf(whenM[1]) >= 0 && /Hold/.test(held.readout) && held.lvlCls === 'tone-alarm', JSON.stringify(held));
+    ok('D26: the screen reader and the copy summary hear the hold', /^Result: Hold: next dose not before /.test(held.said) && /^Hold: next dose not before /.test(held.summary),
+       JSON.stringify({ said: held.said, summary: held.summary }));
+    const printedH = await h.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: the printed report says Hold', /Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d/.test(printedH),
+       printedH.slice(printedH.indexOf('Dose recommendation'), printedH.indexOf('Dose recommendation') + 600));
+
+    // Task 2 review: with "Project next doses" ticked under a hold, the projection is drawn
+    // (from the resume time; SUITE 44.5d checks the start) and its note and key are shown.
+    await h.locator('#b-proj-fwd').check(); await h.waitForTimeout(400);
+    const projH = await h.evaluate(() => ({ note: (document.getElementById('b-proj-auc-note') || {}).textContent || '',
+      key: (document.getElementById('b-proj-legend') || {}).style.display }));
+    ok('D26: under a hold the projection is drawn with its note and key', /^Projected AUC₂₄ \d+ mg·h\/L$/.test(projH.note) && projH.key === '', JSON.stringify(projH));
+
+    // The Trough module, steady-state level mode: the same hold, timed from the fitted decline.
+    await h.locator('[data-onclick="k1"]').click();
+    await typeInto(h, '#age', '60'); await typeInto(h, '#tbw', '80'); await typeInto(h, '#height', '178'); await typeInto(h, '#scr', '1.0');
+    await h.locator('[data-onclick="k9"]').first().click();
+    await h.locator('#mode-btn-level').click();
+    await typeInto(h, '#dose', '1500');
+    await h.locator('#interval').selectOption('8');
+    await typeInto(h, '#tinf', '1.5');
+    await h.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(h, '#level-val', '45');
+    await h.locator('#time-dose-given-date').fill(day(0)); await typeInto(h, '#time-dose-given-time', '0100');
+    await h.locator('#time-level-drawn-date').fill(day(0)); await typeInto(h, '#time-level-drawn-time', '0845');
+    await h.locator('[data-onclick="k31"]').click(); await h.waitForTimeout(600);
+    const tHold = await h.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), a = v && v.querySelector('.vx-action'), reg = document.getElementById('tx-regimen');
+      return { act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', icon: !!(a && a.querySelector('svg.ic')), alarm: !!(a && a.classList.contains('tone-alarm')),
+        before: !!(a && reg && (a.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        said: (document.getElementById('sr-announce') || {}).textContent || '' };
+    });
+    ok('D26: Trough level mode holds — a 45 mg/L steady-state level on 1.5 g q8h shows Hold and a re-dose time',
+       /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(tHold.act) && tHold.icon && tHold.alarm && tHold.before && /^Result: Hold: /.test(tHold.said),
+       JSON.stringify(tHold));
+    const hAttr = await attributeInjected(h, hProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + hAttr.injected;
+    results.problems.push(...hAttr.kept);
+    await hctx.close();
+  }
+
+  // v3.14.0 (D26), the final whole-branch review (rulings R25, R26). Review Focus 1: an anuric patient
+  // with flat levels was told "Hold: next dose not before …" beside "Next: A further level would add
+  // little" (C1). Then a newer measured level the fit reads lower (I1), the refusal's hold (I2), and the
+  // Trough random-level hold (I4) and level-mode due time (I3). Fictional patients; fixed clock today 10:00.
+  {
+    const actx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const a = await actx.newPage();
+    const aProblems = watch(a, 'final-review');
+    await a.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    const aucRun = async (tag, pt, doses, levels, waitSel) => {
+      await a.goto(BASE + `?v=${tag}-` + Date.now(), { waitUntil: 'networkidle' });
+      await a.locator('[data-onclick="k2"]').click();
+      await typeInto(a, '#b-age', pt.age); await typeInto(a, '#b-tbw', pt.tbw); await typeInto(a, '#b-height', pt.ht); await typeInto(a, '#b-scr', pt.scr);
+      await a.locator('[data-onclick="k39"]').click();
+      await a.locator('#b-model-btn-goti').click();
+      for (let i = 1; i <= doses.length; i++) {
+        await a.locator('[data-onclick="k43"]').click();
+        await typeInto(a, `#b-dose-mg-${i}`, doses[i - 1][0]); await typeInto(a, `#b-dose-tinf-${i}`, doses[i - 1][1]);
+        await a.locator(`#b-dose-date-${i}`).fill(doses[i - 1][2]); await typeInto(a, `#b-dose-time-${i}`, doses[i - 1][3]);
+      }
+      for (let i = 1; i <= levels.length; i++) {
+        await a.locator('[data-onclick="k46"]').click();
+        await typeInto(a, `#b-lvl-conc-${i}`, levels[i - 1][0]); await a.locator(`#b-lvl-date-${i}`).fill(levels[i - 1][1]); await typeInto(a, `#b-lvl-time-${i}`, levels[i - 1][2]);
+      }
+      await a.locator('[data-onclick="k47"]').click(); await a.waitForSelector(waitSel || '#b-results .rec-dose', { timeout: 20000 }); await a.waitForTimeout(300);
+      return a.evaluate(() => {
+        const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+        const head = document.querySelector('#b-results .vx-hold-head'), reg = document.getElementById('vx-regimen');
+        return { all: t('#b-results'), head: head ? head.textContent.replace(/\s+/g, ' ').trim() : '', headCls: head ? head.className : '',
+          icon: !!(head && head.querySelector('svg.ic')), before: !!(head && reg && (head.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          next: t('#b-results .vx-next'), reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '', voi: t('#b-voi'),
+          said: t('#sr-announce'), summary: String(bState.summaryText || '') };
+      });
+    };
+    const printed = () => a.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    // C1: 70 M, 70 kg, 175 cm, SCr 8.5 (CrCl 8), Goti; one 2 g dose over 2 h, 100 h ago; levels 52, 51 and 50.2 mg/L.
+    const c1 = await aucRun('c1', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['2000', '2', day(-4), '06:00']],
+      [['52', day(-3), '10:00'], ['51', day(-2), '10:00'], ['50.2', day(0), '09:00']]);
+    const c1p = await printed();
+    // Wave 2 (the user's ruling U2, 72 h): this flat-levels patient has no resume time within the horizon.
+    ok('D26: final review (Review Focus 1): the anuric flat-levels patient — "Hold: recheck a level before the next dose" leads, and Next says it, never "would add little", on screen and in print',
+       c1.head === 'Hold: recheck a level before the next dose' && c1.icon && c1.before && c1.next === 'Next Recheck a level before the next dose.'
+       && !/would add little/.test(c1.all + c1p) && !incoherent(c1.all) && !incoherent(c1p) && /Recheck a level before the next dose/.test(c1.voi)
+       && !/not before/.test(c1.head + c1.summary + c1.said)
+       // Wave 2 label fix: the readout's 49.9 is the carried measured level, never called "fitted level", on screen or in print.
+       && !/fitted level 49\.9/i.test(c1.all + c1p) && /measured level, carried down the fitted slope, 49\.9 mg\/L/i.test(c1.all) && /Measured level, carried down the fitted slope, 49\.9 mg\/L/.test(c1p),
+       JSON.stringify({ head: c1.head, next: c1.next, voi: c1.voi.slice(0, 80), little: /would add little/.test(c1.all + c1p) }));
+    ok('D26: final review: the copy summary and the announcement carry the hold, with no clock time',
+       /^Hold: recheck a level before the next dose/.test(c1.summary) && /^Result: Hold: recheck a level before the next dose/.test(c1.said)
+       && !/\d\d:\d\d/.test(c1.summary.split('. ')[0]), JSON.stringify({ summary: c1.summary, said: c1.said }));
+    ok('D26: final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
+       /No further dose until a level is drawn/.test(c1.all) && !/Give a single weight-based loading dose/.test(c1.all) && !/not the actual 8\b/.test(c1.all),
+       c1.all.slice(c1.all.indexOf('Severe renal'), c1.all.indexOf('Severe renal') + 300));
+    // U1 (the user's ruling; was I1): 70 M, 80 kg, 185 cm, SCr 9.7 (CrCl 8), Goti; one 1.5 g dose 120 h ago; levels
+    // 35, 30.3 and 26.2 mg/L, the last at 09:00. The measured 26.2, carried down the fitted slope, holds the dose.
+    const i1 = await aucRun('i1', { age: '70', tbw: '80', ht: '185', scr: '9.7' }, [['1500', '2', day(-5), '10:00']],
+      [['35', day(-3), '09:00'], ['30.3', day(-2), '09:00'], ['26.2', day(0), '09:00']]);
+    const i1p = await printed();
+    const i1why = await a.evaluate(() => ((document.querySelector('#b-results .vx-hold-why') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D26: final review (U1): a measured 26.2 mg/L the fit reads lower holds the dose, with a resume time; the hold line names the measured basis; Next, summary, announcement and print say it',
+       /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(i1.head) && i1.icon && i1.before && /tone-alarm/.test(i1.headCls)
+       && /^The measured 26\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00, carried down the fitted slope, is [\d.]+ mg\/L at /.test(i1why)
+       && !/the fit reads it lower|vx-measured-high/.test(i1.all + i1.headCls) && i1.next === 'Next Recheck a level before the next dose.'
+       && /^Hold: next dose not before /.test(i1.summary) && /carried down the fitted slope/.test(i1.summary) && /^Result: Hold: next dose not before /.test(i1.said)
+       && /Hold: next dose not before/.test(i1p) && !incoherent(i1.all) && !incoherent(i1p),
+       JSON.stringify({ head: i1.head, why: i1why.slice(0, 160), next: i1.next, said: i1.said.slice(0, 80) }));
+    // k82: a first-dose time past the resume time clears the hold, and the Next line, panel and summary follow it; a time inside it holds again.
+    const firstAt = async (d, t) => {
+      const open = await a.evaluate(() => document.querySelector('#b-results [data-onclick="k83"]').getAttribute('aria-expanded'));
+      if (open !== 'true') { await a.locator('#b-results [data-onclick="k83"]').click(); await a.waitForTimeout(150); }
+      { const [yy, mm, dd] = d.split('-'); await a.locator('#b-first-date').focus(); await a.keyboard.type(mm + dd + yy); await a.waitForTimeout(200); }
+      await typeInto(a, '#b-first-time', t); await a.locator('#b-first-time').press('Tab'); await a.waitForTimeout(400);
+      return a.evaluate(() => ({ hold: ((document.getElementById('b-hold') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        next: ((document.querySelector('#b-results .vx-next') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        voi: ((document.getElementById('b-voi') || {}).textContent || '').replace(/\s+/g, ' ').trim(), summary: String(bState.summaryText || '') }));
+    };
+    const late = await firstAt(day(5), '1200');
+    const inside = await firstAt(day(1), '1200');
+    ok('D26: final review: a chosen time past the hold clears it and the Next line, panel and summary follow; a time inside it holds again',
+       late.hold === '' && !/Recheck a level/.test(late.next + late.voi + late.summary) && /^Next /.test(late.next) && !/Hold: /.test(late.summary)
+       && /^Hold: next dose not before/.test(inside.hold) && inside.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(inside.voi)
+       && /^Hold: next dose not before/.test(inside.summary),
+       JSON.stringify({ late: { hold: late.hold.slice(0, 70), next: late.next, summary: late.summary.slice(0, 40) }, inside: { hold: inside.hold.slice(0, 60), next: inside.next } }));
+    // U1: a routine peak never holds. The re-reviewer's case: 60 M, 80 kg, 178 cm, SCr 1.0, Buelga; 1.25 g q12h x 4 over
+    // 1.5 h, the last at 07:30; a trough of 15 mg/L at 07:00 and a peak of 35 mg/L at 10:00, 1 h after the infusion ended.
+    await a.goto(BASE + '?v=peak-' + Date.now(), { waitUntil: 'networkidle' });
+    await a.locator('[data-onclick="k2"]').click();
+    await typeInto(a, '#b-age', '60'); await typeInto(a, '#b-tbw', '80'); await typeInto(a, '#b-height', '178'); await typeInto(a, '#b-scr', '1.0');
+    await a.locator('[data-onclick="k39"]').click();
+    const pkWhen = [[day(-2), '19:30'], [day(-1), '07:30'], [day(-1), '19:30'], [day(0), '07:30']];
+    for (let i = 1; i <= pkWhen.length; i++) {
+      await a.locator('[data-onclick="k43"]').click();
+      await typeInto(a, `#b-dose-mg-${i}`, '1250'); await typeInto(a, `#b-dose-tinf-${i}`, '1.5');
+      await a.locator(`#b-dose-date-${i}`).fill(pkWhen[i - 1][0]); await typeInto(a, `#b-dose-time-${i}`, pkWhen[i - 1][1]);
+    }
+    for (const [i, conc, t] of [[1, '15', '07:00'], [2, '35', '10:00']]) {
+      await a.locator('[data-onclick="k46"]').click();
+      await typeInto(a, `#b-lvl-conc-${i}`, conc); await a.locator(`#b-lvl-date-${i}`).fill(day(0)); await typeInto(a, `#b-lvl-time-${i}`, t);
+    }
+    await a.locator('[data-onclick="k47"]').click(); await a.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await a.waitForTimeout(300);
+    const pk = await a.evaluate(() => ({ all: (document.getElementById('b-results') || {}).textContent.replace(/\s+/g, ' '), said: (document.getElementById('sr-announce') || {}).textContent || '',
+      head: !!document.querySelector('#b-results .vx-hold-head'), summary: String(bState.summaryText || '') }));
+    ok('D26: final review (U1): a routine peak (35 mg/L an hour after the infusion, trough 15) neither holds nor raises an alarm',
+       !pk.head && !/Hold: /.test(pk.all + pk.said + pk.summary) && !/Measured 35/.test(pk.all), JSON.stringify({ head: pk.head, said: pk.said.slice(0, 120) }));
+    // I2: the same patient as C1 with one 1.75 g dose: every candidate hard-fails.
+    const i2 = await aucRun('i2', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['1750', '2', day(-4), '06:00']],
+      [['52', day(-3), '08:00'], ['51', day(-2), '08:00'], ['50.2', day(0), '08:00']], '#vx-regimen');
+    const i2p = await printed();
+    ok('D26: final review (I2): a refusal with levels at or above 20 mg/L leads with "Hold: recheck a level before the next dose", on screen, in the summary, aloud and in print',
+       i2.reg === 'No regimen recommended' && i2.head === 'Hold: recheck a level before the next dose' && i2.icon && i2.before
+       && /^Hold: recheck a level before the next dose/.test(i2.summary) && /^Result: Hold: recheck a level before the next dose/.test(i2.said)
+       && /Hold: recheck a level before the next dose/.test(i2p) && /^Next Recheck a level before the next dose\./.test(i2.next),
+       JSON.stringify({ reg: i2.reg, head: i2.head, next: i2.next, said: i2.said.slice(0, 90) }));
+    // I4 and I3, the Trough module: 60 M, 80 kg, 178 cm, SCr 1.0.
+    await a.locator('[data-onclick="k1"]').click();
+    await typeInto(a, '#age', '60'); await typeInto(a, '#tbw', '80'); await typeInto(a, '#height', '178'); await typeInto(a, '#scr', '1.0');
+    await a.locator('[data-onclick="k9"]').first().click();
+    const txState = () => a.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), h = v && v.querySelector('.vx-hold-head'), reg = document.getElementById('tx-regimen');
+      return { head: h ? h.textContent.replace(/\s+/g, ' ').trim() : '', alarm: !!(h && h.classList.contains('tone-alarm')), icon: !!(h && h.querySelector('svg.ic')),
+        before: !!(h && reg && (h.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)), reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '',
+        said: (document.getElementById('sr-announce') || {}).textContent || '' };
+    });
+    // Random level at steady state on q12h: 42 mg/L 9 h after a 1 g dose (about 38 at the due time).
+    await a.locator('#mode-btn-randomlevel').click();
+    await a.locator('[data-onclick="k28"]').first().click();
+    const rlSS = await a.evaluate(() => typeof state !== 'undefined' && state.rlMode);
+    await typeInto(a, '#rl-dose', '1000'); await typeInto(a, '#rl-tinf', '1'); await typeInto(a, '#rl-c', '42');
+    await a.locator('#rl-dose-time-date').fill(day(0)); await typeInto(a, '#rl-dose-time-time', '0000');
+    await a.locator('#rl-draw-time-date').fill(day(0)); await typeInto(a, '#rl-draw-time-time', '0900');
+    await a.locator('#rl-tau').selectOption('24');
+    await a.locator('#rl-interval').selectOption('12');
+    await a.locator('[data-onclick="k31"]').click(); await a.waitForTimeout(500);
+    const rl = await txState();
+    ok('D26: final review (I4): Trough random level holds — 42 mg/L at 9 h on q12h at steady state shows Hold, the alarm word and icon, before the regimen, and is heard first',
+       rlSS === 'steadystate' && /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(rl.head) && rl.alarm && rl.icon && rl.before && /^Result: Hold: /.test(rl.said),
+       JSON.stringify(Object.assign({ rlMode: rlSS }, rl)));
+    // Level mode: 1.5 g q8h started 01:00, 20.5 mg/L at 08:36 — below 20 before the 09:00 due time: no hold.
+    await a.locator('#mode-btn-level').click();
+    await typeInto(a, '#dose', '1500'); await a.locator('#interval').selectOption('8'); await typeInto(a, '#tinf', '1.5');
+    await a.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(a, '#level-val', '20.5');
+    await a.locator('#time-dose-given-date').fill(day(0)); await typeInto(a, '#time-dose-given-time', '0100');
+    await a.locator('#time-level-drawn-date').fill(day(0)); await typeInto(a, '#time-level-drawn-time', '0836');
+    await a.locator('[data-onclick="k31"]').click(); await a.waitForTimeout(600);
+    const lv = await txState();
+    ok('D26: final review (I3): Trough level mode does not hold a level that falls below 20 mg/L before the due time (20.5 mg/L at 08:36 on q8h from 01:00)',
+       lv.head === '' && !/^Result: Hold/.test(lv.said) && !!lv.reg, JSON.stringify(lv));
+    const aAttr = await attributeInjected(a, aProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + aAttr.injected;
+    results.problems.push(...aAttr.kept);
+    await actx.close();
+  }
+
+  // v3.14.0 (D26), engine report C2 and I1; the user's ruling 2: the Trough module obeys AUC
+  // Precision's ceilings (2 g a dose, 4.5 g a day, AUC24 700) and gives no empiric maintenance
+  // regimen at CrCl under 10 without a level. Fictional patients: 25 M, 95 kg, 185 cm, SCr 0.5
+  // (CrCl 303.5) at q8h, which was told 7.5 g a day; and 85 F, 45 kg, 155 cm, SCr 4.5 (CrCl 6.5).
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const c = await cctx.newPage();
+    const cProblems = watch(c, 'ceilings');
+    await c.goto(BASE + '?v=pwc-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.locator('[data-onclick="k1"]').click();
+    const verdictOf = () => c.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), reg = document.getElementById('tx-regimen');
+      const notes = [...document.querySelectorAll('#results-content .note')].map(n => ({ cls: n.className, word: (n.querySelector('.note-word') || {}).textContent || '', text: n.textContent.replace(/\s+/g, ' ') }));
+      return { reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '', hold: !!(reg && reg.classList.contains('vx-regimen-hold')),
+        dose: !!(v && v.querySelector('.rec-dose')), why: ((v && v.querySelector('.vx-hold')) || {}).textContent || '', notes,
+        said: (document.getElementById('sr-announce') || {}).textContent || '' };
+    });
+    await typeInto(c, '#age', '25'); await typeInto(c, '#tbw', '95'); await typeInto(c, '#height', '185'); await typeInto(c, '#scr', '0.5');
+    await c.locator('[data-onclick="k9"]').first().click();
+    await c.locator('#init-interval').selectOption('8');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const arc = await verdictOf();
+    const capNote = arc.notes.find(n => /note-alarm/.test(n.cls) && /The target cannot be reached within the conventional ceilings/.test(n.text));
+    ok('D26: Trough refuses 7.5 g a day — "No regimen recommended", no dose, the cap-bound alarm',
+       arc.reg === 'No regimen recommended' && arc.hold && !arc.dose && !!capNote && /q8h/.test(arc.why) && /^Result: No regimen recommended/.test(arc.said), JSON.stringify(arc).slice(0, 600));
+    ok('D26: Trough shows the augmented-clearance caution', arc.notes.some(n => /note-caution/.test(n.cls) && /Augmented renal clearance suspected/.test(n.word) && /CrCl ≈ 303 mL\/min/.test(n.text)),
+       JSON.stringify(arc.notes.map(n => n.word)));
+    // Task 3 review: under the refusal, the explorer never shows the removed 7.5 g a day as in range.
+    const over = await c.evaluate(() => { const th = [...document.querySelectorAll('#results-content .tx-explorer th, #results-content table th')].find(t => /^2\.5 g q8h/.test(t.textContent.trim()));
+      const tr = th && th.closest('tr'); return tr ? { text: tr.textContent.replace(/\s+/g, ' ').trim(), cls: tr.className, inRange: tr.querySelectorAll('td.in-range').length, aucCls: (tr.querySelectorAll('td')[2] || {}).className } : null; });
+    ok('D26 review: the dose explorer marks 2.5 g q8h over the ceilings, its AUC not in range', !!over && /over 2 g a dose/.test(over.text) && /over 4\.5 g a day/.test(over.text)
+       && /is-over/.test(over.cls) && over.aucCls !== 'in-range', JSON.stringify(over));
+    // The same patient on random-level mode with an early, low level (CL 12.6 L/h): a refusal too.
+    await c.locator('#mode-btn-randomlevel').click();
+    await typeInto(c, '#rl-dose', '1000'); await typeInto(c, '#rl-tinf', '1'); await typeInto(c, '#rl-c', '3');
+    await c.locator('#rl-dose-time-date').fill(day(0)); await typeInto(c, '#rl-dose-time-time', '0000');
+    await c.locator('#rl-draw-time-date').fill(day(0)); await typeInto(c, '#rl-draw-time-time', '0800');
+    await c.locator('#rl-tau').selectOption('12');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const rl = await verdictOf();
+    ok('D26: Trough random level renders the refusal with the cap-bound alarm',
+       rl.reg === 'No regimen recommended' && rl.hold && !rl.dose && rl.notes.some(n => /note-alarm/.test(n.cls) && /conventional ceilings/.test(n.text)), JSON.stringify(rl).slice(0, 600));
+    // I1: CrCl 6.5, no HD, initial mode, no level.
+    await c.locator('#mode-btn-initial').click();
+    await typeInto(c, '#age', '85'); await typeInto(c, '#tbw', '45'); await typeInto(c, '#height', '155'); await typeInto(c, '#scr', '4.5');
+    await c.locator('[data-onclick="k10"]').first().click();
+    await c.locator('#init-interval').selectOption('48');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const sev = await verdictOf();
+    ok('D26: Trough withholds at CrCl 6.5 — "No empiric maintenance regimen" with the severe-renal advisory, no dose',
+       sev.reg === 'No empiric maintenance regimen' && sev.hold && !sev.dose && /^Result: No empiric maintenance regimen/.test(sev.said)
+       && sev.notes.some(n => /note-alarm/.test(n.cls) && /Severe renal impairment \(non-dialysis\) suspected/.test(n.word) && /loading dose/.test(n.text)),
+       JSON.stringify(sev).slice(0, 600));
+    // Task 4 (models report I4, ruling 8): only sourced numbers — Rec 11's basis and maximum, then measured
+    // levels; none of the unsourced 15–20 mg/kg, max 2 g, 24–48 h or q24h–q72h; no Bayesian fit in the Trough module.
+    const sevNote = (sev.notes.find(n => /Severe renal impairment/.test(n.word)) || {}).text || '';
+    const sevAll = sev.why + ' ' + sevNote;
+    ok('D26 Task 4: the Trough severe-renal refusal names Rybak 2020 Rec 11 (actual body weight, at most 3 g), then measured levels; no unsourced number, no Bayesian fit',
+       /Rybak 2020 Rec 11/.test(sev.why) && /Rybak 2020 Rec 11/.test(sevNote) && /actual body weight, at most 3 g/.test(sevNote) && /measured level/.test(sev.why) && /measured level/.test(sevNote)
+       && !/15\s*[–-]\s*20 mg\/kg|max 2 g|24\s*[–-]\s*48 h|q24h\s*[–-]\s*q72h|Bayesian|re-fit/i.test(sevAll), sevAll.slice(0, 700));
+    // Task 3 review (ruling R7): the refusal names the intervals that reach 400-600 within the ceilings.
+    // 30 M, 80 kg, 180 cm, SCr 0.7 (CrCl ~175) at q24h: bound at q24h, not at q8h or q12h.
+    await typeInto(c, '#age', '30'); await typeInto(c, '#tbw', '80'); await typeInto(c, '#height', '180'); await typeInto(c, '#scr', '0.7');
+    await c.locator('[data-onclick="k9"]').first().click();
+    await c.locator('#init-interval').selectOption('24');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const r7 = await verdictOf();
+    const r7next = await c.evaluate(() => ((document.querySelector('#results-content .tx-verdict .vx-next') || {}).textContent || ''));
+    ok('D26 review: a q24h cap-bound refusal names the shorter intervals that work, at q24h only, with no specialist line and no "obtain a level"',
+       r7.reg === 'No regimen recommended' && /IV q8h|IV q12h/.test(r7.why) && r7.notes.some(n => /At q24h the target cannot be reached/.test(n.text))
+       && !r7.notes.some(n => /alternative agent|specialist/.test(n.text)) && !/level/i.test(r7next), JSON.stringify({ r7, r7next }).slice(0, 700));
+    // 80 F, 45 kg, 155 cm, SCr 2.65 (CrCl ~12) at q24h: the 250 mg lattice steps over the band; only q36h and q48h work.
+    await typeInto(c, '#age', '80'); await typeInto(c, '#tbw', '45'); await typeInto(c, '#height', '155'); await typeInto(c, '#scr', '2.65');
+    await c.locator('[data-onclick="k10"]').first().click();
+    await c.locator('#init-interval').selectOption('24');   // the CrCl readout suggests an interval; choose q24h after it
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const gap = await verdictOf();
+    ok('D26 review: a gap refusal at q24h names q36h and q48h, not the dose explorer',
+       gap.reg === 'No regimen recommended' && /IV q36h/.test(gap.why) && /IV q48h/.test(gap.why) && !/dose explorer/i.test(gap.why), JSON.stringify(gap).slice(0, 600));
+    // Task 4b (ruling R10): the Trough loading dose obeys Rybak 2020 Rec 11 (at most 3,000 mg). Fictional
+    // 70 M, 130 kg, 175 cm, SCr 2.0 on the Buelga volume (127 L): 3.25 g before the cap.
+    await typeInto(c, '#age', '70'); await typeInto(c, '#tbw', '130'); await typeInto(c, '#height', '175'); await typeInto(c, '#scr', '2.0');
+    await c.locator('[data-onclick="k9"]').first().click();
+    await c.locator('#vd-model').selectOption('buelga');
+    await c.evaluate(() => { const x = document.getElementById('has-ld'); if (x && !x.checked) x.click(); });
+    await c.locator('#init-interval').selectOption('24');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const ldCap = await c.evaluate(() => { const s = document.querySelector('#results-content .tx-ld');
+      return s ? { dose: ((s.querySelector('.tx-ld-dose') || {}).textContent || '').trim(), text: s.textContent.replace(/\s+/g, ' ').trim() } : null; });
+    ok('D26: the Trough loading dose is capped at 3 g', !!ldCap && ldCap.dose === '3 g IV once' && /Rybak 2020 Rec 11/.test(ldCap.text) && /maximum of 3 g/.test(ldCap.text),
+       JSON.stringify(ldCap).slice(0, 700));
+    await c.locator('#vd-model').selectOption('vancopk');
+    await c.evaluate(() => { const x = document.getElementById('has-ld'); if (x && x.checked) x.click(); });
+    const cAttr2 = await attributeInjected(c, cProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr2.injected;
+    results.problems.push(...cAttr2.kept);
+    await cctx.close();
+  }
+
+  // v3.14.0 (D26), engine report I6 (ruling R14): two levels on the steady-state basis, q12h, 1 g over 1 h,
+  // 25.9 mg/L at 2 h and 12.95 mg/L at 56 h. A level later than the interval (plus the 0.5 h trough-timing
+  // window) means another dose came in between: refused, naming the times and the interval. The same times
+  // after the first dose are accepted. Fictional patient: 25 M, 95 kg, 185 cm, SCr 0.5.
+  {
+    const tctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const t = await tctx.newPage();
+    const tProblems = watch(t, 'two-level-late');
+    await t.goto(BASE + '?v=tll-' + Date.now(), { waitUntil: 'networkidle' });
+    await t.locator('[data-onclick="k1"]').click();
+    await typeInto(t, '#age', '25'); await typeInto(t, '#tbw', '95'); await typeInto(t, '#height', '185'); await typeInto(t, '#scr', '0.5');
+    await t.locator('[data-onclick="k9"]').first().click();
+    await t.locator('#mode-btn-twolevels').click();
+    await typeInto(t, '#tl-dose', '1000'); await typeInto(t, '#tl-tinf', '1'); await t.locator('#tl-tau').selectOption('12');
+    await typeInto(t, '#tl-c1', '25.9'); await typeInto(t, '#tl-c2', '12.95');
+    await t.locator('#tl-dose-time-date').fill(day(0)); await typeInto(t, '#tl-dose-time-time', '0000');
+    await t.locator('#tl-t1-time-date').fill(day(0)); await typeInto(t, '#tl-t1-time-time', '0200');
+    await t.locator('#tl-t2-time-date').fill(day(2)); await typeInto(t, '#tl-t2-time-time', '0800');
+    await t.locator('[data-onclick="k25"]').click();
+    await t.locator('#tl-cur-tau').selectOption('12');
+    await t.locator('[data-onclick="k31"]').click(); await t.waitForTimeout(500);
+    const fe = (await t.locator('#fe-trough').textContent().catch(() => '')).replace(/\s+/g, ' ');
+    ok('D26: two levels at steady state, Level 2 at 56 h on a q12h interval — refused, naming the times and the interval',
+       /Level 2 was drawn later than the 12 h interval/.test(fe) && /Level 2 at 56\.0 h/.test(fe) && /before the next dose/.test(fe), fe.slice(0, 500));
+    ok('D26: no regimen or volume is shown for the late level', (await t.locator('#results-content .rec-dose').count()) === 0);
+    await t.locator('[data-onclick="k24"]').click();
+    await t.locator('[data-onclick="k31"]').click(); await t.waitForTimeout(500);
+    const fe2 = await t.locator('#fe-trough').isVisible().catch(() => false);
+    ok('D26: the same levels on the first-dose basis are accepted', !fe2 && (await t.locator('#results-content .tx-verdict, #results-content .tx-regimen, #tx-regimen').count()) > 0);
+    results.problems.push(...tProblems);
+    await tctx.close();
+  }
+
   // v3.12.0 (D23): IV vancomycin on peritoneal dialysis, typed in. A fictional CCPD patient
   // (61 kg at the load, 63 kg now, cycler 21:00 x 9.5 h), on a fixed clock (today 10:00) so the
   // answer cannot depend on the time of day.
@@ -692,6 +1624,30 @@ async function enterCourse(page) {
     const p1 = await pdRead();
     ok('PD: the fictional CCPD patient gets an answer — a dose or none, the expected level at the next draw, and when to draw it',
        /^(Give [\d.]+ (g|mg) IV|No dose today)/.test(p1.verdict) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(p1.verdict) && /Draw the next level/.test(p1.verdict), p1.verdict.slice(0, 300));
+    {
+      const paper = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+      ok('D26: print says not clinically validated (PD result)', /Peritoneal|peritoneal/.test(paper) && /not clinically validated/.test(paper) && /Clinician judgment required/.test(paper), paper.slice(-300));
+      await pd.goto(BASE + '?v=pwpd-empty-' + Date.now(), { waitUntil: 'networkidle' });
+      await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+      const empty = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+      ok('D26: print says not clinically validated (empty state)', /not clinically validated/.test(empty) && /Clinician judgment required/.test(empty), empty.slice(-300));
+      await pd.goto(BASE + '?v=pwpd-empty2-' + Date.now(), { waitUntil: 'networkidle' });
+      await pd.locator('.module-tab', { hasText: 'AUC' }).first().click();
+      const empty2 = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+      ok('D26: print says not clinically validated (empty AUC)', /not clinically validated/.test(empty2), empty2.slice(-300));
+      await pd.goto(BASE + '?v=pwpd-back-' + Date.now(), { waitUntil: 'networkidle' });
+      await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+      await pd.locator('#mode-btn-pd').click();
+      await typeInto(pd, '#tbw', '63');
+      await pd.selectOption('#pd-modality', 'ccpd');
+      await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
+      await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
+      await typeInto(pd, '#pd-load-kg', '61');
+      await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+      await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
+      await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
+      await pdRun();
+    }
     ok('PD: the second interval is flagged early; the options mark the recommendation; the chart shows the levels and cycler nights',
        /within 24 h of a dose ending/.test(p1.decline) && (mgOf(p1.verdict) ? p1.rec.startsWith(p1.verdict.match(/Give ([\d.]+ (?:g|mg))/)[1]) : p1.rec === 'No dose') && p1.lv === 2 && p1.cyc >= 1, JSON.stringify(p1).slice(0, 400));
     const pdD24 = await pd.evaluate(() => { const svg = document.querySelector('#results-content svg.pd-chart'), txt = svg && svg.querySelector('text');

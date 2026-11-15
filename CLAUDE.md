@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~13,900 lines / ~750 KB (2026-09-29).
+~18,000 lines / ~1.06 MB (2026-11-15).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -70,6 +70,8 @@ at Q8H. On the reported case target 450 gives 1750 mg Q48H and target 475 gives 
 Q12H. `exposureMatrix()` replaces the pretence with the whole admissible space — dose x
 interval, banded against `AUC24_TARGET_MIN/MAX`, every cell clickable into the Tinkerer.
 It needs **no preference weights**, which is why it was chosen over a composite score.
+Since v3.14.0 (D25) the regimen being given is judged first (`regimenDecision`); the target box
+decides only a first regimen, inside a strict 400–600 band.
 
 Cross-cutting: KDIGO AKI staging from serial creatinine, ARC and very-low-CrCl advisories,
 cystatin C discordance check, print report, and **saved profiles that work in both
@@ -102,8 +104,10 @@ for the dose after the session it preceded only; the scheduled answer shows it a
 
 **First dose (D20, v3.9.0):** the regular recommendation's first dose can be timed:
 - `firstDosePlan` / `firstDoseHTML`, `k82`, `bState.firstDoseAtH`;
-- default when due (from the last entered dose, given or planned), now if that has passed, a
-  chosen time never before now;
+- default when the new regimen is due (from the last entered dose, given or planned), now if that has
+  passed, a chosen time never before now; under a hold (D26) the default is the resume time;
+- "(was due …)" is the current regimen's due time, printed only when the first dose is now because it
+  has passed; a different current interval is named ("current q24h dose was due …") (D26, R1, R16);
 - timing and readouts only: the dose never changes;
 - the first-day AUC₂₄ is shown, because the changeover is not steady state;
 - `k82` patches only the readout and the curve; a full re-render made typed dates impossible.
@@ -168,6 +172,93 @@ Presentation only: engine parity 0 differences.
 - **PD (the user's ruling):** the next draw is the AM labs, said plainly, with no cycler-end caution;
   `drawOnCycler` is still computed, and a level drawn on the cycler keeps its flag in "The decline".
 
+**Continue the current regimen (D25, v3.14.0):** a clinical change; the engine moves.
+- **The case:** an in-range 1250 mg q12h (AUC₂₄ 546, 14 of 20 in range) was told to change to 1750 mg
+  q24h (382, 7 of 20) because the target box read 400.
+- **`evalRegimen`** judges one regimen (exposure, trough, rejects, flags) for the optimizer and the
+  decision alike.
+- **`rankRegimenCandidates`:** band membership is strictly 400–600. The rounding grace keeps the flags
+  quiet and never selects.
+- **`regimenDecision`** (all three fit paths) reads the current regimen (`currentRegimenOf`: an
+  `established` schedule or the override, never a `possible_transition`; since D26 it also needs one
+  given dose of the detected maintenance amount, R17, D-b). It continues when that
+  regimen is in range, safe (trough < 20, no hard reject) and no admissible regimen puts
+  `CONTINUE_MARGIN_DOTS` (2 of 20, a preference) more plausible AUCs in range.
+- **Otherwise it changes,** across the whole lattice: danger troughs set aside, in-range kept, more
+  dots than now (the full margin when leaving an in-range regimen) unless the current one is unsafe.
+  Then the fewest interval steps, the smallest daily-dose change, the target box, the ceiling and
+  `INTERVAL_PREFERENCE`.
+- **Never worse:** a change never has fewer in-range dots than the current regimen except for safety,
+  and then it says so.
+- **The answer line:** `regimenActionHTML` says "Continue the current regimen" or "Change from X" above
+  the regimen, and why below it, on screen, in print and aloud.
+- **Confidence gates one thing (D26, ruling 3, replacing D25's "not gating"):** at Low or Very low an
+  in-range, safe current regimen is continued rather than changed for dots (`finalizeDecision`,
+  `continueReason: 'low-confidence'`), and the answer names the regimen set aside and says "Draw a
+  level". It never blocks a safety change or a change from out of range. Dialysis and the severe-renal
+  hold pass no current regimen.
+- **Out of range with no dot to gain (D26, R12):** when every admissible regimen ties the current one
+  on dots (0 of 20 at high clearance), the one nearest the band is chosen if it is nearer by more than
+  half a 250 mg step (`roundingGraceAUC`); a genuine exposure tie still continues (`no-better`).
+- **Parity:** D25 alone left engine parity at 0, because its corpus never reaches these cases; SUITE 43
+  and the D25 sweeps are the record.
+
+**The review's fixes (D26, v3.14.0):** the 2026-11-13 review (`docs/review/2026-11-13/`); safety and
+logic, the engine moves.
+- **Hold:** the fitted pre-dose level, OR the newest level drawn after the last given dose and after the
+  distribution phase carried down the fitted terminal slope (the user's ruling U1; `measuredHoldLevel`,
+  `fittedTerminalRate`), at or above `TROUGH_HIGH_MGL` (20) leads the answer with "Hold: next dose not
+  before <time>" (`firstDosePlan` → `hold`, `resumeH`, `holdNoTime`, `holdBasis`). The resume time is the
+  later crossing. "After the distribution phase" reuses `interpretLevelTiming` (not during the infusion,
+  not immediate post-infusion) and, for a 2-comp fit, `hdRedistributionWindowH`; no new constant. The
+  hold line names its basis. The 0.25 h step is search mechanics; `HOLD_SEARCH_MAX_H` is a PREFERENCE,
+  72 h from the due time (U2): past it "Hold: recheck a level before the next dose", no clock time
+  anywhere, no projection. A planned dose at 20 or more is the dose held (R5). Under any hold the Next
+  line, Copy summary and the announcement say "Recheck a level before the next dose" (final review C1;
+  `nextLevelFit(r, conf, plan)`, `bayesNextStep`; k82 moves `#b-next` and `#b-voi` with the hold). A
+  refusal holds too on the fitted or the carried measured level (`noSolutionHold`, I2). The Trough level,
+  two-level and random-level modes hold too (`troughHold`, the same horizon; a measured level below 20
+  by the due time is no hold, and one drawn after the due time is judged as drawn, never carried back
+  up: I3, I4, N2); with no measured level the Trough module never holds.
+- **One set of ceilings:** `findOptimalDose` judges each candidate through `evalRegimen` (2 g a dose,
+  4.5 g a day, AUC₂₄ 700). Nothing admissible in 400–600 is a refusal, "No regimen recommended", naming
+  the intervals q6h–q48h that work (R7). A current Trough regimen over AUC₂₄ 700 is said at alarm tier;
+  over a dose ceiling only it reads as in AUC Precision (U3, below).
+  CrCl under 10 with no level: "No empiric maintenance regimen" in both modules. The Trough module shows
+  the augmented-clearance caution; its CrCl is not capped (D-c).
+- **Only sourced numbers:** the severe-renal advice is Rybak 2020 Rec 11 (actual body weight, at most
+  `HD_LOADING_MAX_MG`), then measured levels; no mg/kg and no interval (`SEVERE_RENAL`,
+  `severeRenalNote`). Once a dose is given or a level exists the note says "No further dose until a level
+  is drawn", with no loading-dose sentence, and no clamp sentence unless a clamp happened (final review
+  I5); once a dose is given the verdict, Next line and print say it too (`severeRenalFollow`/`Next`, N3). The Trough loading dose is capped at the same maximum (`calcLoadingDose`), the
+  augmented-clearance advice lost its unsourced figures, and the HD empiric caption reads the constant.
+  `VERY_LOW_CRCL_THRESHOLD` (10) is still unsourced and recorded open.
+- **Refused input:** a level dated after the analysis (one minute's tolerance); a two-level steady-state
+  level later than the interval plus `TROUGH_TIMING_WINDOW_H` (0.5 h, a preference, R14).
+- **The Next line reads the fit** (`nextLevelValue(…, fit)`, `nextLevelFit`): a conflicted fit (Low or
+  Very low, a level missed by 2 SD, a second MAP solution) gives "A further level is recommended"; any
+  cap-bound answer gives "Confirm the clearance with a level". The Low line names its cause
+  (`confidenceLead`); "a fit the tool itself does not trust" is gone.
+- **Decision defaults:** a charted dose above 2 g or 4.5 g a day is not recommendable but not unsafe
+  (D-a, now the user's ruling U3 in both modules, `doseCeilingBreaches`); a continue above a ceiling leads
+  with the caution, naming the limit, in Copy summary and the announcement too (`ceilingCautionOf`, one
+  wording; final review I6). The Trough module continues such a regimen in range with the same caution;
+  out of range its assessment stands at caution tier, never "increase". A kept regimen under Low confidence says "Draw a level." there too (R26). Better
+  regimens set aside for their trough are said to be (engine M2).
+- **Print:** every report ends with `DISCLAIMER_TEXT`, written once, through `_prFooter`.
+- **Profiles:** `snapshotPatientCore(source)` reads the module on screen. A shared field that differs
+  between the columns refuses the save, naming both values, with one copy action (`k99`, D-e, R19). A
+  course travels with a save only when the other column's demographics are filled and agree (R18, R22).
+  `dial` is stored and loaded only with Goti (R21). `validProfile` on read; unreadable JSON is kept under
+  `ainadara.profiles.v1.bak`; ids and labels go through `escHtml`. A load clears both columns. Trough
+  Clear resets the weight basis, amputation, HD flag and PD form (R20, R22), never the PD local
+  settings, and a blank local setting never overwrites a stored one (R23).
+- **Parity against v3.13.0 (`edc5b53`):** 72 differences, all listed in D26: 64 in six `findOptimalDose`
+  calls (the ceilings and the refusal, Task 3) and 8 additive `calcLoadingDose` fields (Task 4b). The final
+  review's fix waves add none (0 against `73a1936` and `871234c`); SUITE 44.27–44.41 and the `D26: final
+  review` browser checks pin them. The user ruled the three open questions on 2026-11-15 (U1–U3), and U4
+  removed the superseded March build from `archive/`.
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, intraperitoneal vancomycin dosing, AUC or Bayesian
 dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
@@ -204,13 +295,31 @@ dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
    real DOM: the harness runs this script in a Node `vm` with a stub that has no
    `documentElement`.
 8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
-   shipping a clinical number without provenance. v3 added exactly two numbers that have no
-   paper behind them — `NEXT_LEVEL_MIN_GAIN` (0.15) and the 1/2 sigma splits in
-   `FIT_BANDS` — and both carry a comment saying they are preference, what they order, and
-   that they never change a dose. Everything else they sit beside is sourced: sigma is each
-   model's published residual error, the AUC band is Rybak 2020 Rec 1, the 250 mg step is
-   the dispensing increment. Prefer a rule that needs no weight at all: the exposure matrix
-   replaced a composite ranking score precisely because it needs none.
+   shipping a clinical number without provenance. A number no paper sets is a preference: its
+   source comment says "PREFERENCE (rule 8)", what it orders, and whether it can change a dose.
+   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-15 (v3.14.0) they are:
+   - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
+     splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9);
+     `AUC24_MODEST_BELOW_MIN` (325); the Trough AUC band (±22% / ±30%); `MAP_TIE_OBJ` /
+     `MAP_SPLIT_CL` (two MAP minima); `NOTE_CLAMP_CHARS` (300); `PROFILE_ARRIVE_MS`.
+   - **Labels and windows that gate an answer:** `HD_PRE_LABEL_H` (12 h) and
+     `HD_POSTSESSION_HALF_LIVES` (3, the redistribution window, `hdRedistributionWindowH`, which
+     since D26's U1 also marks a 2-comp level as past the distribution phase for the measured
+     Hold); `HD_POSTSESSION_DOSE_WINDOW_H` (6 h); `HD_ONE_TIME_GAPS_H` (24/48/72, default 48);
+     `TROUGH_TIMING_WINDOW_H` (0.5 h); `PD_EARLY_LEVEL_H` (24 h) and `PD_MIN_INTERVAL_H` (12 h); the
+     PD AM-labs default (06:00); and the level-timing narrative's 0.5 h "immediate post-infusion"
+     boundary (`interpretLevelTiming`), which U1 also reuses.
+   - **Preferences that order or time a dose:** `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
+     regimen is changed); `CONFIDENCE_SIGMA` (2/3/4, which since D26's ruling 3 gates one decision,
+     `finalizeDecision`); `INTERVAL_PREFERENCE` (24, 12, 48, 8, ties only); the CrCl → interval
+     cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the
+     weight-based level-dosing cuts; and `HOLD_SEARCH_MAX_H` (72 h from the due time, the user's
+     ruling U2, 2026-11-15): when a hold gives "recheck a level" instead of a resume time.
+
+   Everything they sit beside is sourced: sigma is each model's published residual error, the AUC
+   band is Rybak 2020 Rec 1, the 250 mg step is the dispensing increment, the hold threshold is the
+   user's ruling. Prefer a rule that needs no weight at all: the exposure matrix replaced a composite
+   ranking score precisely because it needs none.
 9. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
    in the decisions doc, and record the numbers that justify the change.
 
@@ -224,12 +333,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **458/458 pass** |
+| `phase2d_validation.cjs` | **554/554 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
-| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>` |
-| `docs/audit/browser-flows.cjs` | **103/103** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26). The script prints the first 40 |
+| `docs/audit/browser-flows.cjs` | **161/161** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -371,7 +480,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 84 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 161 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |
@@ -385,7 +494,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `Phase2_Plan.md` | Bayesian architecture reference |
 | `Vancomycin_TDM_Software_Instructions.md` | Clinical source-of-truth |
 | `validation_report.md` | **Phase 1 only, April 2026** — predates the Bayesian engine |
-| `archive/` | Superseded March build and the abandoned React branch |
+| `archive/` | The abandoned React branch and a superseded recommendations note (the March build was removed 2026-11-15: it carried an institution's private guideline) |
 
 Reference PDFs live one level up, outside this repo — it is public and they are third-party
 papers.

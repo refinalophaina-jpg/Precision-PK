@@ -24,8 +24,8 @@ shared midpoint (17.5 mg/L) pick serves both HD paths. The build ships as **v3.6
   explicitly to `hdViewFor(r, gapH)`.
 - **Tests:** SUITE 36 in `phase2d_validation.cjs` (vm harness). Two checks are added to
   `docs/audit/browser-flows.cjs`.
-- **Cross-checks:** a public VancoPK cross-check probe, plus a private MHHS cross-check kept
-  outside the repo.
+- **Cross-checks:** a public VancoPK cross-check probe, plus a private cross-check against the user's institutional protocol
+  (private), kept outside the repo.
 
 **Tech Stack:** Vanilla JS in one HTML file under a hash-pinned CSP; Node `vm` test harness;
 Playwright for the browser checks; Astro hub repo for release.
@@ -50,9 +50,9 @@ Playwright for the browser checks; Astro hub repo for release.
 - Touch targets ≥ 44 px; no horizontal scroll at 375 px; print keeps working.
 - Rybak 2020 Rec 14 is the only clinical source shipped. VancoPK's Ke 0.005 h⁻¹ and its 35%
   removal live **only** in `docs/audit/probe-hd-one-time.cjs`.
-- **MHHS content never enters any repo**, nor any external service. The private cross-check
-  lives in `/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /Hermann Vanc /`, which is
-  git-ignored by the parent Pharmacy repo.
+- **The user's institutional protocol (private) never enters any repo**, nor any external
+  service. The private cross-check lives in a local folder outside this repository that the
+  parent workspace git-ignores.
 - **Rule 9:** a SUITE 35 expectation that encoded the old smallest-in-range pick is changed in
   the open. Record each as `old → new` in the ledger and in D17.
 - **Version:** `APP_VERSION = '3.6.0'`. Header markup reads `Vancomycin TDM v3.6.0`.
@@ -79,7 +79,7 @@ Playwright for the browser checks; Astro hub repo for release.
 - [ ] **Step 1: Create the feature branch**
 
 ```bash
-cd "/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM"
+cd "<repo root>"
 git switch -c hd-one-time-dose
 node phase2d_validation.cjs > /dev/null; echo "baseline exit $?"
 ```
@@ -671,18 +671,18 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Private MHHS cross-check (not committed)
+### Task 5: Private cross-check against the user's institutional protocol (not committed)
 
 **Files:**
-- Create: `/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /Hermann Vanc /d17-mhhs-crosscheck.cjs`
+- Create: `<private folder>/d17-crosscheck.cjs`
   (outside every repo)
-- Create: `/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /Hermann Vanc /d17-mhhs-crosscheck.txt`
+- Create: `<private folder>/d17-crosscheck.txt`
   (its output)
 
 - [ ] **Step 1: Confirm the location is ignored**
 
 ```bash
-cd /Users/olaiya/Projects-Local/Pharmacy && git check-ignore -q "Vancomycin /Hermann Vanc /d17-mhhs-crosscheck.cjs" && echo IGNORED
+cd <parent workspace> && git check-ignore -q "<private folder>/d17-crosscheck.cjs" && echo IGNORED
 ```
 Expected: `IGNORED`.
 
@@ -691,7 +691,7 @@ Expected: `IGNORED`.
     paths into `AinaDaraTDM/`.
   - Replace the VancoPK section with the protocol's unscheduled-HD table:
     - read it **locally** with `pdftotext -layout` from
-      `Hermann Vanc /MHHS Vancomycin Protocol_2024 - FINAL.pdf`, p. 22;
+      the user's institutional protocol (private), its unscheduled-HD table;
     - transcribe it into the script as a weight-band × level-band map;
     - apply its "no re-dose above 20" rule.
   - Compare our dose at each gap against the protocol dose, for the same fictional cases. The
@@ -700,7 +700,7 @@ Expected: `IGNORED`.
 - [ ] **Step 3: Run it and keep the output private**
 
 ```bash
-cd "/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /Hermann Vanc " && node d17-mhhs-crosscheck.cjs > d17-mhhs-crosscheck.txt; tail -5 d17-mhhs-crosscheck.txt
+cd "<private folder>" && node d17-crosscheck.cjs > d17-crosscheck.txt; tail -5 d17-crosscheck.txt
 ```
 - **Ledger** only general findings, without the protocol's numbers. For example: "ours doses
   higher than the protocol for weights over 85 kg at 48 h, by about one step".
@@ -991,7 +991,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```bash
 python3 docs/audit/serve-csp.py > /tmp/csp.log 2>&1 &
-sleep 1; PLAYWRIGHT=/Users/olaiya/Projects-Local/Pharmacy/node_modules/playwright node docs/audit/browser-flows.cjs | tail -3
+sleep 1; PLAYWRIGHT=<path-to>/node_modules/playwright node docs/audit/browser-flows.cjs | tail -3
 ```
 Expected: `61/61 checks pass; 0 console problem(s)`.
 - On a failure, read the JSON detail and the screenshot in `OUT`.
@@ -1013,7 +1013,7 @@ Expected: `0 differences` (the battery predates HD dosing), 21/21, 49/49.
   point it at the one-time path:
 
 ```bash
-S=/private/tmp/claude-501/-Users-olaiya-Projects-Local-Pharmacy-Vancomycin-/97db9c82-2ba8-44f0-990f-9a5f5d5c7a92/scratchpad
+S=<scratch directory outside the repo>
 mkdir -p $S/d17 && cp $S/d16/probe.cjs $S/d17/probe.cjs
 ```
 
@@ -1066,7 +1066,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - **Every rule-9 SUITE 35 change**, `old → new`, copied from the ledger.
   - **The VancoPK cross-check:** its summary line from Task 4, and the explanation of the
     direction.
-  - **The MHHS cross-check, in general terms only.**
+  - **The cross-check against the user's institutional protocol (private), in general terms only.**
   - **The version table** from the spec, and the version rule.
   - **"Not clinically validated on local HD patients."**
 
@@ -1134,14 +1134,14 @@ Expected: 368/368 on main; push accepted.
 
 ### Task 10: Hub release (the user merges)
 
-**Repo:** `~/Projects-Local/AinaDara.com/repos/pharmacy-ainadara`
+**Repo:** the site repository (a local checkout)
 
 - [ ] **Step 1: Branch, copy, repin**
 
 ```bash
-cd ~/Projects-Local/AinaDara.com/repos/pharmacy-ainadara
+cd <the site repository checkout>
 git switch main && git pull --ff-only && git switch -c vanco/hd-one-time
-cp "/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM/index.html" public/vancomycin/index.html
+cp "<repo root>/index.html" public/vancomycin/index.html
 NEW=$(python3 -c "import re,hashlib,base64;s=open('public/vancomycin/index.html',encoding='utf-8').read();m=re.search(r'<script>([\s\S]*?)</script>',s);print('sha256-'+base64.b64encode(hashlib.sha256(m.group(1).encode()).digest()).decode())")
 OLD='sha256-RSC6j6VhZzwM808CfXGeH6cBlZToM7c/DQLA16hKgSM='
 grep -c "$OLD" public/_headers   # expect 2
@@ -1169,8 +1169,8 @@ EOF
 
 ```bash
 npm run check && npm test 2>&1 | tail -3 && npm run build 2>&1 | tail -2
-python3 /private/tmp/claude-501/-Users-olaiya-Projects-Local-Pharmacy-Vancomycin-/97db9c82-2ba8-44f0-990f-9a5f5d5c7a92/scratchpad/csptest/serve_dist.py > /tmp/dist.log 2>&1 &
-sleep 1; cd "/Users/olaiya/Projects-Local/Pharmacy/Vancomycin /AinaDaraTDM" && BASE=http://localhost:8778/vancomycin/ PLAYWRIGHT=/Users/olaiya/Projects-Local/Pharmacy/node_modules/playwright node docs/audit/browser-flows.cjs | tail -2
+python3 <scratch directory outside the repo>/csptest/serve_dist.py > /tmp/dist.log 2>&1 &
+sleep 1; cd "<repo root>" && BASE=http://localhost:8778/vancomycin/ PLAYWRIGHT=<path-to>/node_modules/playwright node docs/audit/browser-flows.cjs | tail -2
 ```
 Expected: check clean, 655 tests pass, the build succeeds, and `61/61 checks pass; 0 console
 problem(s)`.
@@ -1178,7 +1178,7 @@ problem(s)`.
 - [ ] **Step 4: Commit, push, PR, bind**
 
 ```bash
-cd ~/Projects-Local/AinaDara.com/repos/pharmacy-ainadara
+cd <the site repository checkout>
 git add public/vancomycin/index.html public/_headers src/pages/vancomycin/how-to.astro docs/wiki/10-build-log.md
 git commit -m "Vancomycin TDM v3.6.0: one-time HD dose when the schedule is unknown (D17)
 
