@@ -2704,8 +2704,10 @@
   .pd-chart .pd-base, .pd-chart .pd-tick { stroke: var(--rule); }
   .pd-chart .pd-axl    { font-size: 12px; fill: var(--ink-muted); }
   .lg.pd-lg-lv   { width: 9px; height: 9px; border-radius: 50%; background: var(--series-measured); }
-  .lg.pd-lg-band { background: color-mix(in srgb, var(--series-projection) 22%, transparent); border: 1px solid var(--series-projection); }
-  .lg.pd-lg-goal { background: var(--paper-deep); border: 1px solid var(--rule); }
+  /* Every key swatch is a box with a hairline, so a pale fill (paper-deep, 8% ink) still shows (UI review I7). */
+  .lg.pd-lg-band, .lg.pd-lg-goal, .lg.pd-lg-cyc { height: 10px; box-sizing: border-box; border: 1px solid var(--ink-muted); }
+  .lg.pd-lg-band { background: color-mix(in srgb, var(--series-projection) 22%, transparent); border-color: var(--series-projection); }
+  .lg.pd-lg-goal { background: var(--paper-deep); }
   .lg.pd-lg-cyc  { background: color-mix(in srgb, var(--ink) 8%, transparent); }
   .pd-opt-table tr.is-rec th, .pd-opt-table tr.is-rec td { background: var(--paper-deep); }
   .pd-opt-table tr.is-rec th { color: var(--terracotta-ink); font-weight: 600; }
@@ -4760,7 +4762,8 @@ function pdChartSVG(a, input, nowH, widthPx) {
   if (!levels.length || !a.curve || !a.curve.length) return '';
   const t0 = Math.min(doses.length ? doses[0].timeH : Infinity, levels[0].timeH) - 6, t1 = a.nextDrawH + 6;
   const W = widthPx > 0 ? Math.round(Math.min(1200, Math.max(280, widthPx))) : 600, H = 220, P = { l: 34, r: 10, t: 14, b: 28 };
-  const yMax = Math.max(goal ? goal.max : 0, ...levels.map(l => l.conc), ...a.curve.map(p => p.hi)) * 1.15;
+  const dataMax = Math.max(goal ? goal.max : 0, ...levels.map(l => l.conc), ...a.curve.map(p => p.hi));
+  const topTick = Math.ceil(dataMax - 1e-9), yMax = Math.max(dataMax * 1.15, topTick);   // a labelled tick at or above the drawn maximum
   const x = (t) => P.l + (t - t0) / (t1 - t0) * (W - P.l - P.r), y = (v) => P.t + (1 - v / yMax) * (H - P.t - P.b);
   const f = (n) => n.toFixed(1), yb = y(0);
   let g = '';
@@ -4776,6 +4779,9 @@ function pdChartSVG(a, input, nowH, widthPx) {
     g += `<line class="pd-tick" x1="${f(x(mh))}" x2="${f(x(mh))}" y1="${f(yb)}" y2="${f(yb + 4)}"/><text class="pd-axl" x="${f(x(mh))}" y="${f(yb + 16)}" text-anchor="middle">${mid.getDate()} ${MONTH_ABBR[mid.getMonth()]}</text>`;
     d = mid;
   }
+  // The unit, and a tick at or above the highest drawn value (skipped where it would sit on the goal's label).
+  g += `<text class="pd-axl" x="2" y="${f(P.t - 3)}">mg/L</text>`;
+  if (!goal || Math.abs(y(topTick) - y(goal.max)) >= 14) g += `<text class="pd-axl" x="${P.l - 6}" y="${f(y(topTick) + 4)}" text-anchor="end">${topTick}</text>`;
   if (goal) g += `<text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.max) + 4)}" text-anchor="end">${goal.max}</text><text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.min) + 4)}" text-anchor="end">${goal.min}</text>`;
   if (nowH > t0 && nowH < t1) g += `<line class="pd-now" x1="${f(x(nowH))}" x2="${f(x(nowH))}" y1="${P.t}" y2="${f(yb)}"/><text class="pd-axl" x="${f(x(nowH))}" y="${P.t - 3}" text-anchor="middle">now</text>`;
   g += `<line class="pd-draw" x1="${f(x(a.nextDrawH))}" x2="${f(x(a.nextDrawH))}" y1="${P.t}" y2="${f(yb)}"/>`;
@@ -4855,7 +4861,7 @@ function pdResultsHTML(a, input, nowH) {
       ${pdChartSVG(a, inp, nowH)}
       <figcaption class="tx-legend profile-legend">
         <span class="legend-item"><i class="lg pd-lg-lv"></i>Measured level</span>
-        <span class="legend-item"><i class="lg pd-lg-band"></i>${a.pick ? `Projected with ${fmtDose(a.pick.mg)}` : 'Projected, no dose'}</span>
+        <span class="legend-item"><i class="lg pd-lg-band"></i>${a.pick ? (a.giveAtH > a.lastLevel.timeH ? `Projected: decline before the dose, then with ${fmtDose(a.pick.mg)}` : `Projected with ${fmtDose(a.pick.mg)}`) : 'Projected decline, no dose'}</span>
         <span class="legend-item"><i class="lg pd-lg-goal"></i>Goal</span>
         ${onCycler ? '<span class="legend-item"><i class="lg pd-lg-cyc"></i>Cycler night</span>' : ''}
       </figcaption>

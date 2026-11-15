@@ -1730,6 +1730,24 @@ async function enterCourse(page) {
       ok('D27: PD announces its answer once per run (and not again on resize)',
          /^Result: /.test(said) && /(Give [\d.]+ (g|mg) IV|No dose today)/.test(said) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(said) && again === '', JSON.stringify({ said: said.slice(0, 200), again }));
     }
+    {
+      // D27 (UI review I7, Task 20a): the PD chart names its unit, labels a value at or above the drawn
+      // maximum, shows every legend swatch (a hairline border and a box), and names the pre-dose decline.
+      const ch = await pd.evaluate(() => {
+        const svg = document.querySelector('#results-content svg.pd-chart'), v = state.pdView;
+        const labels = [...svg.querySelectorAll('text.pd-axl')].map(t => t.textContent.trim());
+        const nums = labels.filter(t => /^\d+(\.\d+)?$/.test(t)).map(Number);
+        const peak = Math.max(...v.a.curve.map(p => p.hi), ...v.input.course.levels.map(l => l.conc), v.a.goal.max);
+        const sw = ['pd-lg-goal', 'pd-lg-cyc', 'pd-lg-band', 'pd-lg-lv'].map(c => { const el = document.querySelector('#results-content .lg.' + c);
+          if (!el) return { c, missing: true };
+          const cs = getComputedStyle(el); return { c, h: el.getBoundingClientRect().height, w: el.getBoundingClientRect().width, bw: parseFloat(cs.borderTopWidth), bc: cs.borderTopColor, bs: cs.borderTopStyle }; });
+        return { unit: labels.includes('mg/L'), maxTick: Math.max(...nums), peak, sw,
+          legend: [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()) };
+      });
+      ok('D27: PD chart: a mg/L caption, a tick at or above the drawn maximum, visible swatches, the decline named',
+         ch.unit && ch.maxTick >= ch.peak && ch.sw.every(x => !x.missing && x.h >= 8 && x.w >= 8 && (x.c === 'pd-lg-lv' || (x.bw >= 1 && x.bs === 'solid' && x.bc !== 'rgba(0, 0, 0, 0)')))
+         && ch.legend.some(t => /decline/i.test(t)), JSON.stringify(ch));
+    }
     const pdD24 = await pd.evaluate(() => { const svg = document.querySelector('#results-content svg.pd-chart'), txt = svg && svg.querySelector('text');
       return { px: svg && txt ? +(parseFloat(getComputedStyle(txt).fontSize) * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width).toFixed(1) : 0,
         hidden: ['amp-section', 'section-renal', 'section-ld'].map(id => !document.getElementById(id).offsetParent),
