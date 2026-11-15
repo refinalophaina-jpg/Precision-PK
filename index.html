@@ -5569,9 +5569,11 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
 // ~45%. So with ONE level even 1.3 sigma is an unusually large conflict, and
 // with three levels "modest" is ordinary. The old comment called 2 sigma "the
 // outer 5%", which holds only for an unfitted residual.
-// The bands order the wording; they never change a dose. The "modest" band no
-// longer tells the clinician to draw another level — whether one helps is
-// nextLevelValue's job, and the two used to give opposite advice.
+// The bands order the wording; they never change a dose. No band says whether to
+// draw another level: that is the Next line's one sentence (nextLevelValue, which
+// reads the fit's state), and a band that said it too gave the opposite advice on
+// the same screen — "A further concentration is recommended" here, "A further
+// level would add little" in Next (D26, engine review I2). A band points there.
 const FIT_BANDS = [
   { max: 1,        key: 'close',    label: 'Close agreement',
     verdict: 'The fit reproduces the levels',
@@ -5581,15 +5583,15 @@ const FIT_BANDS = [
   { max: 2,        key: 'modest',   label: 'Modest disagreement',
     verdict: 'The fit sits noticeably off this level',
     clinical: 'Measured concentrations differ modestly from model expectations.',
-    action:   'Check the draw and dose times. Whether a further level would change the dose is shown in the level panel further down.',
+    action:   'Check the draw and dose times. Whether a further level is worth drawing is the Next line at the top of the answer.',
     tone: 'warn' },
   { max: Infinity, key: 'substantial', label: 'Substantial disagreement',
     verdict: 'The fit does not reproduce this level',
     clinical: 'Measured concentrations differ substantially from model expectations. '
             + 'The population assumptions may not represent this patient.',
-    action:   'A further concentration is recommended before relying on this exposure estimate. '
-            + 'Check the demographics, dose times and draw times first — a mistyped timestamp '
-            + 'looks exactly like a patient whose pharmacokinetics have shifted.',
+    action:   'Check the demographics, dose times and draw times — a mistyped timestamp '
+            + 'looks exactly like a patient whose pharmacokinetics have shifted. '
+            + 'Whether a further level is worth drawing is the Next line at the top of the answer.',
     tone: 'danger' },
 ];
 
@@ -5801,7 +5803,9 @@ function confidenceAssessment(r, fd, ag) {
     { good:false, text:'No measured levels — this is the population prior, not an individual fit.' } ] };
   let rank = 0;
   const reasons = [];
-  const cap = (to, text) => { if (to > rank) rank = to; reasons.push({ good:false, text }); };
+  // Each downgrade keeps the rating it sets, so the line that leads with a reason can lead
+  // with the one that decided the rating (confidenceLead), not merely the first one found.
+  const cap = (to, text) => { if (to > rank) rank = to; reasons.push({ good:false, text, rank: to }); };
 
   const worst = fd && fd.worst ? Math.abs(fd.worst.sigma) : NaN;
   if (isFinite(worst)) {
@@ -5815,8 +5819,12 @@ function confidenceAssessment(r, fd, ag) {
   else reasons.push({ good:true, text:`${n} measured levels.` });
 
   if (ag && ag.band) {
-    if (ag.band.tone === 'danger') cap(n <= 1 ? 2 : 1, `The applicable models disagree by ${ag.diffPct.toFixed(0)}% on exposure — the answer depends on which model is right.`);
-    else if (ag.band.tone === 'warn' && n <= 1) cap(1, `Priors differ by ${ag.diffPct.toFixed(0)}% on exposure.`);
+    // Named with each model's AUC24 (D26, UI review I3): the disagreement was the cause of a
+    // Low rating, and the figures behind it sat only in the closed Models section.
+    const each = (ag.rows || []).map(m => `${m.auc24.toFixed(0)} on ${m.label}`);
+    const aucs = each.length > 1 ? ` (AUC₂₄ ${each.slice(0, -1).join(', ')} and ${each[each.length - 1]})` : '';
+    if (ag.band.tone === 'danger') cap(n <= 1 ? 2 : 1, `The applicable models disagree by ${ag.diffPct.toFixed(0)}% on exposure${aucs} — the answer depends on which model is right.`);
+    else if (ag.band.tone === 'warn' && n <= 1) cap(1, `Priors differ by ${ag.diffPct.toFixed(0)}% on exposure${aucs}.`);
     else reasons.push({ good:true, text:`Applicable priors agree within ${ag.diffPct.toFixed(0)}%.` });
   }
 
@@ -5830,6 +5838,14 @@ function confidenceAssessment(r, fd, ag) {
     cap(2, `Hughes 2024 is validated at BMI ≥ ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}.`);
 
   return { level: CONFIDENCE_ORDER[rank], rank, reasons, worstSigma: worst, levels: n };
+}
+
+// The reason a rating is shown with: the first that set it. "One level" (Moderate) used to
+// lead a Low rating set by a 24% model disagreement, so the line named the lesser cause
+// (D26, UI review I3). Without a downgrade, the first reason against, as before.
+function confidenceLead(conf) {
+  const rs = (conf && conf.reasons) || [];
+  return rs.find(x => !x.good && x.rank === conf.rank) || rs.find(x => !x.good) || rs[0] || null;
 }
 
 function fmtTau(t) {
@@ -11062,6 +11078,11 @@ function capBoundFlag(highestAuc24, isThis) {
   return { level:'danger',
     text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. ${isThis ? 'This is the highest admissible regimen and it falls' : 'The highest admissible regimen falls'} short at AUC₂₄ ${highestAuc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` };
 }
+// Whether a flag is that alarm. One test, read by regimenDecision (which keeps one copy of it)
+// and by nextLevelFit (which reads it off the answer rather than judging the ceiling again).
+function isCapBoundFlag(f) {
+  return !!f && /cannot be reached within the conventional ceilings/.test(f.text || '');
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 //  CONTINUE OR CHANGE — the current regimen enters the decision (v3.14.0, D25)
@@ -11178,7 +11199,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
   const best = safe.reduce((m, c) => Math.max(m, c.dots), 0);
   // Out of reach within the ceilings: the alarm stays whatever the answer (review, D25).
   const capNote = nearest && nearest.capBound ? capBoundFlag(nearest.auc24, false) : null;
-  const withCap = (x) => { if (capNote) x.flags = (x.flags || []).filter(f => !/cannot be reached within the conventional ceilings/.test(f.text)).concat([capNote]); return x; };
+  const withCap = (x) => { if (capNote) x.flags = (x.flags || []).filter(f => !isCapBoundFlag(f)).concat([capNote]); return x; };
 
   const keep = (why) => {
     const k = cur;
@@ -11483,8 +11504,26 @@ function aucUncertaintyText(nLevels, model) {
 // (Rybak 2020 Rec 1, A-II), the step from the 250 mg dispensing increment.
 const NEXT_LEVEL_MIN_GAIN = 0.15;   // PREFERENCE, not a literature constant
 
-function nextLevelValue(auc24, nLevels, model, tau, CLind) {
+// THE STATE OF THE FIT (v3.14.0, D26; engine review I2, M1). Everything above
+// assumes the model describes this patient: the widths were simulated for patients
+// drawn from the prior. When the fit says otherwise they describe nothing, and the
+// precision branch told a Low-confidence, one-level fit that "a further level would
+// add little" (the 1->2 narrowing is 14% on Buelga and 9% on Hughes, under the 15%
+// preference, so every such fit read that way). `fit` is { confRank, worstSigma,
+// hasAlt, capBoundContinue, reason } from nextLevelFit. A level missed by
+// CONFIDENCE_SIGMA.moderate or more, a second MAP solution, or a Low / Very low
+// rating is a conflict: a further level is recommended, for the rating's own first
+// reason, and the precision branch is never reached. The thresholds are the
+// confidence rating's (PREFERENCE, rule 8); nothing new is chosen here. Without `fit`
+// the answer is as before.
+//
+// A continued regimen the ceilings bind (capBoundContinue: the cap-bound alarm on a
+// "continue" answer, D25) is outside the band with nothing admissible doing better.
+// "A dose change is indicated" said the opposite of the verdict beside it; the
+// ceiling is what the outright branch then says.
+function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   if (!(auc24 > 0)) return null;
+  const f = fit || {};
   const n     = Number(nLevels) || 0;
   const uNow  = aucUncertaintyFrac(n, model);
   const uNext = aucUncertaintyFrac(n + 1, model);
@@ -11511,7 +11550,18 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind) {
   const pct = x => Math.round(x * 100);
   let kind, headline, detail;
 
-  if (outright) {
+  if (f.confRank >= 2 || f.worstSigma >= CONFIDENCE_SIGMA.moderate || f.hasAlt) {
+    kind = 'conflict';
+    headline = 'A further level is recommended';
+    detail = f.reason || '';
+  } else if (outright && f.capBoundContinue) {
+    kind = 'management';
+    headline = 'Confirm the clearance with a level';
+    detail = `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
+           + `within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) reaches the band: `
+           + `the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range, so the regimen is continued `
+           + `rather than changed. A level confirms the clearance before going beyond the ceiling, or to another agent, is considered.`;
+  } else if (outright) {
     kind = 'management';
     headline = 'A further level may substantially change the regimen';
     detail = `The estimate already sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, so a dose change `
@@ -11549,6 +11599,32 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind) {
 
   return { kind, headline, detail, uNow, uNext, gain, loNow, hiNow, loNext, hiNext,
            stepAUC, margin, nearEdge, outright, nLevels: n };
+}
+
+// The fit state nextLevelValue reads, from the confidence rating and the answer as they
+// stand: nothing is judged again here. capBoundContinue is D25's cap-bound alarm on a
+// continued regimen, read off the answer's own flags.
+function nextLevelFit(r, conf) {
+  const rec = r && r.rec;
+  const lead = confidenceLead(conf);
+  return {
+    confRank: conf ? conf.rank : -1,
+    worstSigma: conf ? conf.worstSigma : NaN,
+    hasAlt: !!(r && r.mapAlt && r.mapAlt.CL > 0),
+    capBoundContinue: !!(rec && !rec.noSolution && rec.action === 'continue' && (rec.flags || []).some(isCapBoundFlag)),
+    reason: lead ? lead.text : '',
+  };
+}
+
+// The Next line's sentence about a further level: the one sentence the panels point to.
+// "Would add little", read alone beside a rating short of High, can look like a
+// contradiction; its own detail says why it is not, so that clause is carried verbatim.
+// (Under Low or Very low it no longer arises: that fit is a conflict.)
+function nextLevelLine(nlv) {
+  if (!nlv) return '';
+  return nlv.kind === 'precision' && nlv.gain < NEXT_LEVEL_MIN_GAIN
+    ? `${nlv.headline} — the maintenance regimen lands in the same place either way.`
+    : `${nlv.headline}.`;
 }
 
 // ─── Format absolute timestamp ───
@@ -13748,7 +13824,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const aucForVOI = (rec && !rec.noSolution) ? rec.auc24
                   : (cur2 && cur2.auc24 != null) ? cur2.auc24 : null;
   const tauForVOI = (rec && !rec.noSolution) ? rec.tau : (cur2 ? cur2.tau : null);
-  const nlv = aucForVOI > 0 ? nextLevelValue(aucForVOI, nLev, uncertaintyModelKey(r), tauForVOI, CL_ind) : null;
+  // It reads the state of the fit (D26): a conflicted fit is told to draw a level, never
+  // that one "would add little" beside a Low rating.
+  const nlv = aucForVOI > 0 ? nextLevelValue(aucForVOI, nLev, uncertaintyModelKey(r), tauForVOI, CL_ind, nextLevelFit(r, conf)) : null;
   const nextStep = (() => {
     if (isHD && hdView && hdView.rec && hdView.rec.oneTime) return 'Draw a pre-HD level before the next session. Once the schedule is known, log it and each post-HD dose is sized for you.';
     if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
@@ -13756,14 +13834,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     if (rec && rec.noSolution) return 'Every candidate breached a hard safety limit. Confirm the inputs; if they hold, seek specialist guidance.';
     if (r.lowCrClHold) return SEVERE_RENAL.next;
     if (r.mapAlt && r.mapAlt.CL > 0) return 'Two parameter sets fit these levels. Check the draw times; a level at a different point in the interval separates them.';
-    // "Would add little", read alone under a Low confidence word, looks like a
-    // contradiction. Its own detail says why it is not; carry that clause
-    // verbatim rather than a new claim (the other precision headline already
-    // says "…not the regimen").
-    if (nlv) return nlv.kind === 'precision' && nlv.gain < NEXT_LEVEL_MIN_GAIN
-      ? `${nlv.headline} — the maintenance regimen lands in the same place either way.`
-      : `${nlv.headline}.`;
-    return '';
+    return nextLevelLine(nlv);
   })();
 
   // ── Notes, tiered. At most two show inline; the rest wait under "All notes".
@@ -14018,7 +14089,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ${delta}
         ${regimenActionHTML(rec, targetAUC, 'why')}
       </div>`;
-    lowConfSpan = derated ? ` This dose was generated from a fit the tool itself does not trust.${span}` : '';
+    // The rating's own first reason leads the line (confidenceLead); the span says what the
+    // dose rests on. "A fit the tool itself does not trust" named no cause and sat beside
+    // "Close agreement" and "would add little" (D26, UI review I3).
+    lowConfSpan = derated ? span : '';
   } else if (rec && rec.noSolution) {
     verdict = `
       <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">No regimen recommended</h3>
@@ -14048,7 +14122,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       : hdRec.kind === 'hold' ? `No dose after session ${hdRec.session}: the fitted pre-HD level at session ${hdRec.sizing} is ${hdRec.pre.toFixed(1)} mg/L.`
       : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC24 ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
   }
-  const confReason = conf.reasons.find(x => !x.good) || conf.reasons[0];
+  const confReason = confidenceLead(conf);
   const mismatch = p2c && p2c.modelRec ? modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model) : null;
   const confBlock = `
     <p class="vx-conf conf-${conf.rank < 0 ? 'info' : conf.rank === 0 ? 'ok' : conf.rank === 1 ? 'warn' : 'danger'}">
@@ -14190,7 +14264,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <ul class="conf-reasons">${reasons}</ul>
       </div>
       ${ceTable}${tied}
-      ${nlv ? `<div class="voi"><p class="voi-head"><span class="voi-tag">${nlv.kind === 'management' ? 'Clinical impact' : 'Precision only'}</span> <strong class="voi-title">${nlv.headline}</strong></p><p class="voi-body">${nlv.detail}</p></div>` : ''}`, false);
+      ${nlv ? `<div class="voi"><p class="voi-head"><span class="voi-tag">${nlv.kind === 'conflict' ? 'Fit in doubt' : nlv.kind === 'management' ? 'Clinical impact' : 'Precision only'}</span> <strong class="voi-title">${escHtml(nlv.headline)}</strong></p><p class="voi-body">${escHtml(nlv.detail)}</p></div>` : ''}`, false);
   }
 
   // Current regimen — what the patient is on, from real timestamps
@@ -14280,8 +14354,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           ${ag.band.tone === 'ok'
             ? 'The models give similar exposure, so the choice of model matters little here.'
             : ag.band.tone === 'warn'
-              ? 'The models differ moderately. The difference comes from their structure as much as from your data; the next step above says whether a further level would change the dose.'
-              : '<strong>The models differ widely on exposure.</strong> The answer depends on which model is right for this patient; the next step above says whether a further level would change the dose.'}
+              ? 'The models differ moderately. The difference comes from their structure as much as from your data; whether a further level is worth drawing is the Next line at the top of the answer.'
+              : '<strong>The models differ widely on exposure.</strong> The answer depends on which model is right for this patient; whether a further level is worth drawing is the Next line at the top of the answer.'}
           The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.</p>
         ${caveats}`;
     }
@@ -14330,8 +14404,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             ${r.crcl != null ? r.crcl.toFixed(0) : '—'} mL/min entered.
             If Cockcroft-Gault is overestimating (low muscle mass, low SCr), the prior is centred in the
             wrong place and the level is the better evidence.` : ''}
-          ${(r.levels || []).length === 1 ? `<br><strong>With one level, CL and V are not separately identifiable</strong> — a second level,
-          or cystatin C, resolves this far better than re-running the fit.` : ''}</p>`;
+          ${(r.levels || []).length === 1 ? `<br><strong>With one level, CL and V are not separately identifiable</strong>, and re-running
+          the fit does not change that.` : ''}</p>`;
         if (fd.anchored) {
           const aucBayes = cur2 && cur2.dose && cur2.tau ? (cur2.dose * (24 / cur2.tau)) / CL_ind : null;
           const gap = aucBayes ? Math.abs(fd.anchored.auc24 - aucBayes) / ((fd.anchored.auc24 + aucBayes) / 2) * 100 : null;

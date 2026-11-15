@@ -772,6 +772,50 @@ async function enterCourse(page) {
     await fctx.close();
   }
 
+  // v3.14.0 (D26), engine report I2 and UI report I3: "Low confidence … a fit the tool itself does
+  // not trust" beside "A further level would add little" and "A further concentration is
+  // recommended". One sentence about a further level, in Next; the panels point to it. A fictional
+  // 76 M (70 kg, 175 cm, SCr 0.5) on Buelga, 1 g q12h x 4 over 1 h, one level of 19.9 mg/L 11.5 h
+  // after the last dose. Fixed clock: today 10:00.
+  {
+    const nctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const n = await nctx.newPage();
+    const nProblems = watch(n, 'next-level');
+    await n.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await n.goto(BASE + '?v=nlv-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '76'); await typeInto(n, '#b-tbw', '70'); await typeInto(n, '#b-height', '175'); await typeInto(n, '#b-scr', '0.5');
+    await n.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1000'); await typeInto(n, `#b-dose-tinf-${i}`, '1');
+      await n.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await n.locator('[data-onclick="k46"]').click();
+    await typeInto(n, '#b-lvl-conc-1', '19.9'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '07:30');
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const nl = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { all: t('#b-results'), next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf'), act: t('#b-results .vx-action'),
+        fit: t('#ev-fit'), models: t('#ev-models') };
+    });
+    const printedN = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: the 76 M on Buelga never says both "would add little" and "is recommended", on screen or in print',
+       !(/would add little/.test(nl.all) && /is recommended/.test(nl.all)) && !(/would add little/.test(printedN) && /is recommended/.test(printedN))
+       && /^Next A further level is recommended\.$/.test(nl.next),
+       JSON.stringify({ next: nl.next, little: /would add little/.test(nl.all), rec: (nl.all.match(/[^.]*is recommended[^.]*\./g) || []) }));
+    ok('D26: Low confidence names the model disagreement with both AUCs; "does not trust" is gone; Fit and Models point to Next',
+       /^Low confidence — The applicable models disagree by \d+% on exposure \(AUC₂₄ \d+ on Buelga 1-comp and \d+ on Goti 2-comp\)/.test(nl.conf)
+       && !/does not trust/.test(nl.all + printedN) && /the Next line/.test(nl.fit) && /the Next line/.test(nl.models)
+       && !/further concentration is recommended|next step above says|level panel further down/.test(nl.all),
+       JSON.stringify({ act: nl.act, conf: nl.conf.slice(0, 220), fitPtr: /the Next line/.test(nl.fit), modelsPtr: /the Next line/.test(nl.models) }));
+    const nAttr = await attributeInjected(n, nProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + nAttr.injected;
+    results.problems.push(...nAttr.kept);
+    await nctx.close();
+  }
+
   // v3.14.0 (D26), engine report C1: a supratherapeutic patient was given a time for the next
   // dose with no hold. The user's ruling: a fitted pre-dose level of 20 mg/L or more is a Hold.
   // A fictional 60 M (80 kg, 178 cm, SCr 3.0) on Buelga, 1.5 g q8h x 6 over 2 h, the last

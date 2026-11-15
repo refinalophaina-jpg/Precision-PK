@@ -144,6 +144,8 @@ function extract() {
     TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
     VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
+    // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state
+    CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
   };
 }
 

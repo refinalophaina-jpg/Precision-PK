@@ -6486,6 +6486,107 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const planned = drive(doses.concat([d(-1), d(-13)]), [{ conc: 15, timeH: nowH - 1, row: '1', label: 'x' }]);
     assert(planned.errs && planned.errs.length === 1 && !/Level row|Dose row/.test(planned.errs[0]), JSON.stringify(planned.errs));
   });
+
+  // I2 (engine report) and I3 (UI report): one screen said "Low confidence … a fit the tool itself
+  // does not trust", Next "A further level would add little", and the Fit panel "A further
+  // concentration is recommended". nextLevelValue now knows the state of the fit; the Next line is
+  // the one sentence about a further level, and the other panels point to it. Fictional 76 M, 70 kg,
+  // 175 cm, SCr 0.5, Buelga; 1 g q12h x 4 over 1 h, the last 11.5 h ago; one level, 19.9 mg/L, now.
+  // The fit, the decision and the render are runBayesian's own (DOM stubbed, then restored).
+  const e1 = (() => {
+    let memo = null;
+    return () => {
+      if (memo) return memo;
+      const H = 3600000, nowH = Date.now() / H, t0 = nowH - 47.5;
+      const doses = Array.from({ length: 4 }, (_, i) => ({ mg: 1000, tinfH: 1, timeH: t0 + i * 12, row: String(i + 1) }));
+      const levels = [{ conc: 19.9, timeH: nowH, row: '1', label: 'x' }];
+      const vals = { 'b-age': '76', 'b-tbw': '70', 'b-height': '175', 'b-scr': '0.5', 'b-auc-target': '450', 'b-mic': '1' };
+      const els = {};
+      const el = (id) => els[id] || (els[id] = { id, value: vals[id] || '', textContent: '', innerHTML: '', checked: false, style: {}, dataset: {},
+        classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, setAttribute() {}, getAttribute() { return null; },
+        removeAttribute() {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, appendChild() {}, scrollIntoView() {} });
+      const keep = {}; ['parseBayesCourse', 'showFormErrors', 'beginFormRun', 'readSerialScrChecked', 'setTimeout'].forEach(n => keep[n] = sandbox[n]);
+      const prevDoc = sandbox.document;
+      vm.runInContext('globalThis.__b44 = Object.assign({}, bState); bState.sex = "M"; bState.model = "buelga"; bState.dial = false; bState.result = null;', sandbox);
+      sandbox.document = { getElementById: el, querySelector: () => null, querySelectorAll: () => [], createElement: () => el('_new') };
+      sandbox.beginFormRun = () => {};
+      sandbox.readSerialScrChecked = () => ({ errors: [], readings: [] });
+      sandbox.parseBayesCourse = () => ({ doses, levels, sessions: [], errors: [] });
+      let errs = null; sandbox.showFormErrors = (s, m) => { errs = [].concat(m); };
+      sandbox.setTimeout = () => 0;
+      let threw = null;
+      try { sandbox.runBayesian(); } catch (e) { threw = e; }
+      const r = vm.runInContext('bState.result', sandbox);
+      Object.assign(sandbox, keep); sandbox.document = prevDoc;
+      vm.runInContext('bState = globalThis.__b44; delete globalThis.__b44;', sandbox);
+      assert(!errs && r && r.rec, `the fit ran: ${JSON.stringify(errs)} ${threw && threw.message}`);
+      const html = (els['b-results'] || {}).innerHTML || '';
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      // The diagnostics, as renderBayesianResults computes them (detected regimen, shared by every panel).
+      const cur2 = fn44('inferCurrentRegimen')(r.doses, r.CL_ind, r.V_ind, null);
+      const fd = fn44('fitDiagnostics')(Object.assign({}, r, { regimen: cur2 }));
+      const ag = fn44('modelAgreement')(r.agCtx, r.doses, r.levels, cur2.dose * (24 / cur2.tau));
+      const conf = fn44('confidenceAssessment')(r, fd, ag);
+      return (memo = { r, html, text, threw, conf, ag, fd });
+    };
+  })();
+  const para44 = (html, cls) => { const m = html.match(new RegExp(`<p class="${cls}[^"]*">([\\s\\S]*?)</p>`)); return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
+
+  test('44.11 a one-level fit the models disagree on: "A further level is recommended", never the precision branch', () => {
+    const { r, conf, ag } = e1();
+    assert(r.rec.action === 'continue' && r.rec.dose === 1000 && r.rec.tau === 12, `the fixture continues 1 g q12h: ${r.rec.action} ${r.rec.dose} q${r.rec.tau}`);
+    assert(conf.rank === 2 && ag && ag.band.tone === 'danger', `the fixture is Low confidence on model disagreement: ${conf.level}, ${ag && ag.diffPct}`);
+    const fit = fn44('nextLevelFit')(r, conf);
+    assert(fit.confRank === 2 && fit.hasAlt === false && fit.capBoundContinue === false && Math.abs(fit.worstSigma - conf.worstSigma) < 1e-12, JSON.stringify(fit));
+    const nlv = fn44('nextLevelValue')(r.rec.auc24, r.levels.length, 'buelga', r.rec.tau, r.CL_ind, fit);
+    assert(nlv.kind === 'conflict' && nlv.headline === 'A further level is recommended', `${nlv.kind}: ${nlv.headline}`);
+    assert(nlv.detail === fn44('confidenceLead')(conf).text && /disagree by \d+%/.test(nlv.detail), nlv.detail);
+    assert(fn44('nextLevelLine')(nlv) === 'A further level is recommended.', fn44('nextLevelLine')(nlv));
+    // Each trigger alone reaches it; below every trigger the precision branch is as before.
+    const kind = (f) => fn44('nextLevelValue')(464, 1, 'buelga', 12, 4.31, f).kind;
+    assert(kind(undefined) === 'precision' && kind({ confRank: 1, worstSigma: 1.9, hasAlt: false }) === 'precision', 'no trigger, no conflict');
+    assert(kind({ confRank: 2 }) === 'conflict' && kind({ confRank: 3 }) === 'conflict', 'Low and Very low');
+    assert(kind({ confRank: 1, worstSigma: K44.CONFIDENCE_SIGMA.moderate }) === 'conflict', 'a level missed by 2 SD');
+    assert(kind({ confRank: 0, hasAlt: true }) === 'conflict', 'a second MAP solution');
+  });
+  test('44.12 the rendered answer never says both "would add little" and "is recommended"; the other panels point to the Next line', () => {
+    const { html, text, threw } = e1();
+    assert(html.length > 5000 && !/could not be displayed/.test(html), `rendered: ${html.length} chars, ${threw && threw.message}`);
+    assert(!(/would add little/.test(text) && /is recommended/.test(text)), 'both sentences on one screen');
+    assert(para44(html, 'vx-next') === 'Next A further level is recommended.', para44(html, 'vx-next'));
+    // Fit vs measured and Models carry no sentence of their own about a further level.
+    for (const re of [/further concentration is recommended/i, /level panel further down/, /next step above says/, /a second level, or cystatin C, resolves/])
+      assert(!re.test(text), `own further-level sentence: ${re}`);
+    assert(K44.FIT_BANDS.every(b => !/further (level|concentration)/i.test(b.action) || /the Next line/.test(b.action)),
+      'every fit band that mentions a further level points to the Next line: ' + K44.FIT_BANDS.map(b => b.action).join(' | '));
+    assert(/the Next line/.test(text), 'the panels point to the Next line');
+  });
+  test('44.13 the Low-confidence line names its first reason, the model disagreement with both AUCs; "does not trust" is gone', () => {
+    const { html, text, conf, ag } = e1();
+    assert(src44.indexOf('a fit the tool itself does not trust') < 0 && !/does not trust/.test(text), 'the sentence is gone');
+    const lead = fn44('confidenceLead')(conf);
+    assert(lead && !lead.good && lead.rank === conf.rank, `the lead is the reason that set the rating: ${JSON.stringify(lead)}`);
+    const aucs = ag.rows.map(m => `${m.auc24.toFixed(0)} on ${m.label}`);
+    assert(aucs.length === 2 && lead.text.indexOf(`(AUC₂₄ ${aucs[0]} and ${aucs[1]})`) > 0, `both AUCs named: ${lead.text}`);
+    const line = para44(html, 'vx-conf');
+    assert(line.indexOf(`Low confidence — ${lead.text}`) === 0, line);
+    assert(!/One level: clearance/.test(line), 'not the weaker reason first: ' + line);
+  });
+  test('44.14 a cap-bound continue (CL 12.34, 1.5 g q8h established, no level): the Next line says the ceiling binds, not "a dose change is indicated"', () => {
+    const doses = Array.from({ length: 4 }, (_, i) => ({ mg: 1500, tinfH: fn44('autoTinf')(1500), timeH: i * 8 }));
+    const rec = fn44('regimenDecision')(12.34, 60, 450, null, 1, doses, fn44('aucUncertaintyRow')(0, 'buelga'));
+    assert(rec.action === 'continue' && rec.dose === 1500 && rec.tau === 8 && Math.round(rec.auc24) === 365, `${rec.action} ${rec.dose} q${rec.tau} ${rec.auc24}`);
+    const r = { model: 'buelga', CL_ind: 12.34, V_ind: 60, doses, levels: [], rec, mapAlt: null };
+    const conf = fn44('confidenceAssessment')(r, null, null);
+    const fit = fn44('nextLevelFit')(r, conf);
+    assert(fit.capBoundContinue === true, JSON.stringify(fit));
+    const nlv = fn44('nextLevelValue')(rec.auc24, 0, 'buelga', rec.tau, 12.34, fit);
+    const line = fn44('nextLevelLine')(nlv);
+    for (const s of [nlv.headline, nlv.detail, line]) assert(!/dose change is indicated/.test(s), s);
+    assert(/conventional ceilings/.test(nlv.detail) && /level/i.test(line), `${line} / ${nlv.detail}`);
+    // Not cap-bound: the outright branch is unchanged.
+    assert(/dose change is indicated/.test(fn44('nextLevelValue')(300, 1, 'buelga', 12, 4).detail), 'an ordinary out-of-range estimate still says so');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
