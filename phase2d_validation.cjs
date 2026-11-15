@@ -7184,9 +7184,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const sentence = m[1];
     assert(/not clinically validated/.test(sentence) && /not a prescription/.test(sentence) && /Clinician judgment required/.test(sentence), sentence);
     assert((src44.match(/const DISCLAIMER_TEXT\b/g) || []).length === 1, 'one definition');
-    assert(src44.split(sentence).length === 2, `the sentence literal appears ${src44.split(sentence).length - 1} times; it must appear once, in the constant`);
+    // The sentence is the constant plus the static on-screen paragraphs, which carry it as literal
+    // HTML (no script needed to show a safety disclaimer); the test pins every copy equal to the constant.
+    const paras = [...src44.matchAll(/<p class="rp-disclaimer">([^<]*)<\/p>/g)].map(x => x[1]);
+    assert(paras.length === 2, `${paras.length} static .rp-disclaimer paragraphs; expected the Trough and AUC ones`);
+    assert(paras.every(t => t === sentence), 'every static .rp-disclaimer text must equal DISCLAIMER_TEXT: ' + JSON.stringify(paras));
+    assert(src44.split(sentence).length === 4, `the sentence appears ${src44.split(sentence).length - 1} times; expected the constant and the two static paragraphs`);
     assert(!/Advisory only — not a prescription/.test(src44), 'an old footer string remains');
-    assert(/querySelectorAll\('\.rp-disclaimer, \.print-footer'\)/.test(src44), 'the screen paragraphs and static print footer are not filled from the constant');
+    assert(!/querySelectorAll\('\.rp-disclaimer/.test(src44), 'the paragraphs must not be filled by script');
+    assert(!/print-footer/.test(src44), 'the dead .print-footer element and its CSS are removed');
     assert((src44.match(/class="pr-footer"/g) || []).length === 1, 'exactly one pr-footer element is written');
     const ft = body44('_prFooter');
     assert(/class="pr-footer"/.test(ft) && /DISCLAIMER_TEXT/.test(ft), '_prFooter must write the footer from the constant');

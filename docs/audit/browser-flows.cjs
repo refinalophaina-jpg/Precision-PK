@@ -1190,6 +1190,30 @@ async function enterCourse(page) {
     const p1 = await pdRead();
     ok('PD: the fictional CCPD patient gets an answer — a dose or none, the expected level at the next draw, and when to draw it',
        /^(Give [\d.]+ (g|mg) IV|No dose today)/.test(p1.verdict) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(p1.verdict) && /Draw the next level/.test(p1.verdict), p1.verdict.slice(0, 300));
+    {
+      const paper = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+      ok('D26: print says not clinically validated (PD result)', /Peritoneal|peritoneal/.test(paper) && /not clinically validated/.test(paper) && /Clinician judgment required/.test(paper), paper.slice(-300));
+      await pd.goto(BASE + '?v=pwpd-empty-' + Date.now(), { waitUntil: 'networkidle' });
+      await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+      const empty = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+      ok('D26: print says not clinically validated (empty state)', /not clinically validated/.test(empty) && /Clinician judgment required/.test(empty), empty.slice(-300));
+      await pd.goto(BASE + '?v=pwpd-empty2-' + Date.now(), { waitUntil: 'networkidle' });
+      await pd.locator('.module-tab', { hasText: 'AUC' }).first().click();
+      const empty2 = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+      ok('D26: print says not clinically validated (empty AUC)', /not clinically validated/.test(empty2), empty2.slice(-300));
+      await pd.goto(BASE + '?v=pwpd-back-' + Date.now(), { waitUntil: 'networkidle' });
+      await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+      await pd.locator('#mode-btn-pd').click();
+      await typeInto(pd, '#tbw', '63');
+      await pd.selectOption('#pd-modality', 'ccpd');
+      await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
+      await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
+      await typeInto(pd, '#pd-load-kg', '61');
+      await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+      await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
+      await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
+      await pdRun();
+    }
     ok('PD: the second interval is flagged early; the options mark the recommendation; the chart shows the levels and cycler nights',
        /within 24 h of a dose ending/.test(p1.decline) && (mgOf(p1.verdict) ? p1.rec.startsWith(p1.verdict.match(/Give ([\d.]+ (?:g|mg))/)[1]) : p1.rec === 'No dose') && p1.lv === 2 && p1.cyc >= 1, JSON.stringify(p1).slice(0, 400));
     const pdD24 = await pd.evaluate(() => { const svg = document.querySelector('#results-content svg.pd-chart'), txt = svg && svg.querySelector('text');
