@@ -6422,24 +6422,35 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/list: arcAdviceListHTML\(\)/.test(body44('renderBayesianResults')), 'AUC Precision reads arcAdviceListHTML');
   });
 
-  test('44.9c the severe-renal advice attributes only the loading basis and maximum to Rec 11, and says Rybak has no figure for CrCl under 10', () => {
+  // Task 4b review (controller ruling R11): Rybak's mg/kg loading figures are set by patient group, not
+  // renal function — Rec 10 (20–35 mg/kg, critically ill with serious MRSA, p. 10) and Rec 12 (20–25 mg/kg
+  // actual body weight, at most 3,000 mg, obese adults with serious infections, p. 11). Neither excludes
+  // CrCl under 10, so the note says only what is true: no loading dose by renal function, none for this group.
+  test('44.9c the severe-renal advice attributes only the loading basis and maximum to Rec 11, and says Rybak sets no loading dose by renal function', () => {
     const LD = fn44('fmtDose')(K44.HD_LOADING_MAX_MG), T = K44.VERY_LOW_CRCL_THRESHOLD;
     const SR = vm.runInContext('SEVERE_RENAL', sandbox);
     const texts = { 'the AUC Precision note': plain44(fn44('severeRenalNote')(6.5, '', 'auc').html),
       'the Trough note': plain44(fn44('troughSevereRenalNote')(6.5).html), 'SEVERE_RENAL.follow': SR.follow };
+    const SAYS = `Rybak 2020 sets no loading dose by renal function, and none for CrCl under ${T} mL/min without dialysis`;
     for (const [where, s] of Object.entries(texts)) {
       assert(/basis and maximum/.test(s) && /Rybak 2020 Rec 11/.test(s) && s.indexOf(`actual body weight, at most ${LD}`) >= 0,
         `${where}: the basis and maximum are Rec 11's — ${s}`);
       // The sentence that says to give the dose cites no guideline: Rybak directs no loading dose for this group.
       s.split(/(?<=\.)\s+/).filter(x => /\bGive\b/.test(x)).forEach(x =>
         assert(!/Rybak|Rec \d/.test(x), `${where}: reads as Rybak directing the dose — "${x}"`));
+      // The over-reach is gone, and neither group's mg/kg range is shown (a question for the user).
+      assert(!/gives no mg\/kg loading dose/.test(s) && !/mg\/kg/.test(s), `${where}: an mg/kg claim or range — ${s}`);
     }
-    ['the AUC Precision note', 'the Trough note'].forEach(where => assert(
-      texts[where].indexOf(`Rybak 2020 gives no mg/kg loading dose for CrCl under ${T} mL/min without dialysis`) >= 0,
-      `${where}: no Rybak mg/kg figure for this group — ${texts[where]}`));
+    ['the AUC Precision note', 'the Trough note'].forEach(where => assert(texts[where].indexOf(SAYS) >= 0,
+      `${where}: says Rybak sets no loading dose by renal function — ${texts[where]}`));
     // As rendered in the Trough refusal (44.8's patient).
     const r = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 });
-    assert(r.text.indexOf(`Rybak 2020 gives no mg/kg loading dose for CrCl under ${T} mL/min without dialysis`) >= 0, r.text.slice(0, 900));
+    assert(r.text.indexOf(SAYS) >= 0 && !/gives no mg\/kg/.test(r.text), r.text.slice(0, 900));
+    // The source comment names both group ranges with their pages, beside Rec 11 (rule 1).
+    const script = src44.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const i = script.indexOf('const HD_LOADING_MAX_MG'), cmt = script.slice(script.lastIndexOf('// ─── The guideline loading maximum', i), i);
+    assert(/Rec 10\b[\s\S]*20 to 35 mg\/kg[\s\S]*p\. ?10\b/.test(cmt) || /Rec 10\b[\s\S]*p\. ?10\b[\s\S]*20 to 35 mg\/kg/.test(cmt), `Rec 10 with its page: ${cmt}`);
+    assert(/Rec 12\b/.test(cmt) && /20 to 25 mg\/kg/.test(cmt) && /obese adult/.test(cmt) && /p\. ?11\b/.test(cmt), `Rec 12 with its page: ${cmt}`);
   });
 }
 

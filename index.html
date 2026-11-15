@@ -8707,9 +8707,12 @@ function detectVeryLowCrCl(crclUncapped) {
 // PDF (doi 10.1093/ajhp/zxaa036), "Loading Doses", Summary and recommendations, printed p. 10:
 //   Rec 11 (B-II): loading doses are based on actual body weight and should "not exceed
 //     3,000 mg" (it refers to Dosing in Obesity). Rec 11 states no mg/kg range.
-//   Rec 10 (B-II), the item before it, is where the range is: 20 to 35 mg/kg may be considered,
-//     by intermittent infusion, in critically ill patients with suspected or documented serious
-//     MRSA infection. Table 2 (Adults, item 12, PDF p. 21) prints Recs 10 and 11 as one item.
+//   Rybak's mg/kg ranges are set by patient group, not renal function (Task 4b review, R11):
+//   Rec 10 (B-II, p. 10): 20 to 35 mg/kg may be considered, by intermittent infusion, in critically
+//     ill patients with suspected or documented serious MRSA infection.
+//   Rec 12 (B-II, Dosing in Obesity, printed p. 11): 20 to 25 mg/kg on actual body weight, at most
+//     3,000 mg, may be considered in obese adult patients with serious infections.
+//   Table 2 (Adults, PDF p. 21) prints Recs 10 and 11 as item 12, and Rec 12 as item 13.
 // One maximum for every loading dose here: the HD empiric table (Rec 13), the PD load (D23),
 // the Trough loading dose (calcLoadingDose, Task 4b) and the severe-renal and augmented-clearance
 // advice below.
@@ -8723,11 +8726,11 @@ const HD_LOADING_MAX_MG = 3000;   // Rec 11
 // Its numbers (Task 4; models report I4; the user's ruling 8): the guideline loading dose,
 // then dose by measured levels, with no stated interval. Only Rec 11's figures are shown,
 // the basis (actual body weight) and the maximum (HD_LOADING_MAX_MG, above). No mg/kg figure:
-// Rec 11 has none, and Rec 10's 20–35 mg/kg is stated for the critically ill with serious
-// MRSA infection, not for CrCl under 10 without RRT. Rybak 2020 gives no time to wait before
-// the level in this population, so none is given. Replaced 2026-11-14, all unsourced: 15–20
-// mg/kg, max 2 g; wait 24–48 h; intervals q24h–q72h. Task 4b: Rec 11 is cited for the basis
-// and maximum only, never as directing a dose for this group, for which Rybak has no figure.
+// Rec 11 has none; Recs 10 and 12 (above) are by patient group and do not exclude CrCl under
+// 10, but showing either is a question for the user (R11). Rybak sets no loading dose by renal
+// function and gives no time to wait before the level here, so none is given. Replaced
+// 2026-11-14, all unsourced: 15–20 mg/kg, max 2 g; wait 24–48 h; intervals q24h–q72h.
+// Rec 11 is cited for the basis and maximum only, never as directing a dose (Task 4b).
 const SEVERE_RENAL = {
   word:   'No empiric maintenance regimen',
   follow: `Give one loading dose, then hold: draw a level, and dose by measured levels. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}.`,
@@ -8739,7 +8742,7 @@ function severeRenalNote(crclTrue, modelNote, module) {
   return { tier: 'alarm', word: 'Severe renal impairment (non-dialysis) suspected', html: `
       CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${modelNote || ''}
       <ul class="note-list">
-        <li>Give a single weight-based loading dose, then hold further doses. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}. Rybak 2020 gives no mg/kg loading dose for CrCl under ${VERY_LOW_CRCL_THRESHOLD} mL/min without dialysis.</li>
+        <li>Give a single weight-based loading dose, then hold further doses. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}. Rybak 2020 sets no loading dose by renal function, and none for CrCl under ${VERY_LOW_CRCL_THRESHOLD} mL/min without dialysis.</li>
         <li>Draw a level before any further dose; later doses follow measured levels, not a schedule.${step}</li>
         <li>Avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
