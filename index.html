@@ -4989,6 +4989,11 @@ function onIntervalChange() {
 // Shown against the rate, never used to change the table.
 const LD_MAX_RATE_MG_PER_MIN = 15;
 
+// The maximum (v3.14.0, D26, Task 4b): Rybak 2020 Rec 11 (B-II, printed p. 10) — loading doses on
+// actual body weight, not exceeding 3,000 mg (HD_LOADING_MAX_MG, sourced above the severe-renal
+// advisory). The target-peak dose is solved first and kept as uncappedMg for the card's
+// explanation; above the maximum the dose given, and so modelled (infusion time, rate, peak), is
+// the maximum. Before Task 4b a large volume returned 3.25 g or more with no cap.
 function calcLoadingDose(popClv, popVd, targetPeak) {
   const vdLD  = popVd;
   const kelLD = popClv / vdLD;
@@ -4997,17 +5002,19 @@ function calcLoadingDose(popClv, popVd, targetPeak) {
   const doseFor = t => targetPeak * (t * kelLD * vdLD) / (1 - Math.exp(-kelLD * t));
   // The infusion time depends on the dose and the dose (weakly) on the time;
   // settle it, then take the time the table gives for the dose actually chosen.
-  let tinf = 1, dose = 0;
+  let tinf = 1, uncappedMg = 0;
   for (let i = 0; i < 6; i++) {
-    dose = Math.max(250, Math.round(doseFor(tinf) / 250) * 250);
-    const t = autoTinf(dose);
+    uncappedMg = Math.max(250, Math.round(doseFor(tinf) / 250) * 250);
+    const t = autoTinf(uncappedMg);
     if (t === tinf) break;
     tinf = t;
   }
+  const capped = uncappedMg > HD_LOADING_MAX_MG;
+  const dose = capped ? HD_LOADING_MAX_MG : uncappedMg;
   tinf = autoTinf(dose);
   const peak = (dose / (tinf * kelLD * vdLD)) * (1 - Math.exp(-kelLD * tinf));
   const rateMgMin = dose / (tinf * 60);
-  return { dose, peak, vdLD, kelLD, tinf, rateMgMin, rateAboveMatzke: rateMgMin > LD_MAX_RATE_MG_PER_MIN };
+  return { dose, peak, vdLD, kelLD, tinf, rateMgMin, rateAboveMatzke: rateMgMin > LD_MAX_RATE_MG_PER_MIN, capped, uncappedMg };
 }
 
 // Level at Δt hours after start of LD infusion
@@ -8703,8 +8710,9 @@ function detectVeryLowCrCl(crclUncapped) {
 //   Rec 10 (B-II), the item before it, is where the range is: 20 to 35 mg/kg may be considered,
 //     by intermittent infusion, in critically ill patients with suspected or documented serious
 //     MRSA infection. Table 2 (Adults, item 12, PDF p. 21) prints Recs 10 and 11 as one item.
-// One maximum for every loading dose here: the HD empiric table (Rec 13), the PD load (D23)
-// and the severe-renal advisory below.
+// One maximum for every loading dose here: the HD empiric table (Rec 13), the PD load (D23),
+// the Trough loading dose (calcLoadingDose, Task 4b) and the severe-renal and augmented-clearance
+// advice below.
 const HD_LOADING_MAX_MG = 3000;   // Rec 11
 
 // The severe-renal advisory, in one place for both modules (v3.14.0, D26; engine report
@@ -8718,10 +8726,11 @@ const HD_LOADING_MAX_MG = 3000;   // Rec 11
 // Rec 11 has none, and Rec 10's 20–35 mg/kg is stated for the critically ill with serious
 // MRSA infection, not for CrCl under 10 without RRT. Rybak 2020 gives no time to wait before
 // the level in this population, so none is given. Replaced 2026-11-14, all unsourced: 15–20
-// mg/kg, max 2 g; wait 24–48 h; intervals q24h–q72h.
+// mg/kg, max 2 g; wait 24–48 h; intervals q24h–q72h. Task 4b: Rec 11 is cited for the basis
+// and maximum only, never as directing a dose for this group, for which Rybak has no figure.
 const SEVERE_RENAL = {
   word:   'No empiric maintenance regimen',
-  follow: `Give one loading dose on actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020 Rec 11), then hold: draw a level, and dose by measured levels.`,
+  follow: `Give one loading dose, then hold: draw a level, and dose by measured levels. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}.`,
   next:   'Give one loading dose, then dose by measured levels — see the severe renal impairment note.',
 };
 // module: 'auc' adds AUC Precision's step (re-run the fit); the Trough module has no fit to name.
@@ -8730,7 +8739,7 @@ function severeRenalNote(crclTrue, modelNote, module) {
   return { tier: 'alarm', word: 'Severe renal impairment (non-dialysis) suspected', html: `
       CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${modelNote || ''}
       <ul class="note-list">
-        <li>Give a single weight-based loading dose: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020 Rec 11). Then hold further doses.</li>
+        <li>Give a single weight-based loading dose, then hold further doses. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}. Rybak 2020 gives no mg/kg loading dose for CrCl under ${VERY_LOW_CRCL_THRESHOLD} mL/min without dialysis.</li>
         <li>Draw a level before any further dose; later doses follow measured levels, not a schedule.${step}</li>
         <li>Avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
@@ -8739,12 +8748,18 @@ function severeRenalNote(crclTrue, modelNote, module) {
       </ul>` };
 }
 // What to do if clearance is truly augmented: one list for both modules (D26, rule 2).
+// Its numbers (Task 4b, controller ruling R10; rule 1): Rybak 2020 gives no adult
+// augmented-clearance dosing figure (searched 2026-11-14; its only augmented-clearance text is
+// paediatric: close monitoring, as renal function may resolve within the first days). The one
+// figure kept is the loading maximum, Rec 11 (p. 10), from HD_LOADING_MAX_MG. Removed 2026-11-14,
+// no paper-and-table source in Rybak 2020 or in this repository (docs/, source comments,
+// CLAUDE.md): intervals q6h–q8h; loading 25–30 mg/kg, max 3 g; a level within 24–48 h.
 function arcAdviceListHTML() {
   return `
         <ul class="note-list">
-          <li>Consider shorter dosing intervals (q6h–q8h) to maintain AUC₂₄</li>
-          <li>Consider a higher loading dose (25–30 mg/kg, max 3 g) to reach target rapidly</li>
-          <li>Obtain an early steady-state level (within 24–48 h) — ARC patients often need dose escalation</li>
+          <li>Consider a shorter dosing interval to maintain the AUC₂₄</li>
+          <li>A loading dose may reach the target sooner: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020 Rec 11)</li>
+          <li>Obtain an early level — augmented clearance often needs a higher dose than the population estimate</li>
           <li>Re-check renal function frequently — ARC can resolve abruptly with clinical improvement</li>
         </ul>`;
 }
@@ -16807,6 +16822,8 @@ function txLoadingDoseHTML(ld, o) {
       <h4 class="tx-ld-h" id="tx-ld-h">Loading dose</h4>
       <p class="tx-ld-dose">${fmtDose(ld.dose)} IV once</p>
       <p class="vx-inf">Infuse over ${fmtHrs(ld.tinf)} · ${ld.rateMgMin.toFixed(1)} mg/min</p>
+      ${ld.capped ? noteHTML({ tier: 'caution', word: 'Loading maximum', html:
+        `Capped at the Rybak 2020 Rec 11 maximum of ${fmtDose(HD_LOADING_MAX_MG)}. The ${ld.targetPeak} mg/L target peak would need ${fmtDose(ld.uncappedMg)}; the peak and level below are for ${fmtDose(ld.dose)}.` }) : ''}
       ${ld.rateAboveMatzke ? noteHTML({ tier: 'caution', word: 'Infusion rate', html:
         `At ${ld.rateMgMin.toFixed(1)} mg/min this runs faster than the ${LD_MAX_RATE_MG_PER_MIN} mg/min Matzke 1984 recommends to avoid infusion reactions — consider a longer infusion.` }) : ''}
       <dl class="ev-dl tx-ld-dl">

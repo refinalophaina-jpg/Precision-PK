@@ -6342,6 +6342,105 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const printed = plain(fn44('_prRecommendation')({ rec: { dose: 1000, tau: 12 }, lowCrClHold: true }, {}));
     sourced(printed, 'the print report'); assert(/No empiric maintenance regimen/.test(printed) && !/1 g IV/.test(printed), printed);
   });
+
+  // Task 4b (controller ruling R10; same class as I4). Rybak 2020, printed p. 10, Rec 11 (B-II): loading
+  // doses on actual body weight, not exceeding 3,000 mg (HD_LOADING_MAX_MG). Rybak 2020 has no adult
+  // augmented-clearance dosing figures. Fictional patients only.
+  const ldPk = (age, sex, tbw, height, scr, vdModel) => {
+    const ibw = fn44('calcIBW')(sex, height), wt = fn44('pickCrClWeight')('auto', tbw, ibw).wt;
+    const crcl = fn44('calcCrCl')(age, sex, scr, wt, vm.runInContext('SCR_POLICY.ACTUAL', sandbox));
+    return { crcl, clv: fn44('calcCLv')('vancopk', crcl, tbw), vd: fn44('calcVd')(vdModel, age, tbw, crcl) };
+  };
+  const ldCard = (h) => (h.match(/<section class="tx-ld"[\s\S]*?<\/section>/) || [''])[0];
+  const plain44 = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  test('44.9a the Trough loading dose never exceeds HD_LOADING_MAX_MG (Rec 11), and says so when capped', () => {
+    const MAX = K44.HD_LOADING_MAX_MG, LD = fn44('fmtDose')(MAX);
+    const calc = fn44('calcLoadingDose');
+    // 70 M, 130 kg, 175 cm, SCr 2.0 on the Buelga volume (0.98 L/kg, 127 L): 3,250 mg before Task 4b.
+    const big = ldPk(70, 'M', 130, 175, 2.0, 'buelga');
+    const b = calc(big.clv, big.vd, 25);
+    assert(b.dose <= MAX && b.dose === MAX && b.capped === true, `130 kg: ${JSON.stringify(b)}`);
+    assert(b.uncappedMg === 3250, `the uncapped figure is kept for the explanation: ${b.uncappedMg}`);
+    // The capped dose is the one modelled: its own infusion time, rate and peak.
+    const tinf = fn44('autoTinf')(MAX);
+    const peak = (MAX / (tinf * b.kelLD * b.vdLD)) * (1 - Math.exp(-b.kelLD * tinf));
+    assert(b.tinf === tinf && Math.abs(b.peak - peak) < 1e-9 && Math.abs(b.rateMgMin - MAX / (tinf * 60)) < 1e-9 && b.peak < 25,
+      `the capped dose is modelled as given: ${JSON.stringify(b)}`);
+    // 50 M, 70 kg, 175 cm, SCr 1.0 on the same volume: 1,750 mg over 2 h, as before.
+    const small = ldPk(50, 'M', 70, 175, 1.0, 'buelga');
+    const s = calc(small.clv, small.vd, 25);
+    const sPeak = (1750 / (2 * s.kelLD * s.vdLD)) * (1 - Math.exp(-s.kelLD * 2));
+    assert(s.dose === 1750 && s.tinf === 2 && s.capped === false && s.uncappedMg === 1750 && Math.abs(s.peak - sPeak) < 1e-9,
+      `70 kg is unchanged: ${JSON.stringify(s)}`);
+    // No volume and no target peak returns more than the maximum.
+    for (const vd of [20, 60, 100, 150, 250]) for (const tp of [15, 25, 40]) {
+      const r = calc(vd * 0.08, vd, tp);
+      assert(r.dose <= MAX && r.capped === (r.uncappedMg > MAX) && r.uncappedMg >= r.dose, `Vd ${vd}, peak ${tp}: ${JSON.stringify(r)}`);
+    }
+    // One constant: no new literal maximum in the function.
+    assert(/HD_LOADING_MAX_MG/.test(body44('calcLoadingDose')) && !/3000|3,000/.test(body44('calcLoadingDose')), 'calcLoadingDose reads HD_LOADING_MAX_MG');
+    // The card, in every Trough mode that shows one: initial, steady-state (no level, and with one), and a refusal.
+    const pt = { age: 70, tbw: 130, height: 175, scr: 2.0, 'vd-model': 'buelga' };
+    const cards = {
+      initial: trough44('initial', 'M', Object.assign({ 'init-interval': 24, 'init-tinf': 1.5 }, pt), { checked: ['has-ld'] }),
+      'steady-state, no level': trough44('level', 'M', Object.assign({ dose: 1500, interval: 24, tinf: 1.5 }, pt), { checked: ['has-ld'] }),
+      'steady-state, a level': trough44('level', 'M', Object.assign({ dose: 1500, interval: 24, tinf: 1.5, 'level-val': 15,
+        'time-dose-given': '2026-11-14T00:00', 'time-level-drawn': '2026-11-14T23:30' }, pt), { checked: ['has-ld', 'has-level'] }),
+      // SCr 12: CrCl under 10, the severe-renal refusal, which keeps the loading card.
+      'severe-renal refusal': trough44('initial', 'M', Object.assign({}, pt, { scr: 12, 'init-interval': 48, 'init-tinf': 1.5 }), { checked: ['has-ld'] }),
+    };
+    assert((cards['severe-renal refusal'].h.match(HOLD_H3) || [])[1] === 'No empiric maintenance regimen', cards['severe-renal refusal'].text.slice(0, 300));
+    for (const [k, r] of Object.entries(cards)) {
+      const card = plain44(ldCard(r.h));
+      assert(card, `${k}: no loading card — ${r.text.slice(0, 300)}`);
+      assert(card.indexOf(`${LD} IV once`) >= 0 && !/3\.25 g IV once|3\.5 g IV once/.test(card), `${k}: the capped dose — ${card.slice(0, 400)}`);
+      assert(/Rybak 2020 Rec 11/.test(card) && card.indexOf(`maximum of ${LD}`) >= 0, `${k}: the Rec 11 maximum is named — ${card}`);
+    }
+    // A dose under the maximum carries no such sentence.
+    const n = plain44(ldCard(trough44('initial', 'M', { age: 50, tbw: 70, height: 175, scr: 1.0, 'vd-model': 'buelga', 'init-interval': 12, 'init-tinf': 1 }, { checked: ['has-ld'] }).h));
+    assert(/1\.75 g IV once/.test(n) && !/Rec 11/.test(n), `70 kg card: ${n}`);
+    // The HD empiric table and the PD load already applied the cap: unchanged.
+    assert(fn44('hdEmpiricDoses')(200).every(r => r.ld === MAX && r.ldCapped), 'the HD empiric table is capped');
+    assert(fn44('pdLoadingDose')(200, 0).mg === MAX, 'the PD load is capped');
+  });
+
+  test('44.9b the augmented-clearance advice carries no unsourced figure; its maximum is HD_LOADING_MAX_MG', () => {
+    const LD = fn44('fmtDose')(K44.HD_LOADING_MAX_MG);
+    const src = body44('arcAdviceListHTML'), out = plain44(fn44('arcAdviceListHTML')());
+    for (const [s, where] of [[src, 'the source'], [out, 'the advice as shown']]) {
+      [/25\s*[–-]\s*30 mg\/kg/, /24\s*[–-]\s*48 h/, /q6h\s*[–-]\s*q8h/, /mg\/kg/, /\bq\d+h\b/, /\d+\s*[–-]\s*\d+\s*h\b/, /within \d+/]
+        .forEach(re => assert(!re.test(s), `${where} still says ${re}: ${s}`));
+    }
+    assert(!/3,?000|\b3 g\b/.test(src), `a hand-written maximum in arcAdviceListHTML: ${src}`);
+    assert(/HD_LOADING_MAX_MG/.test(src) && out.indexOf(`at most ${LD}`) >= 0 && /Rybak 2020 Rec 11/.test(out), `the maximum comes from HD_LOADING_MAX_MG: ${out}`);
+    // The caution stays: clearance may be augmented, and an early level is advised.
+    assert(/early level/i.test(out), `the early level is still advised: ${out}`);
+    const tro = plain44(fn44('troughRenalNotes')(303, 25, 0.5).map(n => n.word + ' ' + n.html).join(' '));
+    assert(/Augmented renal clearance suspected/.test(tro) && /early level/i.test(tro), tro);
+    // AUC Precision reads the same list.
+    assert(/list: arcAdviceListHTML\(\)/.test(body44('renderBayesianResults')), 'AUC Precision reads arcAdviceListHTML');
+  });
+
+  test('44.9c the severe-renal advice attributes only the loading basis and maximum to Rec 11, and says Rybak has no figure for CrCl under 10', () => {
+    const LD = fn44('fmtDose')(K44.HD_LOADING_MAX_MG), T = K44.VERY_LOW_CRCL_THRESHOLD;
+    const SR = vm.runInContext('SEVERE_RENAL', sandbox);
+    const texts = { 'the AUC Precision note': plain44(fn44('severeRenalNote')(6.5, '', 'auc').html),
+      'the Trough note': plain44(fn44('troughSevereRenalNote')(6.5).html), 'SEVERE_RENAL.follow': SR.follow };
+    for (const [where, s] of Object.entries(texts)) {
+      assert(/basis and maximum/.test(s) && /Rybak 2020 Rec 11/.test(s) && s.indexOf(`actual body weight, at most ${LD}`) >= 0,
+        `${where}: the basis and maximum are Rec 11's — ${s}`);
+      // The sentence that says to give the dose cites no guideline: Rybak directs no loading dose for this group.
+      s.split(/(?<=\.)\s+/).filter(x => /\bGive\b/.test(x)).forEach(x =>
+        assert(!/Rybak|Rec \d/.test(x), `${where}: reads as Rybak directing the dose — "${x}"`));
+    }
+    ['the AUC Precision note', 'the Trough note'].forEach(where => assert(
+      texts[where].indexOf(`Rybak 2020 gives no mg/kg loading dose for CrCl under ${T} mL/min without dialysis`) >= 0,
+      `${where}: no Rybak mg/kg figure for this group — ${texts[where]}`));
+    // As rendered in the Trough refusal (44.8's patient).
+    const r = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 });
+    assert(r.text.indexOf(`Rybak 2020 gives no mg/kg loading dose for CrCl under ${T} mL/min without dialysis`) >= 0, r.text.slice(0, 900));
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

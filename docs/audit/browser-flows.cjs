@@ -894,6 +894,20 @@ async function enterCourse(page) {
     const gap = await verdictOf();
     ok('D26 review: a gap refusal at q24h names q36h and q48h, not the dose explorer',
        gap.reg === 'No regimen recommended' && /IV q36h/.test(gap.why) && /IV q48h/.test(gap.why) && !/dose explorer/i.test(gap.why), JSON.stringify(gap).slice(0, 600));
+    // Task 4b (ruling R10): the Trough loading dose obeys Rybak 2020 Rec 11 (at most 3,000 mg). Fictional
+    // 70 M, 130 kg, 175 cm, SCr 2.0 on the Buelga volume (127 L): 3.25 g before the cap.
+    await typeInto(c, '#age', '70'); await typeInto(c, '#tbw', '130'); await typeInto(c, '#height', '175'); await typeInto(c, '#scr', '2.0');
+    await c.locator('[data-onclick="k9"]').first().click();
+    await c.locator('#vd-model').selectOption('buelga');
+    await c.evaluate(() => { const x = document.getElementById('has-ld'); if (x && !x.checked) x.click(); });
+    await c.locator('#init-interval').selectOption('24');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const ldCap = await c.evaluate(() => { const s = document.querySelector('#results-content .tx-ld');
+      return s ? { dose: ((s.querySelector('.tx-ld-dose') || {}).textContent || '').trim(), text: s.textContent.replace(/\s+/g, ' ').trim() } : null; });
+    ok('D26: the Trough loading dose is capped at 3 g', !!ldCap && ldCap.dose === '3 g IV once' && /Rybak 2020 Rec 11/.test(ldCap.text) && /maximum of 3 g/.test(ldCap.text),
+       JSON.stringify(ldCap).slice(0, 700));
+    await c.locator('#vd-model').selectOption('vancopk');
+    await c.evaluate(() => { const x = document.getElementById('has-ld'); if (x && x.checked) x.click(); });
     const cAttr2 = await attributeInjected(c, cProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr2.injected;
     results.problems.push(...cAttr2.kept);

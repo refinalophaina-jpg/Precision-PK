@@ -143,6 +143,7 @@ function extract() {
     CONTINUE_MARGIN_DOTS:   num(src, 'CONTINUE_MARGIN_DOTS'),
     TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
+    VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
   };
 }
 
