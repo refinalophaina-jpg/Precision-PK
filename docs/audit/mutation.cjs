@@ -162,6 +162,20 @@ const MUTANTS = [
   { id: 'I5-5', what: 'bayesInputFingerprint reduced to doses.length (a changed amount or time is not stale)',
     find: 'doses: doses.map(d => [d.mg, d.tinfH, +d.timeH.toFixed(4)]),', replace: 'doses: doses.length,' },
 
+  // Task 19 (D27, models review I2): the early-level band must move the decision, and only for the fits it is for.
+  { id: 'T19-1', what: 'earlyLevelFractions: the < cut comparison inverted (steady-state levels read as early)',
+    find: '.filter(f => isFinite(f) && f < cut);', replace: '.filter(f => isFinite(f) && f >= cut);' },
+  { id: 'T19-2', what: 'aucUncertaintyRow: the early flag ignored (every fit reads the steady-state row)',
+    find: "const design = early && n > 0 ? 'early' : 'steady';", replace: "const design = 'steady';" },
+  { id: 'T19-3', what: 'aucUncertaintyRow: early with no levels (the n > 0 guard removed)',
+    find: "const design = early && n > 0 ? 'early' : 'steady';", replace: "const design = early ? 'early' : 'steady';" },
+  { id: 'T19-4', what: 'latestLevelEarly: any early level, not the most recent (R47 aggregation undone)',
+    find: 'return earlyLevelFractions(ls.filter(l => l.timeH === tLast), doses, t12, model).length > 0;',
+    replace: 'return earlyLevelFractions(ls, doses, t12, model).length > 0;' },
+  { id: 'T19-5', what: 'regimenDecision ignores its row (always the steady-state row of the same level count)',
+    find: 'function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, opts) {\n  const o = opts || {};',
+    replace: 'function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, opts) {\n  row = row && aucUncertaintyRow(row.n, row.key, false);\n  const o = opts || {};' },
+
   // "Tests that cannot fail on what they name" (code report): the mutations that showed it.
   { id: 'CF-1', what: 'fingerprint target and MIC made inert, names left in a comment',
     find: "target: g('b-auc-target'), mic: g('b-mic'),", replace: "target: '', mic: '', // g('b-auc-target') g('b-mic')" },

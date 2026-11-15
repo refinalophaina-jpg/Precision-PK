@@ -21,82 +21,94 @@ buelga  d4-trough/1   | seed 7: -21.0% / +32.6% p50 13.8% p80 25.4% (n=1500) | s
         mean -> { n:1, frac:0.27, median:0.14, lo:0.23, hi:0.33 }
 buelga  d3d4-troughs/2 | seed 7: -20.5% / +30.3% p50 12.9% p80 24.6% (n=1500) | seed 11: -20.5% / +30.3% p50 12.2% p80 24.3% (n=1500) | seed 23: -20.5% / +30.5% p50 12.5% p80 24.2% (n=1500)
         mean -> { n:2, frac:0.24, median:0.13, lo:0.21, hi:0.30 }
+buelga  dose-one/1    | seed 7: -30.9% / +41.5% p50 19.1% p80 35.3% (n=1500) | seed 11: -31.1% / +40.9% p50 18.1% p80 35.7% (n=1500) | seed 23: -29.0% / +42.1% p50 18.3% p80 33.7% (n=1500)
+        mean -> { n:1, frac:0.35, median:0.18, lo:0.30, hi:0.41 }
+buelga  dose-two/1    | seed 7: -24.4% / +37.1% p50 15.6% p80 29.2% (n=1500) | seed 11: -25.7% / +35.4% p50 15.5% p80 29.7% (n=1500) | seed 23: -27.2% / +39.1% p50 16.2% p80 31.1% (n=1500)
+        mean -> { n:1, frac:0.30, median:0.16, lo:0.26, hi:0.37 }
 
 COVERAGE of the shipped rows: the share of simulated patients whose true AUC24 lies in [est x (1 - lo), est x (1 + hi)].
 own = the row meant for the design (troughs: steady-state; load-*: early); app = aucUncertaintyRow(n, model, early), early from
-earlyLevelFractions on each fit. pooled = seeds 7/11/23 together; held-out = seed 31. ABOVE = true AUC above the band.
+latestLevelEarly on each fit. pooled = seeds 7/11/23 together; held-out = seed 31. ABOVE = true AUC above the band.
 buelga  troughs/0      buelga/steady/0 -30% / +46%: pooled 79.7% (ABOVE 9.9%), held-out 81.7% | app: pooled 79.7%, held-out 81.7% | early by the app's test 0.0%
-buelga  troughs/1      buelga/steady/1 -21% / +23%: pooled 80.7% (ABOVE 9.8%), held-out 81.1% | app: pooled 80.7%, held-out 81.1% | early by the app's test 0.0%
-buelga  troughs/2      buelga/steady/2 -18% / +18%: pooled 79.4% (ABOVE 10.5%), held-out 77.0% | app: pooled 79.4%, held-out 77.0% | early by the app's test 0.4%
-buelga  troughs/3      buelga/steady/3 -17% / +18%: pooled 81.0% (ABOVE 9.5%), held-out 81.5% | app: pooled 81.2%, held-out 81.5% | early by the app's test 2.7%
-buelga  load-one/1     buelga/early/1 -29% / +38%: pooled 80.3% (ABOVE 10.0%), held-out 81.7% | app: pooled 80.3%, held-out 81.7% | early by the app's test 99.8%
+buelga  troughs/1      buelga/steady/1 -21% / +23%: pooled 80.7% (ABOVE 9.8%), held-out 81.1% | app: pooled 81.0%, held-out 81.1% | early by the app's test 3.2%
+buelga  troughs/2      buelga/steady/2 -18% / +18%: pooled 79.4% (ABOVE 10.5%), held-out 77.0% | app: pooled 79.6%, held-out 77.3% | early by the app's test 3.1%
+buelga  troughs/3      buelga/steady/3 -17% / +18%: pooled 81.0% (ABOVE 9.5%), held-out 81.5% | app: pooled 81.2%, held-out 81.5% | early by the app's test 2.9%
+buelga  load-one/1     buelga/early/1 -29% / +38%: pooled 80.3% (ABOVE 10.0%), held-out 81.7% | app: pooled 80.3%, held-out 81.7% | early by the app's test 100.0%
 buelga  load-two/2     buelga/early/2 -26% / +38%: pooled 80.4% (ABOVE 9.8%), held-out 79.1% | app: pooled 80.4%, held-out 79.1% | early by the app's test 100.0%
-buelga  load-three/3   buelga/early/3 -21% / +28%: pooled 79.4% (ABOVE 10.2%), held-out 79.7% | app: pooled 79.4%, held-out 79.7% | early by the app's test 100.0%
-buelga  load-two-ss/3  buelga/early/3 -21% / +28%: pooled 88.8% (ABOVE 3.4%), held-out 89.4% | app: pooled 88.8%, held-out 89.4% | early by the app's test 100.0%
-buelga  d4-trough/1    buelga/steady/1 -21% / +23%: pooled 71.1% (ABOVE 17.0%), held-out 71.8% | buelga/early/1 -29% / +38%: pooled 87.2% (ABOVE 7.3%), held-out 88.5% | app: pooled 78.1%, held-out 78.9% | early by the app's test 44.7%
-buelga  d3d4-troughs/2 buelga/steady/2 -18% / +18%: pooled 65.8% (ABOVE 20.9%), held-out 64.0% | buelga/early/2 -26% / +38%: pooled 88.5% (ABOVE 6.1%), held-out 87.1% | app: pooled 82.4%, held-out 80.9% | early by the app's test 75.8%
+buelga  load-three/3   buelga/early/3 -21% / +28%: pooled 79.4% (ABOVE 10.2%), held-out 79.7% | app: pooled 78.2%, held-out 77.8% | early by the app's test 89.6%
+buelga  load-two-ss/3  buelga/early/3 -21% / +28%: pooled 88.8% (ABOVE 3.4%), held-out 89.4% | app: pooled 77.7%, held-out 78.9% | early by the app's test 7.8%
+buelga  d4-trough/1    buelga/steady/1 -21% / +23%: pooled 71.1% (ABOVE 17.0%), held-out 71.8% | buelga/early/1 -29% / +38%: pooled 87.2% (ABOVE 7.3%), held-out 88.5% | app: pooled 82.1%, held-out 83.3% | early by the app's test 69.2%
+buelga  d3d4-troughs/2 buelga/steady/2 -18% / +18%: pooled 65.8% (ABOVE 20.9%), held-out 64.0% | buelga/early/2 -26% / +38%: pooled 88.5% (ABOVE 6.1%), held-out 87.1% | app: pooled 80.8%, held-out 79.2% | early by the app's test 68.9%
+buelga  dose-one/1     buelga/steady/1 -21% / +23%: pooled 58.0% (ABOVE 21.9%), held-out 58.3% | buelga/early/1 -29% / +38%: pooled 76.9% (ABOVE 11.7%), held-out 79.2% | app: pooled 76.9%, held-out 79.2% | early by the app's test 100.0%
+buelga  dose-two/1     buelga/steady/1 -21% / +23%: pooled 65.2% (ABOVE 20.0%), held-out 66.7% | buelga/early/1 -29% / +38%: pooled 83.2% (ABOVE 9.5%), held-out 85.4% | app: pooled 81.8%, held-out 84.2% | early by the app's test 93.0%
 
-SENSITIVITY buelga (pooled seeds; criterion designs: troughs/1, troughs/2, troughs/3, load-one/1, load-two/2, load-three/3, d4-trough/1, d3d4-troughs/2); shipped threshold 0.85 reproduces earlyLevelFractions
-  0.3    fails       worst |cov-80| 14.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 67.2%, load-two/2 75.8%, load-three/3 76.5%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
-  0.325  fails       worst |cov-80| 14.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 68.3%, load-two/2 77.0%, load-three/3 77.5%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
-  0.35   fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 70.2%, load-two/2 77.8%, load-three/3 77.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
-  0.375  fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 72.0%, load-two/2 78.5%, load-three/3 78.2%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
-  0.4    fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 73.3%, load-two/2 79.2%, load-three/3 78.7%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
-  0.425  fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 74.4%, load-two/2 79.5%, load-three/3 78.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
-  0.45   fails       worst |cov-80| 14.0% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 75.5%, load-two/2 79.9%, load-three/3 79.1%, d4-trough/1 71.1%, d3d4-troughs/2 66.0%
-  0.475  fails       worst |cov-80| 13.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 76.5%, load-two/2 80.2%, load-three/3 79.2%, d4-trough/1 71.1%, d3d4-troughs/2 66.2%
-  0.5    fails       worst |cov-80| 13.6% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 77.4%, load-two/2 80.3%, load-three/3 79.3%, d4-trough/1 71.1%, d3d4-troughs/2 66.4%
-  0.525  fails       worst |cov-80| 13.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 77.9%, load-two/2 80.3%, load-three/3 79.3%, d4-trough/1 71.1%, d3d4-troughs/2 66.8%
-  0.55   fails       worst |cov-80| 12.6% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 78.4%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 71.1%, d3d4-troughs/2 67.4%
-  0.575  fails       worst |cov-80| 11.9% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 78.9%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 71.2%, d3d4-troughs/2 68.1%
-  0.6    fails       worst |cov-80| 10.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 79.4%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 71.2%, d3d4-troughs/2 69.2%
-  0.625  fails       worst |cov-80| 9.7% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 79.6%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 71.4%, d3d4-troughs/2 70.3%
-  0.65   fails       worst |cov-80| 8.3% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 79.9%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 71.7%, d3d4-troughs/2 71.7%
-  0.675  fails       worst |cov-80| 8.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.1%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 71.8%, d3d4-troughs/2 72.9%
-  0.7    fails       worst |cov-80| 7.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.1%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 72.2%, d3d4-troughs/2 74.1%
-  0.725  fails       worst |cov-80| 7.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.2%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 72.8%, d3d4-troughs/2 75.9%
-  0.75   fails       worst |cov-80| 6.5% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 73.5%, d3d4-troughs/2 77.3%
-  0.775  fails       worst |cov-80| 5.6% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 74.4%, d3d4-troughs/2 78.6%
-  0.8    meets 75-85 worst |cov-80| 4.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 75.8%, d3d4-troughs/2 79.8%
-  0.825  meets 75-85 worst |cov-80| 3.0% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.1%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 77.0%, d3d4-troughs/2 81.1%
-  0.85   meets 75-85 worst |cov-80| 2.4% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.2%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 78.1%, d3d4-troughs/2 82.4%
-  0.875  meets 75-85 worst |cov-80| 3.7% | troughs/1 80.7%, troughs/2 79.5%, troughs/3 81.3%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 79.5%, d3d4-troughs/2 83.7%
-  0.9    meets 75-85 worst |cov-80| 4.9% | troughs/1 80.8%, troughs/2 79.6%, troughs/3 81.6%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 80.9%, d3d4-troughs/2 84.9%
-  0.925  fails       worst |cov-80| 6.3% | troughs/1 81.0%, troughs/2 79.9%, troughs/3 81.8%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 82.1%, d3d4-troughs/2 86.3%
-  0.95   fails       worst |cov-80| 7.4% | troughs/1 81.4%, troughs/2 80.5%, troughs/3 82.2%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 83.5%, d3d4-troughs/2 87.4%
-  0.975  fails       worst |cov-80| 8.2% | troughs/1 82.3%, troughs/2 82.0%, troughs/3 83.4%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.4%, d4-trough/1 85.4%, d3d4-troughs/2 88.2%
-  CHOSEN buelga: 0.85
-  Coverage at 0.85, app's row choice:
-    troughs/1       pooled 80.7%, held-out 81.1% | read as early 0.0%
-    troughs/2       pooled 79.4%, held-out 77.0% | read as early 0.4%
-    troughs/3       pooled 81.2%, held-out 81.5% | read as early 2.7%
-    load-one/1      pooled 80.3%, held-out 81.7% | read as early 99.8%
+SENSITIVITY buelga (pooled seeds; criterion designs: troughs/1, troughs/2, troughs/3, load-one/1, load-two/2, load-three/3, load-two-ss/3, d4-trough/1, d3d4-troughs/2); shipped threshold 0.925 reproduces latestLevelEarly
+  0.3    fails       worst |cov-80| 21.4% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 67.2%, load-two/2 58.6%, load-three/3 65.5%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.325  fails       worst |cov-80| 20.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 68.3%, load-two/2 59.8%, load-three/3 65.5%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.35   fails       worst |cov-80| 18.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 70.2%, load-two/2 61.2%, load-three/3 65.5%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.375  fails       worst |cov-80| 17.7% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 72.0%, load-two/2 62.3%, load-three/3 65.5%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.4    fails       worst |cov-80| 16.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 73.3%, load-two/2 63.8%, load-three/3 65.6%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.425  fails       worst |cov-80| 14.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 74.4%, load-two/2 65.2%, load-three/3 65.7%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.45   fails       worst |cov-80| 14.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 75.5%, load-two/2 66.7%, load-three/3 65.8%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.8%
+  0.475  fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 76.5%, load-two/2 68.1%, load-three/3 66.2%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
+  0.5    fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 77.4%, load-two/2 69.5%, load-three/3 66.7%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
+  0.525  fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 77.9%, load-two/2 70.6%, load-three/3 67.1%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
+  0.55   fails       worst |cov-80| 14.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 78.4%, load-two/2 72.2%, load-three/3 67.5%, load-two-ss/3 76.9%, d4-trough/1 71.1%, d3d4-troughs/2 65.9%
+  0.575  fails       worst |cov-80| 14.0% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 78.9%, load-two/2 73.5%, load-three/3 68.0%, load-two-ss/3 76.9%, d4-trough/1 71.2%, d3d4-troughs/2 66.0%
+  0.6    fails       worst |cov-80| 13.9% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 79.4%, load-two/2 74.4%, load-three/3 68.5%, load-two-ss/3 76.9%, d4-trough/1 71.2%, d3d4-troughs/2 66.1%
+  0.625  fails       worst |cov-80| 13.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 79.6%, load-two/2 75.4%, load-three/3 69.3%, load-two-ss/3 76.9%, d4-trough/1 71.4%, d3d4-troughs/2 66.2%
+  0.65   fails       worst |cov-80| 13.6% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 79.9%, load-two/2 76.2%, load-three/3 70.2%, load-two-ss/3 76.9%, d4-trough/1 71.7%, d3d4-troughs/2 66.4%
+  0.675  fails       worst |cov-80| 13.2% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.1%, load-two/2 76.9%, load-three/3 70.8%, load-two-ss/3 76.9%, d4-trough/1 71.8%, d3d4-troughs/2 66.8%
+  0.7    fails       worst |cov-80| 12.7% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.1%, load-two/2 77.4%, load-three/3 71.4%, load-two-ss/3 76.9%, d4-trough/1 72.2%, d3d4-troughs/2 67.3%
+  0.725  fails       worst |cov-80| 11.9% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.2%, load-two/2 78.1%, load-three/3 72.2%, load-two-ss/3 76.9%, d4-trough/1 72.8%, d3d4-troughs/2 68.1%
+  0.75   fails       worst |cov-80| 10.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 78.8%, load-three/3 73.0%, load-two-ss/3 76.9%, d4-trough/1 73.5%, d3d4-troughs/2 69.2%
+  0.775  fails       worst |cov-80| 9.6% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 79.3%, load-three/3 73.7%, load-two-ss/3 76.9%, d4-trough/1 74.4%, d3d4-troughs/2 70.4%
+  0.8    fails       worst |cov-80| 8.1% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 79.6%, load-three/3 74.3%, load-two-ss/3 76.9%, d4-trough/1 75.8%, d3d4-troughs/2 71.9%
+  0.825  fails       worst |cov-80| 6.7% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 80.0%, load-three/3 75.0%, load-two-ss/3 76.9%, d4-trough/1 77.0%, d3d4-troughs/2 73.3%
+  0.85   meets 75-85 worst |cov-80| 4.8% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 80.2%, load-three/3 75.8%, load-two-ss/3 77.1%, d4-trough/1 78.1%, d3d4-troughs/2 75.2%
+  0.875  meets 75-85 worst |cov-80| 3.7% | troughs/1 80.7%, troughs/2 79.4%, troughs/3 81.0%, load-one/1 80.3%, load-two/2 80.3%, load-three/3 76.3%, load-two-ss/3 77.2%, d4-trough/1 79.5%, d3d4-troughs/2 77.0%
+  0.9    meets 75-85 worst |cov-80| 2.7% | troughs/1 80.8%, troughs/2 79.5%, troughs/3 81.1%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 77.4%, load-two-ss/3 77.3%, d4-trough/1 80.9%, d3d4-troughs/2 79.0%
+  0.925  meets 75-85 worst |cov-80| 2.3% | troughs/1 81.0%, troughs/2 79.6%, troughs/3 81.2%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 78.2%, load-two-ss/3 77.7%, d4-trough/1 82.1%, d3d4-troughs/2 80.8%
+  0.95   meets 75-85 worst |cov-80| 3.5% | troughs/1 81.4%, troughs/2 80.0%, troughs/3 81.4%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 78.8%, load-two-ss/3 78.5%, d4-trough/1 83.5%, d3d4-troughs/2 83.0%
+  0.975  fails       worst |cov-80| 5.7% | troughs/1 82.3%, troughs/2 80.9%, troughs/3 81.9%, load-one/1 80.3%, load-two/2 80.4%, load-three/3 79.2%, load-two-ss/3 80.0%, d4-trough/1 85.4%, d3d4-troughs/2 85.7%
+  CHOSEN buelga: 0.925
+  Coverage at 0.925, app's row choice:
+    troughs/1       pooled 81.0%, held-out 81.1% | read as early 3.2%
+    troughs/2       pooled 79.6%, held-out 77.3% | read as early 3.1%
+    troughs/3       pooled 81.2%, held-out 81.5% | read as early 2.9%
+    load-one/1      pooled 80.3%, held-out 81.7% | read as early 100.0%
     load-two/2      pooled 80.4%, held-out 79.1% | read as early 100.0%
-    load-three/3    pooled 79.4%, held-out 79.7% | read as early 100.0%
-    load-two-ss/3   pooled 88.8%, held-out 89.4% | read as early 100.0% (not a criterion)
-    d4-trough/1     pooled 78.1%, held-out 78.9% | read as early 44.7%
-    d3d4-troughs/2  pooled 82.4%, held-out 80.9% | read as early 75.8%
+    load-three/3    pooled 78.2%, held-out 77.8% | read as early 89.6%
+    load-two-ss/3   pooled 77.7%, held-out 78.9% | read as early 7.8%
+    d4-trough/1     pooled 82.1%, held-out 83.3% | read as early 69.2%
+    d3d4-troughs/2  pooled 80.8%, held-out 79.2% | read as early 68.9%
+    dose-one/1      pooled 76.9%, held-out 79.2% | read as early 100.0% (not a criterion)
+    dose-two/1      pooled 81.8%, held-out 84.2% | read as early 93.0% (not a criterion)
 
 DECISIONS (pooled seeds): steady-state row (before D27) against the app row (D27), per design
-buelga  troughs/1       0 of 4500 answers differ {}
-buelga  troughs/2       2 of 4500 answers differ {"change -> change":2}
-    change -> change: e.g. CL 1.20 L/h, V 55 L, on 1000 mg q12h (AUC24 1667): buelga/steady/2 change 1250 mg q48h [answer 16/20, current 0/20] -> buelga/early/2 change 250 mg q12h [answer 11/20, current 0/20]
-buelga  troughs/3       15 of 4500 answers differ {"change -> change":15}
+buelga  troughs/1       39 of 4500 answers differ {"change -> change":39}; never worse broken: 0
+    change -> change: e.g. CL 2.29 L/h, V 87 L, on 1000 mg q12h (AUC24 872): buelga/steady/1 change 1250 mg q24h [answer 14/20, current 0/20] -> buelga/early/1 change 500 mg q12h [answer 10/20, current 2/20]
+buelga  troughs/2       35 of 4500 answers differ {"change -> change":35}; never worse broken: 0
+    change -> change: e.g. CL 1.69 L/h, V 63 L, on 1000 mg q12h (AUC24 1182): buelga/steady/2 change 1750 mg q48h [answer 17/20, current 0/20] -> buelga/early/2 change 750 mg q24h [answer 12/20, current 0/20]
+buelga  troughs/3       15 of 4500 answers differ {"change -> change":15}; never worse broken: 0
     change -> change: e.g. CL 1.72 L/h, V 95 L, on 1000 mg q12h (AUC24 1162): buelga/steady/3 change 1750 mg q48h [answer 17/20, current 0/20] -> buelga/early/3 change 750 mg q24h [answer 13/20, current 0/20]
-buelga  load-one/1      0 of 4500 answers differ {}
-buelga  load-two/2      0 of 4500 answers differ {}
-buelga  load-three/3    43 of 4500 answers differ {"change -> continue":8,"change -> change":33,"continue -> change":2}
+buelga  load-one/1      0 of 4500 answers differ {}; never worse broken: 0
+buelga  load-two/2      0 of 4500 answers differ {}; never worse broken: 0
+buelga  load-three/3    39 of 4500 answers differ {"change -> continue":6,"change -> change":31,"continue -> change":2}; never worse broken: 0
     change -> continue: e.g. CL 4.60 L/h, V 54 L, on 1000 mg q12h (AUC24 435): buelga/steady/3 change 1250 mg q12h [answer 16/20, current 14/20] -> buelga/early/3 continue 1000 mg q12h [answer 13/20, current 13/20]
     change -> change: e.g. CL 2.33 L/h, V 43 L, on 1000 mg q12h (AUC24 860): buelga/steady/3 change 1250 mg q24h [answer 16/20, current 0/20] -> buelga/early/3 change 500 mg q12h [answer 12/20, current 1/20]
     continue -> change: e.g. CL 3.68 L/h, V 49 L, on 1000 mg q12h (AUC24 544): buelga/steady/3 continue 1000 mg q12h [answer 16/20, current 16/20] -> buelga/early/3 change 1750 mg q24h [answer 15/20, current 13/20]
-buelga  load-two-ss/3   493 of 4500 answers differ {"change -> change":367,"change -> continue":100,"continue -> change":26}
-    change -> change: e.g. CL 6.91 L/h, V 67 L, on 1000 mg q12h (AUC24 289): buelga/steady/3 change 1750 mg q12h [answer 17/20, current 0/20] -> buelga/early/3 change 1500 mg q12h [answer 13/20, current 1/20]
-    change -> continue: e.g. CL 4.57 L/h, V 88 L, on 1000 mg q12h (AUC24 438): buelga/steady/3 change 750 mg q8h [answer 17/20, current 14/20] -> buelga/early/3 continue 1000 mg q12h [answer 13/20, current 13/20]
-    continue -> change: e.g. CL 3.66 L/h, V 54 L, on 1000 mg q12h (AUC24 546): buelga/steady/3 continue 1000 mg q12h [answer 16/20, current 16/20] -> buelga/early/3 change 1750 mg q24h [answer 15/20, current 13/20]
-buelga  d4-trough/1     406 of 4500 answers differ {"change -> change":234,"change -> continue":160,"continue -> change":12}
+buelga  load-two-ss/3   22 of 4500 answers differ {"change -> change":22}; never worse broken: 0
+    change -> change: e.g. CL 2.34 L/h, V 92 L, on 1000 mg q12h (AUC24 855): buelga/steady/3 change 1250 mg q24h [answer 16/20, current 0/20] -> buelga/early/3 change 500 mg q12h [answer 12/20, current 1/20]
+buelga  d4-trough/1     672 of 4500 answers differ {"change -> change":344,"change -> continue":305,"continue -> change":23}; never worse broken: 0
     change -> change: e.g. CL 2.61 L/h, V 62 L, on 1000 mg q12h (AUC24 765): buelga/steady/1 change 1250 mg q24h [answer 15/20, current 2/20] -> buelga/early/1 change 750 mg q12h [answer 10/20, current 4/20]
-    change -> continue: e.g. CL 3.56 L/h, V 101 L, on 1000 mg q12h (AUC24 561): buelga/steady/1 change 1750 mg q24h [answer 15/20, current 13/20] -> buelga/early/1 continue 1000 mg q12h [answer 10/20, current 10/20]
+    change -> continue: e.g. CL 3.61 L/h, V 60 L, on 1000 mg q12h (AUC24 554): buelga/steady/1 change 1750 mg q24h [answer 15/20, current 13/20] -> buelga/early/1 continue 1000 mg q12h [answer 11/20, current 11/20]
     continue -> change: e.g. CL 3.70 L/h, V 100 L, on 1000 mg q12h (AUC24 540): buelga/steady/1 continue 1000 mg q12h [answer 14/20, current 14/20] -> buelga/early/1 change 1750 mg q24h [answer 12/20, current 10/20]
-buelga  d3d4-troughs/2  685 of 4500 answers differ {"change -> change":447,"change -> continue":238}
+buelga  d3d4-troughs/2  604 of 4500 answers differ {"change -> change":392,"change -> continue":212}; never worse broken: 0
     change -> change: e.g. CL 1.17 L/h, V 45 L, on 1000 mg q12h (AUC24 1712): buelga/steady/2 change 1250 mg q48h [answer 15/20, current 0/20] -> buelga/early/2 change 250 mg q12h [answer 11/20, current 0/20]
     change -> continue: e.g. CL 4.43 L/h, V 80 L, on 1000 mg q12h (AUC24 452): buelga/steady/2 change 750 mg q8h [answer 17/20, current 15/20] -> buelga/early/2 continue 1000 mg q12h [answer 11/20, current 11/20]
+buelga  dose-one/1      0 of 4500 answers differ {}; never worse broken: 0
+buelga  dose-two/1      1001 of 4500 answers differ {"change -> change":624,"change -> continue":350,"continue -> change":27}; never worse broken: 0
+    change -> change: e.g. CL 5.71 L/h, V 69 L, on 1000 mg q12h (AUC24 351): buelga/steady/1 change 1500 mg q12h [answer 15/20, current 4/20] -> buelga/early/1 change 1250 mg q12h [answer 10/20, current 6/20]
+    change -> continue: e.g. CL 3.37 L/h, V 58 L, on 1000 mg q12h (AUC24 594): buelga/steady/1 change 750 mg q12h [answer 13/20, current 11/20] -> buelga/early/1 continue 1000 mg q12h [answer 10/20, current 10/20]
+    continue -> change: e.g. CL 3.69 L/h, V 55 L, on 1000 mg q12h (AUC24 542): buelga/steady/1 continue 1000 mg q12h [answer 14/20, current 14/20] -> buelga/early/1 change 1750 mg q24h [answer 12/20, current 10/20]

@@ -5957,7 +5957,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // Since Task 9 each path builds one decisionArgs (stored on the result, so finalizeDecision
     // re-decides on exactly the same inputs) and decides from it; it carries the fit's "now" (D-b).
     // Since Task 19 (D27) the row also carries the fit's early-level test (earlyFit, from earlyLevelFractions).
-    const calls = code43.match(/const earlyFit = earlyLevelFractions\(filteredLevels, doses, t12_ind, '(goti|hughes|buelga)'\)\.length > 0;[^\n]*\n\s*const decisionArgs = \{[^;]*\bdoses: decisionDoses, row: aucUncertaintyRow\(filteredLevels\.length, '\1', earlyFit\), nowH: fitNowH \};\s*const rec = regimenDecisionOf\(decisionArgs\);/g) || [];
+    // Since Task 19 fix round 2 (R47) the row follows the most recent level (latestLevelEarly).
+    const calls = code43.match(/const earlyFit = latestLevelEarly\(filteredLevels, doses, t12_ind, '(goti|hughes|buelga)'\);[^\n]*\n\s*const decisionArgs = \{[^;]*\bdoses: decisionDoses, row: aucUncertaintyRow\(filteredLevels\.length, '\1', earlyFit\), nowH: fitNowH \};\s*const rec = regimenDecisionOf\(decisionArgs\);/g) || [];
     assert(calls.length === 3, `${calls.length} of 3 fit paths pass decisionDoses and their own model's row, chosen by the early-level test at their own model's threshold`);
     assert((code43.match(/\brec, decisionArgs, doses\b/g) || []).length === 3, 'every fit path stores its decisionArgs on the result');
     assert(!/const rec = bayesDoseOptimizer\(/.test(code43), 'no fit path calls the optimizer directly');
@@ -8340,7 +8341,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // simulated patients, and the 20 dots and the D25 continue-or-change count still read it. Early-design
   // rows are now simulated (docs/audit/uncertainty-by-model.cjs --early) and chosen by the one test the
   // "Early level" note uses (earlyLevelFractions, rule 2).
-  test('45.4a an early-level fit reads the band simulated for early levels: wider than the steady-state row at 1, 2 and 3+ levels, every model', () => {
+  test('45.4a an early-level fit reads the band simulated for early levels: wider than the steady-state row at 1, 2 and 3+ levels, every model; with no levels nothing is early [T19-3]', () => {
     const R = fn45('aucUncertaintyRow');
     for (const m of ['buelga', 'goti', 'hughes']) {
       for (const n of [1, 2, 3]) {
@@ -8370,30 +8371,37 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/levels drawn before steady state/.test(fn45('aucUncertaintyText')(1, 'hughes', true)) && /steady-state troughs/.test(fn45('aucUncertaintyText')(1, 'hughes', false)),
       'the label names the design its band was simulated for');
   });
-  test('45.4b one row per fit: an early-level Hughes fit through runBayesian; the dots, the likely range and regimenDecision read the same early row', () => {
+  // Fictional Hughes fixtures for 45.4b-d: 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103, inside Hughes Table 1).
+  const P454 = { model: 'hughes', age: 45, tbw: 140, ht: 175, scr: 1.0 };
+  const fit454 = (course, levels) => __suiteShared.fit44(Object.assign({}, P454, course, { levels }));
+  const cut454 = () => run45('SS_FRACTION_EARLY').hughes;
+  const fracLast454 = (r) => { const t = Math.max(...r.levels.map(l => l.timeH)); return 1 - Math.exp(-Math.LN2 / r.t12_ind * (t - r.doses[0].timeH)); };
+  test('45.4b one row per fit: a Low-confidence early Hughes fit through runBayesian; the dots, the likely range, regimenDecision and finalizeDecision\'s re-decide read the same early row, and the Next line quotes it [T19-2]', () => {
     const { fit44 } = __suiteShared;
     assert(typeof fit44 === 'function', 'the SUITE 44 fit driver');
     const R = fn45('aucUncertaintyRow');
-    // Spy on the two consumers: regimenDecision (row is its 7th argument; finalizeDecision re-decides
-    // through it too) and aucRangeSVG (the 20 dots, their in-band count and the "likely" range).
+    // Spy on the two consumers: regimenDecision (row is its 7th argument, opts its 8th: finalizeDecision's
+    // re-decide passes protectInRange) and aucRangeSVG (the 20 dots, their in-band count and the "likely" range).
     const real = { regimenDecision: sandbox.regimenDecision, aucRangeSVG: sandbox.aucRangeSVG };
     const seen = { decision: [], range: [] };
-    sandbox.regimenDecision = function (...a) { seen.decision.push(a[6]); return real.regimenDecision.apply(this, a); };
+    sandbox.regimenDecision = function (...a) { seen.decision.push({ row: a[6], protect: !!(a[7] && a[7].protectInRange) }); return real.regimenDecision.apply(this, a); };
     sandbox.aucRangeSVG = function (...a) { seen.range.push({ auc: a[0], row: a[1] }); return real.aucRangeSVG.apply(this, a); };
     let fit;
-    // Fictional: 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103, inside Hughes Table 1); 1500 mg q12h x 2;
-    // one level, 26 mg/L, 3 h after the start of the second dose (15 h after the first).
-    try { fit = fit44({ model: 'hughes', age: 45, tbw: 140, ht: 175, scr: 1.0, mg: 1500, tinf: fn45('autoTinf')(1500), tau: 12, n: 2, lastAgo: 12,
-      levels: [{ conc: 26, after: 3 }] }); }
+    // 750 mg q8h x 3; one level, 12 mg/L, 3 h after the start of dose 3 (19 h after the first). Low confidence
+    // (the models disagree); on the early row the fit's own answer is a 2-dot change from an in-range 750 mg
+    // q8h, which ruling 3 sets aside: finalizeDecision re-decides.
+    try { fit = fit454({ mg: 750, tinf: fn45('autoTinf')(750), tau: 8, n: 3, lastAgo: 3 }, [{ conc: 12, after: 3 }]); }
     finally { Object.assign(sandbox, real); }
-    const { r, html, text } = fit;
+    const { r, html, text, conf } = fit;
     const early = fn45('earlyLevelFractions')(r.levels, r.doses, r.t12_ind, 'hughes');
-    assert(early.length === 1, `the fixture is an early level by the shared test: ${JSON.stringify(early)} (t½ ${r.t12_ind})`);
+    assert(early.length === 1 && fn45('latestLevelEarly')(r.levels, r.doses, r.t12_ind, 'hughes'), `the fixture is an early level by the shared test: ${JSON.stringify(early)} (t½ ${r.t12_ind})`);
     assert(/Early level/.test(text), 'the Early level note is shown');
     const want = R(1, 'hughes', true);
     assert(want.design === 'early', `the early row: ${JSON.stringify(want)}`);
-    assert(seen.decision.length >= 1 && seen.range.length === 1, `consumers called: decision ${seen.decision.length}, range ${seen.range.length}`);
-    const ids = { stored: r.decisionArgs.row.id, decision: seen.decision.map(x => x && x.id), range: seen.range[0].row.id };
+    assert(conf.rank >= 2 && r.recFinal === true && r.rec.continueReason === 'low-confidence', `Low confidence, finalized: ${conf.level} ${r.rec.action} ${r.rec.continueReason}`);
+    assert(seen.decision.some(x => x.protect) && seen.decision.some(x => !x.protect) && seen.range.length === 1,
+      `consumers called: decision ${JSON.stringify(seen.decision.map(x => x.protect))}, range ${seen.range.length}`);
+    const ids = { stored: r.decisionArgs.row.id, decision: seen.decision.map(x => x.row && x.row.id), range: seen.range[0].row.id };
     assert(ids.stored === want.id && ids.decision.every(id => id === want.id) && ids.range === want.id, `rows read: ${JSON.stringify(ids)}, want ${want.id}`);
     // What the reader sees comes from that row: the likely range, its percentages and the dot count.
     const auc = r.rec.auc24;
@@ -8401,8 +8409,66 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(lk && +lk[1] === +(auc * (1 - want.lo)).toFixed(0) && +lk[2] === +(auc * (1 + want.hi)).toFixed(0), `likely range ${lk && lk[0]} for AUC ${auc}`);
     assert(pc && +pc[1] === Math.round(want.lo * 100) && +pc[2] === Math.round(want.hi * 100), `percentages ${pc && pc[0]}`);
     assert(dots && +dots[1] === fn45('attainmentDots')(auc, want), `dots ${dots && dots[0]} vs ${fn45('attainmentDots')(auc, want)}`);
+    // The Next line (nextLevelValue, as bayesNextLevel calls it; read at High confidence so the band
+    // branch is reached): the band now is the early row's; the next is the steady-state row for one more
+    // level (R47: a further level drawn at steady state moves the fit onto it), from steadyFromH.
+    const fitHi = fn45('nextLevelFit')(r, { rank: 0, level: 'High', reasons: [] }, null);
+    const nl = fn45('nextLevelValue')(auc, 1, 'hughes', 8, r.CL_ind, fitHi);
+    const next = R(2, 'hughes', false);
+    assert(fitHi.early === true, 'nextLevelFit reads the early row');
+    assertClose(nl.loNow, auc * (1 - want.lo), 1e-6, 'the Next line\'s band now is the early row\'s (low)');
+    assertClose(nl.hiNow, auc * (1 + want.hi), 1e-6, 'the Next line\'s band now is the early row\'s (high)');
+    assertClose(nl.loNext, auc * (1 - next.lo), 1e-6, 'the next band is the steady-state row for one more level (low)');
+    assertClose(nl.hiNext, auc * (1 + next.hi), 1e-6, 'the next band is the steady-state row for one more level (high)');
+    assertClose(fitHi.steadyFromH, fn45('steadyFromH')(r.doses, r.t12_ind, 'hughes'), 1e-9, 'steadyFromH');
+    if (nl.detail.indexOf(fn45('aucBandText')(R(2, 'hughes', false))) >= 0)
+      assert(nl.detail.indexOf(`drawn at steady state, from ${fn45('fmtDT')(fitHi.steadyFromH)}.`) > 0, nl.detail);
   });
-
+  test('45.4c the early band moves the decision: a reported flip, through runBayesian, is the early-row answer and not the steady-state-row answer [T19-1, T19-2, T19-5]', () => {
+    // From the Task 19 sweep (change -> continue): 1000 mg q8h x 3; one level, 14 mg/L, 3 h after the start of
+    // dose 3 (19 h after the first). On the steady-state row the fit's answer changes an in-range 1000 mg q8h
+    // to 1.25 g q12h for 2 more dots; on the early row (the one an early level reads) no regimen gains 2, so
+    // the in-range regimen is continued, for that reason (not ruling 3).
+    const { r, text } = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 8, n: 3, lastAgo: 3 }, [{ conc: 14, after: 3 }]);
+    const R = fn45('aucUncertaintyRow'), a = r.decisionArgs;
+    assert(r.decisionArgs.row.id === R(1, 'hughes', true).id, `reads the early row: ${r.decisionArgs.row.id}`);
+    const at = (row) => fn45('regimenDecision')(a.CL, a.V, a.target, a.bag, a.mic, a.doses, row, { nowH: a.nowH });
+    const ss = at(R(1, 'hughes', false)), ea = at(R(1, 'hughes', true));
+    assert(ss.action === 'change' && ss.decisionReason === 'attainment' && ss.current && ss.current.inBand, `steady-state row: ${ss.action} ${ss.dose} q${ss.tau}h`);
+    assert(ea.action === 'continue' && ea.continueReason === 'in-range' && ea.dose === 1000 && ea.tau === 8, `early row: ${ea.action} ${ea.continueReason}`);
+    assert(r.rec.action === 'continue' && r.rec.continueReason === 'in-range' && r.rec.dose === 1000 && r.rec.tau === 8 && !r.recFinal,
+      `the shipped answer is the early-row answer: ${r.rec.action} ${r.rec.continueReason} ${r.rec.dose} q${r.rec.tau}h`);
+    assert(!(r.rec.dose === ss.dose && r.rec.tau === ss.tau) && /Continue the current regimen/.test(text) && !/low-confidence|not changed on it/.test(text),
+      'and differs from the steady-state-row answer');
+  });
+  test('45.4d R47: the most recent level decides; just past Hughes\' cut is steady, a mixed course ending at steady state reads the steady-state row [T19-1, T19-4]', () => {
+    const R = fn45('aucUncertaintyRow'), cut = cut454();
+    // Just past the cut: 1 g q8h x 3; one level, 14 mg/L, 10 h after the start of dose 3 (26 h after the first).
+    const past = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 8, n: 3, lastAgo: 10 }, [{ conc: 14, after: 10 }]).r;
+    const fp = fracLast454(past);
+    assert(fp >= cut && fp < cut + 0.03, `the level is just past the cut: ${fp.toFixed(3)} (cut ${cut})`);
+    assert(past.decisionArgs.row.id === R(1, 'hughes', false).id, `just past the cut reads the steady-state row: ${past.decisionArgs.row.id}`);
+    // Just short of it: the same course, 14 mg/L 9 h after dose 3.
+    const short = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 8, n: 3, lastAgo: 9 }, [{ conc: 14, after: 9 }]).r;
+    const fs = fracLast454(short);
+    assert(fs < cut && fs > cut - 0.03 && short.decisionArgs.row.id === R(1, 'hughes', true).id, `just short of the cut reads early: ${fs.toFixed(3)} ${short.decisionArgs.row.id}`);
+    // Mixed: 1 g q12h x 6; a level of 30 mg/L 2 h after the first dose (early), then a trough of 15 mg/L
+    // 11.5 h after dose 6 (steady). The note names the early level; the row is the steady-state one.
+    const mixed = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 12, n: 6, lastAgo: 11.5 }, [{ conc: 30, after: -58 }, { conc: 15, after: 11.5 }]);
+    const mr = mixed.r;
+    assert(fn45('earlyLevelFractions')(mr.levels, mr.doses, mr.t12_ind, 'hughes').length === 1 && !fn45('latestLevelEarly')(mr.levels, mr.doses, mr.t12_ind, 'hughes'),
+      'one early level, the most recent at steady state');
+    assert(mr.decisionArgs.row.id === R(2, 'hughes', false).id, `mixed course reads the steady-state row: ${mr.decisionArgs.row.id}`);
+    assert(/A level was drawn before steady state/.test(mixed.text) && /The most recent level was drawn at steady state, so the range uses the band simulated for steady-state troughs/.test(mixed.text),
+      'the note names the early level and says which band is used');
+  });
+  test('45.4e steadyFromH is the inverse of the shared test: a level just before it is early, just after it is not, every model', () => {
+    const ds = [{ timeH: 100 }], t12 = 20;
+    for (const m of ['buelga', 'goti', 'hughes', 'goti-hd']) {
+      const h = fn45('steadyFromH')(ds, t12, m), ef = (t) => fn45('earlyLevelFractions')([{ timeH: t }], ds, t12, m).length;
+      assert(isFinite(h) && h > 100 && ef(h - 0.01) === 1 && ef(h + 0.01) === 0, `${m}: steady from ${h}`);
+    }
+  });
 
   // Patient size and renal function. Independent anchors: the published equations.
   test('45.5 calcCrClRaw is Cockcroft-Gault: (140 - age) x weight / (72 x SCr), x 0.85 for a woman [I4 CG]', () => {
@@ -8681,7 +8747,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 590;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-b + 45.5-45.34 + D27 redraw)
+const EXPECTED_TOTAL = 593;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.34 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
