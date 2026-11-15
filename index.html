@@ -8688,29 +8688,51 @@ function crclSpreadNote(s, rec, scr, modelLabel, renal) {
 // reduced, dosing intervals must be extended, and the published Buelga/Goti
 // models were not validated in this range. Goti's helper clamps CrCl ≥5,
 // and getBayesCrCl clamps the same way; getUncappedCrCl is the source of truth.
+// Provenance of the 10 mL/min cut-off: not Rybak 2020, which states no CrCl threshold for
+// this advisory (searched 2026-11-14). An open item (models report 2026-11-13, I4, Decision 2).
 const VERY_LOW_CRCL_THRESHOLD = 10;
 function detectVeryLowCrCl(crclUncapped) {
   return crclUncapped != null && crclUncapped < VERY_LOW_CRCL_THRESHOLD;
 }
 
+// ─── The guideline loading maximum (Rybak 2020 Rec 11) ───
+// Rybak MJ et al. Am J Health-Syst Pharm 2020;77:835–864; read 2026-11-14 in the advance-article
+// PDF (doi 10.1093/ajhp/zxaa036), "Loading Doses", Summary and recommendations, printed p. 10:
+//   Rec 11 (B-II): loading doses are based on actual body weight and should "not exceed
+//     3,000 mg" (it refers to Dosing in Obesity). Rec 11 states no mg/kg range.
+//   Rec 10 (B-II), the item before it, is where the range is: 20 to 35 mg/kg may be considered,
+//     by intermittent infusion, in critically ill patients with suspected or documented serious
+//     MRSA infection. Table 2 (Adults, item 12, PDF p. 21) prints Recs 10 and 11 as one item.
+// One maximum for every loading dose here: the HD empiric table (Rec 13), the PD load (D23)
+// and the severe-renal advisory below.
+const HD_LOADING_MAX_MG = 3000;   // Rec 11
+
 // The severe-renal advisory, in one place for both modules (v3.14.0, D26; engine report
 // I1; rule 2). AUC Precision withheld the maintenance regimen at CrCl under 10 without a
 // level while the Trough module dosed the same patient 500 mg q48h; both now withhold, and
 // both read this text. modelNote is each module's sentence on what its model did with the
-// CrCl (AUC Precision's clamp; the Trough module's uncapped use). Text as it stood in
-// AUC Precision; its numbers are revisited, with sources, separately (Task 4).
+// CrCl (AUC Precision's clamp; the Trough module's uncapped use).
+// Its numbers (Task 4; models report I4; the user's ruling 8): the guideline loading dose,
+// then dose by measured levels, with no stated interval. Only Rec 11's figures are shown,
+// the basis (actual body weight) and the maximum (HD_LOADING_MAX_MG, above). No mg/kg figure:
+// Rec 11 has none, and Rec 10's 20–35 mg/kg is stated for the critically ill with serious
+// MRSA infection, not for CrCl under 10 without RRT. Rybak 2020 gives no time to wait before
+// the level in this population, so none is given. Replaced 2026-11-14, all unsourced: 15–20
+// mg/kg, max 2 g; wait 24–48 h; intervals q24h–q72h.
 const SEVERE_RENAL = {
   word:   'No empiric maintenance regimen',
-  follow: 'Follow the severe renal impairment advisory: one loading dose, then dose by measured levels.',
+  follow: `Give one loading dose on actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020 Rec 11), then hold: draw a level, and dose by measured levels.`,
   next:   'Give one loading dose, then dose by measured levels — see the severe renal impairment note.',
 };
-function severeRenalNote(crclTrue, modelNote) {
+// module: 'auc' adds AUC Precision's step (re-run the fit); the Trough module has no fit to name.
+function severeRenalNote(crclTrue, modelNote, module) {
+  const step = module === 'auc' ? ' Enter it here and re-run the fit before the next dose.' : '';
   return { tier: 'alarm', word: 'Severe renal impairment (non-dialysis) suspected', html: `
       CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${modelNote || ''}
       <ul class="note-list">
-        <li>Give a single weight-based loading dose (15–20 mg/kg, max 2 g) — then HOLD further doses</li>
-        <li>Wait 24–48 h after the loading dose, draw a random level, and re-fit Bayesian before next dose</li>
-        <li>Anticipate very long intervals (q24h–q72h or longer); avoid empiric maintenance dosing</li>
+        <li>Give a single weight-based loading dose: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020 Rec 11). Then hold further doses.</li>
+        <li>Draw a level before any further dose; later doses follow measured levels, not a schedule.${step}</li>
+        <li>Avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
         <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
         <li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>; for peritoneal dialysis use Trough-based · Peritoneal dialysis. CRRT is not modelled here.</li>
@@ -9214,7 +9236,7 @@ const HD_EMPIRIC_MG_PER_KG = {
   after:         { high: { ld: 25, md: [10, 10] },  low: { ld: 25, md: [7.5, 7.5] } },
   intradialytic: { high: { ld: 35, md: [10, 15] },  low: { ld: 30, md: [7.5, 10] } },
 };
-const HD_LOADING_MAX_MG = 3000;   // Rec 11
+// HD_LOADING_MAX_MG (Rec 11, 3,000 mg) is defined with its source above the severe-renal advisory.
 function roundDose250(mg) { return Math.max(MATRIX_DOSE_STEP, Math.round(mg / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP); }
 function hdEmpiricDoses(abwKg) {
   if (!(abwKg > 0)) return null;
@@ -13826,7 +13848,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const cappingNote = isHughesLow
       ? 'Hughes 2024 uses its own CrCl computed on fat-free mass (floored at 5 mL/min), a different scale from the Cockcroft-Gault value shown.'
       : `${modelName} clamps CrCl ≥ 5 mL/min in this calculator — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. None of the implemented popPK models were validated below CrCl 10; treat individual CL estimates with caution.`;
-    notes.push(severeRenalNote(crclTrue, cappingNote));
+    notes.push(severeRenalNote(crclTrue, cappingNote, 'auc'));
   }
 
   // ── 1-level Goti advisory (Cunio 2021) ──
@@ -16973,7 +16995,7 @@ function _prRecommendation(r, screen) {
     h += `<p class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</p>`;
   } else if (r.rec && r.lowCrClHold) {
     h += `<p class="pr-regimen pr-hold">${SEVERE_RENAL.word}.</p>`;
-    h += `<p class="pr-metric">Very low CrCl without RRT and no measured level: one loading dose, then dose by levels.</p>`;
+    h += `<p class="pr-metric">CrCl below ${VERY_LOW_CRCL_THRESHOLD} mL/min without RRT and no measured level. ${SEVERE_RENAL.follow}</p>`;
   } else if (r.rec) {
     const best = r.rec;
     const tinf = best.tinfH ? best.tinfH : autoTinf(best.dose);

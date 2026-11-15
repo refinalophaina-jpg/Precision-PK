@@ -6292,6 +6292,56 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const low = fn44('doseExplorerRows')({ tau: 12, tinf: 1, kel: 0.5 / 50, vd: 50, clv: 0.5, mic: 1, troughMin: 10, troughMax: 20 });
     assert(/<th scope="row">250 mg q12h <span class="tx-row-tag">AUC₂₄ over 700<\/span>/.test(low), low.slice(0, 400));
   });
+
+  // Task 4 (models report I4, rule 1; the user's ruling 8): the severe-renal advisory carries only
+  // sourced numbers. The guideline loading dose (Rybak 2020 Rec 11: actual body weight, at most
+  // 3,000 mg, HD_LOADING_MAX_MG), then dose by measured levels, with no stated interval. Every copy:
+  // the shared object, the note in both modules, the Trough refusal as rendered, and print.
+  test('44.9 the severe-renal advisory names Rec 11 and HD_LOADING_MAX_MG, says later doses follow measured levels, and carries no unsourced number', () => {
+    assert(K44.HD_LOADING_MAX_MG === 3000, `HD_LOADING_MAX_MG ${K44.HD_LOADING_MAX_MG}`);
+    const UNSOURCED = [/15\s*[–-]\s*20 mg\/kg/, /max 2 g/, /24\s*[–-]\s*48 h/, /q24h\s*[–-]\s*q72h/];
+    const clean = (s, where) => UNSOURCED.forEach(re => assert(!re.test(s), `${where} still says ${re}: ${s.slice(0, 400)}`));
+    const plain = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const LD = fn44('fmtDose')(K44.HD_LOADING_MAX_MG);                       // "3 g", ISMP form
+    const sourced = (s, where) => {
+      clean(s, where);
+      assert(/Rybak 2020 Rec 11/.test(s), `${where} does not name Rybak 2020 Rec 11: ${s.slice(0, 400)}`);
+      assert(s.indexOf(`at most ${LD}`) >= 0 && /actual body weight/.test(s), `${where} does not give the Rec 11 basis and maximum (${LD}): ${s.slice(0, 400)}`);
+      assert(/measured level/.test(s), `${where} does not say later doses follow measured levels: ${s.slice(0, 400)}`);
+    };
+    // The source: one object both modules read, its maximum from the constant, never a literal.
+    const script = src44.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const i = script.indexOf('const SEVERE_RENAL = {'), j = script.indexOf('\n};\n', i);
+    assert(i > 0 && j > i, 'SEVERE_RENAL is missing');
+    const obj = script.slice(i, j + 3), note = body44('severeRenalNote');
+    assert(/HD_LOADING_MAX_MG/.test(obj), 'SEVERE_RENAL reads HD_LOADING_MAX_MG');
+    [obj, note].forEach((s, k) => { clean(s, k ? 'severeRenalNote' : 'SEVERE_RENAL');
+      assert(!/3,?000 ?mg|\b3 g\b|\b2 g\b/.test(s), `a hand-written maximum in ${k ? 'severeRenalNote' : 'SEVERE_RENAL'}`); });
+    assert((script.match(/const HD_LOADING_MAX_MG\b/g) || []).length === 1, 'one HD_LOADING_MAX_MG');
+    // The source comment records Rec 11's figures with the page (rule 1).
+    const cmt = script.slice(Math.max(0, i - 2500), i);
+    assert(/Rec 11/.test(cmt) && /actual body weight/.test(cmt) && /3,000 mg/.test(cmt) && /p\. ?10\b/.test(cmt), 'the source comment above SEVERE_RENAL cites Rec 11 with its page');
+    // Every string the object holds, as both modules render it.
+    const SR = vm.runInContext('SEVERE_RENAL', sandbox);
+    ['follow', 'next'].forEach(k => clean(SR[k], `SEVERE_RENAL.${k}`));
+    sourced(SR.follow, 'SEVERE_RENAL.follow');
+    // The note in AUC Precision (it may name the fit) and in the Trough module (it must not).
+    const auc = plain(fn44('severeRenalNote')(6.5, '', 'auc').html), tro = plain(fn44('troughSevereRenalNote')(6.5).html);
+    sourced(auc, 'the AUC Precision note'); sourced(tro, 'the Trough note');
+    assert(/fit/.test(auc), `the AUC Precision note says to re-run its fit: ${auc}`);
+    assert(!/Bayesian|re-fit|the fit/i.test(tro), `the Trough note mentions the Bayesian fit: ${tro}`);
+    assert(/severeRenalNote\(crclTrue, cappingNote, 'auc'\)/.test(body44('renderBayesianResults')), 'AUC Precision asks for its own wording');
+    // The Trough refusal as rendered (44.8's patient: 85 F, 45 kg, 155 cm, SCr 4.5).
+    const r = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 });
+    clean(r.text, 'the Trough refusal'); sourced(r.text, 'the Trough refusal');
+    assert(!/Bayesian|re-fit/i.test(r.text), `the Trough refusal mentions the Bayesian fit: ${r.text.slice(0, 600)}`);
+    // AUC Precision's verdict and print read the shared object, not a paraphrase of it.
+    const rb = body44('renderBayesianResults'), pr = body44('_prRecommendation');
+    assert(/\$\{SEVERE_RENAL\.follow\}/.test(rb) && /\$\{SEVERE_RENAL\.follow\}/.test(pr), 'the verdict and print read SEVERE_RENAL.follow');
+    assert(!/one loading dose, then dose by levels/.test(script), 'the print paraphrase is gone');
+    const printed = plain(fn44('_prRecommendation')({ rec: { dose: 1000, tau: 12 }, lowCrClHold: true }, {}));
+    sourced(printed, 'the print report'); assert(/No empiric maintenance regimen/.test(printed) && !/1 g IV/.test(printed), printed);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

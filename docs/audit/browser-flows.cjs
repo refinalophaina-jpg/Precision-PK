@@ -868,6 +868,13 @@ async function enterCourse(page) {
        sev.reg === 'No empiric maintenance regimen' && sev.hold && !sev.dose && /^Result: No empiric maintenance regimen/.test(sev.said)
        && sev.notes.some(n => /note-alarm/.test(n.cls) && /Severe renal impairment \(non-dialysis\) suspected/.test(n.word) && /loading dose/.test(n.text)),
        JSON.stringify(sev).slice(0, 600));
+    // Task 4 (models report I4, ruling 8): only sourced numbers — Rec 11's basis and maximum, then measured
+    // levels; none of the unsourced 15–20 mg/kg, max 2 g, 24–48 h or q24h–q72h; no Bayesian fit in the Trough module.
+    const sevNote = (sev.notes.find(n => /Severe renal impairment/.test(n.word)) || {}).text || '';
+    const sevAll = sev.why + ' ' + sevNote;
+    ok('D26 Task 4: the Trough severe-renal refusal names Rybak 2020 Rec 11 (actual body weight, at most 3 g), then measured levels; no unsourced number, no Bayesian fit',
+       /Rybak 2020 Rec 11/.test(sev.why) && /Rybak 2020 Rec 11/.test(sevNote) && /actual body weight, at most 3 g/.test(sevNote) && /measured level/.test(sev.why) && /measured level/.test(sevNote)
+       && !/15\s*[–-]\s*20 mg\/kg|max 2 g|24\s*[–-]\s*48 h|q24h\s*[–-]\s*q72h|Bayesian|re-fit/i.test(sevAll), sevAll.slice(0, 700));
     // Task 3 review (ruling R7): the refusal names the intervals that reach 400-600 within the ceilings.
     // 30 M, 80 kg, 180 cm, SCr 0.7 (CrCl ~175) at q24h: bound at q24h, not at q8h or q12h.
     await typeInto(c, '#age', '30'); await typeInto(c, '#tbw', '80'); await typeInto(c, '#height', '180'); await typeInto(c, '#scr', '0.7');
