@@ -1843,9 +1843,11 @@ async function enterCourse(page) {
     await wctx.close();
   }
 
-  // D27 (models review I3, Task 18): Hughes 2024 was built in CrCl on fat-free mass 13-255 mL/min
-  // (Table 1). A fictional 25 M, 200 kg, 185 cm, SCr 0.5 on Hughes has 307: one caution line in the
-  // confidence slot says so. The 45 M, 140 kg, 175 cm, SCr 1.0 patient (103) gets none. The D1/D2 course.
+  // D27 (models review I3, Task 18): Hughes 2024 was built in the ranges of its Table 1 (p. 578). A fictional
+  // 25 M, 200 kg, 185 cm, SCr 0.5 on Hughes has CrCl on fat-free mass 307 (built in 13-255): one caution line in
+  // the confidence slot says so. A 92 M, 230 kg, 175 cm (BMI 75.1), SCr 2.8 is outside on four covariates: still
+  // one line, and the Models gist does not suggest the model in use. The 45 M, 140 kg, 175 cm, SCr 1.0 patient
+  // (103) gets none. The D1/D2 course.
   {
     const octx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const o = await octx.newPage();
@@ -1862,17 +1864,26 @@ async function enterCourse(page) {
         inConf: mm.every(e => !!e.closest('.vx-conf')), caution: mm.every(e => e.classList.contains('tone-caution') && !!e.querySelector('svg.ic')),
         alarm: mm.some(e => e.classList.contains('tone-alarm')), gist: ((document.querySelector('#ev-models .ev-gist') || {}).textContent || '').trim() };
     });
-    await o.locator('[data-onclick="k47"]').click();
-    await o.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await o.waitForTimeout(300);
-    const out = await slot();
+    // Each run starts from an empty answer, so the wait is for this run's result, not the last one.
+    const run = async () => {
+      await o.evaluate(() => { document.getElementById('b-results').innerHTML = ''; });
+      await o.locator('[data-onclick="k47"]').click();
+      await o.waitForSelector('#b-results .vx-conf', { timeout: 20000 }); await o.waitForTimeout(300);
+      return slot();
+    };
+    const out = await run();
     ok('D27: Hughes out-of-population line: CrCl on fat-free mass above the built range is one caution line in the confidence slot',
        out.n === 1 && out.inConf && out.caution && !out.alarm
-       && /^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's 307 mL\/min is above that range\.$/.test(out.text)
+       && /^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's CrCl on fat-free mass \(307 mL\/min\) is above that range\.$/.test(out.text)
        && !/^Suggested:/.test(out.gist), JSON.stringify(out));
+    await typeInto(o, '#b-age', '92'); await typeInto(o, '#b-tbw', '230'); await typeInto(o, '#b-height', '175'); await typeInto(o, '#b-scr', '2.8');
+    const four = await run();
+    ok('D27: Hughes out-of-population line: four covariates outside the range are one sentence; the gist does not suggest Hughes on Hughes',
+       four.n === 1 && four.inConf && four.caution && !four.alarm
+       && /^Hughes 2024 was built in patients with weight 91\.6–218 kg, BMI 40–70\.3, age 24\.2–89\.3 years and serum creatinine 0\.4–2\.51 mg\/dL; this patient's weight \(230 kg\), BMI \(75\.1\), age \(92 years\) and serum creatinine \(2\.8 mg\/dL\) are above those ranges\.$/.test(four.text)
+       && !!four.gist && !/Suggested/.test(four.gist), JSON.stringify(four));
     await typeInto(o, '#b-age', '45'); await typeInto(o, '#b-tbw', '140'); await typeInto(o, '#b-height', '175'); await typeInto(o, '#b-scr', '1.0');
-    await o.locator('[data-onclick="k47"]').click();
-    await o.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await o.waitForTimeout(300);
-    const inRange = await slot();
+    const inRange = await run();
     ok('D27: Hughes out-of-population line: an in-range Hughes patient gets none', inRange.n === 0, JSON.stringify(inRange));
     const oAttr = await attributeInjected(o, oProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + oAttr.injected;

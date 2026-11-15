@@ -11010,11 +11010,20 @@ const HUGHES_MIN_BMI = 40;
 // The population the model was built in: Table 1 (p. 578), development dataset
 // (n = 83), the Range column (min-max). Outside these the model extrapolates;
 // modelMismatchText says so in one caution line and nothing is capped (rule 4).
-// CrCl (based on FFM) is the clearance covariate as getHughesCrCl computes it
-// (Cockcroft-Gault on Janmahasatian FFM, SCr as measured).
-const HUGHES_MAX_BMI      = 70.3;   // kg/m², Table 1 BMI range 40-70.3
+// Each is compared with the value the fit used, captured at the fit (hughesCov):
+// CrCl (based on FFM) as getHughesCrCl computes it (Cockcroft-Gault on
+// Janmahasatian FFM, SCr as measured, floored at CRCL_MODEL_FLOOR, so a raw value
+// under the floor is shown as the floor); SCr as measured (rule 4), in mg/dL,
+// the unit Table 1 uses and this module takes, so no conversion.
 const HUGHES_MIN_WT_KG    = 91.6;   // kg, Table 1 weight range 91.6-218
 const HUGHES_MAX_WT_KG    = 218;    // kg, Table 1 weight range 91.6-218
+const HUGHES_MIN_HT_CM    = 122;    // cm, Table 1 height range 122-190
+const HUGHES_MAX_HT_CM    = 190;    // cm, Table 1 height range 122-190
+const HUGHES_MAX_BMI      = 70.3;   // kg/m², Table 1 BMI range 40-70.3 (floor: HUGHES_MIN_BMI)
+const HUGHES_MIN_AGE_Y    = 24.2;   // years, Table 1 age range 24.2-89.3
+const HUGHES_MAX_AGE_Y    = 89.3;   // years, Table 1 age range 24.2-89.3
+const HUGHES_MIN_SCR      = 0.40;   // mg/dL, Table 1 serum creatinine range 0.40-2.51
+const HUGHES_MAX_SCR      = 2.51;   // mg/dL, Table 1 serum creatinine range 0.40-2.51
 const HUGHES_MIN_CRCL_FFM = 13.0;   // mL/min, Table 1 CrCl (based on FFM) range 13.0-255
 const HUGHES_MAX_CRCL_FFM = 255;    // mL/min, Table 1 CrCl (based on FFM) range 13.0-255
 const HUGHES_TVCL    = 5.09;       // L/h, Table 2 (p. 579), nlmixr2 (SAEM) CL
@@ -13042,33 +13051,43 @@ function renderModelBanner(rec, currentModel) {
 // chooses the model; nothing is switched for them.
 const MODEL_NAME = { buelga: 'Buelga 2005', goti: 'Goti 2018', hughes: 'Hughes 2024', gotihd: 'Goti 2018 · HD' };
 // v3.15.0 (D27, models review I3): on Hughes, every covariate outside the population the model was
-// built in (Table 1: BMI, weight, CrCl on fat-free mass) is named in the same one sentence. `hughes`
-// is { crclFFM, tbw } from the fit; without it only BMI (from rec) is checked. Display only: no value
-// is capped or changed. A value that rounds onto (or into) the range is shown one step beyond it.
+// built in (Table 1: weight, height, BMI, age, SCr, CrCl on fat-free mass) is named in the same one
+// sentence. `hughes` is the fit's hughesCov ({ tbw, ht, age, scr, crclFFM }); without it only BMI (from
+// rec) is checked. Display only: no value is capped or changed. The number shown is the patient's own:
+// at the usual precision, or with more decimals when that rounding would land on or inside the range.
 function modelMismatchText(rec, model, hughes) {
   if (!rec || rec.recommended === 'gotihd' || model === 'gotihd') return null;
   if (rec.isClass3 && model !== 'hughes')
     return `Hughes 2024 is fitted to class 3 obesity (BMI ${rec.bmi.toFixed(1)}); this result uses ${MODEL_NAME[model] || model}.`;
   if (model !== 'hughes') return null;
-  const out = [];
-  const check = (v, lo, hi, dp, range, show) => {
-    if (v == null || !isFinite(v) || (v >= lo && v <= hi)) return;
-    const f = Math.pow(10, dp), up = v > hi;
-    let s = Number(v.toFixed(dp));
-    if (up && s <= hi) s = hi + 1 / f;
-    if (!up && s >= lo) s = lo - 1 / f;
-    out.push({ range, value: show(s.toFixed(dp)), dir: up ? 'above' : 'below' });
-  };
-  check(rec.bmi, HUGHES_MIN_BMI, HUGHES_MAX_BMI, 1, `BMI ${HUGHES_MIN_BMI}–${HUGHES_MAX_BMI}`, (s) => `BMI ${s}`);
-  if (hughes) {
-    check(hughes.tbw, HUGHES_MIN_WT_KG, HUGHES_MAX_WT_KG, 1, `weight ${HUGHES_MIN_WT_KG}–${HUGHES_MAX_WT_KG} kg`, (s) => `${s.replace(/\.0$/, '')} kg`);
-    check(hughes.crclFFM, HUGHES_MIN_CRCL_FFM, HUGHES_MAX_CRCL_FFM, 0, `CrCl on fat-free mass ${HUGHES_MIN_CRCL_FFM}–${HUGHES_MAX_CRCL_FFM} mL/min`, (s) => `${s} mL/min`);
+  const h = hughes || {}, out = [];
+  // Table 1's order. [value, lo, hi, decimals, name, unit]
+  const rows = [
+    [h.tbw, HUGHES_MIN_WT_KG, HUGHES_MAX_WT_KG, 1, 'weight', ' kg'],
+    [h.ht, HUGHES_MIN_HT_CM, HUGHES_MAX_HT_CM, 0, 'height', ' cm'],
+    [rec.bmi, HUGHES_MIN_BMI, HUGHES_MAX_BMI, 1, 'BMI', ''],
+    [h.age, HUGHES_MIN_AGE_Y, HUGHES_MAX_AGE_Y, 0, 'age', ' years'],
+    [h.scr, HUGHES_MIN_SCR, HUGHES_MAX_SCR, 2, 'serum creatinine', ' mg/dL'],
+    [h.crclFFM, HUGHES_MIN_CRCL_FFM, HUGHES_MAX_CRCL_FFM, 0, 'CrCl on fat-free mass', ' mL/min'],
+  ];
+  for (const [v, lo, hi, dp, name, unit] of rows) {
+    if (v == null || !isFinite(v) || (v >= lo && v <= hi)) continue;
+    let shown = String(v);
+    for (let d = dp; d <= dp + 4; d++) { const r = Number(v.toFixed(d)); if (r < lo || r > hi) { shown = String(r); break; } }
+    out.push({ range: `${name} ${lo}–${hi}${unit}`, said: `${name} (${shown}${unit})`, dir: v > hi ? 'above' : 'below' });
   }
   if (!out.length) return null;
   const list = (a) => a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
-  const group = (dir) => { const g = out.filter(o => o.dir === dir).map(o => o.value); return g.length ? `${list(g)} ${g.length > 1 ? 'are' : 'is'} ${dir}` : null; };
+  const group = (dir) => { const g = out.filter(o => o.dir === dir).map(o => o.said); return g.length ? `${list(g)} ${g.length > 1 ? 'are' : 'is'} ${dir}` : null; };
   const said = [group('below'), group('above')].filter(Boolean).join(' and ');
   return `Hughes 2024 was built in patients with ${list(out.map(o => o.range))}; this patient's ${said} ${out.length > 1 ? 'those ranges' : 'that range'}.`;
+}
+// The Models gist's "Suggested:" is the choice of model only: the suggested model's name when the
+// patient's population points away from the model in use, else null. A Hughes patient on Hughes
+// outside the built range is never told Hughes is suggested (D27).
+function modelSuggestedName(rec, model) {
+  if (!rec || rec.recommended === model || !modelMismatchText(rec, model)) return null;
+  return MODEL_NAME[rec.recommended] || null;
 }
 // The suggested model's tile is marked as soon as the patient is known (weight and
 // height, or dialysis). Marked, never selected: the choice stays the clinician's.
@@ -13348,6 +13367,9 @@ function runBayesian() {
     const ffm  = computeFFM(tbw, htCm, bState.sex);
     if (!ffm)  { showFormErrors('auc', 'Hughes 2024 requires height to compute fat-free mass.', ['b-height']); return; }
     const crclFFM = getHughesCrCl(effScr);
+    // The covariates this fit used, kept for the out-of-population line (D27); re-renders read these, not the form.
+    const hp = readBayesPatient(effScr);
+    const hughesCov = hp ? { tbw: hp.tbw, ht: hp.ht, age: hp.age, scr: hp.scr, crclFFM } : { crclFFM };
     if (!crclFFM) { showFormErrors('auc', 'Could not calculate Hughes CrCl (FFM-based).', [bayesDemographicGaps(effScr)]); return; }
     const pk = hughesPopPK(crclFFM, ffm);
     CL_pop = pk.TVCL;
@@ -13407,7 +13429,7 @@ function runBayesian() {
     const hughesResult = { CL_ind, Vc_ind, Vp_ind, Q: Q_h, k10_ind, k12_ind, k21_ind,
                            Vc_pop, Vp_pop, k10_pop, k12_pop, k21_pop,
                            alpha, beta, etaVc: etaVc_opt, etaVp: etaVp_opt,
-                           crclHughes: crclFFM, ffm };
+                           crclHughes: crclFFM, ffm, hughesCov };
     bState.result = {
       model:'hughes', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
@@ -14749,10 +14771,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC24 ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
   }
   const confReason = confidenceLead(conf);
-  // On Hughes the fitted covariates are checked against the built range too (D27); the Models gist
-  // below reads the choice of model only, so it is called without them.
+  // On Hughes the covariates the fit used are checked against the built range too (D27); the Models
+  // gist reads modelSuggestedName, the choice of model only.
   const mismatch = p2c && p2c.modelRec ? modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model,
-    r.model === 'hughes' && r.goti ? { crclFFM: r.goti.crclHughes, tbw: r.tbw } : null) : null;
+    r.model === 'hughes' && r.goti ? r.goti.hughesCov : null) : null;
   const confBlock = `
     <p class="vx-conf conf-${conf.rank < 0 ? 'info' : conf.rank === 0 ? 'ok' : conf.rank === 1 ? 'warn' : 'danger'}">
       <strong class="conf-level">${escHtml(conf.level)}${conf.rank >= 0 ? ' confidence' : ''}</strong>
@@ -14989,9 +15011,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.</p>
         ${caveats}`;
     }
-    // The choice of model only: a Hughes patient on Hughes outside its built range is never told Hughes is suggested.
-    if (p2c.modelRec && p2c.modelRec.recommended !== (isHD ? 'gotihd' : r.model) && modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model))
-      gist = `Suggested: ${MODEL_NAME[p2c.modelRec.recommended]} · ${gist}`;
+    const suggested = p2c.modelRec ? modelSuggestedName(p2c.modelRec, isHD ? 'gotihd' : r.model) : null;
+    if (suggested) gist = `Suggested: ${suggested} · ${gist}`;
     const modelsEmpty = !body;   // no level to compare on and no model advice
     html += ev('ev-models', 'Models', gist, body, false, modelsEmpty ? 'a measured level' : null);
   }

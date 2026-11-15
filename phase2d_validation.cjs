@@ -5717,9 +5717,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(mm(c3, 'hughes') === null, 'Hughes on a class-3 patient fits');
     const c1 = rec({ tbw: 100, ht: 175 });                       // BMI 32.7
     // v3.15.0 (D27): the Hughes line names the built range (Table 1) and the direction.
-    assert(/BMI 40–70\.3; this patient's BMI 32\.7 is below that range\./.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
+    assert(/BMI 40–70\.3; this patient's BMI \(32\.7\) is below that range\./.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
     assert(mm(rec({ n: 2, tbw: 70, ht: 175 }), 'buelga') === null, 'two levels suggest Goti, but that is not a population mismatch');
-    assert(/BMI 39\.9 is below/.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
+    assert(/BMI \(39\.9\) is below/.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
     assert(mm(rec({ tbw: 70, ht: 175, hd: true }), 'buelga') === null, 'dialysis has its own handling (D16)');
     const v = code42.slice(code42.indexOf('const confBlock = `'), code42.indexOf('const nextBlock'));
     assert(/modelMismatchText\(/.test(code42) && /vx-mismatch/.test(v), 'the line sits in the confidence slot');
@@ -8253,54 +8253,72 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // paper once, here; every other use reads them from harness_constants (rule 6).
   test('45.3 Hughes out of its built range: one line in the confidence slot names the covariate and the range; in range, none', () => {
     const K = __extractConsts(), mm = sandbox.modelMismatchText;
-    // Hughes 2024 Table 1 (p. 578), development dataset, the Range column.
-    assert(K.HUGHES_MIN_CRCL_FFM === 13 && K.HUGHES_MAX_CRCL_FFM === 255, `CrCl (based on FFM) ${K.HUGHES_MIN_CRCL_FFM}-${K.HUGHES_MAX_CRCL_FFM}: Table 1 gives 13.0-255 mL/min`);
-    assert(K.HUGHES_MIN_WT_KG === 91.6 && K.HUGHES_MAX_WT_KG === 218, `weight ${K.HUGHES_MIN_WT_KG}-${K.HUGHES_MAX_WT_KG}: Table 1 gives 91.6-218 kg`);
-    assert(K.HUGHES_MIN_BMI === 40 && K.HUGHES_MAX_BMI === 70.3, `BMI ${K.HUGHES_MIN_BMI}-${K.HUGHES_MAX_BMI}: Table 1 gives 40-70.3`);
-    const ACTUAL = vm.runInContext('SCR_POLICY.ACTUAL', sandbox);
-    const crclFFM = (age, sex, scr, tbw, ht) => Math.max(K.CRCL_MODEL_FLOOR, sandbox.calcCrClRaw(age, sex, scr, computeFFM(tbw, ht, sex), ACTUAL));   // getHughesCrCl
+    // Hughes 2024 Table 1 (p. 578), development dataset (n = 83), the Range column.
+    const T1 = [['HUGHES_MIN_WT_KG', 91.6], ['HUGHES_MAX_WT_KG', 218], ['HUGHES_MIN_HT_CM', 122], ['HUGHES_MAX_HT_CM', 190],
+      ['HUGHES_MIN_BMI', 40], ['HUGHES_MAX_BMI', 70.3], ['HUGHES_MIN_AGE_Y', 24.2], ['HUGHES_MAX_AGE_Y', 89.3],
+      ['HUGHES_MIN_SCR', 0.40], ['HUGHES_MAX_SCR', 2.51], ['HUGHES_MIN_CRCL_FFM', 13.0], ['HUGHES_MAX_CRCL_FFM', 255]];
+    for (const [n, v] of T1) assert(K[n] === v, `${n} ${K[n]}: Table 1 gives ${v}`);
+    // The shipped covariate function, fed a fictional patient (getHughesCrCl reads the form through readBayesPatient).
+    const hughesCrCl = (age, sex, scr, tbw, ht) => {
+      const prev = sandbox.readBayesPatient;
+      sandbox.readBayesPatient = () => ({ age, sex, scr, tbw, ht });
+      try { return sandbox.getHughesCrCl(); } finally { sandbox.readBayesPatient = prev; }
+    };
     const rec = (tbw, ht) => sandbox.getModelRecommendation(0, false, tbw, ht, false);
+    const cov = (age, scr, tbw, ht, sex) => ({ age, scr, tbw, ht, crclFFM: hughesCrCl(age, sex || 'M', scr, tbw, ht) });
     // The brief's fictional patient: 25 y M, 200 kg, 185 cm (BMI 58.4), SCr 0.5 mg/dL. Independent anchor:
     // FFM = 9270 x 200 / (6680 + 216 x 58.44) = 96.05 kg (Janmahasatian); CG = 115 x 96.05 / (72 x 0.5) = 306.8.
-    const big = crclFFM(25, 'M', 0.5, 200, 185);
-    assertClose(big, 306.8, 0.1, 'CrCl on FFM, 25 y M, 200 kg, 185 cm, SCr 0.5');
+    const big = cov(25, 0.5, 200, 185);
+    assertClose(big.crclFFM, 306.8, 0.1, 'getHughesCrCl, 25 y M, 200 kg, 185 cm, SCr 0.5');
     const r200 = rec(200, 185);
     assert(r200.recommended === 'hughes' && r200.isClass3, 'the fixture is a class-3 patient for whom Hughes is suggested');
-    const line = mm(r200, 'hughes', { crclFFM: big, tbw: 200 });
-    assert(typeof line === 'string', `no line for CrCl on FFM ${big.toFixed(1)}: ${line}`);
-    assert(/^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's 307 mL\/min is above that range\.$/.test(line), line);
+    const line = mm(r200, 'hughes', big);
+    assert(/^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's CrCl on fat-free mass \(307 mL\/min\) is above that range\.$/.test(line || ''), String(line));
     // One line, one sentence, caution not alarm.
-    assert(!/\n/.test(line) && !/\.\s/.test(line) && !/!/.test(line) && !/weight|BMI/.test(line), `one sentence naming only the out-of-range covariate: ${line}`);
+    assert(!/\n/.test(line) && !/\.\s/.test(line) && !/!/.test(line) && !/weight|BMI|age|height|creatinine/.test(line), `one sentence naming only the out-of-range covariate: ${line}`);
     // In range: the 45.1 patient, 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103).
-    const mid = crclFFM(45, 'M', 1.0, 140, 175);
-    assert(mid > 100 && mid < 110, `in-range fixture CrCl on FFM ${mid}`);
-    assert(mm(rec(140, 175), 'hughes', { crclFFM: mid, tbw: 140 }) === null, `in range: ${mm(rec(140, 175), 'hughes', { crclFFM: mid, tbw: 140 })}`);
-    // Each boundary, each side. The bound itself is in range; just beyond it is not, and the value shown
-    // never rounds onto the bound.
+    const mid = cov(45, 1.0, 140, 175);
+    assert(mid.crclFFM > 100 && mid.crclFFM < 110, `in-range fixture CrCl on FFM ${mid.crclFFM}`);
+    assert(mm(rec(140, 175), 'hughes', mid) === null, `in range: ${mm(rec(140, 175), 'hughes', mid)}`);
+    // Each covariate, each bound, each side. The bound itself is in range. Just beyond it, the value shown is
+    // the patient's own: one more decimal when rounding would land on the bound, never a stepped number.
     const c3 = (bmi) => ({ recommended: 'hughes', isClass3: bmi >= K.HUGHES_MIN_BMI, isObese: true, bmi });
-    const at = (o) => mm(c3(o.bmi || 46), 'hughes', { crclFFM: o.crcl || 84, tbw: o.tbw || 134 });
-    assert(at({ crcl: K.HUGHES_MAX_CRCL_FFM }) === null && at({ crcl: K.HUGHES_MIN_CRCL_FFM }) === null, 'CrCl at either bound is in range');
-    assert(/this patient's 256 mL\/min is above that range\.$/.test(at({ crcl: 255.2 }) || ''), String(at({ crcl: 255.2 })));
-    assert(/CrCl on fat-free mass 13–255 mL\/min; this patient's 12 mL\/min is below that range\.$/.test(at({ crcl: 12.9 }) || ''), String(at({ crcl: 12.9 })));
-    assert(at({ tbw: K.HUGHES_MAX_WT_KG }) === null && at({ tbw: K.HUGHES_MIN_WT_KG }) === null, 'weight at either bound is in range');
-    assert(/with weight 91\.6–218 kg; this patient's 218\.1 kg is above that range\.$/.test(at({ tbw: 218.04 }) || ''), String(at({ tbw: 218.04 })));
-    assert(/with weight 91\.6–218 kg; this patient's 91\.5 kg is below that range\.$/.test(at({ tbw: 91.58 }) || ''), String(at({ tbw: 91.58 })));
-    assert(at({ bmi: K.HUGHES_MAX_BMI }) === null && at({ bmi: K.HUGHES_MIN_BMI }) === null, 'BMI at either bound is in range');
-    assert(/with BMI 40–70\.3; this patient's BMI 70\.4 is above that range\.$/.test(at({ bmi: 70.31 }) || ''), String(at({ bmi: 70.31 })));
-    // Several at once: still one sentence, naming each.
-    const three = at({ bmi: 72, tbw: 230, crcl: 307 });
-    assert(/^Hughes 2024 was built in patients with BMI 40–70\.3, weight 91\.6–218 kg and CrCl on fat-free mass 13–255 mL\/min; this patient's BMI 72\.0, 230 kg and 307 mL\/min are above those ranges\.$/.test(three || ''), String(three));
-    const mixed = mm(rec(110, 172), 'hughes', { crclFFM: 300, tbw: 110 });   // BMI 37.18, below 40
-    assert(/^Hughes 2024 was built in patients with BMI 40–70\.3 and CrCl on fat-free mass 13–255 mL\/min; this patient's BMI 37\.2 is below and 300 mL\/min is above those ranges\.$/.test(mixed || ''), String(mixed));
+    const base = { bmi: 46, age: 56, scr: 0.84, tbw: 134, ht: 170, crclFFM: 84 };   // Table 1 medians
+    const at = (o) => { const p = Object.assign({}, base, o); return mm(c3(p.bmi), 'hughes', p); };
+    const one = (o, rng, said, dir) => {
+      const t = at(o), re = new RegExp(`^Hughes 2024 was built in patients with ${rng}; this patient's ${said} is ${dir} that range\\.$`);
+      assert(re.test(t || ''), `${JSON.stringify(o)}: ${t}`);
+    };
+    const edge = [
+      ['crclFFM', 'CrCl on fat-free mass 13–255 mL\\/min', [[255.2, 'CrCl on fat-free mass \\(255\\.2 mL\\/min\\)', 'above'], [256.4, 'CrCl on fat-free mass \\(256 mL\\/min\\)', 'above'],
+        [12.9, 'CrCl on fat-free mass \\(12\\.9 mL\\/min\\)', 'below'], [12.4, 'CrCl on fat-free mass \\(12 mL\\/min\\)', 'below']], K.HUGHES_MIN_CRCL_FFM, K.HUGHES_MAX_CRCL_FFM],
+      ['tbw', 'weight 91\\.6–218 kg', [[218.04, 'weight \\(218\\.04 kg\\)', 'above'], [230, 'weight \\(230 kg\\)', 'above'], [91.58, 'weight \\(91\\.58 kg\\)', 'below']], K.HUGHES_MIN_WT_KG, K.HUGHES_MAX_WT_KG],
+      ['ht', 'height 122–190 cm', [[190.4, 'height \\(190\\.4 cm\\)', 'above'], [195, 'height \\(195 cm\\)', 'above'], [121.6, 'height \\(121\\.6 cm\\)', 'below']], K.HUGHES_MIN_HT_CM, K.HUGHES_MAX_HT_CM],
+      ['bmi', 'BMI 40–70\\.3', [[70.31, 'BMI \\(70\\.31\\)', 'above'], [75, 'BMI \\(75\\)', 'above'], [39.95, 'BMI \\(39\\.95\\)', 'below']], K.HUGHES_MIN_BMI, K.HUGHES_MAX_BMI],
+      ['age', 'age 24\\.2–89\\.3 years', [[24, 'age \\(24 years\\)', 'below'], [89.33, 'age \\(89\\.33 years\\)', 'above'], [90, 'age \\(90 years\\)', 'above']], K.HUGHES_MIN_AGE_Y, K.HUGHES_MAX_AGE_Y],
+      ['scr', 'serum creatinine 0\\.4–2\\.51 mg\\/dL', [[0.3, 'serum creatinine \\(0\\.3 mg\\/dL\\)', 'below'], [0.396, 'serum creatinine \\(0\\.396 mg\\/dL\\)', 'below'], [2.6, 'serum creatinine \\(2\\.6 mg\\/dL\\)', 'above']], K.HUGHES_MIN_SCR, K.HUGHES_MAX_SCR],
+    ];
+    for (const [k, rng, cases, lo, hi] of edge) {
+      assert(at({ [k]: lo }) === null && at({ [k]: hi }) === null, `${k} at either bound (${lo}, ${hi}) is in range: ${at({ [k]: lo })} / ${at({ [k]: hi })}`);
+      for (const [v, said, dir] of cases) one({ [k]: v }, rng, said, dir);
+    }
+    // Several at once: still one sentence, naming each, in Table 1's order.
+    const many = at({ age: 92, tbw: 230, bmi: 72, scr: 2.8, crclFFM: 307 });
+    assert(/^Hughes 2024 was built in patients with weight 91\.6–218 kg, BMI 40–70\.3, age 24\.2–89\.3 years, serum creatinine 0\.4–2\.51 mg\/dL and CrCl on fat-free mass 13–255 mL\/min; this patient's weight \(230 kg\), BMI \(72\), age \(92 years\), serum creatinine \(2\.8 mg\/dL\) and CrCl on fat-free mass \(307 mL\/min\) are above those ranges\.$/.test(many || ''), String(many));
+    const mixed = mm(rec(110, 172), 'hughes', Object.assign({}, base, { tbw: 110, ht: 172, crclFFM: 300 }));   // BMI 37.18
+    assert(/^Hughes 2024 was built in patients with BMI 40–70\.3 and CrCl on fat-free mass 13–255 mL\/min; this patient's BMI \(37\.2\) is below and CrCl on fat-free mass \(300 mL\/min\) is above those ranges\.$/.test(mixed || ''), String(mixed));
+    // Without the fitted covariates only BMI (from the recommendation) is checked.
+    assert(/this patient's BMI \(75\) is above that range\.$/.test(mm(c3(75), 'hughes') || ''), String(mm(c3(75), 'hughes')));
     // Another model: Hughes' range says nothing about it; the class-3 mismatch line stands.
-    assert(/^Hughes 2024 is fitted to class 3 obesity \(BMI 58\.4\); this result uses Goti 2018\.$/.test(mm(r200, 'goti', { crclFFM: big, tbw: 200 }) || ''), String(mm(r200, 'goti', { crclFFM: big, tbw: 200 })));
-    // The confidence slot passes the fitted Hughes covariate; the Models gist's "Suggested:" reads only the
-    // choice of model, so a Hughes patient on Hughes is never told Hughes is suggested.
-    const slot = html.slice(html.indexOf('const confReason = confidenceLead(conf);'), html.indexOf('const confBlock = `'));
-    assert(/modelMismatchText\(p2c\.modelRec,[^;]*r\.goti\.crclHughes[^;]*r\.tbw/.test(slot), slot);
-    assert(/if \(p2c\.modelRec && p2c\.modelRec\.recommended !== \(isHD \? 'gotihd' : r\.model\) && modelMismatchText\(p2c\.modelRec, isHD \? 'gotihd' : r\.model\)\)/.test(html), 'the gist call reads the model choice only');
-    // BMI above the range on Hughes is a line in the slot even without the fitted covariates.
-    assert(/this patient's BMI 75\.0 is above that range\.$/.test(mm(c3(75), 'hughes') || ''), String(mm(c3(75), 'hughes')));
+    assert(/^Hughes 2024 is fitted to class 3 obesity \(BMI 58\.4\); this result uses Goti 2018\.$/.test(mm(r200, 'goti', big) || ''), String(mm(r200, 'goti', big)));
+    // The Models gist's "Suggested:" is the choice of model only: a Hughes patient on Hughes outside the
+    // range is never told Hughes is suggested; a class-3 patient on Buelga, and BMI 32.7 on Hughes, are.
+    const sug = sandbox.modelSuggestedName;
+    assert(typeof sug === 'function', 'modelSuggestedName() is missing');
+    assert(sug(c3(75), 'hughes') === null && sug(r200, 'hughes') === null, `Hughes on Hughes: ${sug(c3(75), 'hughes')}`);
+    assert(sug(r200, 'buelga') === 'Hughes 2024', `class 3 on Buelga: ${sug(r200, 'buelga')}`);
+    assert(sug(rec(100, 175), 'hughes') === 'Goti 2018', `BMI 32.7 on Hughes: ${sug(rec(100, 175), 'hughes')}`);
+    assert(sug(rec(70, 175), 'buelga') === null && sug(rec(70, 175), 'goti') === null, 'no population mismatch, no suggestion');
   });
 
   // ── Task 14: direct behaviour tests, one per mutant the code review saw survive (I3, I4, I5) ──

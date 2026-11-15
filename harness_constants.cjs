@@ -99,6 +99,12 @@ function extract() {
     HUGHES_MAX_BMI:      num(src, 'HUGHES_MAX_BMI'),
     HUGHES_MIN_WT_KG:    num(src, 'HUGHES_MIN_WT_KG'),
     HUGHES_MAX_WT_KG:    num(src, 'HUGHES_MAX_WT_KG'),
+    HUGHES_MIN_HT_CM:    num(src, 'HUGHES_MIN_HT_CM'),
+    HUGHES_MAX_HT_CM:    num(src, 'HUGHES_MAX_HT_CM'),
+    HUGHES_MIN_AGE_Y:    num(src, 'HUGHES_MIN_AGE_Y'),
+    HUGHES_MAX_AGE_Y:    num(src, 'HUGHES_MAX_AGE_Y'),
+    HUGHES_MIN_SCR:      num(src, 'HUGHES_MIN_SCR'),
+    HUGHES_MAX_SCR:      num(src, 'HUGHES_MAX_SCR'),
     HUGHES_MIN_CRCL_FFM: num(src, 'HUGHES_MIN_CRCL_FFM'),
     HUGHES_MAX_CRCL_FFM: num(src, 'HUGHES_MAX_CRCL_FFM'),
 
