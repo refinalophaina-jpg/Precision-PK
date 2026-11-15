@@ -89,6 +89,10 @@ cases.push(['kdigoStage', [[{ scr: 1.0, timeH: 0 }, { scr: 1.4, timeH: 30 }, { s
 cases.push(['selectEffectiveScr', [[{ scr: 1.0, timeH: 14 }, { scr: 2.0, timeH: 29 }], 20]]);
 
 // MAP fits through the exact objective functions the app uses.
+// The omega^2 literals below (0.0793 / 0.138 Buelga, 0.147 / 0.5103 / 0.2824 Goti, 0.0602 / 0.0312 / 0.4974
+// Hughes) are deliberate: they are battery INPUTS, passed identically to the baseline and the candidate, so
+// a difference can only come from the engine code. Rule 6 (parse, never hand-copy) is about a test checking
+// the shipped values; this battery checks nothing against them, so do not "fix" these into parsed constants.
 function fits(S) {
   const out = [];
   if (typeof S.mapFit !== 'function') return ['mapFit absent (predates the multi-start fit)'];

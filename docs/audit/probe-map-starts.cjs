@@ -7,9 +7,16 @@
 // model's own prior and residual error, fits them with the shipped `mapFit`
 // (called exactly as runBayesian calls it, including the peripheral-volume
 // variance), and refits with a wide reference start set: every combination
-// of {-1, 0, +1} SD on CL, Vc and Vp (27 starts). A fit is "missed" when the
-// reference reaches an objective lower than the shipped fit by more than
-// MISS_TOL. Counts are reported per model and per design.
+// of {-2, -1, 0, +1, +2} SD on CL, Vc and Vp (5^3 = 125 Nelder-Mead starts, each
+// SD the model's own published omega; the lowest objective wins). The reference
+// is a superset of the shipped starts (0, +/-1 SD on CL and on Vc, +/-1 and +/-2 SD
+// on Vp), so it can find any minimum the shipped fit can, and more.
+//   missed          the reference reaches an objective lower than the shipped fit by more than MISS_TOL
+//   shipped beats   the shipped fit reaches an objective lower than the reference by more than MISS_TOL
+//                   (the reference is not exhaustive; this says by how much it is not)
+// Counts are reported per model and per design. --baseline=<git ref> also fits
+// every patient with that version's mapFit (e.g. b410477, the five-start fit of
+// v3.14.0) against the same reference, so "before" and "after" share patients.
 //
 // Regimens (8 doses = steady state), chosen by --regimen:
 //   guideline (default)  dose and interval from computeGuidelineDose (15 mg/kg, interval by CrCl)
@@ -20,14 +27,19 @@
 //   peak-trough      that trough + a level 1 h after the end of infusion 7
 //   three-troughs    troughs before doses 6, 7 and 8
 //   two-after-load   one 25 mg/kg load (cap 3000 mg); 2 h after its end, and 0.5 h before the next dose
+//                    (no regimen choice, so its 1,500 patients are the same under both policies:
+//                    count them once when adding the two policies' runs together)
 //
-// Seeded (the LCG in uncertainty-load.cjs), so the figures repeat exactly.
-// Usage:  node docs/audit/probe-map-starts.cjs [n=1500] [models=hughes,goti] [--regimen=target] [--cases]
+// Seeded (the LCG in uncertainty-load.cjs), so the figures repeat exactly. --seed
+// sets the base seed (default 20261113, the seed the shipped start set was chosen
+// on); any other value is a held-out sample.
+// Usage:  node docs/audit/probe-map-starts.cjs [n=1500] [models=hughes,goti] [--regimen=target]
+//                                            [--seed=20261113] [--baseline=b410477] [--cases]
 //   --cases prints every missed case as a JSON fixture (concentrations rounded
 //   to 0.01 mg/L, re-checked after rounding) for SUITE 45.2.
 // Fictional patients only. Reads index.html; changes nothing.
 // ════════════════════════════════════════════════════════════════════════
-const vm = require('vm');
+const vm = require('vm'), cp = require('child_process'), path = require('path');
 const { sb, C, rnd, randn, setSeed } = require('./uncertainty-load.cjs');
 const { mapFit, nelderMead3D, gotiPopPK, hughesPopPK, burtonObj3D, burtonObj3D_hughes, predictConc2comp,
   computeFFM, calcCrClRaw, calcIBW, pickCrClWeight, computeGuidelineDose, autoTinf } = sb;
@@ -40,6 +52,24 @@ const MODELS = (args.find(a => /^[a-z,]+$/.test(a)) || 'hughes,goti').split(',')
 const CASES = args.includes('--cases');
 const REGIMEN = (args.find(a => a.startsWith('--regimen=')) || '--regimen=guideline').slice(10);
 if (!['guideline', 'target'].includes(REGIMEN)) throw new Error('--regimen must be guideline or target');
+const opt = (k, d) => { const a = args.find(x => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
+const SEED = +opt('seed', 20261113);
+if (!Number.isInteger(SEED)) throw new Error('--seed must be an integer');
+const BASELINE = opt('baseline', null);
+// The baseline engine, loaded from git in its own sandbox (same stub as uncertainty-load.cjs).
+let baseMapFit = null;
+if (BASELINE) {
+  const html = cp.execSync(`git show ${BASELINE}:index.html`, { cwd: path.join(__dirname, '..', '..'), maxBuffer: 64 << 20 }).toString();
+  const el = () => ({ value: '', textContent: '', innerHTML: '', style: { display: '' }, checked: false,
+    classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, querySelectorAll: () => [], querySelector: () => null,
+    getAttribute: () => null, setAttribute() {}, addEventListener() {}, appendChild() {}, removeChild() {} });
+  const bs = { document: { getElementById: el, querySelector: () => null, querySelectorAll: () => [], createElement: el },
+    window: {}, alert() {}, requestAnimationFrame() {}, console, Math, parseFloat, parseInt, isNaN, isFinite, NaN, Infinity,
+    Object, Array, String, Number, Boolean, Function, Date, Error, TypeError, JSON, RegExp,
+    bState: { sex: 'M', model: 'buelga', dial: false, result: null, tinkCompare: [] } };
+  bs.window = bs; vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], bs);
+  baseMapFit = bs.mapFit;
+}
 const MISS_TOL = 1e-6;          // objective units (-2 log posterior)
 const DESIGNS = ['one-trough', 'peak-trough', 'three-troughs', 'two-after-load'];
 const r2 = x => Math.round(x * 100) / 100;
@@ -103,11 +133,12 @@ function course(p, pk, design) {
   return { doses, times };
 }
 
-// The wide reference: 27 starts, the best objective wins.
+// The wide reference: 125 starts, {-2,-1,0,+1,+2} SD on each of CL, Vc and Vp; the best objective wins.
+const GRID = [-2, -1, 0, 1, 2];
 function reference(fn, o) {
   const s = o.map(Math.sqrt);
   let best = null;
-  for (const i of [-1, 0, 1]) for (const j of [-1, 0, 1]) for (const k of [-1, 0, 1]) {
+  for (const i of GRID) for (const j of GRID) for (const k of GRID) {
     const x = nelderMead3D(fn, i * s[0], j * s[1], k * s[2], 400), f = fn(...x);
     if (isFinite(f) && (!best || f < best.f)) best = { x, f };
   }
@@ -118,8 +149,9 @@ const shipped = (fn, o) => mapFit(fn, 3, o[0], o[1], 400, o[2]);
 
 function simulate(model, design, di) {
   const M = MODEL[model], o = M.omega(), [sp, sa] = M.sigma();
-  setSeed(20261113 + 1000 * di + (model === 'hughes' ? 1 : 2));
-  const res = { model, design, n: 0, missed: 0, missedMaterial: 0, maxClGap: 0, shippedAlt: 0, cases: [] };
+  setSeed(SEED + 1000 * di + (model === 'hughes' ? 1 : 2));
+  const res = { model, design, n: 0, missed: 0, missedMaterial: 0, maxClGap: 0, shippedAlt: 0, beats: 0, maxBeat: 0,
+    base: { missed: 0, maxClGap: 0, alt: 0, beats: 0 }, cases: [] };
   for (let i = 0; i < N; i++) {
     const p = M.patient(), pk = M.pk(p), { doses, times } = course(p, pk, design);
     const CLt = pk.TVCL * Math.exp(randn() * Math.sqrt(o[0]));
@@ -132,6 +164,13 @@ function simulate(model, design, di) {
     const s = shipped(fn, o), ref = reference(fn, o);
     res.n++;
     if (s.alternative) res.shippedAlt++;
+    if (s.obj < ref.f - MISS_TOL) { res.beats++; res.maxBeat = Math.max(res.maxBeat, ref.f - s.obj); }
+    if (baseMapFit) {
+      const b = baseMapFit(fn, 3, o[0], o[1], 400, o[2]);
+      if (b.alternative) res.base.alt++;
+      if (b.obj < ref.f - MISS_TOL) res.base.beats++;
+      if (ref.f < b.obj - MISS_TOL) { res.base.missed++; res.base.maxClGap = Math.max(res.base.maxClGap, Math.abs(Math.exp(ref.x[0] - b.eta[0]) - 1)); }
+    }
     if (ref.f < s.obj - MISS_TOL) {
       res.missed++;
       const gap = Math.abs(Math.exp(ref.x[0] - s.eta[0]) - 1);
@@ -156,12 +195,15 @@ function simulate(model, design, di) {
 }
 
 const t0 = Date.now();
-console.log(`probe-map-starts: regimen ${REGIMEN}; n = ${N} per design; missed = a 27-start reference finds an objective lower by more than ${MISS_TOL}`);
+console.log(`probe-map-starts: regimen ${REGIMEN}; seed ${SEED}; n = ${N} per design; reference = ${GRID.length ** 3} starts ` +
+  `({${GRID.join(',')}} SD on CL, Vc, Vp); missed / beats = objective lower by more than ${MISS_TOL}` + (BASELINE ? `; baseline ${BASELINE}` : ''));
 for (const m of MODELS) {
   for (const [di, d] of DESIGNS.entries()) {
     const r = simulate(m, d, di);
     console.log(`${m.padEnd(6)} ${d.padEnd(15)} missed ${String(r.missed).padStart(3)} / ${r.n}` +
-      `  (CL > 1% apart: ${r.missedMaterial}; largest CL gap ${(100 * r.maxClGap).toFixed(1)}%)  shipped flagged an alternative: ${r.shippedAlt}`);
+      `  (CL > 1% apart: ${r.missedMaterial}; largest CL gap ${(100 * r.maxClGap).toFixed(1)}%)  shipped flagged an alternative: ${r.shippedAlt}` +
+      `  shipped beats reference: ${r.beats}${r.beats ? ` (by up to ${r.maxBeat.toExponential(2)})` : ''}` +
+      (baseMapFit ? `  | baseline ${BASELINE}: missed ${r.base.missed} (largest CL gap ${(100 * r.base.maxClGap).toFixed(1)}%), flagged ${r.base.alt}, beats reference ${r.base.beats}` : ''));
     for (const c of r.cases) {
       console.log(`    #${c.i} ${c.patient.sex} ${c.patient.age} y ${c.patient.tbw} kg ${c.patient.ht} cm SCr ${c.patient.scr}` +
         `  shipped obj ${c.shipped.obj.toFixed(4)} CL ${c.shipped.CL.toFixed(3)}${c.shipped.flagged ? ' (flagged)' : ''}` +

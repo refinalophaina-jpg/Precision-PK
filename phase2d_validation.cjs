@@ -8200,7 +8200,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // +/-1 SD on Vp alone did not reach (its lower minimum sits at eta Vp 1.39, about 2 SD). Tolerance:
   // 1e-4 objective units (-2 log posterior), 260x smaller than the smallest of those gaps; clearance
   // within 0.01 L/h. All are slow clearers on q24h or q36h.
-  test('45.2 Hughes and Goti MAP fits start on Vp too: the probe\'s missed cases reach the lower minimum', () => {
+  test('45.2 Hughes MAP fit starts on Vp too: seven missed Hughes cases reach the lower minimum; all four Goti/Hughes call sites pass their omega2 Vp', () => {
     const fixtures = [
       { design: 'peak-trough',   patient: { sex: 'F', ht: 175, tbw: 198.1, age: 48, scr: 1.99 }, course: { mg: 2500, tinfH: 2.5, tau: 24 },
         levels: [{ timeH: 147.5, conc: 44.13 }, { timeH: 167.5, conc: 6.37 }],                                 refObj: 16.661163, refCL: 3.1852 },
@@ -8239,7 +8239,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // Every 3-parameter call site passes its own model's peripheral-volume variance (Goti and Hughes, in
     // runBayesian and in modelAgreement). A call that omits it silently loses the Vp starts.
     const calls = [...html.matchAll(/mapFit\([^;]*?,\s*3,\s*OMEGA2_CL_(GOTI|HUGHES),\s*OMEGA2_VC_\1,\s*\d+\s*(,\s*OMEGA2_VP_(\w+)\s*)?\)/g)];
-    assert(calls.length >= 4, `expected at least 4 three-parameter mapFit calls, found ${calls.length}`);
+    // Exactly four: Goti and Hughes in runBayesian and in modelAgreement. A fifth 3-parameter call (or one
+    // the regex stops matching) changes the count and must be added here deliberately.
+    assert(calls.length === 4, `expected exactly 4 three-parameter mapFit calls, found ${calls.length}`);
     for (const c of calls) assert(c[3] === c[1], `a ${c[1]} mapFit call does not pass OMEGA2_VP_${c[1]}: …${c[0].slice(-70).replace(/\s+/g, ' ')}`);
   });
 
