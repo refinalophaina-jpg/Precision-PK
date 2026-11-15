@@ -6314,27 +6314,31 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/id="prn-redose-thresh"/.test(rl.h), 'random-level keeps the level-based PRN calculator');
   });
 
-  test('44.8c Trough level mode: a current regimen above a ceiling is never "continue" (2.5 g q8h, 7.5 g a day)', () => {
-    // The C2 patient on 2.5 g q8h (1 h) with a true trough that matches the population fit: AUC24 ~540
-    // and a low trough read "AUC therapeutic despite low trough — continue". AUC Precision never
-    // continues a regimen with a hard reject (D25); nor does the Trough module now.
+  test('44.8c Trough level mode: a current regimen above a ceiling but in range is continued with the ceiling caution leading (U3; 2.5 g q8h, 7.5 g a day)', () => {
+    // The C2 patient on 2.5 g q8h (1 h) with a true trough that matches the population fit: AUC24 ~540.
+    // Re-pointed in wave 2: Task 3 made this "never continue" (an alarm-tier breach); the user's ruling U3
+    // (2026-11-15) made D-a the rule in both modules: in range and safe, it is continued with the caution.
     const p = c2Pk();
     const tr = fn44('calcPeakTrough')(2500, 8, 1, p.kel, p.vd).trough;
     const r = trough44('level', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, dose: 2500, interval: 8, tinf: 1,
       'level-val': tr.toFixed(1), 'time-dose-given': '2026-11-14T00:00', 'time-level-drawn': '2026-11-14T08:00' }, { checked: ['has-level'] });
-    assert(!/Continue current regimen/.test(r.text), `continued: ${r.text.slice(0, 400)}`);
-    assert((r.h.match(HOLD_H3) || [])[1] === 'No regimen recommended', `heading: ${r.text.slice(0, 400)}`);
-    assert(/total daily dose 7500 mg exceeds 4500 mg/.test(r.text) && /tx-action-alarm/.test(r.h), `the breach is said, in the alarm tier: ${r.text.slice(0, 600)}`);
-    assert(/Current 2\.5 g IV q8h/.test(r.text), 'the current regimen is named');
+    assert(/Continue current regimen/.test(r.text) && !/breaches a hard limit/.test(r.text) && !/tx-action-alarm/.test(r.h), `continued: ${r.text.slice(0, 500)}`);
+    assert(/<h3 class="vx-regimen" id="tx-regimen"><span class="rec-dose">2\.5 g<\/span> IV <span class="vx-freq">q8h<\/span>/.test(r.h), `the current regimen: ${r.text.slice(0, 300)}`);
+    assert(/class="vx-ceiling-head tone-caution"/.test(r.h) && r.h.indexOf('vx-ceiling-head') < r.h.indexOf('id="tx-regimen"')
+      && /Caution: the current dose is above the conventional ceilings \(single dose 2500 mg exceeds 2000 mg; total daily dose 7500 mg exceeds 4500 mg\)/.test(r.text),
+      `the caution leads, naming both limits: ${r.text.slice(0, 600)}`);
+    assert(/Caution: the current dose is above the conventional ceilings/.test(r.said), `heard: ${r.said}`);
   });
 
   // Task 3 review fixes (the coordinator's 1-4; ruling R7).
-  test('44.8d Trough level mode: a regimen over a ceiling with a low AUC is a breach, never "Dose increase indicated"', () => {
+  test('44.8d Trough level mode: a regimen over a ceiling with a low AUC is said at caution tier, never "Dose increase indicated"', () => {
     // The C2 patient on 2.5 g q8h with a measured trough of 2 mg/L: the fitted AUC is low, and the
     // assessment's "increase" sat beside a refusal whose highest admissible regimen is a reduction.
+    // Re-pointed in wave 2 (U3): over a ceiling only, it is not unsafe — caution tier, the caution leading.
     const r = trough44('level', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, dose: 2500, interval: 8, tinf: 1,
       'level-val': 2, 'time-dose-given': '2026-11-14T00:00', 'time-level-drawn': '2026-11-14T08:00' }, { checked: ['has-level'] });
-    assert(/Current regimen breaches a hard limit/.test(r.text) && /tx-action-alarm/.test(r.h), `the breach at alarm tier: ${r.text.slice(0, 600)}`);
+    assert(/tx-action-caution/.test(r.h) && !/tx-action-alarm/.test(r.h) && !/breaches a hard limit/.test(r.text) && /class="vx-ceiling-head tone-caution"/.test(r.h),
+      `caution tier: ${r.text.slice(0, 600)}`);
     assert(/single dose 2500 mg exceeds 2000 mg/.test(r.text) && /total daily dose 7500 mg exceeds 4500 mg/.test(r.text), `both limits named: ${r.text.slice(0, 600)}`);
     assert(!/increase/i.test(r.text) && !/increase/i.test(r.said), `no increase wording: ${r.said} | ${r.text.slice(0, 900)}`);
     // A reduction over a ceiling says the breach too (45 mg/L on 1.5 g q8h, AUC24 above 700).
@@ -7982,6 +7986,25 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // The Trough module's closed form uses the same horizon.
     const th = fn44('troughHold'), k = Math.log(40 / 20) / 71, k2 = Math.log(40 / 20) / 73;
     assert(th(40, 12, k, NaN, null).noTime === false && th(40, 12, k2, NaN, null).noTime === true, 'Trough: 71 h a time, 73 h recheck');
+  });
+  test('44.38 U3: an over-ceiling regimen in range reads the same in both modules — continue, with the ceiling caution leading; AUC24 above 700 stays alarm', () => {
+    // 2 g q8h (6 g a day) at CL 11 L/h: AUC24 545. AUC Precision (the twin) and the Trough level mode.
+    const row = fn44('aucUncertaintyRow')(2, 'buelga');
+    const auc = fn44('regimenDecision')(11, 60, 450, null, 1, hist44(2000, 8), row);
+    assert(auc.action === 'continue' && auc.dose === 2000 && auc.tau === 8 && /^Caution: the current dose is above the conventional ceiling \(total daily dose 6000 mg exceeds 4500 mg\)\.$/.test(fn44('ceilingCautionText')(auc)),
+      `${auc.action} ${fn44('ceilingCautionText')(auc)}`);
+    const p = c2Pk(), kel = 11 / p.vd, tr = fn44('calcPeakTrough')(2000, 8, 1, kel, p.vd).trough;
+    const t = trough44('level', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, dose: 2000, interval: 8, tinf: 1,
+      'level-val': tr.toFixed(2), 'time-dose-given': '2026-11-14T00:00', 'time-level-drawn': '2026-11-14T08:00' }, { checked: ['has-level'] });
+    assert(/Continue current regimen/.test(t.text) && !/tx-action-alarm/.test(t.h) && t.text.indexOf(fn44('ceilingCautionText')(auc).replace(/\.$/, '')) >= 0,
+      `the Trough reading: ${t.text.slice(0, 600)}`);
+    assert(t.said.indexOf(fn44('ceilingCautionText')(auc)) > 0, t.said);
+    // One implementation of the sentence.
+    assert((src44.match(/Caution: the current dose is above the conventional ceiling/g) || []).length === 1, 'one wording');
+    // AUC24 above 700 (45 mg/L on 1.5 g q8h) is still unsafe at alarm tier.
+    const red = trough44('level', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, dose: 1500, interval: 8, tinf: 1.5,
+      'level-val': 45, 'time-dose-given': '2026-11-14T01:00', 'time-level-drawn': '2026-11-14T08:45' }, { checked: ['has-level'] });
+    assert(/Current regimen breaches a hard limit/.test(red.text) && /tx-action-alarm/.test(red.h), red.text.slice(0, 400));
   });
   test('44.39 N2: a Trough level drawn after the due time is judged as drawn, never carried back up', () => {
     const th = fn44('troughHold');

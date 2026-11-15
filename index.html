@@ -7461,16 +7461,33 @@ function renderResults(d) {
   // says (Task 3 review): "Dose increase indicated" on 2.5 g q8h with a low AUC sat beside a
   // refusal whose highest admissible regimen was a reduction. Its increase / extend / reduce
   // wording is then not shown.
-  const curBreach = !isInitialMode && (d.curHardFail || []).length > 0;
-  const recAction = curBreach ? { title: 'Current regimen breaches a hard limit', tier: 'alarm' }
+  // The user's ruling U3 (2026-11-15; D-a): a current regimen whose only hard fails are the dose
+  // ceilings (2 g a dose, 4.5 g a day) is not recommendable but not unsafe, in both modules. In
+  // range (AUC₂₄ 400–600, trough under 20) it is continued with the ceiling caution leading, as
+  // AUC Precision does (ceilingCautionOf, one implementation); out of range the assessment stands,
+  // at caution tier, never with "increase" wording (no admissible dose is higher). AUC₂₄ above 700
+  // or a trough of 20 or more stays unsafe, at alarm tier.
+  const curFails = isInitialMode ? [] : (d.curHardFail || []);
+  const curCeil = isInitialMode ? [] : doseCeilingBreaches(d.dose, d.dose * 24 / d.tau);
+  const ceilingOnly = curFails.length > 0 && curFails.every(x => curCeil.indexOf(x) >= 0);
+  const curUnsafe = !isInitialMode && curFails.length > 0 && !ceilingOnly;
+  const ceilingContinue = ceilingOnly && d.auc24 >= AUC24_TARGET_MIN && d.auc24 <= AUC24_TARGET_MAX && d.trough < TROUGH_HIGH_MGL;
+  const curBreach = curUnsafe || (ceilingOnly && !ceilingContinue);
+  const ceilText = ceilingOnly ? ceilingCautionOf(curCeil) : '';
+  const recAction = curUnsafe ? { title: 'Current regimen breaches a hard limit', tier: 'alarm' }
+    : ceilingContinue ? actionMap.continue
+    : ceilingOnly ? { title: a.action === 'increase' ? 'Below the AUC₂₄ target, above the conventional ceiling' : (actionMap[a.action] || actionMap.review).title,
+                      tier: d.trough >= TROUGH_HIGH_MGL ? 'alarm' : 'caution' }
     : actionMap[a.action] || actionMap['review'];
+  // The caution leads the verdict, under any hold (caution tone, the drawn icon).
+  const ceilHTML = ceilText ? `<p class="vx-ceiling-head tone-caution">${ICON.caution}<span>${escHtml(ceilText.replace(/\.$/, ''))}</span></p>` : '';
   // D26: the optimiser may refuse (no admissible dose in 400–600 at this interval). Where
   // the verdict would have named its dose, the refusal takes the regimen's place; where the
   // current regimen is continued (or monitored), it stays, and the refusal is said in the
   // dose explorer. Initial dosing never reaches here with a refusal (renderTroughRefusal).
   const refusal = d.optRefusal || null;
-  const headRefused = !!refusal && !isInitialMode && (curBreach || (a.action !== 'continue' && a.action !== 'monitor'));
-  const showOptDose = !refusal && (curBreach || a.action !== 'continue') && d.optDose !== d.dose;
+  const headRefused = !!refusal && !isInitialMode && !ceilingContinue && (curBreach || (a.action !== 'continue' && a.action !== 'monitor'));
+  const showOptDose = !refusal && !ceilingContinue && (curBreach || a.action !== 'continue') && d.optDose !== d.dose;
   const vDose   = showOptDose ? d.optDose       : d.dose;
   const vAUC    = showOptDose ? d.optAUC        : d.auc24;
   const vTrough = showOptDose ? d.optPT.trough  : d.trough;
@@ -7511,7 +7528,7 @@ function renderResults(d) {
   }
   (d.renalNotes || []).forEach(n => notes.push(n));   // D26: augmented clearance, before a level
 
-  const recRat = a.divergence || (curBreach && !showOptDose) ? '' :
+  const recRat = a.divergence || ceilingContinue || (curBreach && !showOptDose) ? '' :
     showOptDose
     ? `PK (CL ${d.adjClv.toFixed(2)} L/h, Vd ${d.vd.toFixed(1)} L, t½ ${d.t12.toFixed(1)} h) — adjusting to ${fmtDose(d.optDose)} estimated to achieve trough ${d.optPT.trough.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.`
     : escHtml(a.summary);
@@ -7526,7 +7543,7 @@ function renderResults(d) {
     const delta = showOptDose || headRefused
       ? `<p class="tx-action-body">Current ${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, trough ${d.trough.toFixed(1)} mg/L (${troughBasisWord}).</p>`
       : '';
-    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(curBreach ? d.curHardFail.join('; ') : a.primary),
+    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(curBreach ? d.curHardFail.join('; ') : ceilingContinue ? `${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}; trough ${d.trough.toFixed(1)} mg/L. It is not a regimen this tool would recommend, but the ceiling does not by itself make it unsafe (AUC₂₄ at most ${AUC24_ABSOLUTE_MAX}, trough under ${TROUGH_HIGH_MGL} mg/L), so it is not changed on that account.` : a.primary),
       (recRat ? `<p class="tx-action-body">${recRat}</p>` : '') + delta);
   }
 
@@ -7538,10 +7555,10 @@ function renderResults(d) {
 
   const basis = d.levelFitted ? `From your level — ${escHtml(methodMain)}` : `Population estimate — ${modelsLine}`;
   const verdict = headRefused ? txRefusalVerdictHTML({
-    hold: troughHoldHTML(d.hold, true), word: TROUGH_REFUSAL_WORD, reason: refusal.reason,
+    hold: troughHoldHTML(d.hold, true) + ceilHTML, word: TROUGH_REFUSAL_WORD, reason: refusal.reason,
     action: actionBlock, flags: troughCapBoundHTML(refusal), basis, next: '',
   }) : txVerdictHTML({
-    hold: troughHoldHTML(d.hold),
+    hold: troughHoldHTML(d.hold) + ceilHTML,
     dose: vDose, tau: d.tau, tinf: d.tinf,
     auc: vAUC, aucBand: showOptDose ? `approx. ±${uncertaintyPct}% (not simulated)` : aucConfText,
     trough: vTrough, troughWord: showOptDose ? 'predicted at steady state' : troughBasisWord,
@@ -7573,7 +7590,7 @@ function renderResults(d) {
   const summary = `On ${fmtRegimen(vDose, d.tau)} the predicted steady-state peak is ${vPeak.toFixed(1)} mg/L and the trough ${vTrough.toFixed(1)} mg/L`
     + (showOptDose ? `; the current ${fmtRegimen(d.dose, d.tau)} is drawn beside it for comparison` : '')
     + (d.levelFitted ? `; the dashed line is what the population model predicts for ${showOptDose ? 'the current regimen' : 'it'} before your level` : '')
-    + `. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.`;
+    + `. The shaded band is the ${d.troughMin}–${d.troughMax} mg/L trough target.` + (ceilText ? ` ${ceilText}` : '');
   const figure = txCurveHTML({ id: 'pk-graph-ss', suffix: 'ss', legend, summary });
 
   // ── Evidence ──
@@ -7671,8 +7688,9 @@ function renderResults(d) {
           // fitted once a level exists, otherwise the recommendation.
           base: d.levelFitted || headRefused ? { role: 'current', dose: d.dose, tau: d.tau } : { role: 'rec', dose: vDose, tau: d.tau },
           popKel: d.levelFitted ? d.popKel : null, popVd: d.levelFitted ? d.vd : null };
-  announceResult(headRefused ? troughRefusalSaid(TROUGH_REFUSAL_WORD, `${recAction.title}. ${refusal.reason}`, d.hold)
-    : `Result: ${troughHoldSaid(d.hold)}${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
+  announceResult((headRefused ? troughRefusalSaid(TROUGH_REFUSAL_WORD, `${recAction.title}. ${refusal.reason}`, d.hold)
+    : `Result: ${troughHoldSaid(d.hold)}${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`)
+    + (ceilText ? ` ${ceilText}` : ''));
   // Draw the PK graph after DOM insertion
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-ss', d.dose, d.tau, d.tinf, d.kel, d.vd, {
@@ -11688,8 +11706,12 @@ function regimenActionHTML(rec, targetAUC, part) {
 // The ceiling caution on a continued regimen above 2 g a dose or 4.5 g a day (D-a; final
 // review I6), one sentence for the answer, Copy summary and the announcement. '' otherwise.
 function ceilingCautionText(rec) {
-  const over = rec && !rec.noSolution && rec.action === 'continue' ? (rec.notRecommendable || []) : [];
-  return over.length ? `Caution: the current dose is above the conventional ceiling${over.length > 1 ? 's' : ''} (${over.join('; ')}).` : '';
+  return ceilingCautionOf(rec && !rec.noSolution && rec.action === 'continue' ? (rec.notRecommendable || []) : []);
+}
+// The sentence itself, from the breaches (doseCeilingBreaches): one wording for AUC Precision
+// and the Trough module (the user's ruling U3).
+function ceilingCautionOf(over) {
+  return over && over.length ? `Caution: the current dose is above the conventional ceiling${over.length > 1 ? 's' : ''} (${over.join('; ')}).` : '';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
