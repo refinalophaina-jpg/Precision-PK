@@ -5444,7 +5444,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/data-onclick="k93"/.test(body('bayesPdNoticeHTML')) && /Trough-based · Peritoneal dialysis/.test(body('bayesPdNoticeHTML')), 'the refusal links to the PD mode');
     assert(/\n  k93: [^\n]*switchModule\('trough'\)[^\n]*setCalcMode\('pd'\)/.test(script), 'k93 opens it');
     assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /for peritoneal dialysis use Trough-based · Peritoneal dialysis/.test(src), 'the advisory no longer sends PD to Goti');
-    assert(/snapshot\.pd = snapshotPdForm\(\);/.test(body('saveCurrentProfile')), 'saved');
+    // v3.14.0 (D26, R22): read into pdForm, stored unless an AUC save's Trough column is another patient's.
+    assert(/const pdForm = snapshotPdForm\(\);/.test(body('saveCurrentProfile')) && /snapshot\.pd = [^;]*\bpdForm;/.test(body('saveCurrentProfile')), 'saved');
     assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /getElementById\('b-pd'\)/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');
     assert(/const PROFILE_SCHEMA\s+=\s+1;/.test(src), 'the profile schema is unchanged: older profiles load with no pd block');
   });
@@ -7245,7 +7246,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       // resetForm empties the Trough column's number inputs: here, every field not of the AUC column.
       querySelectorAll: (sel) => sel === '.profile-status' ? status : sel === '.profile-list' ? lists
         : sel === '.profile-label-input' ? labels
-        : sel === 'input[type="number"]' ? Object.values(els).filter(e => !/^b-/.test(e.id)) : [],
+        : sel === 'input[type="number"]' ? Object.values(els).filter(e => !/^b-/.test(e.id) && e.type === 'number') : [],
     };
     const labels = [new PEl('profile-label-1', 'INPUT'), new PEl('profile-label-2', 'INPUT')];
     const localStorage = {
@@ -7539,6 +7540,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     withProf44(env, [], () => {
       vm.runInContext("state.dosingWt = 'IBW'; ampState.RL = 'knee';", sandbox);
       env.get('amp-enabled').checked = true; env.get('dosing-wt').value = 'IBW';
+      env.get('t-hd').checked = true;   // the previous patient was on haemodialysis (review item 1)
       sandbox.resetForm();
       assert(vm.runInContext('state.dosingWt', sandbox) === 'auto' && env.els['dosing-wt'].value === 'auto', `basis ${vm.runInContext('state.dosingWt', sandbox)}`);
       assert(vm.runInContext('Object.values(ampState).every(v => v === null)', sandbox) && env.els['amp-enabled'].checked === false, 'amputation kept');
@@ -7550,6 +7552,80 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       sandbox.saveCurrentProfile();
       const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
       assert(p && p.snapshot.core.dosingWt === 'auto' && Object.values(p.snapshot.core.amputation).every(v => v === null), JSON.stringify(p && p.snapshot.core));
+    });
+  });
+
+  test('44.26b R21: dial is stored and loaded only with Goti; a Trough-only HD patient loads with the Trough flag ticked and AUC Precision not on dialysis', () => {
+    // A Trough-only haemodialysis patient (58 M), the AUC column empty on its default Buelga.
+    const T = { age: '58', tbw: '77', height: '174', scr: '6.8', mic: '1', 'b-mic': '1', 'b-auc-target': '450' };
+    const env = profEnv44({}, T);
+    Object.keys(T).concat(['b-age', 'b-tbw', 'b-height', 'b-scr']).forEach(k => env.get(k));
+    env.get('app-shell-bayesian').style.display = 'none';
+    env.get('t-hd').checked = true;
+    withProf44(env, ['addBayesSession'], (calls) => {
+      vm.runInContext("bState.model = 'buelga'; bState.dial = false;", sandbox);
+      sandbox.setPatientSex('M');
+      env.labels[0].value = 'Patient HD';
+      sandbox.saveCurrentProfile();
+      const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+      assert(p && p.snapshot.model === 'buelga' && p.snapshot.core.hd === true && p.snapshot.demographics.dial === false,
+        'stored: ' + JSON.stringify(p && { model: p.snapshot.model, hd: p.snapshot.core.hd, dial: p.snapshot.demographics.dial }));
+      env.get('t-hd').checked = false; env.get('b-dial').checked = true;   // a different screen before the load
+      sandbox.loadProfileIntoForm(p.id);
+      assert(env.els['t-hd'].checked === true, 'the Trough flag is not ticked');
+      assert(env.els['b-dial'].checked === false && vm.runInContext('bState.dial', sandbox) === false && vm.runInContext('bState.model', sandbox) === 'buelga',
+        `AUC: dial ${env.els['b-dial'].checked} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
+      // Defence in depth: a stored dial true with Buelga (or Hughes) loads with dial false; the Trough flag still ticks.
+      for (const model of ['buelga', 'hughes']) {
+        const crafted = JSON.parse(JSON.stringify(profFixture44[1]));
+        crafted.id = 'p_crafted' + model; crafted.snapshot.model = model; crafted.snapshot.demographics.dial = true;
+        env.localStorage.setItem(PROF_KEY44, JSON.stringify([crafted]));
+        sandbox.loadProfileIntoForm(crafted.id);
+        assert(env.els['b-dial'].checked === false && vm.runInContext('bState.dial', sandbox) === false && vm.runInContext('bState.model', sandbox) === model,
+          `${model}: dial ${env.els['b-dial'].checked} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
+        assert(env.els['t-hd'].checked === true, `${model}: the Trough flag`);
+      }
+      // The Goti-HD fixture is unchanged: Goti, dialysis on, the Trough flag ticked.
+      env.localStorage.setItem(PROF_KEY44, JSON.stringify(profFixture44));
+      sandbox.loadProfileIntoForm(profFixture44[2].id);
+      assert(vm.runInContext('bState.model', sandbox) === 'goti' && vm.runInContext('bState.dial', sandbox) === true
+        && env.els['b-dial'].checked === true && env.els['t-hd'].checked === true, 'the Goti-HD fixture changed');
+    });
+  });
+
+  test('44.26c R22: Trough "Clear all fields" empties the whole PD form; an AUC save keeps the PD form only when the Trough patient fields are filled and agree', () => {
+    const pdPrev = { 'pd-modality': 'ccpd', 'pd-start': '21:00', 'pd-hours': '9.5', 'pd-vd': 'watanabe', 'pd-prior': 'no', 'pd-urine': 'anuric',
+      'pd-give-date': '2025-11-06', 'pd-give-time': '10:00', 'pd-stopped-date': '2025-11-05', 'pd-goal-min': '10', 'pd-goal-max': '15' };
+    const env = profEnv44({}, pdPrev);
+    Object.keys(pdPrev).forEach(k => env.get(k));
+    // Their real types: resetForm's number sweep reaches only the number inputs.
+    const types = { 'pd-modality': 'select-one', 'pd-vd': 'select-one', 'pd-prior': 'select-one', 'pd-urine': 'select-one',
+      'pd-start': 'text', 'pd-give-time': 'text', 'pd-give-date': 'date', 'pd-stopped-date': 'date' };
+    Object.keys(types).forEach(k => { env.els[k].type = types[k]; });
+    ['pd-stopped', 'pd-ip'].forEach(k => { env.get(k).checked = true; });
+    ['dose', 'lvl', 'held'].forEach(k => { env.get(`pd-${k}-tbody`).innerHTML = `<tr data-n="1"><td>patient A's ${k}</td></tr>`; });
+    withProf44(env, [], () => {
+      sandbox.resetForm();
+      Object.keys(pdPrev).forEach(k => assert(env.els[k].value === (k === 'pd-vd' ? 'bauer' : ''), `${k} kept "${env.els[k].value}"`));
+      ['pd-stopped', 'pd-ip'].forEach(k => assert(env.els[k].checked === false, `${k} kept`));
+      ['dose', 'lvl', 'held'].forEach(k => assert(env.els[`pd-${k}-tbody`].innerHTML === '', `pd ${k} rows kept`));
+      // R22: patient A's PD form in the Trough column, its patient fields empty; patient B saved from AUC Precision.
+      env.els['pd-modality'].value = 'ccpd'; env.els['pd-start'].value = '21:00';
+      [['b-age', '50'], ['b-tbw', '72'], ['b-height', '170'], ['b-scr', '1.0']].forEach(([k, v]) => { env.get(k).value = v; });
+      ['age', 'tbw', 'height', 'scr'].forEach(k => env.get(k));
+      sandbox.setPatientSex('M');
+      env.labels[1].value = 'Patient B';
+      sandbox.saveCurrentProfile();
+      const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+      assert(p && p.label === 'Patient B' && !(p.snapshot.pd && p.snapshot.pd.modality), 'patient A\'s PD form travelled: ' + JSON.stringify(p && p.snapshot.pd));
+      assert(/Trough-Based PD form not saved/.test(statusText44(env)), statusText44(env));
+      // The same patient in both columns: the PD form is kept, and nothing is said.
+      [['age', '50'], ['tbw', '72'], ['height', '170'], ['scr', '1.0']].forEach(([k, v]) => { env.els[k].value = v; });
+      env.labels[1].value = 'Patient B with PD';
+      sandbox.saveCurrentProfile();
+      const q = JSON.parse(env.localStorage.getItem(PROF_KEY44))[0];
+      assert(q.label === 'Patient B with PD' && q.snapshot.pd && q.snapshot.pd.modality === 'ccpd' && q.snapshot.pd.start === '21:00', JSON.stringify(q.snapshot.pd));
+      assert(!/PD form not saved/.test(statusText44(env)), statusText44(env));
     });
   });
 }

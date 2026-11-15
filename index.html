@@ -8551,6 +8551,7 @@ function clearWithUndo(mod) {
       setPatientSex(sex);
       toggleLevel(); toggleLD();
       refreshDtPairs();
+      try { pdSetGoal(`${(document.getElementById('pd-goal-min') || {}).value || ''}|${(document.getElementById('pd-goal-max') || {}).value || ''}`); pdToggleFields(); } catch (e) { /* display only */ }
       try { autoWeights(); updateCrCl(); checkAKI(); updateBayesCrCl(); } catch (e) { /* display only */ }
       const f = document.getElementById('age'); if (f) f.focus();
     });
@@ -8606,6 +8607,8 @@ function resetForm() {
   const ampCb = document.getElementById('amp-enabled');
   if (ampCb) ampCb.checked = false;
   ampToggleEnabled(ampCb);
+  // The PD form is this column's too (R22): every field and row, not only its number inputs.
+  applyPdForm(null);
   setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
 }
 
@@ -15745,6 +15748,10 @@ function snapshotPatientCore(source) {
   return { core, conflicts, otherFilled };
 }
 
+// Anything entered in the PD form (D23)? Its volume basis always holds a value, so it does not count.
+function pdFormHasContent(pd) {
+  return !!pd && Object.keys(pd).some(k => k !== 'vd' && (Array.isArray(pd[k]) ? pd[k].length > 0 : !!pd[k]));
+}
 // The Trough-Based and AUC Precision values of each conflicting field, one line each (R19).
 function profileConflictLines(conflicts) {
   const val = id => String((id && document.getElementById(id)?.value) || '').trim();
@@ -15857,7 +15864,16 @@ function saveCurrentProfile() {
   // v3.13.0 (D24): saved without the fit, and said so (a native confirm() asked).
   const savedWithoutFit = !!snapshot.dirty;
   snapshot.core = core;
-  snapshot.pd = snapshotPdForm();   // the PD mode's fields (D23); older profiles have none
+  // R21: dial means Goti-HD and nothing else. A dial stored beside Buelga or Hughes reloaded as a
+  // hidden ticked box that switched off the severe-renal hold; the haemodialysis flag is core.hd.
+  if (snapshot.model !== 'goti' && snapshot.demographics.dial) {
+    snapshot.demographics = Object.assign({}, snapshot.demographics, { dial: false });
+  }
+  // The PD mode's fields (D23); older profiles have none. R22, mirroring R18: an AUC save keeps
+  // the Trough column's PD form only when that column holds this patient.
+  const pdForm = snapshotPdForm();
+  const pdLeftOut = source === 'auc' && !otherFilled && pdFormHasContent(pdForm);
+  snapshot.pd = (source === 'auc' && !otherFilled) ? null : pdForm;
   // "Is anything entered" must look at the CORE, not only the Bayesian form — a
   // profile saved from the Trough-Based module has no dose history and its
   // demographics live in the other set of inputs.
@@ -15882,6 +15898,7 @@ function saveCurrentProfile() {
     ? `Saved "${label}" without the fitted PK: the inputs changed since the last calculation. Run the analysis and save again to keep a matching fit.`
     : `Saved "${label}".`)
     + (courseLeftOut ? ' AUC Precision course not saved: its patient fields are empty or incomplete, so it may belong to another patient.' : '')
+    + (pdLeftOut ? ' Trough-Based PD form not saved: its patient fields are empty or incomplete, so it may belong to another patient.' : '')
     + (replacedKey ? ` The earlier saved profiles could not be read; their text is kept in this browser's storage under "${replacedKey}".` : ''));
 }
 // One polite line in each profile section (v3.13.0, D24). Any problem reading the store, as
@@ -15954,7 +15971,10 @@ function loadProfileIntoForm(id) {
   // lookup found nothing, so setBModel got undefined: the model changed and the
   // highlight stayed on the previous card. Goti with dialysis is the Goti-HD cell.
   const modelKey = ['buelga', 'goti', 'hughes'].includes(s.model) ? s.model : 'buelga';
-  const cellKey  = modelKey === 'goti' && s.demographics && s.demographics.dial ? 'gotihd' : modelKey;
+  // R21: a stored dial counts only with Goti (Goti-HD). With Buelga or Hughes it is ignored, so an
+  // older profile cannot load a hidden ticked box that switches off the severe-renal hold.
+  const dialOn   = modelKey === 'goti' && !!s.demographics.dial;
+  const cellKey  = dialOn ? 'gotihd' : modelKey;
   setBModel(document.getElementById('b-model-btn-' + cellKey), cellKey);
 
   // The Trough haemodialysis flag is the profile's (review item 1): the previous patient's tick
@@ -15962,7 +15982,7 @@ function loadProfileIntoForm(id) {
   const tHd = document.getElementById('t-hd');
   if (tHd) tHd.checked = !!((s.core && s.core.hd) || s.demographics.dial);
   const icuCb  = document.getElementById('b-icu');  if (icuCb)  icuCb.checked  = !!s.demographics.icu;
-  const dialCb = document.getElementById('b-dial'); if (dialCb) { dialCb.checked = !!s.demographics.dial; bState.dial = dialCb.checked; }
+  const dialCb = document.getElementById('b-dial'); if (dialCb) { dialCb.checked = dialOn; bState.dial = dialOn; }
 
   (s.doses || []).forEach(d => {
     addBayesDose();

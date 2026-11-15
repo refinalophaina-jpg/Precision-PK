@@ -975,6 +975,55 @@ async function enterCourse(page) {
        && r20Ui.auto && !r20Ui.ampOn,
        JSON.stringify({ r20Prev, core: pe && { dw: pe.snapshot.core.dosingWt, amp: pe.snapshot.core.amputation }, r20Ui }));
 
+    // R21: a Trough-only haemodialysis patient (58 M, SCr 6.8; the AUC column empty, on its default Buelga)
+    // loads with the Trough flag ticked and AUC Precision not on dialysis, so the severe-renal hold stays on.
+    await s.locator('[data-onclick="k48"]:visible').first().click();
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await typeInto(s, '#age', '58'); await typeInto(s, '#tbw', '77'); await typeInto(s, '#height', '174'); await typeInto(s, '#scr', '6.8');
+    await s.locator('[data-onclick="k9"]').click();
+    await s.locator('#t-hd').check();
+    await save('Patient F HD');
+    const pf = (await stored())[0];
+    await s.locator('#t-hd').uncheck();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Patient F HD' }).locator('.profile-item-btn.load').click();
+    await s.waitForTimeout(300);
+    const r21 = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked,
+      dial: bState.dial, model: bState.model, wrap: getComputedStyle(document.getElementById('b-dial-wrap')).display }));
+    ok('D26: a Trough-only haemodialysis profile loads with the Trough flag ticked and AUC Precision not on dialysis (R21)',
+       !!pf && pf.snapshot.core.hd === true && pf.snapshot.demographics.dial === false && pf.snapshot.model === 'buelga'
+       && r21.tHd && !r21.bDial && r21.dial === false && r21.model === 'buelga' && r21.wrap === 'none',
+       JSON.stringify({ stored: pf && { hd: pf.snapshot.core.hd, dial: pf.snapshot.demographics.dial, model: pf.snapshot.model }, r21 }));
+
+    // R22: patient A's PD form; Trough "Clear all fields" empties all of it.
+    await s.locator('#mode-btn-pd').click();
+    const pdFill = async () => {
+      await s.selectOption('#pd-modality', 'ccpd'); await typeInto(s, '#pd-start', '2100'); await typeInto(s, '#pd-hours', '9.5');
+      await s.selectOption('#pd-vd', { index: 1 });
+      await s.locator('[data-onclick="k86"]').click(); await s.locator('[data-onclick="k88"]').click();
+    };
+    await pdFill();
+    const pdForm = () => s.evaluate(() => ({ modality: document.getElementById('pd-modality').value, start: document.getElementById('pd-start').value,
+      hours: document.getElementById('pd-hours').value, vd: document.getElementById('pd-vd').value,
+      rows: document.querySelectorAll('#pd-dose-tbody tr, #pd-lvl-tbody tr, #pd-held-tbody tr').length, mode: state.calcMode }));
+    const pdBefore = await pdForm();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    const pdAfter = await pdForm();
+    // And an AUC save of another patient leaves out a PD form whose Trough patient fields are empty.
+    await s.locator('#mode-btn-pd').click();
+    await pdFill();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k48"]:visible').first().click();
+    await typeInto(s, '#b-age', '50'); await typeInto(s, '#b-tbw', '72'); await typeInto(s, '#b-height', '170'); await typeInto(s, '#b-scr', '1.0');
+    await s.locator('[data-onclick="k39"]').click();
+    await save('Patient G');
+    const pg = (await stored())[0], pgStatus = await statusLine();
+    ok('D26: Trough "Clear all fields" empties the PD form, and an AUC save leaves out another patient\'s PD form (R22)',
+       pdBefore.modality === 'ccpd' && pdBefore.rows === 2 && pdBefore.vd !== 'bauer'
+       && pdAfter.modality === '' && pdAfter.start === '' && pdAfter.hours === '' && pdAfter.vd === 'bauer' && pdAfter.rows === 0 && pdAfter.mode === 'initial'
+       && !!pg && pg.label === 'Patient G' && !(pg.snapshot.pd && pg.snapshot.pd.modality) && /Trough-Based PD form not saved/.test(pgStatus),
+       JSON.stringify({ pdBefore, pdAfter, pd: pg && pg.snapshot.pd && pg.snapshot.pd.modality, pgStatus }));
+
     // Code report I2: truncated JSON in the store is copied to the backup key before anything is
     // written over it, and the status line says so; a save afterwards starts a new list.
     const trunc = '[{"id":"p_trunc1","label":"Truncated","savedAt":1762412400000,"snapshot":{"demographics":{"age":"5';
