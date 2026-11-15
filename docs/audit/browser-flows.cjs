@@ -721,9 +721,9 @@ async function enterCourse(page) {
     });
     const dd = (n) => { const d = new Date(`${day(n)}T12:00`);
       return `${d.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]}`; };
-    ok('D26: on a change from q24h to q12h, "was due" is the q24h dose due today 08:00, on screen and in print, offset against the current q24h',
-       dueRead.first.startsWith(`${dd(0)} 10:00 (was due ${dd(0)} 08:00)`) && !dueRead.first.includes(`${dd(-1)} 20:00`)
-       && dueRead.paper.includes(`${dd(0)} 10:00 (was due ${dd(0)} 08:00)`) && /2 h after the current q24h schedule/.test(dueRead.paper),
+    ok('D26: on a change from q24h to q12h, "current q24h dose was due" today 08:00, on screen and in print, offset against the current q24h',
+       dueRead.first.startsWith(`${dd(0)} 10:00 (current q24h dose was due ${dd(0)} 08:00)`) && !dueRead.first.includes(`${dd(-1)} 20:00`)
+       && dueRead.paper.includes(`First dose ${dd(0)} 10:00 (current q24h dose was due ${dd(0)} 08:00)`) && /2 h after the current q24h schedule/.test(dueRead.paper),
        JSON.stringify(dueRead));
     // v3.14.0 (D26): saving while the result is stale keeps the stale mark. The 1.75 g q24h
     // fit above is still on screen; change SCr so it is stale, then save with and without a label.

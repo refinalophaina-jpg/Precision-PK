@@ -10090,9 +10090,14 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     for (let k = 0; ; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
     auc24First = fittedAUC(Object.assign({}, rFit, { doses: rFit.doses.concat(regimen) }), firstH, firstH + 24);
   }
-  return { firstH, dueH, dueTau, dueCurrent: !!given, deltaH: firstH - dueH, duePassed: !!given && !chosen && dueH < nowH - 1e-9, chosen, clamped, plannedN,
+  // "Was due" means v3.13.0's: the first dose is now because the current regimen's due
+  // time has passed (Task 8 review, ruling R16). A first dose later than now (a longer new
+  // interval) was not made late by it. `same` ("Next dose") reads the decision's regimen
+  // too, so a screen holds one reading of the current regimen (R16).
+  return { firstH, dueH, dueTau, dueCurrent: !!given, deltaH: firstH - dueH,
+    duePassed: !!given && !chosen && dueH < nowH - 1e-9 && firstH <= nowH + 1e-9, chosen, clamped, plannedN,
     pre: predictFittedAt(rFit, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
-    same: !!(cur && cur.dose === rec.dose && cur.tau === rec.tau),
+    same: !!(given && given.dose === rec.dose && given.tau === rec.tau),
     hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH };
 }
 // The regimen being given, as the decision read it (D25): the one it continues, or the
@@ -10158,19 +10163,21 @@ function holdLineHTML(head, why) {
 // the printed block keeps the offset against the schedule, the first-day AUC and
 // the sentence on exposure.
 function firstDoseReadoutHTML(plan, rec, print) {
-  // The offset is against the schedule dueH is on (D26, R1): the current regimen's when there
-  // is one, named "current" when its interval is not the new one's, so the sentence stays true.
+  // The offset is against the schedule dueH is on (D26, R1): the current regimen's, named
+  // "current" when its interval is not the new one's, so the sentence stays true. A start
+  // has no regimen being given, so no schedule and no offset (R16).
   const dueTau = plan.dueTau > 0 ? plan.dueTau : rec.tau;
-  const q = `${plan.dueCurrent && dueTau !== rec.tau ? 'current ' : ''}${fmtFreq(dueTau)}`, d = plan.deltaH, ad = Math.abs(d);
+  const other = plan.dueCurrent && dueTau !== rec.tau;
+  const q = `${other ? 'current ' : ''}${fmtFreq(dueTau)}`, d = plan.deltaH, ad = Math.abs(d);
   const amount = ad < 1 ? `${Math.round(ad * 60)} min` : `${+ad.toFixed(1)} h`;
-  const rel = ad < 1 / 60 ? `on the ${q} schedule` : `${amount} ${d > 0 ? 'after' : 'before'} the ${q} schedule`;
+  const rel = !plan.dueCurrent ? '' : ad < 1 / 60 ? `on the ${q} schedule` : `${amount} ${d > 0 ? 'after' : 'before'} the ${q} schedule`;
   const list = (a) => a.length < 2 ? a[0] : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
   const then = plan.times ? `then ${list(plan.times)} daily` : `then every ${rec.tau} h (next ${fmtClock(plan.nextH)})`;
   const word = plan.same ? 'Next dose' : 'First dose';
   const planned = plan.holdPlannedH != null
     ? ` · ${plan.plannedN === 1 ? `the planned dose at ${fmtClock(plan.holdPlannedH)}` : `the ${plan.plannedN} planned doses from ${fmtClock(plan.holdPlannedH)}`} held`
     : plan.plannedN ? ` · after the ${plan.plannedN} planned dose${plan.plannedN === 1 ? '' : 's'} entered` : '';
-  const when = plan.clamped ? ` (not before ${fmtClock(plan.nowH)}, as of the calculation)` : plan.duePassed ? ` (was due ${fmtClock(plan.dueH)})` : '';
+  const when = plan.clamped ? ` (not before ${fmtClock(plan.nowH)}, as of the calculation)` : plan.duePassed ? ` (${other ? `current ${fmtFreq(dueTau)} dose ` : ''}was due ${fmtClock(plan.dueH)})` : '';
   // The hold (D26): no time at all when the fitted curve gives none; otherwise the time,
   // marked, and the level by then in the alarm tone.
   // Judged on the number shown (D21's rule): a level just under the threshold that one
@@ -10194,7 +10201,7 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const band = an == null ? '' : an < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
     : an > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
   return `
-      <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${at} · ${rel}${planned} · ${then}</p>
+      <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${at}${rel ? ` · ${rel}` : ''}${planned} · ${then}</p>
       <p class="vx-sub">Level by then ${lvl} <span class="vx-muted">fitted, before the ${plan.same ? 'next' : 'first'} dose</span></p>
       ${a != null ? `<p class="vx-sub">AUC₂₄ over the first 24 h <strong>${a.toFixed(0)}</strong> mg·h/L${band}</p>` : ''}
       <p class="vx-sub vx-muted">Steady-state AUC₂₄ and trough are unchanged; until then an earlier first dose raises exposure and a later one lowers it.</p>`;
