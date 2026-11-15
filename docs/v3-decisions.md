@@ -2166,6 +2166,19 @@ in `t8/w2-*`.
 
 **Parity:** 0 differences against `871234c`, and still 72 against `edc5b53`.
 
+**Wave 2 label fix (the wave-2 re-review; U1–U4 and N2–N4 were confirmed).**
+- **The defect.** On the C1 patient's no-time hold, set on both bases, the first-dose readout showed
+  `holdPre`, the higher of the two (49.9 mg/L, the carried measured level). It labelled that number
+  "fitted level" on screen and "Fitted level" in print.
+- **The label now follows the value.** When the carried level is the higher, the readout says "measured
+  level, carried down the fitted slope," followed by the number.
+- **"Level by then" on a timed hold whose time the carried measured level set.** It showed the fitted 14.9
+  mg/L. It now shows the carried value (19.99 mg/L) and names both: "(measured, carried down the fitted
+  slope; fitted 14.9)". This uses `plan.preCarried`.
+- **Pinned by** new assertions in 44.27 and 44.28 and in the C1 browser check. "Fitted level 49.9" never
+  appears on screen or in print.
+- **Rule 8 in CLAUDE.md** now lists the current preferences instead of "exactly two".
+
 **Verified:**
 - unit 554/554; phase3 21/21; phase4 49/49;
 - in the comprehensive suite only scenarios 3 and 4 fail, by design;

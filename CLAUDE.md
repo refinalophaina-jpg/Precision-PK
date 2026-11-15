@@ -295,13 +295,31 @@ dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
    real DOM: the harness runs this script in a Node `vm` with a stub that has no
    `documentElement`.
 8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
-   shipping a clinical number without provenance. v3 added exactly two numbers that have no
-   paper behind them — `NEXT_LEVEL_MIN_GAIN` (0.15) and the 1/2 sigma splits in
-   `FIT_BANDS` — and both carry a comment saying they are preference, what they order, and
-   that they never change a dose. Everything else they sit beside is sourced: sigma is each
-   model's published residual error, the AUC band is Rybak 2020 Rec 1, the 250 mg step is
-   the dispensing increment. Prefer a rule that needs no weight at all: the exposure matrix
-   replaced a composite ranking score precisely because it needs none.
+   shipping a clinical number without provenance. A number no paper sets is a preference: its
+   source comment says "PREFERENCE (rule 8)", what it orders, and whether it can change a dose.
+   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-15 (v3.14.0) they are:
+   - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
+     splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9);
+     `AUC24_MODEST_BELOW_MIN` (325); the Trough AUC band (±22% / ±30%); `MAP_TIE_OBJ` /
+     `MAP_SPLIT_CL` (two MAP minima); `NOTE_CLAMP_CHARS` (300); `PROFILE_ARRIVE_MS`.
+   - **Labels and windows that gate an answer:** `HD_PRE_LABEL_H` (12 h) and
+     `HD_POSTSESSION_HALF_LIVES` (3, the redistribution window, `hdRedistributionWindowH`, which
+     since D26's U1 also marks a 2-comp level as past the distribution phase for the measured
+     Hold); `HD_POSTSESSION_DOSE_WINDOW_H` (6 h); `HD_ONE_TIME_GAPS_H` (24/48/72, default 48);
+     `TROUGH_TIMING_WINDOW_H` (0.5 h); `PD_EARLY_LEVEL_H` (24 h) and `PD_MIN_INTERVAL_H` (12 h); the
+     PD AM-labs default (06:00); and the level-timing narrative's 0.5 h "immediate post-infusion"
+     boundary (`interpretLevelTiming`), which U1 also reuses.
+   - **Preferences that order or time a dose:** `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
+     regimen is changed); `CONFIDENCE_SIGMA` (2/3/4, which since D26's ruling 3 gates one decision,
+     `finalizeDecision`); `INTERVAL_PREFERENCE` (24, 12, 48, 8, ties only); the CrCl → interval
+     cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the
+     weight-based level-dosing cuts; and `HOLD_SEARCH_MAX_H` (72 h from the due time, the user's
+     ruling U2, 2026-11-15): when a hold gives "recheck a level" instead of a resume time.
+
+   Everything they sit beside is sourced: sigma is each model's published residual error, the AUC
+   band is Rybak 2020 Rec 1, the 250 mg step is the dispensing increment, the hold threshold is the
+   user's ruling. Prefer a rule that needs no weight at all: the exposure matrix replaced a composite
+   ranking score precisely because it needs none.
 9. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
    in the decisions doc, and record the numbers that justify the change.
 
