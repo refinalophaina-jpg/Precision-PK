@@ -1691,6 +1691,16 @@ async function enterCourse(page) {
     }
     ok('PD: the second interval is flagged early; the options mark the recommendation; the chart shows the levels and cycler nights',
        /within 24 h of a dose ending/.test(p1.decline) && (mgOf(p1.verdict) ? p1.rec.startsWith(p1.verdict.match(/Give ([\d.]+ (?:g|mg))/)[1]) : p1.rec === 'No dose') && p1.lv === 2 && p1.cyc >= 1, JSON.stringify(p1).slice(0, 400));
+    {
+      // D27 (UI review I5, Task 20a): the PD answer is announced once per run, never again on a resize.
+      const said = await pd.evaluate(() => (document.getElementById('sr-announce') || {}).textContent || '');
+      await pd.evaluate(() => { document.getElementById('sr-announce').textContent = ''; });
+      await pd.setViewportSize({ width: 1100, height: 900 }); await pd.waitForTimeout(500);
+      const again = await pd.evaluate(() => (document.getElementById('sr-announce') || {}).textContent || '');
+      await pd.setViewportSize({ width: 1280, height: 900 }); await pd.waitForTimeout(500);
+      ok('D27: PD announces its answer once per run (and not again on resize)',
+         /^Result: /.test(said) && /(Give [\d.]+ (g|mg) IV|No dose today)/.test(said) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(said) && again === '', JSON.stringify({ said: said.slice(0, 200), again }));
+    }
     const pdD24 = await pd.evaluate(() => { const svg = document.querySelector('#results-content svg.pd-chart'), txt = svg && svg.querySelector('text');
       return { px: svg && txt ? +(parseFloat(getComputedStyle(txt).fontSize) * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width).toFixed(1) : 0,
         hidden: ['amp-section', 'section-renal', 'section-ld'].map(id => !document.getElementById(id).offsetParent),

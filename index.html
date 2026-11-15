@@ -4716,6 +4716,9 @@ function runPd() {
   const answer = pdAnswer(r.input, nowH);
   state.pdLast = { input: r.input, answer, nowH };
   renderPdResults(answer, r.input, nowH);
+  // The answer is announced once per run, as in the other modes; a resize only redraws the chart (I5).
+  const sec = document.querySelector('#results-content .pd-verdict');
+  if (sec) announceResult('Result: ' + Array.from(sec.querySelectorAll('h3, p')).map(n => n.textContent.replace(/\s+/g, ' ').trim().replace(/[.]$/, '')).filter(Boolean).join('. ') + '.');
 }
 
 // ── Peritoneal dialysis mode (D23): the answer on screen ──
