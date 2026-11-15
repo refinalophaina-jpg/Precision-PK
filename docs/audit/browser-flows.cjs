@@ -1341,14 +1341,14 @@ async function enterCourse(page) {
     const c1 = await aucRun('c1', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['2000', '2', day(-4), '06:00']],
       [['52', day(-3), '10:00'], ['51', day(-2), '10:00'], ['50.2', day(0), '09:00']]);
     const c1p = await printed();
-    ok('D26 final review (Review Focus 1): the anuric flat-levels patient — Hold leads, and Next is "Recheck a level before the next dose", never "would add little", on screen and in print',
+    ok('D26: final review (Review Focus 1): the anuric flat-levels patient — Hold leads, and Next is "Recheck a level before the next dose", never "would add little", on screen and in print',
        /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(c1.head) && c1.icon && c1.before && c1.next === 'Next Recheck a level before the next dose.'
        && !/would add little/.test(c1.all + c1p) && !incoherent(c1.all) && !incoherent(c1p) && /Recheck a level before the next dose/.test(c1.voi),
        JSON.stringify({ head: c1.head, next: c1.next, voi: c1.voi.slice(0, 80), little: /would add little/.test(c1.all + c1p) }));
-    ok('D26 final review: the copy summary and the announcement carry the hold\'s instruction',
+    ok('D26: final review: the copy summary and the announcement carry the hold\'s instruction',
        /^Hold: next dose not before /.test(c1.summary) && /Recheck a level before the next dose\./.test(c1.summary)
        && /^Result: Hold: next dose not before /.test(c1.said) && /Recheck a level before the next dose\./.test(c1.said), JSON.stringify({ summary: c1.summary, said: c1.said }));
-    ok('D26 final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
+    ok('D26: final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
        /No further dose until a level is drawn/.test(c1.all) && !/Give a single weight-based loading dose/.test(c1.all) && !/not the actual 8\b/.test(c1.all),
        c1.all.slice(c1.all.indexOf('Severe renal'), c1.all.indexOf('Severe renal') + 300));
     // k82: a first-dose time after the resume time clears the hold, and the Next line and the panel follow it; a time inside it holds again.
@@ -1365,7 +1365,7 @@ async function enterCourse(page) {
     const inside = await firstAt(day(1), '1200');
     // Past the fitted resume time the hold clears, but the measured 50.2 mg/L the fit reads lower does not: the
     // measured-level alarm (I1) takes the slot, and the Next line, panel and summary follow the chosen time.
-    ok('D26 final review: a chosen time past the hold clears the hold and the measured-level alarm leads; a time inside it holds again; Next, panel and summary follow',
+    ok('D26: final review: a chosen time past the hold clears the hold and the measured-level alarm leads; a time inside it holds again; Next, panel and summary follow',
        /^Measured 50\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00: recheck a level before the next dose/.test(late.hold) && !/Hold: /.test(late.hold + late.summary)
        && late.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(late.voi) && /^Measured 50\.2 mg\/L/.test(late.summary)
        && /^Hold: next dose not before/.test(inside.hold) && inside.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(inside.voi)
@@ -1375,7 +1375,7 @@ async function enterCourse(page) {
     const i1 = await aucRun('i1', { age: '70', tbw: '80', ht: '185', scr: '9.7' }, [['1500', '2', day(-5), '10:00']],
       [['35', day(-3), '09:00'], ['30.3', day(-2), '09:00'], ['26.2', day(0), '09:00']]);
     const i1p = await printed();
-    ok('D26 final review (I1): a newer measured 26.2 mg/L that the fit reads lower leads the answer in the alarm tone, without a hold; Next, summary, announcement and print say it',
+    ok('D26: final review (I1): a newer measured 26.2 mg/L that the fit reads lower leads the answer in the alarm tone, without a hold; Next, summary, announcement and print say it',
        /^Measured 26\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00: recheck a level before the next dose$/.test(i1.head) && /vx-measured-high/.test(i1.headCls) && /tone-alarm/.test(i1.headCls)
        && i1.icon && i1.before && /the fit reads it lower/.test(i1.all) && !/Hold: /.test(i1.all) && i1.next === 'Next Recheck a level before the next dose.'
        && /^Measured 26\.2 mg\/L/.test(i1.summary) && /^Result: Measured 26\.2 mg\/L/.test(i1.said) && /Measured 26\.2 mg\/L/.test(i1p) && !incoherent(i1.all) && !incoherent(i1p),
@@ -1384,7 +1384,7 @@ async function enterCourse(page) {
     const i2 = await aucRun('i2', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['1750', '2', day(-4), '06:00']],
       [['52', day(-3), '08:00'], ['51', day(-2), '08:00'], ['50.2', day(0), '08:00']], '#vx-regimen');
     const i2p = await printed();
-    ok('D26 final review (I2): a refusal with levels at or above 20 mg/L leads with "Hold: recheck a level before the next dose", on screen, in the summary, aloud and in print',
+    ok('D26: final review (I2): a refusal with levels at or above 20 mg/L leads with "Hold: recheck a level before the next dose", on screen, in the summary, aloud and in print',
        i2.reg === 'No regimen recommended' && i2.head === 'Hold: recheck a level before the next dose' && i2.icon && i2.before
        && /^Hold: recheck a level before the next dose/.test(i2.summary) && /^Result: Hold: recheck a level before the next dose/.test(i2.said)
        && /Hold: recheck a level before the next dose/.test(i2p) && /^Next Recheck a level before the next dose\./.test(i2.next),
@@ -1410,7 +1410,7 @@ async function enterCourse(page) {
     await a.locator('#rl-interval').selectOption('12');
     await a.locator('[data-onclick="k31"]').click(); await a.waitForTimeout(500);
     const rl = await txState();
-    ok('D26 final review (I4): Trough random level holds — 42 mg/L at 9 h on q12h at steady state shows Hold, the alarm word and icon, before the regimen, and is heard first',
+    ok('D26: final review (I4): Trough random level holds — 42 mg/L at 9 h on q12h at steady state shows Hold, the alarm word and icon, before the regimen, and is heard first',
        rlSS === 'steadystate' && /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(rl.head) && rl.alarm && rl.icon && rl.before && /^Result: Hold: /.test(rl.said),
        JSON.stringify(Object.assign({ rlMode: rlSS }, rl)));
     // Level mode: 1.5 g q8h started 01:00, 20.5 mg/L at 08:36 — below 20 before the 09:00 due time: no hold.
@@ -1422,7 +1422,7 @@ async function enterCourse(page) {
     await a.locator('#time-level-drawn-date').fill(day(0)); await typeInto(a, '#time-level-drawn-time', '0836');
     await a.locator('[data-onclick="k31"]').click(); await a.waitForTimeout(600);
     const lv = await txState();
-    ok('D26 final review (I3): Trough level mode does not hold a level that falls below 20 mg/L before the due time (20.5 mg/L at 08:36 on q8h from 01:00)',
+    ok('D26: final review (I3): Trough level mode does not hold a level that falls below 20 mg/L before the due time (20.5 mg/L at 08:36 on q8h from 01:00)',
        lv.head === '' && !/^Result: Hold/.test(lv.said) && !!lv.reg, JSON.stringify(lv));
     const aAttr = await attributeInjected(a, aProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + aAttr.injected;

@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~13,900 lines / ~750 KB (2026-09-29).
+~17,900 lines / ~1.06 MB (2026-11-15).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -206,11 +206,18 @@ Presentation only: engine parity 0 differences.
 **The review's fixes (D26, v3.14.0):** the 2026-11-13 review (`docs/review/2026-11-13/`); safety and
 logic, the engine moves.
 - **Hold:** a fitted pre-dose level at or above `TROUGH_HIGH_MGL` (20) leads the answer with "Hold: next
-  dose not before <time>" (`firstDosePlan` → `hold`, `resumeH`, `holdNoTime`; a 0.25 h search over 14
-  days is search mechanics, not a clinical constant). No time within it: "recheck a level", and no
-  projection. A planned dose at 20 or more is the dose held (R5). The Trough level and two-level modes
-  hold too (`troughHold`, timed from the level through `timeToDecayTo`); with no measured level the
-  Trough module never holds.
+  dose not before <time>" (`firstDosePlan` → `hold`, `resumeH`, `holdNoTime`; the 0.25 h step is search
+  mechanics; the 14-day horizon `HOLD_SEARCH_MAX_H` is a PREFERENCE, how far the fitted curve is trusted
+  to time a dose, for the user to rule on). No time within it: "recheck a level", and no projection. A
+  planned dose at 20 or more is the dose held (R5). Under any hold the Next line, Copy summary and the
+  announcement say "Recheck a level before the next dose" (final review C1; `nextLevelFit(r, conf, plan)`,
+  `bayesNextStep`, and k82 moves `#b-next` and `#b-voi` with the hold). A refusal holds too when the
+  fitted level at the due time or the newest measured level is 20 or more (`noSolutionHold`, I2). With no
+  hold, a newer measured level of 20 or more that the fit reads lower leads the answer as an alarm
+  (`answerHeadHTML`, I1, the minimum; whether it should hold is the user's question). The Trough level,
+  two-level and random-level modes hold too (`troughHold`, timed from the level through
+  `timeToDecayTo`; a measured level below 20 by the due time is no hold, I3, I4); with no measured
+  level the Trough module never holds.
 - **One set of ceilings:** `findOptimalDose` judges each candidate through `evalRegimen` (2 g a dose,
   4.5 g a day, AUC₂₄ 700). Nothing admissible in 400–600 is a refusal, "No regimen recommended", naming
   the intervals q6h–q48h that work (R7). A current Trough regimen over a limit is said at alarm tier.
@@ -218,7 +225,9 @@ logic, the engine moves.
   the augmented-clearance caution; its CrCl is not capped (D-c).
 - **Only sourced numbers:** the severe-renal advice is Rybak 2020 Rec 11 (actual body weight, at most
   `HD_LOADING_MAX_MG`), then measured levels; no mg/kg and no interval (`SEVERE_RENAL`,
-  `severeRenalNote`). The Trough loading dose is capped at the same maximum (`calcLoadingDose`), the
+  `severeRenalNote`). Once a dose is given or a level exists the note says "No further dose until a level
+  is drawn", with no loading-dose sentence, and no clamp sentence unless a clamp happened (final review
+  I5). The Trough loading dose is capped at the same maximum (`calcLoadingDose`), the
   augmented-clearance advice lost its unsourced figures, and the HD empiric caption reads the constant.
   `VERY_LOW_CRCL_THRESHOLD` (10) is still unsourced and recorded open.
 - **Refused input:** a level dated after the analysis (one minute's tolerance); a two-level steady-state
@@ -228,8 +237,10 @@ logic, the engine moves.
   cap-bound answer gives "Confirm the clearance with a level". The Low line names its cause
   (`confidenceLead`); "a fit the tool itself does not trust" is gone.
 - **Decision defaults:** a charted dose above 2 g or 4.5 g a day is not recommendable but not unsafe
-  (D-a, `doseCeilingBreaches`); a continue above a ceiling carries a caution. Better regimens set aside
-  for their trough are said to be (engine M2).
+  (D-a, `doseCeilingBreaches`); a continue above a ceiling leads with the caution, naming the limit, in
+  Copy summary and the announcement too (`ceilingCautionText`, final review I6; the cross-module reading
+  is the user's). A kept regimen under Low confidence says "Draw a level." there too (R26). Better
+  regimens set aside for their trough are said to be (engine M2).
 - **Print:** every report ends with `DISCLAIMER_TEXT`, written once, through `_prFooter`.
 - **Profiles:** `snapshotPatientCore(source)` reads the module on screen. A shared field that differs
   between the columns refuses the save, naming both values, with one copy action (`k99`, D-e, R19). A
@@ -239,7 +250,9 @@ logic, the engine moves.
   Clear resets the weight basis, amputation, HD flag and PD form (R20, R22), never the PD local
   settings, and a blank local setting never overwrites a stored one (R23).
 - **Parity against v3.13.0 (`edc5b53`):** 72 differences, all listed in D26: 64 in six `findOptimalDose`
-  calls (the ceilings and the refusal, Task 3) and 8 additive `calcLoadingDose` fields (Task 4b).
+  calls (the ceilings and the refusal, Task 3) and 8 additive `calcLoadingDose` fields (Task 4b). The final
+  review's fix wave (R25–R27) adds none (0 against `73a1936`); SUITE 44.27–44.36 and nine browser checks
+  pin it. Three questions are the user's: a measured-level hold, the hold horizon, D-a's cross-module reading.
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, intraperitoneal vancomycin dosing, AUC or Bayesian
@@ -297,12 +310,12 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **537/537 pass** |
+| `phase2d_validation.cjs` | **548/548 pass** |
 | `phase3_simulation.cjs` | **21/21 pass** |
 | `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26). The script prints the first 40 |
-| `docs/audit/browser-flows.cjs` | **151/151** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **160/160** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -444,7 +457,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 151 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 160 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |

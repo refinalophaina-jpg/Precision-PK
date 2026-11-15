@@ -1647,8 +1647,8 @@ together. The engine moves.
 
 ### What was fixed, and the tests that pin it
 
-New unit tests are SUITE 44 in `phase2d_validation.cjs` (59 tests). New browser checks are the `D26:`
-checks in `docs/audit/browser-flows.cjs` (44 checks, under the production CSP). Every fix began with a
+New unit tests are SUITE 44 in `phase2d_validation.cjs` (59 tests; 70 after the final review's fixes). New browser checks are the `D26:`
+checks in `docs/audit/browser-flows.cjs` (44 checks; 53 after the final review's fixes, under the production CSP). Every fix began with a
 test seen failing. The task reports in `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/` hold the
 RED and GREEN output.
 
@@ -1970,6 +1970,117 @@ first 40; the full list was taken with the print limit lifted. Every difference 
   - The qualitative augmented-clearance prose is unsourced.
   - There is no control to remove a stored PD cap, since a blank keeps it.
   - The ledger lists the smaller code-health items.
+
+### The final review's fixes (2026-11-15, rulings R25–R27)
+
+A whole-branch review of `edc5b53..73a1936` on the most capable model found one Critical and six
+Important issues, mostly about the new Hold, and named the deferred minors. All were fixed in one wave,
+each test-first. The new unit tests are SUITE 44.27–44.36 (11 tests). The new browser checks are the nine
+`D26: … final review` checks. The RED and GREEN runs are under `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/t8/final-*`.
+
+**The rulings.**
+- **R25:** fix now with the safe minimum for the three questions the user owns (I1, I2, I6). Those
+  questions are listed below.
+- **R26:** fix the deferred minors before merge, and strip the scratch paths from the review reports.
+- **R27:** scrub the institution acronym, protocol filename and local paths from the two HD plan documents
+  in the current files. Rewriting git history is the user's call.
+
+**What changed, and what pins each change.**
+- **C1 (Critical): a Hold sat beside "A further level would add little".** The case was a fictional 70 M,
+  CrCl 8, on Goti, one 2 g dose, with flat levels of 52, 51 and 50.2 mg/L over three days. It got a
+  Moderate fit and "Hold: next dose not before …", with "Next: A further level would add little". Six of
+  nine hold scenarios reached that precision branch.
+  - `nextLevelFit(r, conf, plan)` now reads the finalized first-dose plan.
+  - Under any hold, the Next line is the hold's own instruction, "Recheck a level before the next dose",
+    ahead of every other branch.
+  - Copy summary and the announcement say it too.
+  - A first-dose time chosen through `k82` can make or clear a hold. The Next line and the further-level
+    panel follow it (`#b-next`, `#b-voi`, `bayesNextStep`).
+  - Two pairs join the coherence predicates in both suites: "Hold" with "would add little", and "Hold" with
+    "Give a … loading dose".
+  - Pinned by 44.27, the Review Focus 1 browser regression, and the chosen-time browser check.
+- **I1 (minimum): a newer measured level of 20 or more was not reflected when the fit read it lower.** A
+  fictional 70 M, CrCl 8, had levels of 35, 30.3 and 26.2 mg/L. The fit read the 26.2 as 19.5. The answer
+  was "250 mg q48h, first dose now", with no hold and High confidence.
+  - With no hold, the newest level measured after the last given dose leads the answer in the alarm tone
+    (`answerHeadHTML`, `measuredHighSentence`). It does so only when the level is at or above 20 mg/L and
+    the fit reads it lower.
+  - The alarm names the level and its time, the fitted value, and "recheck a level before the next dose".
+  - It shows on screen, in print, in Copy summary and in the announcement. The Next line says the same.
+  - When the Hold fires is unchanged (ruling 1).
+  - A time chosen past the fitted resume time clears the hold but not this alarm.
+  - Pinned by 44.28 and the I1 browser check.
+- **I2: "Recheck a level" could not be reached on real anuric fits.**
+  - `HOLD_SEARCH_MAX_H` (now the literal 336, 14 days, unchanged) is labelled a PREFERENCE (rule 8). It is
+    how far the fitted curve is trusted to time a dose.
+  - A refusal now leads with "Hold: recheck a level before the next dose" when either reading is at or
+    above 20 (`noSolutionHold`). The two readings are the fitted level at the next dose's due time and the
+    newest level measured after the last dose. This shows on screen, in print, in the summary and in the
+    announcement.
+  - 44.4 now runs a real anuric fit that reaches this hold. The CL 0.05 case stays as an extra unit case.
+  - Pinned by 44.4, 44.29, 44.29a and the I2 browser check.
+- **I3: a Trough "not before" time could fall before the due time.** The case was 20.5 mg/L at 08:36 on
+  q8h from 01:00, which read "not before 08:49" against a 09:00 due time.
+  - With a measured level, `troughHold` carries that level down the fitted decline to the due time. Below
+    20 there is no hold.
+  - Pinned by 44.30 and the I3 browser check.
+- **I4: random-level mode never held.**
+  - It now calls `troughHold` from the level, its time and the fitted Kel.
+  - The dose is due at the interval the patient is on (steady state), or at the interval chosen after a
+    first dose.
+  - The verdict, the refusal and the announcement carry the hold.
+  - Pinned by 44.31 and the I4 browser check.
+- **I5: the severe-renal note contradicted a Hold.**
+  - Once a dose is given or a level exists, its first bullet is "No further dose until a level is drawn",
+    with no loading-dose sentence. The Rec 11 basis and maximum go with the loading dose.
+  - The clamp sentence shows only when a clamp happened. It no longer says "used 8 mL/min, not the actual
+    8". It gives one decimal when the whole numbers agree.
+  - The pre-dose wording is unchanged, so 44.9–44.9d still hold.
+  - Pinned by 44.32 and the I5 browser check.
+- **I6 (minimum): an over-ceiling continue read differently in the two modules.**
+  - The AUC answer now leads with the ceiling caution, in the caution tone, naming the limit, before the
+    action and the why line (`ceilingCautionText`).
+  - Copy summary and the announcement carry it.
+  - The action chosen is unchanged.
+  - Pinned by 44.33. 44.21 still passes unchanged.
+- **R26 minors:**
+  - Copy summary and the announcement say "Draw a level." on a low-confidence continue (44.34).
+  - The cap-bound detail is one sentence: "Confirm the clearance with a level before considering a dose
+    beyond the ceiling or another agent" (44.35).
+  - The future-level refusal gives the year (`fmtDT(…, true)`), pinned by 44.36 and a browser check.
+- **Hygiene (R26, R27):**
+  - The scratch paths, which contained the OS username, are gone from the 2026-11-13 engine and UI reports.
+  - The HD plan documents say "the user's institutional protocol (private)" and use placeholder paths.
+  - The README no longer names the protocol folder.
+  - `phase4_regimen_validation.cjs` reads `index.html` beside itself, not an absolute local path.
+  - Three `.impeccable/critique` logs record `index.html` relatively.
+  - A repository-wide `git grep` for the username, the acronym and the folder name now finds nothing.
+
+**Tests re-pointed, not weakened (rule 9).**
+- 44.9 matched `severeRenalNote(crclTrue, cappingNote, 'auc')` literally. The call gained a fourth argument
+  (`dosed`), so the regex accepts it. The assertion still requires the AUC wording.
+- 44.4's hand-built fixture is now the extra unit case, beside the real fit the review asked for.
+- `fit44` was moved above 44.2, and now also records the announcement and Copy summary. When no regimen
+  is detected it reads model agreement on the recommended daily dose, as the render does.
+- `trough44` takes the random-level sub-mode.
+
+**Engine parity:** 0 differences against `73a1936`, and still 72 against `edc5b53`. The 225-call corpus
+reaches none of these paths. The units and browser checks above are the record.
+
+**Verified (2026-11-15, after the fix wave):**
+- Unit tests 548/548; phase3 21/21; phase4 49/49.
+- In the comprehensive suite only scenarios 3 and 4 fail, by design, with the figures above.
+- Browser flows under the CSP 160/160, with 0 console problems.
+- The JS syntax check passes.
+
+### Questions for the user from the final review (R25)
+
+1. **Should a measured level hold?** The Hold fires on the fitted pre-dose level only (ruling 1). The I1
+   alarm says a newer measured level the fit reads lower, but it does not hold the dose or move it.
+2. **The hold horizon (`HOLD_SEARCH_MAX_H`, 14 days, a preference).** Past it the answer is "recheck a
+   level", with no time.
+3. **D-a, how the modules read an over-ceiling current regimen.** AUC Precision continues it, with the
+   caution leading. The Trough module calls it a breach at alarm tier. Which reading should both use?
 
 ### Open question for the user
 
