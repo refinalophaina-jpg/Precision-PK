@@ -3665,6 +3665,7 @@
           <div class="field-group"><label class="field-label" for="pd-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="pd-set-max" min="250" max="3000" step="250" placeholder="none" data-onchange="k92"><span class="unit-badge">mg</span></div></div>
           <div class="field-group"><label class="field-label" for="pd-set-peak">Target peak, to compare</label><div class="input-row"><input type="number" id="pd-set-peak" min="10" max="50" step="1" placeholder="none" data-onchange="k92"><span class="unit-badge">mg/L</span></div></div>
           <div class="field-group"><label class="field-label" for="pd-set-amlabs">AM labs drawn at (06:00 if blank)</label><div class="input-row"><input type="text" id="pd-set-amlabs" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" data-onchange="k92"><span class="unit-badge">24 h</span></div></div>
+          <p class="field-hint" id="pd-set-status" role="status"></p>
         </div>
       </details>
     </div><!-- /section-pd -->
@@ -4590,9 +4591,25 @@ function pdLocalSettings() {
   return { maxDoseMg: o.maxDoseMg > 0 ? +o.maxDoseMg : null, targetPeak: o.targetPeak > 0 ? +o.targetPeak : null,
     amLabs: isClock24(o.amLabs) ? o.amLabs : '06:00', amLabsSet: isClock24(o.amLabs) };
 }
+// A blank or invalid maximum dose or target peak is refused: the stored value stays, the field
+// shows it again and the line below the settings says so (R23). A blank maximum read as "no cap".
 function savePdLocalSettings() {
-  const n = (id) => { const x = String((document.getElementById(id) || {}).value || '').trim(); return x === '' ? null : Number(x); };
-  const o = { maxDoseMg: n('pd-set-max'), targetPeak: n('pd-set-peak'), amLabs: String((document.getElementById('pd-set-amlabs') || {}).value || '') };
+  const raw = (id) => String((document.getElementById(id) || {}).value || '').trim();
+  const stored = pdLocalSettings(), refused = [];
+  const num = (id, label, unit, was) => {
+    const x = raw(id), v = x === '' ? NaN : Number(x);
+    if (isFinite(v) && v > 0) return v;
+    if (was != null) {
+      refused.push(`${label} was ${x === '' ? 'blank' : 'not a positive number'}, so the saved ${was} ${unit} is kept.`);
+      const e = document.getElementById(id); if (e) e.value = was;
+      return was;
+    }
+    return null;
+  };
+  const o = { maxDoseMg: num('pd-set-max', 'Maximum single dose', 'mg', stored.maxDoseMg), targetPeak: num('pd-set-peak', 'Target peak', 'mg/L', stored.targetPeak),
+    amLabs: raw('pd-set-amlabs') };
+  if (o.amLabs !== '' && !isClock24(o.amLabs)) { refused.push('AM labs time was not a 24-hour time, so it is not saved.'); o.amLabs = stored.amLabsSet ? stored.amLabs : ''; }
+  const line = document.getElementById('pd-set-status'); if (line) line.textContent = refused.join(' ');
   try { localStorage.setItem('vanco.pd.local', JSON.stringify(o)); } catch (e) { /* private window: settings last this visit only */ }
 }
 function fillPdLocalSettings() {
@@ -8562,7 +8579,10 @@ function resetForm() {
   // Its own column only (D24): it used to empty every number field in the document, the
   // AUC form's included, while leaving that form's rows and dates.
   const shell = document.querySelector('.app-shell:not(#app-shell-bayesian)') || document;
-  shell.querySelectorAll('input[type="number"]').forEach(i=>i.value='');
+  // The PD local settings (pd-set-*) are this browser's, not the patient's, and one is a dose cap:
+  // Clear leaves them as they are (R23). They had been blanked here, and the next change to any
+  // setting wrote the blank over the stored value.
+  shell.querySelectorAll('input[type="number"]').forEach(i => { if (!/^pd-set-/.test(i.id)) i.value = ''; });
   // A cleared form leaves no CrCl override active. The box stayed ticked with its value
   // blanked while every model kept the old value (the final review, 2026-11-10).
   const coBox = document.getElementById('crcl-override-on');

@@ -1024,6 +1024,31 @@ async function enterCourse(page) {
        && !!pg && pg.label === 'Patient G' && !(pg.snapshot.pd && pg.snapshot.pd.modality) && /Trough-Based PD form not saved/.test(pgStatus),
        JSON.stringify({ pdBefore, pdAfter, pd: pg && pg.snapshot.pd && pg.snapshot.pd.modality, pgStatus }));
 
+    // R23: Clear all fields leaves the PD local settings alone, and a later change to another
+    // setting does not write a blank over the stored maximum dose or target peak.
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('#mode-btn-pd').click();
+    await s.evaluate(() => { document.querySelector('details.pd-settings').open = true; });
+    await s.locator('#pd-set-max').fill('1500'); await s.locator('#pd-set-max').blur();
+    await s.locator('#pd-set-peak').fill('30'); await s.locator('#pd-set-peak').blur();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    // Read straight after Clear, before re-entering PD mode refills the fields from storage.
+    const setAfterClear = await s.evaluate(() => ({ max: document.getElementById('pd-set-max').value, peak: document.getElementById('pd-set-peak').value }));
+    await s.locator('#mode-btn-pd').click();
+    await s.evaluate(() => { document.querySelector('details.pd-settings').open = true; });
+    const setShown = await s.evaluate(() => ({ max: document.getElementById('pd-set-max').value, peak: document.getElementById('pd-set-peak').value }));
+    await s.locator('#pd-set-amlabs').fill('05:30'); await s.locator('#pd-set-amlabs').blur();
+    await s.reload({ waitUntil: 'networkidle' });
+    const setStored = await s.evaluate(() => JSON.parse(localStorage.getItem('vanco.pd.local') || '{}'));
+    await s.locator('#mode-btn-pd').click();
+    await s.evaluate(() => { document.querySelector('details.pd-settings').open = true; });
+    const setReload = await s.evaluate(() => ({ max: document.getElementById('pd-set-max').value, peak: document.getElementById('pd-set-peak').value }));
+    ok('D26: Clear keeps the PD local settings (the maximum dose and target peak survive Clear, a later setting change and a reload)',
+       setAfterClear.max === '1500' && setAfterClear.peak === '30' && setShown.max === '1500' && setShown.peak === '30' && setStored.maxDoseMg === 1500 && setStored.targetPeak === 30 && setStored.amLabs === '05:30'
+       && setReload.max === '1500' && setReload.peak === '30',
+       JSON.stringify({ setAfterClear, setShown, setStored, setReload }));
+    await s.evaluate(() => localStorage.removeItem('vanco.pd.local'));
+
     // Code report I2: truncated JSON in the store is copied to the backup key before anything is
     // written over it, and the status line says so; a save afterwards starts a new list.
     const trunc = '[{"id":"p_trunc1","label":"Truncated","savedAt":1762412400000,"snapshot":{"demographics":{"age":"5';

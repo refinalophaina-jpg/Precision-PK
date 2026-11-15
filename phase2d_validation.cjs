@@ -7628,6 +7628,46 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(!/PD form not saved/.test(statusText44(env)), statusText44(env));
     });
   });
+
+  test('44.26d R23: "Clear all fields" leaves the PD local settings alone; a blank or invalid setting never overwrites a stored valid one', () => {
+    const LS = 'vanco.pd.local';
+    const store = { [LS]: JSON.stringify({ maxDoseMg: 1500, targetPeak: 30, amLabs: '05:30' }) };
+    const env = profEnv44(store, { 'pd-set-max': '1500', 'pd-set-peak': '30', 'pd-set-amlabs': '05:30', dose: '1000' });
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status', 'dose'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      sandbox.resetForm();
+      assert(env.els['pd-set-max'].value === '1500', 'pd-set-max cleared to "' + env.els['pd-set-max'].value + '"');
+      assert(env.els['pd-set-peak'].value === '30', 'pd-set-peak cleared to "' + env.els['pd-set-peak'].value + '"');
+      assert(env.els['pd-set-amlabs'].value === '05:30', 'pd-set-amlabs changed');
+      assert(env.els.dose.value === '', 'a patient field was not cleared');
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500, 'the stored max changed on Clear');
+      // The field that was blanked and then saved (the old defect's path): the stored cap survives.
+      env.els['pd-set-max'].value = '';
+      sandbox.savePdLocalSettings();
+      let o = JSON.parse(store[LS]);
+      assert(o.maxDoseMg === 1500 && o.targetPeak === 30 && o.amLabs === '05:30', 'a blank max overwrote the stored settings: ' + store[LS]);
+      assert(env.els['pd-set-max'].value === '1500', 'the field shows "' + env.els['pd-set-max'].value + '" while 1500 is stored');
+      const say = env.els['pd-set-status'] && env.els['pd-set-status'].textContent;
+      assert(/Maximum single dose/.test(say) && /1500 mg/.test(say) && /kept/.test(say), 'the settings line did not say so: "' + say + '"');
+      // An invalid (non-numeric, zero, negative) target peak is refused the same way.
+      ['0', '-5', 'abc'].forEach(bad => {
+        env.els['pd-set-peak'].value = bad;
+        sandbox.savePdLocalSettings();
+        assert(JSON.parse(store[LS]).targetPeak === 30, `"${bad}" overwrote the stored peak`);
+      });
+      // A valid change is saved, and the line clears.
+      env.els['pd-set-peak'].value = '25'; env.els['pd-set-max'].value = '2000';
+      sandbox.savePdLocalSettings();
+      o = JSON.parse(store[LS]);
+      assert(o.maxDoseMg === 2000 && o.targetPeak === 25, 'a valid change was not saved: ' + store[LS]);
+      assert(env.els['pd-set-status'].textContent === '', 'the line still says "' + env.els['pd-set-status'].textContent + '"');
+      // Nothing stored yet: a blank is simply no setting, and nothing is refused.
+      delete store[LS];
+      env.els['pd-set-max'].value = ''; env.els['pd-set-peak'].value = '';
+      sandbox.savePdLocalSettings();
+      assert(sandbox.pdLocalSettings().maxDoseMg === null && env.els['pd-set-status'].textContent === '', 'blank with nothing stored');
+    });
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
