@@ -2016,6 +2016,42 @@ async function enterCourse(page) {
     results.problems.push(...kAttr.kept);
     await kctx.close();
   }
+  // D27 (UI review M1, Task 20a): the focus ring is --terracotta-ink everywhere, light and dark. No rule that
+  // matches :focus / :focus-visible / :focus-within carries raw --terracotta, and tabbing through the Trough
+  // and AUC columns shows a ring of the resolved ink colour on every stop, in both schemes.
+  for (const scheme of ['light', 'dark']) {
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme });
+    const f = await fctx.newPage();
+    const fProblems = watch(f, 'focus-ring-' + scheme);
+    await f.goto(BASE + '?v=pwring-' + scheme + Date.now(), { waitUntil: 'networkidle' });
+    const rules = await f.evaluate(() => {
+      const bad = [];
+      const walk = (list) => { for (const r of list) {
+        if (r.cssRules && !r.selectorText) walk(r.cssRules);
+        else if (r.selectorText && /:focus/.test(r.selectorText) && /var\(--terracotta\)/.test(r.cssText)) bad.push(r.selectorText.slice(0, 80)); } };
+      for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch (e) { /* cross-origin */ } }
+      return bad;
+    });
+    const stops = [];
+    for (const tab of ['Trough', 'AUC']) {
+      await f.locator('.module-tab', { hasText: tab }).first().click();
+      await f.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+      for (let i = 0; i < 40; i++) {
+        await f.keyboard.press('Tab');
+        stops.push(await f.evaluate(() => { const el = document.activeElement, cs = getComputedStyle(el), probe = document.createElement('i');
+          probe.style.color = 'var(--terracotta-ink)'; document.body.appendChild(probe); const ink = getComputedStyle(probe).color; probe.remove();
+          const isField = /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && !/checkbox|radio/.test(el.type);
+          return { id: el.id || el.className.toString().slice(0, 30), style: cs.outlineStyle, color: cs.outlineColor, ink, w: cs.outlineWidth, isField, bd: cs.borderTopColor }; }));
+      }
+    }
+    const bad = stops.filter(x => x.style !== 'none' && x.color !== x.ink);
+    ok(`D27: the focus ring is --terracotta-ink everywhere (${scheme}): no raw --terracotta in a focus rule, every tab stop`,
+       rules.length === 0 && bad.length === 0 && stops.length > 40, JSON.stringify({ rules: rules.slice(0, 8), bad: bad.slice(0, 4), stops: stops.length }));
+    const fAttr = await attributeInjected(f, fProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + fAttr.injected;
+    results.problems.push(...fAttr.kept);
+    await fctx.close();
+  }
   await browser.close();
 
   results.checks = checks;
