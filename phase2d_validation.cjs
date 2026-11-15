@@ -5971,6 +5971,52 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     return { r, rec, nowH, cur: { dose: 1500, tau: 8, tinfH: 2 } };
   };
   const at44 = (r, t) => fn44('predictFittedAt')(r, t);
+  // fit44 (Task 6; moved here in the final-review wave so 44.4 can run a real fit): one fictional patient
+  // through runBayesian and the render.
+  const fit44memo = {};
+  const fit44 = (p) => {
+    const key = JSON.stringify(p);
+    if (fit44memo[key]) return fit44memo[key];
+    return (fit44memo[key] = (() => {
+      const H = 3600000, nowH = Date.now() / H, lastH = nowH - p.lastAgo, t0 = lastH - (p.n - 1) * p.tau;
+      const doses = Array.from({ length: p.n }, (_, i) => ({ mg: p.mg, tinfH: p.tinf, timeH: t0 + i * p.tau, row: String(i + 1) }));
+      const levels = p.levels.map((l, i) => ({ conc: l.conc, timeH: Math.min(nowH, lastH + l.after), row: String(i + 1), label: 'x' }));
+      const vals = { 'b-age': String(p.age), 'b-tbw': String(p.tbw), 'b-height': String(p.ht), 'b-scr': String(p.scr), 'b-auc-target': '450', 'b-mic': '1' };
+      const els = {};
+      const el = (id) => els[id] || (els[id] = { id, value: vals[id] || '', textContent: '', innerHTML: '', checked: false, style: {}, dataset: {},
+        classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, setAttribute() {}, getAttribute() { return null; },
+        removeAttribute() {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, appendChild() {}, scrollIntoView() {} });
+      const keep = {}; ['parseBayesCourse', 'showFormErrors', 'beginFormRun', 'readSerialScrChecked', 'setTimeout', 'announceResult'].forEach(n => keep[n] = sandbox[n]);
+      const prevDoc = sandbox.document;
+      vm.runInContext(`globalThis.__b44 = Object.assign({}, bState); bState.sex = ${JSON.stringify(p.sex || 'M')}; bState.model = ${JSON.stringify(p.model || 'buelga')}; bState.dial = false; bState.result = null; bState.firstDoseAtH = null;`, sandbox);
+      sandbox.document = { getElementById: el, querySelector: () => null, querySelectorAll: () => [], createElement: () => el('_new') };
+      sandbox.beginFormRun = () => {};
+      sandbox.readSerialScrChecked = () => ({ errors: [], readings: [] });
+      sandbox.parseBayesCourse = () => ({ doses, levels, sessions: [], errors: [] });
+      let errs = null; sandbox.showFormErrors = (s, m) => { errs = [].concat(m); };
+      sandbox.setTimeout = () => 0;
+      // What the screen reader hears (announceResult's message, without its delay) — Task 13 (final review).
+      let said = ''; sandbox.announceResult = (m) => { said = String(m); };
+      let threw = null;
+      try { sandbox.runBayesian(); } catch (e) { threw = e; }
+      const r = vm.runInContext('bState.result', sandbox);
+      const summary = String(vm.runInContext('bState.summaryText || ""', sandbox));
+      Object.assign(sandbox, keep); sandbox.document = prevDoc;
+      vm.runInContext('bState = globalThis.__b44; delete globalThis.__b44;', sandbox);
+      assert(!errs && r && r.rec, `the fit ran: ${JSON.stringify(errs)} ${threw && threw.message}`);
+      const html = (els['b-results'] || {}).innerHTML || '';
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      // The diagnostics, as renderBayesianResults computes them (detected regimen, shared by every panel).
+      const cur2 = fn44('inferCurrentRegimen')(r.doses, r.CL_ind, r.V_ind, r.goti || null);
+      const fd = fn44('fitDiagnostics')(Object.assign({}, r, { regimen: cur2 }));
+      // As the render reads it: the detected daily dose, else the recommended one (a single dose has no regimen).
+      const agDD = cur2 && cur2.dose && cur2.tau ? cur2.dose * (24 / cur2.tau)
+        : r.rec && !r.rec.noSolution && r.rec.dose && r.rec.tau ? r.rec.dose * (24 / r.rec.tau) : null;
+      const ag = r.levels.length && agDD ? fn44('modelAgreement')(r.agCtx, r.doses, r.levels, agDD) : null;
+      const conf = fn44('confidenceAssessment')(r, fd, ag);
+      return { r, html, text, threw, conf, ag, fd, said, summary };
+    })());
+  };
 
   test('44.2 a 48 mg/L level holds the first dose until the fitted level is below 20 mg/L', () => {
     assert(!K44._err, K44._err);
@@ -6019,7 +6065,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const near = fn44('firstDosePlan')(r, rec, 40, 40, { dose: 1250, tau: 12, tinfH: 1.5 });
     assert(near.hold === true && near.firstH === 40 && near.resumeH > 40 && at44(r, near.resumeH) < K44.TROUGH_HIGH_MGL, JSON.stringify({ hold: near.hold, resumeH: near.resumeH }));
   });
-  test('44.4 a level that stays at or above 20 mg/L for 14 days gives no resume time: recheck a level', () => {
+  test('44.4 a level that stays at or above 20 mg/L gives no resume time: recheck a level — a real anuric fit, and the CL 0.05 unit', () => {
+    // The final review (I2): the old fixture alone (CL 0.05 with a hand-built regimen) is not a fit the app can
+    // produce; real anuric fits keep CL at ~0.17 L/h or more and below ~0.18 every candidate hard-fails. A real
+    // fit (44.29's: 70 M, CrCl 8, Goti, one 1.75 g dose, flat levels 52 to 50.2 mg/L) reaches the refusal's
+    // hold, with no time. The CL 0.05 case stays below as an extra unit case of firstDosePlan.
+    const real = fit44({ model: 'goti', age: 70, tbw: 70, ht: 175, scr: 8.5, mg: 1750, tinf: 2, tau: 24, n: 1, lastAgo: 100,
+      levels: [{ conc: 52, after: 26 }, { conc: 51, after: 50 }, { conc: 50.2, after: 98 }] });
+    const ns = real.r.rec && real.r.rec.noSolution && typeof sandbox.noSolutionHold === 'function' ? fn44('noSolutionHold')(real.r, real.r.fitNowH, null) : null;
+    assert(ns && ns.hold === true && ns.holdNoTime === true && ns.fitted >= K44.TROUGH_HIGH_MGL,
+      `a real fit: ${real.r.rec && real.r.rec.noSolution} ${JSON.stringify(ns)}`);
+    assert(/Hold: recheck a level before the next dose/.test(real.text) && !/not before/.test(fn44('holdHeadHTML')(ns)), fn44('holdHeadHTML')(ns));
     const r = { model: 'buelga', CL_ind: 0.05, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [{ conc: 40, timeH: 3 }], fitNowH: 4 };
     const rec = { dose: 500, tau: 24, tinfH: 1 };
     assert(at44(r, 24 + 14 * 24) >= K44.TROUGH_HIGH_MGL, 'the fixture stays at or above 20 for the whole search');
@@ -6369,7 +6425,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     sourced(auc, 'the AUC Precision note'); sourced(tro, 'the Trough note');
     assert(/fit/.test(auc), `the AUC Precision note says to re-run its fit: ${auc}`);
     assert(!/Bayesian|re-fit|the fit/i.test(tro), `the Trough note mentions the Bayesian fit: ${tro}`);
-    assert(/severeRenalNote\(crclTrue, cappingNote, 'auc'\)/.test(body44('renderBayesianResults')), 'AUC Precision asks for its own wording');
+    // Re-pointed in the final-review wave (I5): the call gained a fourth argument, whether a dose was given or a
+    // level exists; the AUC wording is still asked for by name.
+    assert(/severeRenalNote\(crclTrue, cappingNote, 'auc'(?:, dosed)?\)/.test(body44('renderBayesianResults')), 'AUC Precision asks for its own wording');
     // The Trough refusal as rendered (44.8's patient: 85 F, 45 kg, 155 cm, SCr 4.5).
     const r = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 });
     clean(r.text, 'the Trough refusal'); sourced(r.text, 'the Trough refusal');
@@ -6547,53 +6605,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The fit, the decision and the render are runBayesian's own (DOM stubbed, then restored).
   // fit44: one fictional patient through runBayesian and the render. `lastAgo` is how long ago the
   // last of `n` doses q`tau` h went in; each level is { conc, after } (hours after that last dose).
-  const fit44memo = {};
-  const fit44 = (p) => {
-    const key = JSON.stringify(p);
-    if (fit44memo[key]) return fit44memo[key];
-    return (fit44memo[key] = (() => {
-      const H = 3600000, nowH = Date.now() / H, lastH = nowH - p.lastAgo, t0 = lastH - (p.n - 1) * p.tau;
-      const doses = Array.from({ length: p.n }, (_, i) => ({ mg: p.mg, tinfH: p.tinf, timeH: t0 + i * p.tau, row: String(i + 1) }));
-      const levels = p.levels.map((l, i) => ({ conc: l.conc, timeH: Math.min(nowH, lastH + l.after), row: String(i + 1), label: 'x' }));
-      const vals = { 'b-age': String(p.age), 'b-tbw': String(p.tbw), 'b-height': String(p.ht), 'b-scr': String(p.scr), 'b-auc-target': '450', 'b-mic': '1' };
-      const els = {};
-      const el = (id) => els[id] || (els[id] = { id, value: vals[id] || '', textContent: '', innerHTML: '', checked: false, style: {}, dataset: {},
-        classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, setAttribute() {}, getAttribute() { return null; },
-        removeAttribute() {}, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, appendChild() {}, scrollIntoView() {} });
-      const keep = {}; ['parseBayesCourse', 'showFormErrors', 'beginFormRun', 'readSerialScrChecked', 'setTimeout'].forEach(n => keep[n] = sandbox[n]);
-      const prevDoc = sandbox.document;
-      vm.runInContext(`globalThis.__b44 = Object.assign({}, bState); bState.sex = ${JSON.stringify(p.sex || 'M')}; bState.model = ${JSON.stringify(p.model || 'buelga')}; bState.dial = false; bState.result = null;`, sandbox);
-      sandbox.document = { getElementById: el, querySelector: () => null, querySelectorAll: () => [], createElement: () => el('_new') };
-      sandbox.beginFormRun = () => {};
-      sandbox.readSerialScrChecked = () => ({ errors: [], readings: [] });
-      sandbox.parseBayesCourse = () => ({ doses, levels, sessions: [], errors: [] });
-      let errs = null; sandbox.showFormErrors = (s, m) => { errs = [].concat(m); };
-      sandbox.setTimeout = () => 0;
-      let threw = null;
-      try { sandbox.runBayesian(); } catch (e) { threw = e; }
-      const r = vm.runInContext('bState.result', sandbox);
-      Object.assign(sandbox, keep); sandbox.document = prevDoc;
-      vm.runInContext('bState = globalThis.__b44; delete globalThis.__b44;', sandbox);
-      assert(!errs && r && r.rec, `the fit ran: ${JSON.stringify(errs)} ${threw && threw.message}`);
-      const html = (els['b-results'] || {}).innerHTML || '';
-      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-      // The diagnostics, as renderBayesianResults computes them (detected regimen, shared by every panel).
-      const cur2 = fn44('inferCurrentRegimen')(r.doses, r.CL_ind, r.V_ind, r.goti || null);
-      const fd = fn44('fitDiagnostics')(Object.assign({}, r, { regimen: cur2 }));
-      const ag = fn44('modelAgreement')(r.agCtx, r.doses, r.levels, cur2.dose * (24 / cur2.tau));
-      const conf = fn44('confidenceAssessment')(r, fd, ag);
-      return { r, html, text, threw, conf, ag, fd };
-    })());
-  };
   const e1 = () => fit44({ age: 76, tbw: 70, ht: 175, scr: 0.5, mg: 1000, tinf: 1, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 19.9, after: 11.5 }] });
   // One sentence about a further level: "would add little" never sits beside a sentence that asks
   // for one — Next's conflict, the cap-bound alarm, or the no-better flag (D26 review). And the
   // cap-bound alarm ("confirm the clearance with a level before acting on it") never sits beside
   // "a dose change is indicated" or "how large it needs to be" (Task 6b review). Task 9 adds
   // "Draw a level." (a regimen kept under Low confidence) to the sentences that ask for one.
+  // The final review (C1, I5): a Hold never sits beside "would add little", nor beside the severe-renal
+  // note's "Give a … loading dose" (a hold means doses have been given; the note then says no further dose).
+  const HOLD44 = /Hold: |Hold the (?:\d+ )?planned dose/;
   const incoherent44 = (text) => [].concat(
-    /would add little/.test(text) ? (text.match(/is recommended|Confirm the clearance with a level|another level may settle it|Draw a level/g) || []) : [],
-    /cannot be reached within the conventional ceilings/.test(text) ? (text.match(/a dose change is indicated|how large it needs to be/g) || []) : []);
+    /would add little/.test(text) ? (text.match(/is recommended|Confirm the clearance with a level|another level may settle it|Draw a level|Recheck a level|Hold: |Hold the (?:\d+ )?planned dose/g) || []) : [],
+    /cannot be reached within the conventional ceilings/.test(text) ? (text.match(/a dose change is indicated|how large it needs to be/g) || []) : [],
+    HOLD44.test(text) ? (text.match(/Give (?:a|one) [^.]*?loading dose/g) || []) : []);
   const para44 = (html, cls) => { const m = html.match(new RegExp(`<p class="${cls}[^"]*">([\\s\\S]*?)</p>`)); return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
 
   test('44.11 a one-level fit the models disagree on: "A further level is recommended", never the precision branch', () => {
@@ -7680,6 +7704,194 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       sandbox.savePdLocalSettings();
       assert(sandbox.pdLocalSettings().maxDoseMg === null && env.els['pd-set-status'].textContent === '', 'blank with nothing stored');
     });
+  });
+
+  // ── The final whole-branch review (edc5b53..73a1936): C1, I1–I6 and the deferred minors (rulings R25–R27) ──
+  // Fictional anuric patients, Goti, CrCl 8 (Cockcroft-Gault, as measured). The fit, the decision and the
+  // render are runBayesian's own (fit44).
+  const anuric44 = () => fit44({ model: 'goti', age: 70, tbw: 70, ht: 175, scr: 8.5, mg: 2000, tinf: 2, tau: 24, n: 1, lastAgo: 100,
+    levels: [{ conc: 52, after: 28 }, { conc: 51, after: 52 }, { conc: 50.2, after: 99 }] });
+  const headOf44 = (html, cls) => para44(html, cls);
+  const before44 = (html, a, b) => html.indexOf(a) >= 0 && html.indexOf(b) > html.indexOf(a);
+
+  // C1 (Critical): 70 M, 70 kg, 175 cm, SCr 8.5; one 2 g dose over 2 h, 100 h ago; levels 52, 51 and 50.2 mg/L
+  // 72, 48 and 1 h ago. A Moderate fit with three levels fell to the precision branch: "Hold: next dose not
+  // before …" beside "Next: A further level would add little".
+  test('44.27 C1: under a Hold the Next line is the hold\'s own instruction — "Recheck a level before the next dose" — on screen, in the summary and aloud', () => {
+    const { r, html, text, conf, said, summary } = anuric44();
+    assert(r.crcl < 10 && r.rec && !r.rec.noSolution && r.levels.length === 3, `the fixture: CrCl ${r.crcl}, ${r.rec && r.rec.noSolution}`);
+    assert(conf.rank <= 1, `Moderate or High (the precision branch is reachable): ${conf.level}`);
+    assert(/^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(headOf44(html, 'vx-action vx-hold-head')), headOf44(html, 'vx-action vx-hold-head'));
+    assert(para44(html, 'vx-next') === 'Next Recheck a level before the next dose.', para44(html, 'vx-next'));
+    assert(!/would add little/.test(text), 'would add little is still on screen');
+    assert(!incoherent44(text).length, JSON.stringify(incoherent44(text)));
+    assert(/^Hold: next dose not before /.test(summary) && /Recheck a level before the next dose\./.test(summary), `summary: ${summary}`);
+    assert(/^Result: Hold: next dose not before /.test(said) && /Recheck a level before the next dose\./.test(said), `said: ${said}`);
+    // The rule itself: a hold is ahead of every other branch of nextLevelValue.
+    const plan = fn44('firstDosePlan')(r, r.rec, r.fitNowH, null, null);
+    const fit = fn44('nextLevelFit')(r, conf, plan);
+    assert(fit.hold === true, JSON.stringify(fit));
+    for (const f of [{ hold: true }, { hold: true, confRank: 3, hasAlt: true }, { hold: true, capBound: true, action: 'continue' }]) {
+      const nlv = fn44('nextLevelValue')(464, 3, 'goti', 48, 0.19, f);
+      assert(nlv.kind === 'hold' && nlv.headline === 'Recheck a level before the next dose'
+        && fn44('nextLevelLine')(nlv) === 'Recheck a level before the next dose.', `${JSON.stringify(f)}: ${nlv.kind} ${nlv.headline}`);
+    }
+    // Without a hold the branch is as before.
+    assert(fn44('nextLevelValue')(464, 1, 'buelga', 12, 4.31, { hold: false }).kind === 'precision', 'no hold, no hold branch');
+    // Print reads the screen's Next line and leads with the hold.
+    const pr = fn44('_prRecommendation')(r, { next: 'Recheck a level before the next dose.' });
+    assert(/Hold: next dose not before/.test(pr) && !/would add little/.test(pr), pr.slice(0, 500));
+  });
+
+  // I1 (minimum, ruling R25): a newer measured level of 20 mg/L or more that the fit reads lower was not
+  // reflected. 70 M, 80 kg, 185 cm, SCr 9.7 (CrCl 8), Goti; one 1.5 g dose over 2 h, 120 h ago; levels 35,
+  // 30.3 and 26.2 mg/L, 73, 49 and 1 h ago. No change to when the Hold fires (ruling 1): an alarm note.
+  const i1Case44 = () => fit44({ model: 'goti', age: 70, tbw: 80, ht: 185, scr: 9.7, mg: 1500, tinf: 2, tau: 24, n: 1, lastAgo: 120,
+    levels: [{ conc: 35, after: 47 }, { conc: 30.3, after: 71 }, { conc: 26.2, after: 119 }] });
+  test('44.28 I1: a measured level at or above 20 mg/L after the last dose that the fit reads lower leads the answer with an alarm, without a hold', () => {
+    const { r, html, text, said, summary } = i1Case44();
+    const plan = fn44('firstDosePlan')(r, r.rec, r.fitNowH, null, null), last = r.levels[2];
+    assert(r.crcl < 10 && !r.rec.noSolution && plan.hold === false, `the fixture has no hold: ${r.rec.noSolution} ${plan.hold}`);
+    assert(fn44('predictFittedAt')(r, last.timeH) < K44.TROUGH_HIGH_MGL && last.conc >= K44.TROUGH_HIGH_MGL,
+      `the fit reads 26.2 below 20: ${fn44('predictFittedAt')(r, last.timeH)}`);
+    assert(plan.measuredHigh && plan.measuredHigh.conc === 26.2 && plan.measuredHigh.timeH === last.timeH, JSON.stringify(plan.measuredHigh));
+    const head = headOf44(html, 'vx-action vx-hold-head vx-measured-high');
+    assert(/class="vx-action vx-hold-head vx-measured-high tone-alarm"/.test(html) && head.indexOf('Measured 26.2 mg/L at ' + fn44('fmtClock')(last.timeH)) === 0
+      && /recheck a level before the next dose/.test(head), head);
+    assert(before44(html, 'vx-measured-high', 'id="vx-regimen"'), 'the note is above the regimen');
+    assert(/the fit reads it lower/.test(text) && !/Hold: next dose|Hold: recheck/.test(text), text.slice(0, 600));
+    assert(para44(html, 'vx-next') === 'Next Recheck a level before the next dose.' && !/would add little/.test(text), para44(html, 'vx-next'));
+    assert(/^Measured 26\.2 mg\/L at /.test(summary) && /the fit reads it lower/.test(summary) && /before the next dose/.test(summary), summary);
+    assert(/^Result: Measured 26\.2 mg\/L at /.test(said) && /before the next dose/.test(said), said);
+    const pr = fn44('_prRecommendation')(r, {});
+    assert(/Measured 26\.2 mg\/L at /.test(pr) && /the fit reads it lower/.test(pr), pr.slice(0, 600));
+    // A time chosen past the fitted resume time clears the hold, not the measured level: 44.27's anuric fit reads
+    // its flat 50.2 mg/L lower, so the alarm leads instead (the case a chosen time could otherwise hide).
+    const { r: rA } = anuric44();
+    const pA = fn44('firstDosePlan')(rA, rA.rec, rA.fitNowH, null, null);
+    const after = fn44('firstDosePlan')(rA, rA.rec, rA.fitNowH, pA.resumeH + 1, null);
+    assert(pA.hold && !pA.measuredHigh && after.hold === false && after.measuredHigh && after.measuredHigh.conc === 50.2 && after.measuredHigh.fitted < 50.2,
+      JSON.stringify({ hold: after.hold, m: after.measuredHigh }));
+    assert(/^Measured 50\.2 mg\/L at /.test(fn44('measuredHighSentence')(after)), fn44('measuredHighSentence')(after));
+    // The C1 Buelga fit reads its 48 mg/L higher (49.3): past its resume time, no alarm.
+    const { r: rC, rec: recC, nowH: nC, cur: curC } = c1Case();
+    const pC = fn44('firstDosePlan')(rC, recC, nC, null, curC);
+    assert(!fn44('firstDosePlan')(rC, recC, nC, pC.resumeH + 1, curC).measuredHigh, 'a fit that reads the level higher');
+    // Not when the fit reads the level at or above what was measured: it already times the dose on it.
+    const mk = (conc) => ({ model: 'buelga', CL_ind: 4.58, V_ind: 61.8, doses: Array.from({ length: 4 }, (_, i) => ({ mg: 1250, tinfH: 1.5, timeH: i * 12 })), levels: [{ conc, timeH: 37 }], fitNowH: 38 });
+    const fitAt37 = at44(mk(1), 37);
+    assert(fitAt37 >= K44.TROUGH_HIGH_MGL, `the fixture's fitted level at 37 h: ${fitAt37}`);
+    assert(!fn44('firstDosePlan')(mk(fitAt37 - 0.5), { dose: 1250, tau: 12, tinfH: 1.5 }, 38, 48, null).measuredHigh, 'the fit reads it higher: no alarm');
+    assert(fn44('firstDosePlan')(mk(fitAt37 + 5), { dose: 1250, tau: 12, tinfH: 1.5 }, 38, 48, null).measuredHigh, 'the fit reads it lower: the alarm');
+    // Not for an ordinary in-range fit (44.3), and not under a hold (the hold says it).
+    const CL = 4.58, V = 61.8, doses = Array.from({ length: 4 }, (_, i) => ({ mg: 1250, tinfH: 1.5, timeH: i * 12 }));
+    const rO = { model: 'buelga', CL_ind: CL, V_ind: V, doses, levels: [{ conc: 15, timeH: 45 }], fitNowH: 46 };
+    assert(!fn44('firstDosePlan')(rO, { dose: 1250, tau: 12, tinfH: 1.5 }, 46, null, null).measuredHigh, 'ordinary fit');
+    assert(!pC.measuredHigh, 'under a hold');
+  });
+
+  // I2 (ruling R25): real anuric fits keep CL at ~0.17 L/h and every candidate hard-fails, "No regimen
+  // recommended" with no hold line. 70 M, 70 kg, 175 cm, SCr 8.5, Goti; one 1.75 g dose 100 h ago; levels 52,
+  // 51 and 50.2 mg/L, 74, 50 and 2 h ago.
+  const noSol44 = () => fit44({ model: 'goti', age: 70, tbw: 70, ht: 175, scr: 8.5, mg: 1750, tinf: 2, tau: 24, n: 1, lastAgo: 100,
+    levels: [{ conc: 52, after: 26 }, { conc: 51, after: 50 }, { conc: 50.2, after: 98 }] });
+  test('44.29 I2: a refusal with the fitted or measured level at or above 20 mg/L says "Hold: recheck a level" on screen, in the summary, aloud and in print', () => {
+    const { r, html, text, said, summary } = noSol44();
+    assert(r.rec.noSolution === true, `the fixture is a refusal: ${r.rec.action} ${r.rec.dose}`);
+    const head = headOf44(html, 'vx-action vx-hold-head');
+    assert(head === 'Hold: recheck a level before the next dose', head);
+    assert(before44(html, 'vx-hold-head', 'No regimen recommended'), 'the hold leads the refusal');
+    assert(/50\.2 mg\/L/.test(text) && !/\d\d:\d\d[^.]*not before/.test(head), text.slice(0, 600));
+    assert(/^Hold: recheck a level before the next dose/.test(summary), summary);
+    assert(/^Result: Hold: recheck a level before the next dose/.test(said), said);
+    assert(/Recheck a level before the next dose/.test(para44(html, 'vx-next')), para44(html, 'vx-next'));
+    const pr = fn44('_prRecommendation')(r, {});
+    assert(/Hold: recheck a level before the next dose/.test(pr) && /No regimen offered/.test(pr), pr.slice(0, 600));
+    // The unit: the fitted level at the due time, or the latest measured level after the last dose.
+    const ns = fn44('noSolutionHold');
+    const base = { model: 'buelga', CL_ind: 4, V_ind: 50, rec: { noSolution: true }, doses: [{ mg: 1000, tinfH: 1, timeH: 0 }], fitNowH: 20 };
+    assert(ns(Object.assign({}, base, { levels: [{ conc: 25, timeH: 19 }] }), 20, null), 'a measured level of 25 after the last dose holds');
+    assert(!ns(Object.assign({}, base, { levels: [{ conc: 15, timeH: 19 }] }), 20, null), 'a level of 15 and a low fit do not');
+    assert(!ns(Object.assign({}, base, { rec: { dose: 500, tau: 12 }, levels: [{ conc: 25, timeH: 19 }] }), 20, null), 'only a refusal');
+    const hi = ns({ model: 'buelga', CL_ind: 0.05, V_ind: 50, rec: { noSolution: true }, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [], fitNowH: 20 }, 20, null);
+    assert(hi && hi.holdNoTime && hi.fitted >= K44.TROUGH_HIGH_MGL && !hi.measured, JSON.stringify(hi));
+  });
+  test('44.29a I2: HOLD_SEARCH_MAX_H is labelled a preference (rule 8): how far the fitted curve is trusted to time a dose', () => {
+    const i = src44.indexOf('const HOLD_SEARCH_MAX_H'), cmt = src44.slice(Math.max(0, i - 900), i);
+    assert(i > 0 && /PREFERENCE/.test(cmt) && /rule 8/.test(cmt) && /how far the fitted curve is trusted to time a dose/.test(cmt), cmt.slice(-700));
+    assert(K44.HOLD_SEARCH_MAX_H === 14 * 24, `the value is kept: ${K44.HOLD_SEARCH_MAX_H}`);
+  });
+
+  // I5: the severe-renal note said "Give a single weight-based loading dose, then hold further doses" beside a
+  // Hold, with doses given and a level of 50. And "used 8 mL/min, not the actual 8" when nothing was clamped.
+  test('44.32 I5: once a dose is given or a level exists the severe-renal note says no further dose until a level, with no loading-dose sentence; no clamp sentence when nothing was clamped', () => {
+    const plain = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const before = plain(fn44('severeRenalNote')(8, '', 'auc').html), after = plain(fn44('severeRenalNote')(8, '', 'auc', true).html);
+    assert(/Give a single weight-based loading dose/.test(before), 'before any dose the loading-dose wording stays: ' + before);
+    const li = (fn44('severeRenalNote')(8, '', 'auc', true).html.match(/<li>([\s\S]*?)<\/li>/) || [])[1] || '';
+    assert(/^No further dose until a level is drawn/.test(plain(li)) && !/loading dose/i.test(after), after);
+    assert(/measured level/.test(after), 'later doses follow measured levels: ' + after);
+    const { text } = anuric44();
+    assert(/No further dose until a level is drawn/.test(text) && !/Give a single weight-based loading dose/.test(text), text.slice(text.indexOf('Severe renal'), text.indexOf('Severe renal') + 500));
+    assert(!/not the actual 8/.test(text) && /None of the implemented popPK models were validated below CrCl 10/.test(text), 'nothing clamped: ' + text.slice(text.indexOf('Severe renal'), text.indexOf('Severe renal') + 400));
+    // Clamped (CrCl 4.5 read as 5): the sentence stays, and the two values differ as printed.
+    const cl = fit44({ model: 'goti', age: 70, tbw: 70, ht: 175, scr: 15, mg: 1000, tinf: 1, tau: 24, n: 1, lastAgo: 30, levels: [{ conc: 30, after: 29 }] });
+    const m = cl.text.match(/the Bayesian fit used ([\d.]+) mL\/min ?, not the actual (\d+(?:\.\d)?)/);
+    assert(m && m[1] !== m[2], `clamped: ${m && m[0]}`);
+  });
+
+  // I6 (minimum, ruling R25): an over-ceiling current regimen continued in AUC Precision said the ceiling as a
+  // trailing sentence; the Trough module says it at alarm tier. Now the AUC answer leads with the caution, and
+  // the Copy summary and the announcement carry it. Which action is chosen does not change.
+  test('44.33 I6: an over-ceiling continue leads with the ceiling caution, names the limit, and the summary and announcement carry it', () => {
+    const row = fn44('aucUncertaintyRow')(2, 'buelga');
+    const h = (mg, tau) => Array.from({ length: 4 }, (_, i) => ({ mg, tinfH: fn44('autoTinf')(mg), timeH: i * tau }));
+    const rec = fn44('regimenDecision')(2.25, 70, 450, null, 1, h(2250, 48), row);
+    assert(rec.action === 'continue' && rec.dose === 2250 && rec.tau === 48, `the action is unchanged: ${rec.action}`);
+    const head = fn44('regimenActionHTML')(rec, 450, 'head'), why = fn44('regimenActionHTML')(rec, 450, 'why');
+    assert(/class="vx-ceiling-head tone-caution"/.test(head) && /<svg class="ic"/.test(head), head);
+    assert(head.indexOf('above the conventional ceiling (single dose 2250 mg exceeds 2000 mg)') > 0, head);
+    assert(head.indexOf('vx-ceiling-head') < head.indexOf('Continue the current regimen'), 'the caution leads the answer');
+    assert(!/conventional ceiling/.test(why), 'said once, ahead of the why line: ' + why);
+    const r = { model: 'buelga', CL_ind: 2.25, V_ind: 70, doses: h(2250, 48), levels: [{ conc: 10, timeH: 190 }], fitNowH: 192, rec };
+    const s = fn44('resultSummary')(r, rec, null, row, { level: 'High' }, null);
+    assert(/Caution: the current dose is above the conventional ceiling \(single dose 2250 mg exceeds 2000 mg\)\./.test(s), s);
+    const said = fn44('bayesAnnouncement')(r, rec, { level: 'High' }, null);
+    assert(/^Result: continue 2\.25 g IV q48h, AUC24 \d+, High confidence\./.test(said) && /Caution: the current dose is above the conventional ceiling/.test(said), said);
+    // Within the ceilings: no caution anywhere.
+    const ok = fn44('regimenDecision')(4.58, 61.8, 450, null, 1, h(1250, 12).map(d => Object.assign(d, { tinfH: 1.5 })), row);
+    assert(!/ceiling/.test(fn44('regimenActionHTML')(ok, 450)) && !/ceiling/.test(fn44('bayesAnnouncement')(r, ok, { level: 'High' }, null)), 'in range, within the ceilings');
+  });
+
+  // Deferred minors (ruling R26).
+  test('44.34 R26: the Copy summary and the announcement say "Draw a level." on a low-confidence continue', () => {
+    const { r, said, summary } = lowHughes();
+    assert(r.rec.continueReason === 'low-confidence', r.rec.continueReason);
+    assert(/Draw a level\./.test(summary), summary);
+    assert(/^Result: continue 1\.5 g IV q12h, AUC24 \d+, Low confidence\./.test(said) && /Draw a level\./.test(said), said);
+  });
+  test('44.35 R26: the cap-bound detail reads as a sentence: "Confirm the clearance with a level before considering a dose beyond the ceiling or another agent."', () => {
+    const conf0 = { rank: 0, worstSigma: 0.5 };
+    const fitOf = (rec) => fn44('nextLevelFit')({ model: 'buelga', CL_ind: capCL, V_ind: 60, rec, mapAlt: null }, conf0);
+    const cont = fn44('regimenDecision')(12.34, 60, 450, null, 1, hist44(1500, 8), fn44('aucUncertaintyRow')(0, 'buelga'));
+    const dc = fn44('nextLevelValue')(cont.auc24, 0, 'buelga', cont.tau, 12.34, fitOf(cont)).detail;
+    assert(/Confirm the clearance with a level before considering a dose beyond the ceiling or another agent\.$/.test(dc) && !/A level confirms the clearance before going beyond/.test(dc), dc);
+    const chg = capDecide(250, 24), dg = fn44('nextLevelValue')(chg.auc24, 1, 'buelga', chg.tau, capCL, fitOf(chg)).detail;
+    assert(/Confirm the clearance with a level before this regimen is acted on, and before considering a dose beyond the ceiling or another agent\.$/.test(dg), dg);
+    assert(src44.indexOf('A level confirms the clearance before') < 0, 'the old wording is gone');
+  });
+  test('44.36 R26: the future-level refusal gives the year with the date', () => {
+    const H = 3600000, nowH = Date.now() / H, lvlH = nowH + 30;
+    const keep = {}; ['parseBayesCourse', 'showFormErrors', 'beginFormRun', 'readSerialScrChecked'].forEach(n => keep[n] = sandbox[n]);
+    const prevDoc = sandbox.document, vals = { 'b-age': '55', 'b-tbw': '80', 'b-height': '180', 'b-scr': '1.0', 'b-auc-target': '450' };
+    let errs = null;
+    sandbox.document = { getElementById: (id) => ({ value: vals[id] || '', checked: false, style: {}, classList: { add() {}, remove() {}, contains() { return false; } } }), querySelector: () => null, querySelectorAll: () => [] };
+    sandbox.beginFormRun = () => {}; sandbox.readSerialScrChecked = () => ({ errors: [], readings: [] });
+    sandbox.parseBayesCourse = () => ({ doses: [{ mg: 1250, tinfH: 1.5, timeH: nowH - 11 }], levels: [{ conc: 15, timeH: lvlH, row: '1', label: 'x' }], sessions: [], errors: [] });
+    sandbox.showFormErrors = (s, m) => { errs = [].concat(m); };
+    try { sandbox.runBayesian(); } finally { Object.assign(sandbox, keep); sandbox.document = prevDoc; }
+    const yr = String(new Date(lvlH * H).getFullYear());
+    assert(errs && errs.length === 1 && /^Level row 1: dated /.test(errs[0]) && errs[0].indexOf(yr) > 0, JSON.stringify(errs));
   });
 }
 

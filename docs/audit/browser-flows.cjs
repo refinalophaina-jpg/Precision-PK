@@ -22,6 +22,14 @@ const OUT = process.env.OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'vanco-flow
 fs.mkdirSync(OUT, { recursive: true });
 const checks = [];
 const ok = (name, pass, detail = '') => checks.push({ name, pass: !!pass, detail: String(detail).slice(0, 300) });
+// One sentence about a further level (D26): "would add little" never beside a sentence that asks for a
+// level ("Draw a level." included, Task 9) or beside a Hold (final review C1); the cap-bound alarm never
+// beside "a dose change is indicated" or "how large it needs to be" (Task 6b review); and a Hold never
+// beside the severe-renal note's "Give a … loading dose" (final review I5).
+const HOLD_RE = /Hold: |Hold the (?:\d+ )?planned dose/;
+const incoherent = (s) => (/would add little/.test(s) && (/is recommended|Confirm the clearance with a level|another level may settle it|Draw a level|Recheck a level/.test(s) || HOLD_RE.test(s)))
+  || (/cannot be reached within the conventional ceilings/.test(s) && /a dose change is indicated|how large it needs to be/.test(s))
+  || (HOLD_RE.test(s) && /Give (?:a|one) [^.]*?loading dose/.test(s));
 
 async function typeInto(page, sel, text) {
   const el = page.locator(sel);
@@ -791,6 +799,7 @@ async function enterCourse(page) {
     const fut = await futState();
     ok('D26: a level dated 30 h ahead is refused, naming "Level row 1", with no result',
        /Level row 1/.test(fut.err) && /future/.test(fut.err) && !fut.result && !fut.rec && fut.invalid, JSON.stringify({ result: fut.result, rec: fut.rec, invalid: fut.invalid, err: fut.err.replace(/\s+/g, ' ').trim().slice(0, 80) }));
+    ok('D26: the future-level refusal gives the year with the date (final review, R26)', fut.err.indexOf(day(1).slice(0, 4)) > 0, fut.err.replace(/\s+/g, ' ').trim().slice(0, 140));
     await f.locator('#b-lvl-date-1').fill(day(0)); await typeInto(f, '#b-lvl-time-1', '07:30');
     await f.locator('[data-onclick="k47"]').click(); await f.waitForSelector('#b-results .rec-dose', { timeout: 20000 });
     const fixed = await futState();
@@ -1098,11 +1107,7 @@ async function enterCourse(page) {
         fit: t('#ev-fit'), models: t('#ev-models') };
     });
     const printedN = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
-    // "Would add little" never beside a sentence that asks for a level (D26 review), "Draw a level."
-    // included (Task 9). And the cap-bound alarm never beside "a dose change is indicated" or "how
-    // large it needs to be" (Task 6b review).
-    const incoherent = (s) => (/would add little/.test(s) && /is recommended|Confirm the clearance with a level|another level may settle it|Draw a level/.test(s))
-      || (/cannot be reached within the conventional ceilings/.test(s) && /a dose change is indicated|how large it needs to be/.test(s));
+    // incoherent(): the file-level coherence predicate (D26 review; Task 6b, Task 9 and the final review).
     ok('D26: the 76 M on Buelga never says both "would add little" and "is recommended", on screen or in print',
        !incoherent(nl.all) && !incoherent(printedN)
        && /^Next A further level is recommended\.$/.test(nl.next),
@@ -1295,6 +1300,99 @@ async function enterCourse(page) {
     results.cloudflareInjected = (results.cloudflareInjected || 0) + hAttr.injected;
     results.problems.push(...hAttr.kept);
     await hctx.close();
+  }
+
+  // v3.14.0 (D26), the final whole-branch review (rulings R25, R26). Review Focus 1: an anuric patient
+  // with flat levels was told "Hold: next dose not before …" beside "Next: A further level would add
+  // little" (C1). Then a newer measured level the fit reads lower (I1) and the refusal's hold (I2).
+  // Fictional patients; fixed clock today 10:00.
+  {
+    const actx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const a = await actx.newPage();
+    const aProblems = watch(a, 'final-review');
+    await a.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    const aucRun = async (tag, pt, doses, levels, waitSel) => {
+      await a.goto(BASE + `?v=${tag}-` + Date.now(), { waitUntil: 'networkidle' });
+      await a.locator('[data-onclick="k2"]').click();
+      await typeInto(a, '#b-age', pt.age); await typeInto(a, '#b-tbw', pt.tbw); await typeInto(a, '#b-height', pt.ht); await typeInto(a, '#b-scr', pt.scr);
+      await a.locator('[data-onclick="k39"]').click();
+      await a.locator('#b-model-btn-goti').click();
+      for (let i = 1; i <= doses.length; i++) {
+        await a.locator('[data-onclick="k43"]').click();
+        await typeInto(a, `#b-dose-mg-${i}`, doses[i - 1][0]); await typeInto(a, `#b-dose-tinf-${i}`, doses[i - 1][1]);
+        await a.locator(`#b-dose-date-${i}`).fill(doses[i - 1][2]); await typeInto(a, `#b-dose-time-${i}`, doses[i - 1][3]);
+      }
+      for (let i = 1; i <= levels.length; i++) {
+        await a.locator('[data-onclick="k46"]').click();
+        await typeInto(a, `#b-lvl-conc-${i}`, levels[i - 1][0]); await a.locator(`#b-lvl-date-${i}`).fill(levels[i - 1][1]); await typeInto(a, `#b-lvl-time-${i}`, levels[i - 1][2]);
+      }
+      await a.locator('[data-onclick="k47"]').click(); await a.waitForSelector(waitSel || '#b-results .rec-dose', { timeout: 20000 }); await a.waitForTimeout(300);
+      return a.evaluate(() => {
+        const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+        const head = document.querySelector('#b-results .vx-hold-head'), reg = document.getElementById('vx-regimen');
+        return { all: t('#b-results'), head: head ? head.textContent.replace(/\s+/g, ' ').trim() : '', headCls: head ? head.className : '',
+          icon: !!(head && head.querySelector('svg.ic')), before: !!(head && reg && (head.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          next: t('#b-results .vx-next'), reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '', voi: t('#b-voi'),
+          said: t('#sr-announce'), summary: String(bState.summaryText || '') };
+      });
+    };
+    const printed = () => a.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    // C1: 70 M, 70 kg, 175 cm, SCr 8.5 (CrCl 8), Goti; one 2 g dose over 2 h, 100 h ago; levels 52, 51 and 50.2 mg/L.
+    const c1 = await aucRun('c1', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['2000', '2', day(-4), '06:00']],
+      [['52', day(-3), '10:00'], ['51', day(-2), '10:00'], ['50.2', day(0), '09:00']]);
+    const c1p = await printed();
+    ok('D26 final review (Review Focus 1): the anuric flat-levels patient — Hold leads, and Next is "Recheck a level before the next dose", never "would add little", on screen and in print',
+       /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(c1.head) && c1.icon && c1.before && c1.next === 'Next Recheck a level before the next dose.'
+       && !/would add little/.test(c1.all + c1p) && !incoherent(c1.all) && !incoherent(c1p) && /Recheck a level before the next dose/.test(c1.voi),
+       JSON.stringify({ head: c1.head, next: c1.next, voi: c1.voi.slice(0, 80), little: /would add little/.test(c1.all + c1p) }));
+    ok('D26 final review: the copy summary and the announcement carry the hold\'s instruction',
+       /^Hold: next dose not before /.test(c1.summary) && /Recheck a level before the next dose\./.test(c1.summary)
+       && /^Result: Hold: next dose not before /.test(c1.said) && /Recheck a level before the next dose\./.test(c1.said), JSON.stringify({ summary: c1.summary, said: c1.said }));
+    ok('D26 final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
+       /No further dose until a level is drawn/.test(c1.all) && !/Give a single weight-based loading dose/.test(c1.all) && !/not the actual 8\b/.test(c1.all),
+       c1.all.slice(c1.all.indexOf('Severe renal'), c1.all.indexOf('Severe renal') + 300));
+    // k82: a first-dose time after the resume time clears the hold, and the Next line and the panel follow it; a time inside it holds again.
+    const firstAt = async (d, t) => {
+      const open = await a.evaluate(() => document.querySelector('#b-results [data-onclick="k83"]').getAttribute('aria-expanded'));
+      if (open !== 'true') { await a.locator('#b-results [data-onclick="k83"]').click(); await a.waitForTimeout(150); }
+      { const [yy, mm, dd] = d.split('-'); await a.locator('#b-first-date').focus(); await a.keyboard.type(mm + dd + yy); await a.waitForTimeout(200); }
+      await typeInto(a, '#b-first-time', t); await a.locator('#b-first-time').press('Tab'); await a.waitForTimeout(400);
+      return a.evaluate(() => ({ hold: ((document.getElementById('b-hold') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        next: ((document.querySelector('#b-results .vx-next') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        voi: ((document.getElementById('b-voi') || {}).textContent || '').replace(/\s+/g, ' ').trim(), summary: String(bState.summaryText || '') }));
+    };
+    const late = await firstAt(day(7), '1200');
+    const inside = await firstAt(day(1), '1200');
+    // Past the fitted resume time the hold clears, but the measured 50.2 mg/L the fit reads lower does not: the
+    // measured-level alarm (I1) takes the slot, and the Next line, panel and summary follow the chosen time.
+    ok('D26 final review: a chosen time past the hold clears the hold and the measured-level alarm leads; a time inside it holds again; Next, panel and summary follow',
+       /^Measured 50\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00: recheck a level before the next dose/.test(late.hold) && !/Hold: /.test(late.hold + late.summary)
+       && late.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(late.voi) && /^Measured 50\.2 mg\/L/.test(late.summary)
+       && /^Hold: next dose not before/.test(inside.hold) && inside.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(inside.voi)
+       && /^Hold: next dose not before/.test(inside.summary),
+       JSON.stringify({ late: { hold: late.hold.slice(0, 70), next: late.next, summary: late.summary.slice(0, 40) }, inside: { hold: inside.hold.slice(0, 60), next: inside.next } }));
+    // I1: 70 M, 80 kg, 185 cm, SCr 9.7 (CrCl 8), Goti; one 1.5 g dose 120 h ago; levels 35, 30.3 and 26.2 mg/L, the last at 09:00.
+    const i1 = await aucRun('i1', { age: '70', tbw: '80', ht: '185', scr: '9.7' }, [['1500', '2', day(-5), '10:00']],
+      [['35', day(-3), '09:00'], ['30.3', day(-2), '09:00'], ['26.2', day(0), '09:00']]);
+    const i1p = await printed();
+    ok('D26 final review (I1): a newer measured 26.2 mg/L that the fit reads lower leads the answer in the alarm tone, without a hold; Next, summary, announcement and print say it',
+       /^Measured 26\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00: recheck a level before the next dose$/.test(i1.head) && /vx-measured-high/.test(i1.headCls) && /tone-alarm/.test(i1.headCls)
+       && i1.icon && i1.before && /the fit reads it lower/.test(i1.all) && !/Hold: /.test(i1.all) && i1.next === 'Next Recheck a level before the next dose.'
+       && /^Measured 26\.2 mg\/L/.test(i1.summary) && /^Result: Measured 26\.2 mg\/L/.test(i1.said) && /Measured 26\.2 mg\/L/.test(i1p) && !incoherent(i1.all) && !incoherent(i1p),
+       JSON.stringify({ head: i1.head, cls: i1.headCls, next: i1.next, said: i1.said.slice(0, 80) }));
+    // I2: the same patient as C1 with one 1.75 g dose: every candidate hard-fails.
+    const i2 = await aucRun('i2', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['1750', '2', day(-4), '06:00']],
+      [['52', day(-3), '08:00'], ['51', day(-2), '08:00'], ['50.2', day(0), '08:00']], '#vx-regimen');
+    const i2p = await printed();
+    ok('D26 final review (I2): a refusal with levels at or above 20 mg/L leads with "Hold: recheck a level before the next dose", on screen, in the summary, aloud and in print',
+       i2.reg === 'No regimen recommended' && i2.head === 'Hold: recheck a level before the next dose' && i2.icon && i2.before
+       && /^Hold: recheck a level before the next dose/.test(i2.summary) && /^Result: Hold: recheck a level before the next dose/.test(i2.said)
+       && /Hold: recheck a level before the next dose/.test(i2p) && /^Next Recheck a level before the next dose\./.test(i2.next),
+       JSON.stringify({ reg: i2.reg, head: i2.head, next: i2.next, said: i2.said.slice(0, 90) }));
+    const aAttr = await attributeInjected(a, aProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + aAttr.injected;
+    results.problems.push(...aAttr.kept);
+    await actx.close();
   }
 
   // v3.14.0 (D26), engine report C2 and I1; the user's ruling 2: the Trough module obeys AUC

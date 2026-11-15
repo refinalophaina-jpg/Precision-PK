@@ -2217,6 +2217,10 @@
   .vx-action.vx-hold-head { display: flex; align-items: flex-start; gap: 6px; color: var(--alarm); }
   .vx-action.vx-hold-head .ic { width: 1.05em; height: 1.05em; margin-top: .18em; }
   .vx-hold-why { margin: 0 0 10px; }
+  /* v3.14.0 (D26, final review I6): an over-ceiling continue leads with the caution */
+  .vx-ceiling-head { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); font-weight: 600; margin: 0 0 2px; }
+  .vx-ceiling-head .ic { flex: none; width: 1.05em; height: 1.05em; margin-top: .18em; }
+  .vx-ceiling-why { margin: 0 0 10px; }
   #b-results .rec-lowconf { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 10px 0 0;
     padding: 0; background: none; border: 0; }
   .vx-conf { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft);
@@ -8818,13 +8822,22 @@ const SEVERE_RENAL = {
   next:   'Give one loading dose, then dose by measured levels — see the severe renal impairment note.',
 };
 // module: 'auc' adds AUC Precision's step (re-run the fit); the Trough module has no fit to name.
-function severeRenalNote(crclTrue, modelNote, module) {
-  const step = module === 'auc' ? ' Enter it here and re-run the fit before the next dose.' : '';
+// dosed (final review I5): a dose has been given or a level exists. The loading-dose sentence
+// is advice before any dose; beside a Hold, with doses given and a level of 50 mg/L, "Give a
+// single weight-based loading dose" contradicted it. Then the first bullet says no further
+// dose until a level is drawn. The Rec 11 basis and maximum belong to the loading dose and go
+// with it.
+function severeRenalNote(crclTrue, modelNote, module, dosed) {
+  const step = module === 'auc' ? ` Enter ${dosed ? 'each level' : 'it'} here and re-run the fit before the next dose.` : '';
+  const first = dosed
+    ? `<li>No further dose until a level is drawn.</li>
+        <li>Later doses follow measured levels, not a schedule.${step}</li>`
+    : `<li>Give a single weight-based loading dose, then hold further doses. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}. Rybak 2020 sets no loading dose by renal function, and none for CrCl under ${VERY_LOW_CRCL_THRESHOLD} mL/min without dialysis.</li>
+        <li>Draw a level before any further dose; later doses follow measured levels, not a schedule.${step}</li>`;
   return { tier: 'alarm', word: 'Severe renal impairment (non-dialysis) suspected', html: `
       CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${modelNote || ''}
       <ul class="note-list">
-        <li>Give a single weight-based loading dose, then hold further doses. Its basis and maximum are those of Rybak 2020 Rec 11: actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)}. Rybak 2020 sets no loading dose by renal function, and none for CrCl under ${VERY_LOW_CRCL_THRESHOLD} mL/min without dialysis.</li>
-        <li>Draw a level before any further dose; later doses follow measured levels, not a schedule.${step}</li>
+        ${first}
         <li>Avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
         <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
@@ -10087,10 +10100,15 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
 // the resume time is searched from it on the fit WITHOUT the planned doses — they are
 // what is being held — as are the first dose's level and first-day AUC. Below it, the
 // check at the regimen's own time (with the planned rows) runs as before.
-// SEARCH MECHANICS, not clinical constants: the step is the resolution of the
-// "not before" time; the bound is how far the fitted curve is trusted to time a dose
-// before the answer becomes "recheck a level". Neither changes a dose or the threshold.
-const HOLD_SEARCH_STEP_H = 0.25, HOLD_SEARCH_MAX_H = 14 * 24;
+// The step is SEARCH MECHANICS, not a clinical constant: the resolution of the "not
+// before" time. It never changes a dose or the threshold.
+const HOLD_SEARCH_STEP_H = 0.25;
+// HOLD_SEARCH_MAX_H is a PREFERENCE (rule 8), not a sourced clinical constant (final review
+// I2, ruling R25): how far the fitted curve is trusted to time a dose. Past it the answer is
+// "recheck a level", with no time. No paper sets it; the user will rule on the value (14
+// days, kept as shipped). It changes when a hold says "recheck a level" instead of a
+// resume time, never a dose or the threshold (TROUGH_HIGH_MGL).
+const HOLD_SEARCH_MAX_H = 336;   // 14 days
 // "Was due" (v3.14.0, D26; UI report I2; ruling R1) is the due time of the regimen being
 // given, not of the new one: a q24h dose given 12 Nov 08:00 was due 13 Nov 08:00, and a
 // change to q12h read "was due 12 Nov 20:00", a dose missed 14 h ago. The regimen being
@@ -10147,11 +10165,49 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   // time has passed (Task 8 review, ruling R16). A first dose later than now (a longer new
   // interval) was not made late by it. `same` ("Next dose") reads the decision's regimen
   // too, so a screen holds one reading of the current regimen (R16).
+  // The final review's I1 (minimum, ruling R25): with no hold, the newest level measured after
+  // the last dose given, at or above the threshold, that the fit reads lower, leads the answer
+  // with an alarm (26.2 mg/L read as 19.5 gave "250 mg q48h, first dose now", no hold; and a
+  // time chosen past the fitted resume time hid flat levels of 50). When the Hold fires is
+  // unchanged (ruling 1: the fitted pre-dose level); whether a measured level should itself hold
+  // is the user's question. A fit that reads the level at or above it already times the dose on it.
+  const lv = hold ? null : newestLevelAfterLastDose(r, nowH);
+  const lvFit = lv ? predictFittedAt(r, lv.timeH) : NaN;
+  const measuredHigh = lv && lv.conc >= TROUGH_HIGH_MGL && lvFit < lv.conc ? { conc: lv.conc, timeH: lv.timeH, fitted: lvFit } : null;
   return { firstH, dueH, dueTau, dueCurrent: !!given, deltaH: firstH - dueH,
     duePassed: !!given && !chosen && dueH < nowH - 1e-9 && firstH <= nowH + 1e-9, chosen, clamped, plannedN,
     pre: predictFittedAt(rFit, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
     same: !!(given && given.dose === rec.dose && given.tau === rec.tau),
-    hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH };
+    hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH, measuredHigh };
+}
+// The newest measured level drawn after the start of the last dose given by nowH, or null
+// (final review I1/I2). Planned rows (after nowH) are not given.
+function newestLevelAfterLastDose(r, nowH) {
+  const given = ((r && r.doses) || []).filter(d => d.timeH <= nowH + 1e-9);
+  if (!given.length) return null;
+  const lastH = given.reduce((m, d) => Math.max(m, d.timeH), -Infinity);
+  const after = ((r && r.levels) || []).filter(l => l.timeH > lastH && l.timeH <= nowH + 1e-9);
+  return after.length ? after.reduce((a, b) => (b.timeH >= a.timeH ? b : a)) : null;
+}
+// The refusal's hold (final review I2, ruling R25). Real anuric fits keep CL at ~0.17 L/h or
+// more and every candidate hard-fails: "No regimen recommended" said nothing about the next
+// dose. When the fitted level at the next dose's due time (the current regimen's interval
+// from the last dose given, or now when there is none or it has passed), or the newest level
+// measured after the last dose, is at or above TROUGH_HIGH_MGL, the refusal leads with "Hold:
+// recheck a level before the next dose". No time: no regimen is offered to time.
+function noSolutionHold(r, nowH, cur) {
+  if (!(r && r.rec && r.rec.noSolution) || r.lowCrClHold) return null;
+  const given = (r.doses || []).filter(d => d.timeH <= nowH + 1e-9);
+  if (!given.length) return null;
+  const lastH = given.reduce((m, d) => Math.max(m, d.timeH), -Infinity);
+  const dueKnown = !!(cur && cur.tau > 0) && lastH + cur.tau > nowH;
+  const dueH = dueKnown ? lastH + cur.tau : nowH;
+  const fitted = predictFittedAt(Object.assign({}, r, { doses: given }), dueH);
+  const lv = newestLevelAfterLastDose(r, nowH);
+  const measured = lv && lv.conc >= TROUGH_HIGH_MGL ? { conc: lv.conc, timeH: lv.timeH } : null;
+  if (!(fitted >= TROUGH_HIGH_MGL) && !measured) return null;
+  return { noSolution: true, hold: true, holdNoTime: true, resumeH: null, holdPlannedH: null, plannedN: 0,
+           dueH, dueKnown, fitted, measured };
 }
 // The regimen being given, as the decision read it (D25): the one it continues, or the
 // one it changes from. A start (no established schedule, no override) has none.
@@ -10165,6 +10221,7 @@ function regimenBeingGiven(rec) {
 // first line, the Copy summary and the announcement. '' when there is no hold.
 function holdSentence(plan) {
   if (!(plan && plan.hold)) return '';
+  if (plan.noSolution) return `Hold: recheck a level before the next dose; ${noSolutionHoldWhy(plan, false)}`;
   const at = `the fitted level at ${fmtClock(plan.holdAtH)} is ${plan.holdPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L`;
   const lead = holdLead(plan);
   return plan.holdNoTime
@@ -10183,7 +10240,15 @@ function holdLead(plan) {
 function refreshHoldSlots(r, plan) {
   if (typeof document === 'undefined') return;
   const hh = document.getElementById('b-hold');
-  if (hh) hh.innerHTML = holdHeadHTML(plan);
+  if (hh) hh.innerHTML = answerHeadHTML(plan);
+  // The Next line and the further-level panel read the hold too (final review C1).
+  const ctx = bState.nextCtx;
+  if (ctx && ctx.r === r) {
+    const nx = document.getElementById('b-next'), step = bayesNextStep(ctx, plan);
+    if (nx && step) nx.innerHTML = nextLineHTML(step);
+    const voi = document.getElementById('b-voi');
+    if (voi) voi.innerHTML = voiHTML(bayesNextLevel(ctx, plan));
+  }
   const a = bState.summaryArgs;
   if (!a) return;
   const s = resultSummary(r, r.rec, a.cur, a.row, a.conf, plan);
@@ -10198,6 +10263,10 @@ function refreshHoldSlots(r, plan) {
 // k82 replaces it (#b-hold) when a chosen time makes or clears a hold.
 function holdHeadHTML(plan) {
   if (!(plan && plan.hold)) return '';
+  if (plan.noSolution) {
+    const why = noSolutionHoldWhy(plan, true);
+    return holdLineHTML('Hold: recheck a level before the next dose', why.charAt(0).toUpperCase() + why.slice(1));
+  }
   const head = plan.holdNoTime ? `${holdLead(plan)}: recheck a level before the next dose` : `${holdLead(plan)}: next dose not before ${fmtClock(plan.resumeH)}`;
   const at = plan.holdPlannedH != null ? 'At the planned dose, ' : plan.chosen ? 'At the time chosen, ' : '';
   const why = plan.holdNoTime
@@ -10207,9 +10276,43 @@ function holdHeadHTML(plan) {
 }
 // The markup of a hold, in both modules (D26): the alarm word and drawn icon on the
 // answer line, then why. Text only from numbers and fixed words (nothing typed).
-function holdLineHTML(head, why) {
-  return `<p class="vx-action vx-hold-head tone-alarm">${ICON.alarm}<span>${escHtml(head)}</span></p>
+function holdLineHTML(head, why, extraClass) {
+  return `<p class="vx-action vx-hold-head${extraClass ? ' ' + extraClass : ''} tone-alarm">${ICON.alarm}<span>${escHtml(head)}</span></p>
         <p class="vx-sub vx-hold-why">${escHtml(why)}</p>`;
+}
+// Why the refusal holds (final review I2): the fitted level at the due time, the newest
+// measured level after the last dose, or both — only those at or above the threshold.
+// full: the screen and print sentence (it closes with the instruction); else the summary's.
+function noSolutionHoldWhy(h, full) {
+  const parts = [];
+  if (h.fitted >= TROUGH_HIGH_MGL) parts.push(h.dueKnown ? `the fitted level when the next dose is due (${fmtClock(h.dueH)}) is ${h.fitted.toFixed(1)} mg/L`
+    : `the fitted level is ${h.fitted.toFixed(1)} mg/L now`);
+  if (h.measured) parts.push(`the newest level measured after the last dose is ${h.measured.conc.toFixed(1)} mg/L (${fmtClock(h.measured.timeH)})`);
+  return `${parts.join(', and ')}, at or above ${TROUGH_HIGH_MGL} mg/L.`
+    + (full ? ' No regimen is recommended below; recheck a level before any further dose.' : '');
+}
+// I1 (final review, minimum; ruling R25): a measured level at or above the threshold after
+// the last dose that the fit reads below it, with no hold. The same alarm grammar as a hold,
+// above the regimen; the regimen and its time are unchanged (the hold is the fit's, ruling 1).
+function measuredHighHead(plan) {
+  return `Measured ${plan.measuredHigh.conc.toFixed(1)} mg/L at ${fmtClock(plan.measuredHigh.timeH)}: recheck a level before the next dose`;
+}
+function measuredHighWhy(plan) {
+  const m = plan.measuredHigh;
+  return `Drawn after the last dose, it is at or above ${TROUGH_HIGH_MGL} mg/L, and the fit reads it lower (${m.fitted.toFixed(1)} mg/L at that time). `
+    + `The regimen below is timed on the fit, which reads ${plan.pre.toFixed(1)} mg/L by ${fmtClock(plan.firstH)}; check a level before the next dose.`;
+}
+function measuredHighSentence(plan) {
+  if (!(plan && !plan.hold && plan.measuredHigh)) return '';
+  const m = plan.measuredHigh;
+  return `Measured ${m.conc.toFixed(1)} mg/L at ${fmtClock(m.timeH)}, after the last dose, is at or above ${TROUGH_HIGH_MGL} mg/L; the fit reads it lower (${m.fitted.toFixed(1)} mg/L). Recheck a level before the next dose.`;
+}
+// The line above the regimen (#b-hold, print): a hold, else a measured level the fit reads
+// lower (I1), else nothing. k82 replaces it with the plan for a chosen time.
+function answerHeadHTML(plan) {
+  if (!plan) return '';
+  if (plan.hold) return holdHeadHTML(plan);
+  return plan.measuredHigh ? holdLineHTML(measuredHighHead(plan), measuredHighWhy(plan), 'vx-measured-high') : '';
 }
 // The readout part, which k82 replaces on its own (no full re-render). On screen
 // it is one line (v3.11.0, D22): when, the times after it and the level by then;
@@ -11487,9 +11590,6 @@ function regimenActionHTML(rec, targetAUC, part) {
     } else {
       why = `Within ${band} at AUC₂₄ ${rec.auc24.toFixed(0)} with ${rec.dots} of 20 plausible AUCs in range; no admissible regimen puts ${CONTINUE_MARGIN_DOTS} or more further in range.${alt}`;
     }
-    // D-a: a charted dose above a ceiling is continued when nothing else moves it, never quietly.
-    const over = rec.notRecommendable || [];
-    if (over.length) why += ` Caution: its dose is above the conventional ceiling${over.length > 1 ? 's' : ''} (${over.join('; ')}). It is not a regimen this tool would recommend, but the ceiling does not by itself make it unsafe (AUC₂₄ at most ${AUC24_ABSOLUTE_MAX}, trough under ${TROUGH_HIGH_MGL} mg/L), so it is not changed on that account.`;
   } else {
     const c = rec.current;
     head = `Change from ${fmtRegimen(c.dose, c.tau)}`;
@@ -11500,8 +11600,22 @@ function regimenActionHTML(rec, targetAUC, part) {
       ? `The current regimen gives AUC₂₄ ${c.auc24.toFixed(0)} with ${c.dots} of 20 plausible AUCs in ${band}, and no admissible regimen puts more in range; this one brings AUC₂₄ ${rec.inBand ? 'into the band, at' : 'nearer the band, to'} ${rec.auc24.toFixed(0)}, with ${rec.dots} of 20 in range.${alt}`
       : `The current regimen gives AUC₂₄ ${c.auc24.toFixed(0)} with ${c.dots} of 20 plausible AUCs in ${band}; this one puts ${rec.dots} of 20 in range.${alt}`;
   }
-  const h = `<p class="vx-action">${escHtml(head)}</p>`, w = `<p class="vx-why">${escHtml(why)}</p>`;
+  // D-a: a charted dose above a ceiling is continued when nothing else moves it, never quietly.
+  // The final review (I6, minimum, ruling R25): the caution leads the answer, in the caution
+  // tone, naming the limit, ahead of the action and the why line (it was the why line's last
+  // sentence, after the regimen, and absent from Copy summary and the announcement). Which
+  // action is chosen is unchanged; how the two modules read such a regimen is the user's (D-a).
+  const ceil = ceilingCautionText(rec);
+  const ceilHTML = ceil ? `<p class="vx-ceiling-head tone-caution">${ICON.caution}<span>${escHtml(ceil.replace(/\.$/, ''))}</span></p>
+        <p class="vx-sub vx-ceiling-why">${escHtml(`It is not a regimen this tool would recommend, but the ceiling does not by itself make it unsafe (AUC₂₄ at most ${AUC24_ABSOLUTE_MAX}, trough under ${TROUGH_HIGH_MGL} mg/L), so it is not changed on that account.`)}</p>` : '';
+  const h = `${ceilHTML}<p class="vx-action">${escHtml(head)}</p>`, w = `<p class="vx-why">${escHtml(why)}</p>`;
   return part === 'head' ? h : part === 'why' ? w : h + w;
+}
+// The ceiling caution on a continued regimen above 2 g a dose or 4.5 g a day (D-a; final
+// review I6), one sentence for the answer, Copy summary and the announcement. '' otherwise.
+function ceilingCautionText(rec) {
+  const over = rec && !rec.noSolution && rec.action === 'continue' ? (rec.notRecommendable || []) : [];
+  return over.length ? `Caution: the current dose is above the conventional ceiling${over.length > 1 ? 's' : ''} (${over.join('; ')}).` : '';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -11780,7 +11894,18 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   const pct = x => Math.round(x * 100);
   let kind, headline, detail;
 
-  if (f.confRank >= 2 || f.worstSigma >= CONFIDENCE_SIGMA.moderate || f.hasAlt) {
+  // A hold (final review C1), or a measured level the fit reads lower (I1), is ahead of every
+  // branch: its own instruction is the next step. "A further level would add little" stood
+  // beside "Hold: next dose not before …" on a Moderate three-level anuric fit.
+  if (f.hold || f.measuredHigh) {
+    kind = 'hold';
+    headline = 'Recheck a level before the next dose';
+    detail = f.hold
+      ? `The fitted level is at or above ${TROUGH_HIGH_MGL} mg/L when the next dose would go in, so it is held. `
+        + `A level before the next dose shows whether the concentration has fallen as the fit predicts; the precision of the AUC₂₄ estimate is not the question until then.`
+      : `A level measured after the last dose is at or above ${TROUGH_HIGH_MGL} mg/L, and the fit reads it lower. `
+        + `A level before the next dose shows which is right; the precision of the AUC₂₄ estimate is not the question until then.`;
+  } else if (f.confRank >= 2 || f.worstSigma >= CONFIDENCE_SIGMA.moderate || f.hasAlt) {
     kind = 'conflict';
     headline = 'A further level is recommended';
     detail = f.reason || '';
@@ -11792,10 +11917,10 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
       ? `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
         + `${ceilings} reaches the band: the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range `
         + `or brings AUC₂₄ nearer the band by more than half a 250 mg step, so the regimen is continued rather than changed. `
-        + `A level confirms the clearance before going beyond the ceiling, or to another agent, is considered.`
+        + `Confirm the clearance with a level before considering a dose beyond the ceiling or another agent.`
       : `This regimen sits below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen ${ceilings} `
         + `reaches the band: ${f.action === 'start' ? 'this is the highest admissible regimen, and the ceiling binds' : 'the ceiling binds'}. `
-        + `A level confirms the clearance before this regimen is acted on, and before going beyond the ceiling, or to another agent, is considered.`;
+        + `Confirm the clearance with a level before this regimen is acted on, and before considering a dose beyond the ceiling or another agent.`;
   } else if (outright) {
     kind = 'management';
     headline = 'A further level may substantially change the regimen';
@@ -11839,10 +11964,14 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
 // The fit state nextLevelValue reads, from the confidence rating and the answer as they
 // stand: nothing is judged again here. capBound is D25's cap-bound alarm on the answer,
 // read off its own flags, and action is the answer's (continue, change or start).
-function nextLevelFit(r, conf) {
+// plan: the first-dose plan as finalized (final review C1). Its hold, and with no hold a
+// measured level the fit reads lower (I1), put the hold's instruction ahead of everything.
+function nextLevelFit(r, conf, plan) {
   const rec = r && r.rec;
   const lead = confidenceLead(conf);
   return {
+    hold: !!(plan && plan.hold),
+    measuredHigh: !!(plan && !plan.hold && plan.measuredHigh),
     confRank: conf ? conf.rank : -1,
     worstSigma: conf ? conf.worstSigma : NaN,
     hasAlt: !!(r && r.mapAlt && r.mapAlt.CL > 0),
@@ -11863,11 +11992,38 @@ function nextLevelLine(nlv) {
     : `${nlv.headline}.`;
 }
 
+// AUC Precision's Next line, from one context the render keeps (bState.nextCtx) and the plan
+// in force (final review C1): the render and k82's chosen time read it the same way, so a
+// time that makes or clears a hold moves the Next line with it. ctx: { r, conf, auc, nLev,
+// model, tau, CL, fixed }; fixed is the HD, refusal or severe-renal sentence, said as is.
+// plan: the first-dose plan, or the refusal's hold (noSolutionHold).
+function bayesNextLevel(ctx, plan) {
+  return ctx && ctx.auc > 0 ? nextLevelValue(ctx.auc, ctx.nLev, ctx.model, ctx.tau, ctx.CL, nextLevelFit(ctx.r, ctx.conf, plan)) : null;
+}
+function bayesNextStep(ctx, plan) {
+  if (!ctx) return '';
+  if (ctx.fixed) return ctx.fixed;
+  const held = !!(plan && (plan.hold || plan.measuredHigh));
+  if (!held && ctx.r && ctx.r.mapAlt && ctx.r.mapAlt.CL > 0) return 'Two parameter sets fit these levels. Check the draw times; a level at a different point in the interval separates them.';
+  return nextLevelLine(bayesNextLevel(ctx, plan));
+}
+function nextLineHTML(step) {
+  return `<p class="vx-next"><span class="vx-k">Next</span> ${escHtml(step)}</p>`;
+}
+// The further-level panel under "Why this dose" (#b-voi): the Next line's headline and why.
+function voiHTML(nlv) {
+  if (!nlv) return '';
+  const tag = nlv.kind === 'hold' ? 'Hold' : nlv.kind === 'conflict' ? 'Fit in doubt' : nlv.kind === 'management' ? 'Clinical impact' : 'Precision only';
+  return `<div class="voi"><p class="voi-head"><span class="voi-tag">${tag}</span> <strong class="voi-title">${escHtml(nlv.headline)}</strong></p><p class="voi-body">${escHtml(nlv.detail)}</p></div>`;
+}
+
 // ─── Format absolute timestamp ───
-function fmtDT(timeH) {
+// withYear (final review, R26): a date that is wrong by a year (a level dated next year) must
+// read as such, so the future-level refusal carries it.
+function fmtDT(timeH, withYear) {
   const d = new Date(timeH * 3600000);
-  return d.toLocaleString('en-US',{month:'short',day:'numeric',
-    hour:'2-digit',minute:'2-digit',hour12:false});
+  return d.toLocaleString('en-US', Object.assign({month:'short',day:'numeric',
+    hour:'2-digit',minute:'2-digit',hour12:false}, withYear ? { year: 'numeric' } : {}));
 }
 
 // ─── Draw Dosing Profile canvas ───
@@ -12807,7 +12963,7 @@ function runBayesian() {
   const fitNowH = Date.now() / 3600000;
   const futureLevels = levels.filter(l => l.timeH > fitNowH + 1 / 60);
   if (futureLevels.length) {
-    const msgs = futureLevels.map(l => `Level row ${l.row}: dated ${fmtDT(l.timeH)}, after the time of this analysis. A level cannot be drawn in the future; check the date and time.`);
+    const msgs = futureLevels.map(l => `Level row ${l.row}: dated ${fmtDT(l.timeH, true)}, after the time of this analysis. A level cannot be drawn in the future; check the date and time.`);
     showFormErrors('auc', msgs, msgs.map(m => courseErrorTarget(m)), {
       lead: 'A level is dated in the future, so the fit was not run.',
       tail: 'Correct the date or time, or delete the row, then run again.' });
@@ -13962,23 +14118,54 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive
 // figure, used as the canvas's accessible name, and printed. plan: the first-dose
 // plan; a hold leads (v3.14.0, D26: the Copy summary carried no first-dose
 // information at all, engine report E3).
+// plan may also be the refusal's hold (noSolutionHold, final review I2). The answer's own
+// instruction closes it, as it closes the announcement (answerNextSaid): the hold's recheck
+// (C1), a kept regimen's "Draw a level." (ruling 3; R26). An over-ceiling continue's caution
+// follows the regimen (I6).
 function resultSummary(r, rec, cur, row, conf, plan) {
   const parts = [];
-  const held = rec && !rec.noSolution && !r.lowCrClHold ? holdSentence(plan) : '';
+  const regular = rec && !rec.noSolution && !r.lowCrClHold;
+  const held = regular || (rec && rec.noSolution && plan && plan.noSolution) ? (holdSentence(plan) || measuredHighSentence(plan)) : '';
   if (held) parts.push(held);
   if (cur && cur.dose && cur.tau && cur.auc24 != null) {
     parts.push(`On ${fmtRegimen(cur.dose, cur.tau)} the fitted AUC₂₄ is ${cur.auc24.toFixed(0)} mg·h/L`
       + (cur.Ctrough != null ? ` with a steady-state trough of ${cur.Ctrough.toFixed(1)} mg/L` : '') + '.');
   }
-  if (rec && !rec.noSolution && !r.lowCrClHold) {
+  if (regular) {
     const lead = rec.action === 'continue' ? `Continuing ${fmtRegimen(rec.dose, rec.tau)} is predicted to give`
       : rec.action === 'change' && rec.current ? `Change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ${fmtRegimen(rec.dose, rec.tau)}: predicted to give`
       : `${fmtRegimen(rec.dose, rec.tau)} is predicted to give`;
     parts.push(`${lead} ${rec.auc24.toFixed(0)} mg·h/L, likely `
       + `${(rec.auc24 * (1 - row.lo)).toFixed(0)} to ${(rec.auc24 * (1 + row.hi)).toFixed(0)}.`);
+    const ceil = ceilingCautionText(rec);
+    if (ceil) parts.push(ceil);
   }
   parts.push(`${conf.level} confidence, ${(r.levels || []).length} measured level${(r.levels || []).length === 1 ? '' : 's'}.`);
+  const next = regular ? answerNextSaid(rec, plan) : '';
+  if (next) parts.push(next);
   return parts.join(' ');
+}
+// The answer's own instruction, said after it in Copy summary and the announcement: a hold
+// with a resume time asks for a level before the next dose (C1; "recheck a level" with no
+// time, and the measured-level alarm, already say it); a regimen kept under Low confidence
+// says "Draw a level." (ruling 3, R26). '' otherwise.
+function answerNextSaid(rec, plan) {
+  if (plan && plan.hold && !plan.holdNoTime) return 'Recheck a level before the next dose.';
+  if (rec && !rec.noSolution && rec.action === 'continue' && rec.continueReason === 'low-confidence') return 'Draw a level.';
+  return '';
+}
+// What the screen reader hears for a regular AUC Precision answer or a refusal (not HD):
+// the hold or the measured-level alarm first, then the action and regimen, the ceiling
+// caution (I6), the rating, and the answer's own instruction (answerNextSaid).
+function bayesAnnouncement(r, rec, conf, plan) {
+  if (rec && !rec.noSolution && !r.lowCrClHold) {
+    const first = holdSentence(plan) || measuredHighSentence(plan);
+    const ceil = ceilingCautionText(rec), next = answerNextSaid(rec, plan);
+    return `Result: ${first ? `${first} Then ` : ''}${rec.action === 'continue' ? 'continue ' : rec.action === 'change' ? `change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ` : ''}${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
+      + (ceil ? ` ${ceil}` : '') + (next ? ` ${next}` : '');
+  }
+  const held = rec && rec.noSolution && plan && plan.noSolution ? holdSentence(plan) : '';
+  return held ? `Result: ${held} No maintenance regimen offered. See the notes.` : 'Result: no maintenance regimen offered. See the notes.';
 }
 
 // ─── Render Bayesian results ───
@@ -14071,18 +14258,27 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const aucForVOI = (rec && !rec.noSolution) ? rec.auc24
                   : (cur2 && cur2.auc24 != null) ? cur2.auc24 : null;
   const tauForVOI = (rec && !rec.noSolution) ? rec.tau : (cur2 ? cur2.tau : null);
+  // When the first dose of this regimen goes in (v3.9.0): not on HD, where dosing follows
+  // sessions. Planned before the Next line, which reads its hold (final review C1). A refusal
+  // has its own hold when the fitted or measured level is 20 mg/L or more (final review I2).
+  const firstPlan = !isHD && rec && !rec.noSolution && !r.lowCrClHold ? firstDosePlan(r, rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen) : null;
+  const nsHold = !isHD ? noSolutionHold(r, r.fitNowH, bState.curRegimen) : null;
+  const holdPlan = firstPlan || nsHold;
   // It reads the state of the fit (D26): a conflicted fit is told to draw a level, never
-  // that one "would add little" beside a Low rating.
-  const nlv = aucForVOI > 0 ? nextLevelValue(aucForVOI, nLev, uncertaintyModelKey(r), tauForVOI, CL_ind, nextLevelFit(r, conf)) : null;
-  const nextStep = (() => {
-    if (isHD && hdView && hdView.rec && hdView.rec.oneTime) return 'Draw a pre-HD level before the next session. Once the schedule is known, log it and each post-HD dose is sized for you.';
-    if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
-      : 'Give the loading dose, then draw a pre-HD level before the next session.';
-    if (rec && rec.noSolution) return 'Every candidate breached a hard safety limit. Confirm the inputs; if they hold, seek specialist guidance.';
-    if (r.lowCrClHold) return SEVERE_RENAL.next;
-    if (r.mapAlt && r.mapAlt.CL > 0) return 'Two parameter sets fit these levels. Check the draw times; a level at a different point in the interval separates them.';
-    return nextLevelLine(nlv);
-  })();
+  // that one "would add little" beside a Low rating; and a hold is told to recheck a level
+  // (final review C1). One context, kept so k82's chosen time re-reads it (bayesNextStep).
+  const nextCtx = { r, conf, auc: aucForVOI, nLev, model: uncertaintyModelKey(r), tau: tauForVOI, CL: CL_ind,
+    fixed: (() => {
+      if (isHD && hdView && hdView.rec && hdView.rec.oneTime) return 'Draw a pre-HD level before the next session. Once the schedule is known, log it and each post-HD dose is sized for you.';
+      if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
+        : 'Give the loading dose, then draw a pre-HD level before the next session.';
+      if (rec && rec.noSolution) return (nsHold ? 'Recheck a level before the next dose. ' : '') + 'Every candidate breached a hard safety limit. Confirm the inputs; if they hold, seek specialist guidance.';
+      if (r.lowCrClHold) return SEVERE_RENAL.next;
+      return '';
+    })() };
+  bState.nextCtx = nextCtx;
+  const nlv = bayesNextLevel(nextCtx, holdPlan);
+  const nextStep = bayesNextStep(nextCtx, holdPlan);
 
   // ── Notes, tiered. At most two show inline; the rest wait under "All notes".
   const notes = [];
@@ -14195,10 +14391,18 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       r.model === 'hughes' ? 'Hughes 2024' :
       r.model === 'goti'   ? 'Goti 2018'  :
                              'Buelga 2005';
+    // The clamp sentence only when something was clamped (final review I5): "used 8 mL/min, not
+    // the actual 8" said a clamp that did not happen. One decimal when the whole numbers agree.
+    const clamped = Math.abs(crclModel - crclTrue) > 1e-9;
+    const dp = clamped && crclModel.toFixed(0) === crclTrue.toFixed(0) ? 1 : 0;
+    const validated = `None of the implemented popPK models were validated below CrCl ${VERY_LOW_CRCL_THRESHOLD}; treat individual CL estimates with caution.`;
     const cappingNote = isHughesLow
       ? 'Hughes 2024 uses its own CrCl computed on fat-free mass (floored at 5 mL/min), a different scale from the Cockcroft-Gault value shown.'
-      : `${modelName} clamps CrCl ≥ 5 mL/min in this calculator — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. None of the implemented popPK models were validated below CrCl 10; treat individual CL estimates with caution.`;
-    notes.push(severeRenalNote(crclTrue, cappingNote, 'auc'));
+      : clamped ? `${modelName} clamps CrCl ≥ 5 mL/min in this calculator — the Bayesian fit used <strong>${crclModel.toFixed(dp)} mL/min</strong>, not the actual ${crclTrue.toFixed(dp)}. ${validated}`
+      : validated;
+    // A dose given or a level measured: no loading-dose advice (final review I5).
+    const dosed = nLev > 0 || (r.doses || []).some(d => d.timeH <= r.fitNowH + 1e-9);
+    notes.push(severeRenalNote(crclTrue, cappingNote, 'auc', dosed));
   }
 
   // ── 1-level Goti advisory (Cunio 2021) ──
@@ -14276,9 +14480,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const inlineNotes = notes.filter(n => n.tier !== 'info').slice(0, 2);
   const restNotes = notes.filter(n => !inlineNotes.includes(n));
 
-  // When the first dose of this regimen goes in (v3.9.0): not on HD, where dosing follows
-  // sessions. It reads after confidence and the next step, on one line (v3.11.0, D22).
-  const firstPlan = !isHD && rec && !rec.noSolution && !r.lowCrClHold ? firstDosePlan(r, rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen) : null;
+  // The first dose (firstPlan, above) reads after confidence and the next step, on one line (v3.11.0, D22).
   const firstBlock = firstPlan ? firstDoseHTML(firstPlan, rec, false) : '';
 
   // ── Dose recommendation ──
@@ -14320,7 +14522,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     // slot, so a chosen time (k82) can make or clear it without a re-render.
     verdict = `
       <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
-        <div id="b-hold">${holdHeadHTML(firstPlan)}</div>
+        <div id="b-hold">${answerHeadHTML(firstPlan)}</div>
         ${regimenActionHTML(rec, targetAUC, 'head')}
         <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.dose)}</span> IV <span class="vx-freq">${fmtFreq(rec.tau)}</span></h3>
         <p class="vx-inf">Infuse over ${fmtHrs(rec.tinfH)}${derated ? ' · <span class="vx-prov">provisional</span>' : ''}</p>
@@ -14342,6 +14544,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     lowConfSpan = derated ? span : '';
   } else if (rec && rec.noSolution) {
     verdict = `
+      ${holdHeadHTML(nsHold)}
       <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">No regimen recommended</h3>
       <p class="vx-hold">${escHtml(rec.reason || '')}</p>`;
   }
@@ -14378,7 +14581,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <span class="vx-muted">${escHtml(modelLabel)}</span>
       ${mismatch ? `<span class="vx-mismatch tone-caution">${ICON.caution}<span>${escHtml(mismatch)}</span></span>` : ''}
     </p>`;
-  const nextBlock = nextStep ? `<p class="vx-next"><span class="vx-k">Next</span> ${escHtml(nextStep)}</p>` : '';
+  // Its own slot (#b-next), so k82's chosen time can move it with the hold (final review C1).
+  const nextBlock = nextStep ? `<div id="b-next">${nextLineHTML(nextStep)}</div>` : '';
   // The fitted curve read at the start of the next planned session (D15). It
   // includes any planned dose rows, so a post-HD dose can be tried by hand.
   const hdBlock = !hd ? '' : hd.next
@@ -14392,7 +14596,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // ── The first viewport: course strip + verdict + curve ─────────────────────
   const projDefaultDose = (rec && !rec.noSolution) ? rec.dose : 1000;
   const projDefaultTau  = (rec && !rec.noSolution) ? rec.tau  : 12;
-  const summary = hdSentence || resultSummary(r, rec, cur, uRow, conf, firstPlan);
+  const summary = hdSentence || resultSummary(r, rec, cur, uRow, conf, holdPlan);
   // What k82 needs to say a hold made or cleared by a chosen time in the Copy summary (D26).
   bState.summaryArgs = hdSentence ? null : { cur, row: uRow, conf };
   html += `
@@ -14511,7 +14715,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <ul class="conf-reasons">${reasons}</ul>
       </div>
       ${ceTable}${tied}
-      ${nlv ? `<div class="voi"><p class="voi-head"><span class="voi-tag">${nlv.kind === 'conflict' ? 'Fit in doubt' : nlv.kind === 'management' ? 'Clinical impact' : 'Precision only'}</span> <strong class="voi-title">${escHtml(nlv.headline)}</strong></p><p class="voi-body">${escHtml(nlv.detail)}</p></div>` : ''}`, false);
+      <div id="b-voi">${voiHTML(nlv)}</div>`, false);
   }
 
   // Current regimen — what the patient is on, from real timestamps
@@ -14912,10 +15116,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   cont.innerHTML = html;
   bState.summaryText = summary;
   scrollResultsIntoView('b-results');
-  const heldSaid = !hdSentence ? holdSentence(firstPlan) : '';   // D26: a hold is heard first
-  announceResult(hdSentence ? `Result: ${hdSentence}` : rec && !rec.noSolution && !r.lowCrClHold
-    ? `Result: ${heldSaid ? `${heldSaid} Then ` : ''}${rec.action === 'continue' ? 'continue ' : rec.action === 'change' ? `change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ` : ''}${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
-    : 'Result: no maintenance regimen offered. See the notes.');
+  // D26: a hold is heard first; the refusal's hold, the ceiling caution and the answer's own
+  // instruction are heard too (final review C1, I2, I6; R26).
+  announceResult(hdSentence ? `Result: ${hdSentence}` : bayesAnnouncement(r, rec, conf, holdPlan));
 
   // ── Draw graph and pre-select tinkerer interval ──
   requestAnimationFrame(() => {
@@ -17531,6 +17734,8 @@ function _prRecommendation(r, screen) {
   if (hv) {
     h += (hv.empiric ? hdEmpiricHTML(hv.empiric, r.tbw, r.doses) : hdNextDoseHTML(hv.rec, !!screen.provisional, hv.nowH, true)).replace(/ id="vx-regimen"/g, '');
   } else if (r.rec && r.rec.noSolution) {
+    // The refusal's hold (final review I2), as on screen.
+    h += holdHeadHTML(noSolutionHold(r, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.curRegimen));
     h += `<p class="pr-regimen pr-hold">No regimen offered.</p>`;
     h += `<p class="pr-metric">${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</p>`;
     h += `<p class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</p>`;
@@ -17541,7 +17746,7 @@ function _prRecommendation(r, screen) {
     const best = r.rec;
     const tinf = best.tinfH ? best.tinfH : autoTinf(best.dose);
     const fp = !r.lowCrClHold ? firstDosePlan(r, r.rec, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.firstDoseAtH, bState.curRegimen) : null;
-    h += holdHeadHTML(fp);                               // v3.14.0 (D26): a hold leads, as on screen
+    h += answerHeadHTML(fp);                             // v3.14.0 (D26): a hold, or a measured level the fit reads lower (I1), leads as on screen
     h += regimenActionHTML(best, r.targetAUC, 'head');   // v3.14.0 (D25): continue, or change and why — as on screen
     h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? '<span class="pr-prov">provisional</span>' : ''}</p>`;
     if (fp) h += firstDoseHTML(fp, r.rec, true);
