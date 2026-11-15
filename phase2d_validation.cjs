@@ -3312,7 +3312,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     for (let i = 0; i < n; i++) doses.push({ mg: dose, tinfH: tinf, timeH: i * tau });
     const f = (a, b, c) => burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels);
     const auc = e => dose * 24 / tau / (pk.TVCL * Math.exp(e[0]));
-    return { f, auc, single: nelderMead3D(f, 0, 0, 0, 400), multi: mapFit(f, 3, om('OMEGA2_CL_GOTI'), om('OMEGA2_VC_GOTI'), 400) };
+    return { f, auc, single: nelderMead3D(f, 0, 0, 0, 400), multi: mapFit(f, 3, om('OMEGA2_CL_GOTI'), om('OMEGA2_VC_GOTI'), 400, om('OMEGA2_VP_GOTI')) };
   };
 
   test('multi-start finds the better MAP minimum a single start missed', ()=>{
@@ -4737,7 +4737,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const pk = sandbox.gotiPopPK(10, 70, true);
     const doses = [{ mg: 1000, tinfH: sandbox.autoTinf(1000), timeH: 9.3 }];
     const levels = [{ conc: 10.3, timeH: 29.7 }];
-    const mf = sandbox.mapFit((a, b, c) => sandbox.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels), 3, K37.OMEGA2_CL_GOTI, K37.OMEGA2_VC_GOTI, 400);
+    const mf = sandbox.mapFit((a, b, c) => sandbox.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels), 3, K37.OMEGA2_CL_GOTI, K37.OMEGA2_VC_GOTI, 400, K37.OMEGA2_VP_GOTI);
     const [eCL, eVc, eVp] = mf.eta;
     const r = { model: 'goti', dial: true, CL_ind: pk.TVCL * Math.exp(eCL), V_ind: pk.TVVc * Math.exp(eVc), tbw: 70,
       goti: { Vc_ind: pk.TVVc * Math.exp(eVc), Vp_ind: pk.TVVp * Math.exp(eVp), Q: pk.Q }, levels, doses,
@@ -8182,12 +8182,65 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const doses = [0, 12, 24, 36].map(t => ({ mg: 2000, tinfH: 2, timeH: t }));
     const levels = [{ conc: 38, timeH: 27 }, { conc: 21, timeH: 36 }];
     const mf = sandbox.mapFit((a, b, c) => burtonObj3D_hughes(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, levels),
-      3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400);
+      3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES);
     const CL = pk.TVCL * Math.exp(mf.eta[0]);
     // Measured 2026-11 on this fixture: 4.42996 L/h. Doubling any one constant moves it by at least
     // 0.0067 (OMEGA2_VC_HUGHES, the weakest), and by 0.24 (OMEGA2_CL), 0.13 (OMEGA2_VP), 0.25 (SIGMA_PROP),
     // 0.045 (SIGMA_ADD); the tolerance is a third of the smallest of those.
     assertClose(CL, 4.4300, 0.002, 'posterior CL (L/h)');
+  });
+
+  // 45.2 (models review I1, Task 17): the 3-parameter MAP fit never started away from zero on Vp, so on
+  // Hughes (Vp 80.3% CV, the widest prior) it could settle in the higher of two minima along the CL-Vp
+  // ridge and say nothing. These seven fictional patients are every case docs/audit/probe-map-starts.cjs
+  // found missed (seeded; 1,500 per design; four from --regimen=guideline, three from --regimen=target;
+  // concentrations rounded to 0.01 mg/L and re-checked). Each carries the objective and clearance of the
+  // lowest minimum a 27-start reference ({-1,0,+1} SD on CL, Vc and Vp) reaches. Before the fix mapFit
+  // stopped 0.026-0.38 objective units above it, with clearance 11-55% higher. Fixture 2 is the one that
+  // +/-1 SD on Vp alone did not reach (its lower minimum sits at eta Vp 1.39, about 2 SD). Tolerance:
+  // 1e-4 objective units (-2 log posterior), 260x smaller than the smallest of those gaps; clearance
+  // within 0.01 L/h. All are slow clearers on q24h or q36h.
+  test('45.2 Hughes and Goti MAP fits start on Vp too: the probe\'s missed cases reach the lower minimum', () => {
+    const fixtures = [
+      { design: 'peak-trough',   patient: { sex: 'F', ht: 175, tbw: 198.1, age: 48, scr: 1.99 }, course: { mg: 2500, tinfH: 2.5, tau: 24 },
+        levels: [{ timeH: 147.5, conc: 44.13 }, { timeH: 167.5, conc: 6.37 }],                                 refObj: 16.661163, refCL: 3.1852 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 179, tbw: 209.5, age: 24, scr: 2.16 }, course: { mg: 2500, tinfH: 2.5, tau: 24 },
+        levels: [{ timeH: 119.5, conc: 9.4 }, { timeH: 143.5, conc: 10.82 }, { timeH: 167.5, conc: 10.88 }],     refObj: 7.311188,  refCL: 4.1201 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 164, tbw: 117.4, age: 65, scr: 2.34 }, course: { mg: 1750, tinfH: 2,   tau: 36 },
+        levels: [{ timeH: 179.5, conc: 8.98 }, { timeH: 215.5, conc: 19.6 }, { timeH: 251.5, conc: 18.36 }],     refObj: 10.405557, refCL: 1.6273 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 150, tbw: 112.7, age: 20, scr: 2.17 }, course: { mg: 1750, tinfH: 2,   tau: 24 },
+        levels: [{ timeH: 119.5, conc: 10.66 }, { timeH: 143.5, conc: 16.78 }, { timeH: 167.5, conc: 17.86 }],   refObj: 6.752988,  refCL: 2.5218 },
+      { design: 'one-trough',    patient: { sex: 'M', ht: 187, tbw: 238.2, age: 75, scr: 1.61 }, course: { mg: 1500, tinfH: 1.5, tau: 24 },
+        levels: [{ timeH: 167.5, conc: 2.61 }],                                                                  refObj: 11.618928, refCL: 4.8723 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 153, tbw: 128,   age: 58, scr: 1.98 }, course: { mg: 750,  tinfH: 1,   tau: 24 },
+        levels: [{ timeH: 119.5, conc: 5.73 }, { timeH: 143.5, conc: 3.23 }, { timeH: 167.5, conc: 4.99 }],      refObj: 11.687872, refCL: 2.0305 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 161, tbw: 108.5, age: 46, scr: 2.47 }, course: { mg: 750,  tinfH: 1,   tau: 24 },
+        levels: [{ timeH: 119.5, conc: 5.69 }, { timeH: 143.5, conc: 10.02 }, { timeH: 167.5, conc: 4.22 }],     refObj: 13.179912, refCL: 1.8788 },
+    ];
+    const ACTUAL = vm.runInContext('SCR_POLICY.ACTUAL', sandbox), FLOOR = __extractConsts().CRCL_MODEL_FLOOR;
+    const sd = [OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, OMEGA2_VP_HUGHES].map(Math.sqrt);
+    for (const [k, f] of fixtures.entries()) {
+      const p = f.patient, ffm = computeFFM(p.tbw, p.ht, p.sex);
+      const pk = hughesPopPK(Math.max(FLOOR, sandbox.calcCrClRaw(p.age, p.sex, p.scr, ffm, ACTUAL)), ffm);   // getHughesCrCl
+      const doses = Array.from({ length: 8 }, (_, i) => ({ mg: f.course.mg, tinfH: f.course.tinfH, timeH: i * f.course.tau }));
+      const obj = (a, b, c) => burtonObj3D_hughes(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, f.levels);
+      // As runBayesian calls it.
+      const mf = sandbox.mapFit(obj, 3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES);
+      // The wide reference, recomputed here so the pinned value is not the only anchor.
+      let ref = Infinity;
+      for (const i of [-1, 0, 1]) for (const j of [-1, 0, 1]) for (const m of [-1, 0, 1]) {
+        const x = nelderMead3D(obj, i * sd[0], j * sd[1], m * sd[2], 400); ref = Math.min(ref, obj(...x));
+      }
+      const tag = `fixture ${k + 1} (${f.design}, ${p.sex} ${p.age} y ${p.tbw} kg)`;
+      assertClose(ref, f.refObj, 1e-4, `${tag}: 27-start reference objective`);
+      assertClose(mf.obj, f.refObj, 1e-4, `${tag}: mapFit objective (the lower minimum)`);
+      assertClose(pk.TVCL * Math.exp(mf.eta[0]), f.refCL, 0.01, `${tag}: posterior CL (L/h)`);
+    }
+    // Every 3-parameter call site passes its own model's peripheral-volume variance (Goti and Hughes, in
+    // runBayesian and in modelAgreement). A call that omits it silently loses the Vp starts.
+    const calls = [...html.matchAll(/mapFit\([^;]*?,\s*3,\s*OMEGA2_CL_(GOTI|HUGHES),\s*OMEGA2_VC_\1,\s*\d+\s*(,\s*OMEGA2_VP_(\w+)\s*)?\)/g)];
+    assert(calls.length >= 4, `expected at least 4 three-parameter mapFit calls, found ${calls.length}`);
+    for (const c of calls) assert(c[3] === c[1], `a ${c[1]} mapFit call does not pass OMEGA2_VP_${c[1]}: …${c[0].slice(-70).replace(/\s+/g, ' ')}`);
   });
 
   // ── Task 14: direct behaviour tests, one per mutant the code review saw survive (I3, I4, I5) ──
@@ -8478,7 +8531,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 586;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.5-45.34 + D27 redraw)
+const EXPECTED_TOTAL = 587;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.5-45.34 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

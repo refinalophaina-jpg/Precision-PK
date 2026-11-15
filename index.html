@@ -5539,7 +5539,7 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
       const onHD = !!ctx.dial;
       const gp = gotiPopPK(crclG, ctx.tbw, onHD);
       const gf = mapFit((a,b,c) => burtonObj3D(a,b,c,gp.TVCL,gp.TVVc,gp.TVVp,doses,levels),
-                        3, OMEGA2_CL_GOTI, OMEGA2_VC_GOTI, 400).eta;
+                        3, OMEGA2_CL_GOTI, OMEGA2_VC_GOTI, 400, OMEGA2_VP_GOTI).eta;
       push(onHD ? 'goti-hd' : 'goti',
            onHD ? 'Goti 2-comp · HD' : 'Goti 2-comp', '2-compartment',
            gp.TVCL * Math.exp(gf[0]));
@@ -5551,7 +5551,7 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     if (hughesApplies && ctx.crclHughes > 0 && ctx.ffm > 0) {
       const hp = hughesPopPK(ctx.crclHughes, ctx.ffm);
       const hf = mapFit((a,b,c) => burtonObj3D_hughes(a,b,c,hp.TVCL,hp.TVVc,hp.TVVp,hp.TVQ,doses,levels),
-                        3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400).eta;
+                        3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES).eta;
       push('hughes', 'Hughes 2-comp · FFM', '2-compartment',
            hp.TVCL * Math.exp(hf[0]),
            (isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
@@ -10833,15 +10833,32 @@ function nelderMead3D(fn, a0, b0, c0, maxIter) {
 // clearance — and so an AUC24 = TDD/CL — that differs materially, both are
 // reported and confidence is lowered: choosing the lower of two near-equal
 // minima is itself close to arbitrary, so the clinician must be told.
+//
+// A 3-parameter fit (Goti, Hughes) also starts from +/-1 and +/-2 SD on Vp, the
+// model's own published omega (models review 2026-11-13, I1; D27). The five
+// starts above all sit at Vp = 0, and Hughes' widest prior is Vp (80.3% CV): along
+// the CL-Vp ridge every start could converge on the higher of two minima and say
+// nothing. docs/audit/probe-map-starts.cjs (fictional, 1,500 per design, two
+// regimen policies, four designs; a 27-start reference): 8 of 12,000 Hughes fits
+// missed the lower minimum with five starts, the clearance reported up to 47%
+// above the better one's; 1 with +/-1 SD added (its lower minimum sits near +2 SD);
+// 0 with +/-1 and +/-2 SD. Goti: 0 of 12,000 either way. The multiples 1 and 2 are
+// search mechanics, not clinical constants: they decide only where the optimiser
+// starts, and the lowest objective still wins. The Vp starts come last, so an
+// exact tie resolves as before. A caller passes its own model's omega2Vp.
 // PREFERENCE (rule 8): the two cut-points below are this calculator's choice.
 const MAP_TIE_OBJ   = 2;      // objective units (-2 log posterior); ~1 chi-square unit apart
 const MAP_SPLIT_CL  = 0.20;   // clearance ratio above which two minima are "different answers"
 
-function mapFit(fn, dim, omega2CL, omega2V, maxIter) {
+function mapFit(fn, dim, omega2CL, omega2V, maxIter, omega2Vp) {
   const sC = Math.sqrt(omega2CL), sV = Math.sqrt(omega2V);
-  const starts = [[0, 0], [sC, 0], [-sC, 0], [0, sV], [0, -sV]];
-  const runs = starts.map(([a, b]) => {
-    const x = dim === 2 ? nelderMead2D(fn, a, b, maxIter) : nelderMead3D(fn, a, b, 0, maxIter);
+  const starts = [[0, 0, 0], [sC, 0, 0], [-sC, 0, 0], [0, sV, 0], [0, -sV, 0]];
+  if (dim === 3 && isFinite(omega2Vp) && omega2Vp > 0) {
+    const sP = Math.sqrt(omega2Vp);
+    starts.push([0, 0, sP], [0, 0, -sP], [0, 0, 2 * sP], [0, 0, -2 * sP]);
+  }
+  const runs = starts.map(([a, b, c]) => {
+    const x = dim === 2 ? nelderMead2D(fn, a, b, maxIter) : nelderMead3D(fn, a, b, c, maxIter);
     return { x, f: fn(...x) };
   }).filter(r => isFinite(r.f));
   if (!runs.length) return { eta: dim === 2 ? [0, 0] : [0, 0, 0], obj: NaN, alternative: null };
@@ -13212,7 +13229,7 @@ function runBayesian() {
 
     if (filteredLevels.length > 0) {
       const mf = mapFit((a,b,c) => burtonObj3D(a,b,c, pk.TVCL, pk.TVVc, pk.TVVp, doses, filteredLevels),
-                        3, OMEGA2_CL_GOTI, OMEGA2_VC_GOTI, 400);
+                        3, OMEGA2_CL_GOTI, OMEGA2_VC_GOTI, 400, OMEGA2_VP_GOTI);
       const [eCL, eVc, eVp] = mf.eta;
       etaCL_opt=eCL; etaVc_opt=eVc; etaVp_opt=eVp;
       if (mf.alternative) mapAlt = { CL: pk.TVCL * Math.exp(mf.alternative.eta[0]), dObj: mf.alternative.dObj };
@@ -13289,7 +13306,7 @@ function runBayesian() {
 
     if (filteredLevels.length > 0) {
       const mf = mapFit((a,b,c) => burtonObj3D_hughes(a,b,c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, filteredLevels),
-                        3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400);
+                        3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES);
       const [eCL, eVc, eVp] = mf.eta;
       etaCL_opt=eCL; etaVc_opt=eVc; etaVp_opt=eVp;
       if (mf.alternative) mapAlt = { CL: pk.TVCL * Math.exp(mf.alternative.eta[0]), dObj: mf.alternative.dObj };

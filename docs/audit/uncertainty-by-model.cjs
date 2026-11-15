@@ -36,7 +36,7 @@ function run(model,nLev,design){
         obj=(a,b,c)=>burtonObj3D_hughes(a,b,c,pk.TVCL,pk.TVVc,pk.TVVp,pk.TVQ,doses,levels);}
       CLt=pk.TVCL*Math.exp(randn()*Math.sqrt(o[0])); const Vc=pk.TVVc*Math.exp(randn()*Math.sqrt(o[1])); const Vp=pk.TVVp*Math.exp(randn()*Math.sqrt(o[2]));
       for(const t of times){const c=predictConc2comp(doses,t,CLt/Vc,Q/Vc,Q/Vp,Vc);const sd=Math.sqrt((sp*c)**2+sa*sa);levels.push({timeH:t,conc:Math.max(0.5,c+randn()*sd)});}
-      CLfit=pk.TVCL; if(nLev){const r=(SINGLE||!sb.mapFit)?nelderMead3D(obj,0,0,0,400):sb.mapFit(obj,3,o[0],o[1],400).eta;CLfit=pk.TVCL*Math.exp(r[0]);}
+      CLfit=pk.TVCL; if(nLev){const r=(SINGLE||!sb.mapFit)?nelderMead3D(obj,0,0,0,400):sb.mapFit(obj,3,o[0],o[1],400,o[2]).eta;CLfit=pk.TVCL*Math.exp(r[0]);}
     }
     if(!(CLfit>0)||!isFinite(CLfit))continue;
     const aT=24000/tau/CLt, aE=24000/tau/CLfit;
