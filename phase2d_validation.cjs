@@ -3418,14 +3418,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log('  SUITE 28 — redraw after resize or theme toggle');
   console.log(`${'─'.repeat(60)}`);
 
-  test('every value the redraw passes is stored by the render it repeats', ()=>{
-    const redraw = bodyOf('redrawAllCanvases');
+  test('every value a re-render repeats is stored by the render (Explain and the HD controls re-render from them)', ()=>{
     const render = bodyOf('renderBayesianResults');
     for (const k of ['divergeMsg', 'levelWarnings', 'mic', 'p2c']) {
-      assert(new RegExp('bState\\.' + k).test(redraw), `redraw no longer reads ${k}?`);
       assert(new RegExp('bState\\.' + k + '\\s*=').test(render), `renderBayesianResults must store bState.${k}`);
     }
     assert(/levelWarnings = Array\.isArray\(levelWarnings\) \? levelWarnings : \[\]/.test(render), 'a missing list must not throw');
+  });
+  test('D27: a resize or theme redraw repaints the canvases and the strip; it does not rebuild the result', ()=>{
+    const redraw = bodyOf('redrawAllCanvases');
+    assert(!/renderBayesianResults\s*\(/.test(redraw), 'redrawAllCanvases must not call renderBayesianResults');
+    assert(/refreshProfileGraph\s*\(/.test(redraw), 'the profile curve and the course strip are redrawn');
+    assert(/_tinkSSRedraw/.test(redraw) && /_txTinkView/.test(redraw) && /renderComparisonSection/.test(redraw),
+      'the Tinkerer, Trough tinker and comparison charts are redrawn');
   });
   test('the Tinkerer steady-state canvas never paints default black: it clears, like drawPKGraph', ()=>{
     // A bare fillRect with no fillStyle painted a black slab (design audit 2026-09-28).
@@ -8473,7 +8478,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 585;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.5-45.34)
+const EXPECTED_TOTAL = 586;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.5-45.34 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

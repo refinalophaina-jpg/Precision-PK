@@ -352,6 +352,47 @@ async function enterCourse(page) {
   await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(300);
   await page.locator('.theme-toggle').click(); await page.waitForTimeout(300);
 
+  // D27: a resize or a theme change redraws the canvases and the strip; it does not rebuild the
+  // result. Every evidence section open, a typed value, the first-dose editor open with its date
+  // focused: all of it, and the announcer, survive. A soft keyboard (a height-only change at 375 px)
+  // is the same case on a phone.
+  {
+    const snap = () => page.evaluate(() => ({
+      open: [...document.querySelectorAll('#b-results details')].filter(d => d.open).length,
+      all: document.querySelectorAll('#b-results details').length,
+      tink: (document.getElementById('b-tink-dose') || {}).value, focus: document.activeElement && document.activeElement.id,
+      editOpen: !document.getElementById('b-first-edit').hidden, said: (document.getElementById('sr-announce') || {}).textContent || '',
+      same: !!document.querySelector('#b-results .vx-top') && document.querySelector('#b-results .vx-top').__d27 === true }));
+    await page.evaluate(() => { document.querySelectorAll('#b-results details').forEach(d => { d.open = true; });
+      document.querySelector('#b-results .vx-top').__d27 = true; });
+    await typeInto(page, '#b-tink-dose', '1750');
+    if (await page.locator('#b-results [data-onclick="k83"]').getAttribute('aria-expanded') !== 'true') await page.locator('#b-results [data-onclick="k83"]').click();
+    await page.locator('#b-first-date').focus(); await page.waitForTimeout(200);
+    const before = await snap();
+    // The theme is switched by its function, not a click: a click would move focus to the button, which is its own effect.
+    await page.setViewportSize({ width: 1300, height: 900 }); await page.waitForTimeout(500);
+    await page.evaluate(() => toggleTheme()); await page.waitForTimeout(500);
+    const after = await snap();
+    await page.evaluate(() => toggleTheme()); await page.waitForTimeout(300);
+    ok('D27: resize and a theme change keep the result\'s state (sections, typed value, focus, one announcement)',
+       before.all > 3 && before.open === before.all && before.tink === '1750' && before.focus === 'b-first-date' && before.editOpen
+       && after.open === before.open && after.tink === '1750' && after.focus === 'b-first-date' && after.editOpen
+       && after.said === before.said && after.same, JSON.stringify({ before, after }));
+    const inkD = await canvasInk(page, '#b-profile-canvas');
+    ok('D27: the canvas is still drawn after the redraw', inkD.painted > 500, JSON.stringify(inkD));
+    // A soft keyboard: width unchanged, height shrinks.
+    await page.setViewportSize({ width: 375, height: 812 }); await page.waitForTimeout(500);
+    await page.locator('#b-first-time').focus(); await page.keyboard.type('123'); await page.waitForTimeout(200);
+    const k1 = await snap(), t1 = await page.locator('#b-first-time').inputValue();
+    await page.setViewportSize({ width: 375, height: 500 }); await page.waitForTimeout(500);
+    const k2 = await snap(), t2 = await page.locator('#b-first-time').inputValue();
+    ok('D27: a soft keyboard (375 px, height only) leaves the first-dose editor open, the focus and the typed value',
+       k1.editOpen && k2.editOpen && k1.focus === 'b-first-time' && k2.focus === 'b-first-time' && !!t1 && t2 === t1
+       && k2.tink === '1750' && k2.open === k2.all && k2.said === k1.said && k2.same, JSON.stringify({ t1, t2, f: [k1.focus, k2.focus], e: [k1.editOpen, k2.editOpen], s: k2.said === k1.said, o: k2.open, same: k2.same }));
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(400);
+    await page.evaluate(() => { document.getElementById('b-first-time').blur(); });
+  }
+
   // The shared time cursor: the strip drives the curve, the curve drives the strip.
   const sig = () => page.evaluate(() => { const c = document.getElementById('b-profile-canvas');
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let h = 0;

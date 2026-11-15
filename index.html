@@ -5908,6 +5908,8 @@ const _pkGraphArgs = {};
 // A palette change or a resize redraws from here — never from the inputs, which
 // may have been edited since Predict was pressed.
 const _txTinkView = {};
+// The Bayesian Dose Tinkerer's preview chart, repainted by redrawAllCanvases (D27).
+let _tinkSSRedraw = null;
 // Canvases size their backing store once, at draw time. Rotating a tablet or
 // dragging a window left the drawn curve stretched and the crosshair reporting
 // the wrong time and concentration. Debounced so a drag does not thrash.
@@ -5953,9 +5955,12 @@ function redrawAllCanvases() {
       if (document.getElementById(id)) drawPKGraph.apply(null, _pkGraphArgs[id]);
     });
   } catch (e) { if (typeof console !== 'undefined') console.warn('PK graph redraw failed', e); }
-  try { if (bState && bState.result) renderBayesianResults(bState.result, bState.divergeMsg,
-        bState.levelWarnings, bState.mic, bState.p2c); } catch (e) {
+  // D27: a redraw repaints the canvases and the course strip; it never rebuilds the result
+  // (that collapsed open sections, lost typed values and focus, and announced the result again).
+  try { if (bState && bState.result) refreshProfileGraph(); } catch (e) {
     if (typeof console !== 'undefined') console.warn('bayes redraw failed', e); }
+  try { if (typeof _tinkSSRedraw === 'function') _tinkSSRedraw(); } catch (e) {
+    if (typeof console !== 'undefined') console.warn('tinkerer redraw failed', e); }
   try { Object.keys(_txTinkView).forEach(drawTxTinkChart); } catch (e) {
     if (typeof console !== 'undefined') console.warn('trough tinker redraw failed', e); }
   try { if (typeof renderComparisonSection === 'function' && bState &&
@@ -15760,8 +15765,9 @@ function runBayesTinkerer() {
       </div>
     </div>`;
 
-  // Draw the SS profile canvas
-  requestAnimationFrame(() => {
+  // Draw the SS profile canvas. Kept as a closure over what this preview drew so a resize or a
+  // theme change repaints it (colours re-read) without running the preview again (D27).
+  _tinkSSRedraw = () => {
     const ssCanvas = document.getElementById('b-tink-ss-canvas');
     if (ssCanvas) {
       // For Goti, pre-computed 2-comp pts; for Buelga, the 1-comp ssCurve
@@ -15772,7 +15778,8 @@ function runBayesTinkerer() {
         { pts: triedPts, tau, color: themeColor('--series-projection', '#cc785c'), width: 2.25 },
       ], { band: tinkBand, height: 180 });
     }
-  });
+  };
+  requestAnimationFrame(_tinkSSRedraw);
 }
 
 // ─── Reset ───
