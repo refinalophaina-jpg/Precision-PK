@@ -816,9 +816,10 @@ async function enterCourse(page) {
         fit: t('#ev-fit'), models: t('#ev-models') };
     });
     const printedN = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
-    // "Would add little" never beside a sentence that asks for a level (D26 review).
-    // And the cap-bound alarm never beside "a dose change is indicated" or "how large it needs to be" (Task 6b review).
-    const incoherent = (s) => (/would add little/.test(s) && /is recommended|Confirm the clearance with a level|another level may settle it/.test(s))
+    // "Would add little" never beside a sentence that asks for a level (D26 review), "Draw a level."
+    // included (Task 9). And the cap-bound alarm never beside "a dose change is indicated" or "how
+    // large it needs to be" (Task 6b review).
+    const incoherent = (s) => (/would add little/.test(s) && /is recommended|Confirm the clearance with a level|another level may settle it|Draw a level/.test(s))
       || (/cannot be reached within the conventional ceilings/.test(s) && /a dose change is indicated|how large it needs to be/.test(s));
     ok('D26: the 76 M on Buelga never says both "would add little" and "is recommended", on screen or in print',
        !incoherent(nl.all) && !incoherent(printedN)
@@ -889,6 +890,40 @@ async function enterCourse(page) {
        && !/^Result: continue/.test(lo.said) && /^Next Confirm the clearance with a level\.$/.test(lo.next)
        && !incoherent(lo.all) && !incoherent(printedL),
        JSON.stringify({ act: lo.act, reg: lo.reg, conf: lo.conf, why: lo.why, next: lo.next, said: lo.said.slice(0, 80) }));
+    // Task 9, the user's ruling 3 (UI report I8): a Low-confidence fit moved an in-range regimen for two
+    // more of 20 plausible AUCs. A fictional 30 M (125 kg, 170 cm, BMI 43.3, SCr 0.9) on Hughes, 1.5 g
+    // q12h x 4 over 2 h, the last at 22:30 yesterday; one level of 14 mg/L now. The models disagree,
+    // so the rating is Low; the dots alone would move to 1.25 g q12h (15 of 20 against 13). A real fit.
+    await n.goto(BASE + '?v=nlv4-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '30'); await typeInto(n, '#b-tbw', '125'); await typeInto(n, '#b-height', '170'); await typeInto(n, '#b-scr', '0.9');
+    await n.locator('[data-onclick="k39"]').click();
+    await n.locator('#b-model-btn-hughes').click();
+    const lcWhen = [[D1, '10:30'], [D1, '22:30'], [D2, '10:30'], [D2, '22:30']];
+    for (let i = 1; i <= lcWhen.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1500'); await typeInto(n, `#b-dose-tinf-${i}`, '2');
+      await n.locator(`#b-dose-date-${i}`).fill(lcWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, lcWhen[i - 1][1]);
+    }
+    await n.locator('[data-onclick="k46"]').click();
+    await typeInto(n, '#b-lvl-conc-1', '14'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '10:00');
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const lc = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { model: bState.result && bState.result.model, all: t('#b-results'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), why: t('#b-results .vx-why'),
+        next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf'), delta: !!document.querySelector('#b-results .vx-delta'),
+        first: t('#b-first-readout'), firstK: t('#b-results .vx-first .vx-k'), said: t('#sr-announce'), summary: String(bState.summaryText || '') };
+    });
+    const printedLC = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: Low confidence keeps an in-range regimen and asks for a level',
+       lc.model === 'hughes' && lc.act === 'Continue the current regimen' && lc.reg === '1.5 g IV q12h' && !lc.delta
+       && /^Low confidence — The applicable models disagree by \d+% on exposure/.test(lc.conf)
+       && /^Within 400–600 at AUC₂₄ \d+ with 13 of 20 in range\. Another regimen would put 15 of 20 in range, but confidence in this fit is Low \(the applicable models disagree by \d+% on exposure .+\), so the regimen is not changed on it\. Draw a level\./.test(lc.why)
+       && /^Next A further level is recommended\.$/.test(lc.next) && lc.firstK === 'Next dose'
+       && /^Result: continue 1\.5 g IV q12h, AUC24 \d+, Low confidence\./.test(lc.said) && /Continuing 1\.5 g IV q12h is predicted to give/.test(lc.summary)
+       && /Continue the current regimen\s*1\.5 g IV q12h/.test(printedLC) && /so the regimen is not changed on it\. Draw a level\./.test(printedLC)
+       && !/Change from 1\.5 g/.test(lc.all + printedLC) && !incoherent(lc.all) && !incoherent(printedLC),
+       JSON.stringify({ model: lc.model, act: lc.act, reg: lc.reg, conf: lc.conf.slice(0, 60), why: lc.why, next: lc.next, firstK: lc.firstK, said: lc.said, summary: lc.summary.slice(0, 120) }));
     const nAttr = await attributeInjected(n, nProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + nAttr.injected;
     results.problems.push(...nAttr.kept);
