@@ -95,12 +95,12 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-11-15, v3.14.0) |
 |---|---|
-| `phase2d_validation.cjs` | **548 / 548 pass** |
+| `phase2d_validation.cjs` | **554 / 554 pass** |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72, every one a deliberate D26 change listed in the decision record |
-| `docs/audit/browser-flows.cjs` | **160 / 160** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/browser-flows.cjs` | **161 / 161** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two

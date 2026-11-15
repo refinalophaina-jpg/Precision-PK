@@ -1647,8 +1647,8 @@ together. The engine moves.
 
 ### What was fixed, and the tests that pin it
 
-New unit tests are SUITE 44 in `phase2d_validation.cjs` (59 tests; 70 after the final review's fixes). New browser checks are the `D26:`
-checks in `docs/audit/browser-flows.cjs` (44 checks; 53 after the final review's fixes, under the production CSP). Every fix began with a
+New unit tests are SUITE 44 in `phase2d_validation.cjs` (59 tests; 70 after the final review's fixes; 76 after wave 2). New browser checks are the `D26:`
+checks in `docs/audit/browser-flows.cjs` (44 checks; 53 after the final review's fixes; 54 after wave 2, under the production CSP). Every fix began with a
 test seen failing. The task reports in `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/` hold the
 RED and GREEN output.
 
@@ -2073,7 +2073,7 @@ reaches none of these paths. The units and browser checks above are the record.
 - Browser flows under the CSP 160/160, with 0 console problems.
 - The JS syntax check passes.
 
-### Questions for the user from the final review (R25)
+### Questions for the user from the final review (R25) — answered 2026-11-15 (U1–U3, wave 2 below)
 
 1. **Should a measured level hold?** The Hold fires on the fitted pre-dose level only (ruling 1). The I1
    alarm says a newer measured level the fit reads lower, but it does not hold the dose or move it.
@@ -2081,6 +2081,95 @@ reaches none of these paths. The units and browser checks above are the record.
    level", with no time.
 3. **D-a, how the modules read an over-ceiling current regimen.** AUC Precision continues it, with the
    caution leading. The Trough module calls it a breach at alarm tier. Which reading should both use?
+
+### Wave 2: the user's rulings U1–U4 and the re-review's residuals (2026-11-15)
+
+The re-review of the fix wave confirmed C1, I2, I3, I6 and deferred items 1–4. It found three Important
+breakages and an archive file the grep had missed:
+- The I1 alarm fired on routine peaks.
+- `troughHold` extrapolated upward for a level drawn after the due time.
+- The severe-renal verdict and Next line still said "Give one loading dose" while the note said "No further
+  dose until a level is drawn".
+- `archive/v0-march-2026-superseded.html` still named the institution.
+
+The user then ruled on the three open questions. These rulings replace ruling 1's "fitted level only", the
+default status of D-a, and R25's stop-gaps. Every change began with a test seen failing. RED and GREEN are
+in `t8/w2-*`.
+
+- **U1: the Hold reads the fitted OR the measured level.**
+  - **The rule.** The Hold also fires on the newest level drawn after the last given dose and after the
+    distribution phase, carried down the fitted terminal slope to the time the dose would go in, when that
+    is ≥ `TROUGH_HIGH_MGL`. The carry uses `measuredHoldLevel` and `fittedTerminalRate` (β for a
+    two-compartment fit, CL/V for a one-compartment fit).
+  - **The resume time** is the later of the two crossings below 20, on the same 0.25 h grid.
+  - **The hold line names its basis.** For example: "The measured 26.2 mg/L at 15 Nov 09:00, carried down
+    the fitted slope, is 26.0 mg/L at 15 Nov 10:00 …".
+  - **No new constant: "after the distribution phase" reuses the code's existing definitions.**
+    - `interpretLevelTiming` must not class the level 'during_infusion' or 'immediate_post_infusion'.
+      Immediate means under 0.5 h after the infusion ended, the level-timing narrative's own boundary.
+    - For a two-compartment fit, the level must also fall after the model's own redistribution window,
+      counted from the end of the infusion. That window is `hdRedistributionWindowH`:
+      `HD_POSTSESSION_HALF_LIVES` (3) × ln2/α, D15's "drug is still returning from the tissues". It is
+      about 5–6 h on Goti.
+    - A one-compartment model has no distribution phase to read, so its window is 0.
+  - **The I1 alarm is removed:** `measuredHigh`, `measuredHighSentence` and its head line.
+  - **The refusal's measured branch** uses the same rule.
+  - **Pinned by:**
+    - 44.28: the I1 case, a 70 M with CrCl 8 on Goti and levels of 35, 30.3 and 26.2 mg/L. It now holds
+      with a resume time about 44 h later, on the measured basis.
+    - 44.28a: the re-reviewer's peak cases hold neither on Buelga nor on Goti. These are troughs of 10–17
+      with peaks of 25–40, an hour after a 1.25 g q12h infusion. Neither do the augmented-clearance peaks
+      (20.5–26), and a level of 30 drawn during the infusion holds on neither basis.
+    - Browser: "D26: final review (U1) …", plus a routine-peak browser check.
+- **U2: the hold horizon is 72 h from the due time** (`HOLD_SEARCH_MAX_H = 72`, still a PREFERENCE under
+  rule 8, parsed by the harness).
+  - Past it the answer is "Hold: recheck a level before the next dose", with no clock time on any surface:
+    the head, the why line, the readout, print, Copy summary, the announcement and the refusal.
+  - The Trough module's closed-form cutoff uses the same constant.
+  - The anuric flat-levels patient (52, 51, 50.2) is now a hold with no time.
+  - Pinned by 44.37 (a 60 h crossing gives a time; an 80 h one gives "recheck"; the Trough cutoff falls
+    between 71 and 73 h), 44.27 and the browser checks.
+- **U3: an over-ceiling current regimen is continued with caution in both modules.**
+  - AUC Precision is unchanged; D-a is now the user's ruling.
+  - **The Trough module** now reads it the same way when the only hard fails are the dose ceilings:
+    - In range and safe, it reads "Continue current regimen", with the caution leading the verdict.
+      The caution is `ceilingCautionOf`, one wording shared with AUC Precision.
+    - Out of range, the assessment stands at caution tier, and never with "increase" wording.
+    - The announcement and the curve summary carry the caution.
+  - AUC₂₄ above 700, or a trough of 20 or more, stays alarm tier.
+  - Pinned by 44.38 (2 g q8h at CL 11 reads the same in both modules) and the re-pointed 44.8c and 44.8d.
+- **U4: the superseded March build is deleted.**
+  - It named the institution and transcribed its guideline table and notes. Nothing linked to it, so it was
+    deleted rather than scrubbed.
+  - README, CLAUDE.md and the review manifest no longer list it. History is untouched.
+  - `git grep -n -i -E "harris|hhs|mhhs|hermann|olaiya"` returns no hits in tracked files.
+- **N2:** `troughHold` judges at the later of the due time and the draw. A level drawn after the due time is
+  its own reading, and below 20 it is no hold. The sentence then says "drawn … h after the last dose
+  started, after the … h due time". Pinned by 44.39.
+- **N3:** once a dose has been given, the severe-renal verdict, Next line and print say "No further dose until
+  a level is drawn" (`SEVERE_RENAL.followDosed`/`nextDosed`, `severeRenalFollow`/`Next`). Before any dose
+  they keep the loading dose. The coherence predicates in both suites gain "No further dose until a level"
+  with "Give … loading dose", matched case-insensitively. Pinned by 44.40.
+- **N4:** the refusal's Next line now reads "Confirm the inputs; if they are right, seek specialist guidance."
+  Pinned by 44.41.
+
+**Re-pointed, not weakened (rule 9):**
+- 44.27: the C1 patient is now a hold with no time (U2).
+- 44.28: U1 replaces the I1 alarm.
+- 44.29a: the value is 72 h (U2).
+- 44.8c and 44.8d: Task 3's "never continue / alarm" was the default the user overruled in U3.
+- 44.9: the verdict and print read `severeRenalFollow`, which equals `SEVERE_RENAL.follow` before any dose.
+- 44.29's unit: a measured level holds only when it is post-distribution and carried down the fitted slope.
+- The browser checks for C1, I1 and the chosen time. The chosen-time check now uses the I1 patient, whose
+  hold has a resume time.
+
+**Parity:** 0 differences against `871234c`, and still 72 against `edc5b53`.
+
+**Verified:**
+- unit 554/554; phase3 21/21; phase4 49/49;
+- in the comprehensive suite only scenarios 3 and 4 fail, by design;
+- flows 161/161 with 0 console problems;
+- the JS syntax check passes.
 
 ### Open question for the user
 
