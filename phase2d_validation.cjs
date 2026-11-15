@@ -8288,50 +8288,63 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('45.15 pdLoadingDose: a local maximum above 3,000 mg never raises the Rec 11 cap; a lower one lowers it [I4-17]', () => {
     const pd = fn45('pdLoadingDose');
-    assert(K45.HD_LOADING_MAX_MG === 3000, `HD_LOADING_MAX_MG ${K45.HD_LOADING_MAX_MG} (Rybak 2020 Rec 11: 3,000 mg)`);
-    const hi = pd(200, 4000);                     // 20 mg/kg x 200 kg = 4,000 mg, local maximum 4,000
-    assert(hi.mg === 3000 && hi.cap === 3000 && hi.capped === true, `local max 4000: ${JSON.stringify(hi)}`);
-    assertClose(hi.mgPerKg, 15, 1e-9, 'mg/kg given');
+    // HD_LOADING_MAX_MG (Rybak 2020 Rec 11) is pinned once, in SUITE 44; here it is read, never copied.
+    const hi = pd(200, 4000);                     // PD_LOAD_MG_PER_KG x 200 kg is above the cap; local maximum 4,000
+    assert(K45.PD_LOAD_MG_PER_KG * 200 > 4000 - 1e-9 && 4000 > K45.HD_LOADING_MAX_MG, 'the fixture: load and local maximum both above the cap');
+    const cap = K45.HD_LOADING_MAX_MG;
+    assert(hi.mg === cap && hi.cap === cap && hi.capped === true, `local max 4000: ${JSON.stringify(hi)}`);
+    assertClose(hi.mgPerKg, cap / 200, 1e-9, 'mg/kg given');
     const lo = pd(200, 2500);
     assert(lo.mg === 2500 && lo.cap === 2500 && lo.capped === true, `local max 2500: ${JSON.stringify(lo)}`);
     const none = pd(100, 0);
-    assert(none.mg === 2000 && none.cap === 3000 && none.capped === false, `no local max: ${JSON.stringify(none)}`);
+    assert(none.mg === K45.PD_LOAD_MG_PER_KG * 100 && none.cap === cap && none.capped === false, `no local max: ${JSON.stringify(none)}`);
   });
   test('45.16 an SCr below 0.1 mg/dL is refused at entry; 0.1 to 25 is accepted [I4-18]', () => {
-    const cv = fn45('checkValue');
-    assert(!cv('0.05', 'scr').ok && !cv('0.09', 'scr').ok, 'SCr 0.05 / 0.09 accepted');
-    assert(cv('0.1', 'scr').ok && cv('25', 'scr').ok && !cv('25.5', 'scr').ok, 'the 0.1-25 range');
+    // INPUT_LIMITS is a UI plausibility table, not a clinical constant; its SCr range is pinned once, here.
+    const L = K45.INPUT_LIMITS.scr, cv = fn45('checkValue');
+    assert(L.min === 0.1 && L.max === 25 && L.unit === 'mg/dL', `SCr entry range ${L.min}-${L.max} ${L.unit}`);
+    assert(!cv(String(L.min / 2), 'scr').ok && !cv(String(L.min - 0.01), 'scr').ok, `SCr below ${L.min} accepted`);
+    assert(cv(String(L.min), 'scr').ok && cv(String(L.max), 'scr').ok && !cv(String(L.max + 0.5), 'scr').ok, `the ${L.min}-${L.max} range`);
   });
 
   // evalRegimen: one case per hard reject and per flag (1-compartment, MIC 1 unless stated).
   const ev45 = (mg, tau, cl, v, mic) => fn45('evalRegimen')(mg, tau, fn45('autoTinf')(mg), cl, v, null, mic);
   const lv45 = (r) => r.flags.map(f => f.level);
-  test('45.17 evalRegimen hard reject: a single dose above 2000 mg', () => {
-    const r = ev45(2250, 24, 5, 50, 1);
-    assert(JSON.stringify(r.hardFail) === '["single dose 2250 mg exceeds 2000 mg"]', JSON.stringify(r.hardFail));
-    assert(ev45(2000, 24, 5, 50, 1).hardFail.length === 0, '2000 mg q24h is admissible');
+  // The ceilings and the trough thresholds come from harness_constants (rule 6); their values are pinned
+  // against their sources once, in 44.6 (2000 / 4500 / 700) and 44.2 (TROUGH_HIGH_MGL 20).
+  test('45.17 evalRegimen hard reject: a single dose above DOSE_MAX_PER_DOSE_MG', () => {
+    const cap = K45.DOSE_MAX_PER_DOSE_MG, mg = cap + 250;
+    const r = ev45(mg, 24, 5, 50, 1);
+    assert(JSON.stringify(r.hardFail) === JSON.stringify([`single dose ${mg} mg exceeds ${cap} mg`]), JSON.stringify(r.hardFail));
+    assert(ev45(cap, 24, 5, 50, 1).hardFail.length === 0, `${cap} mg q24h is admissible`);
   });
-  test('45.18 evalRegimen hard reject: a total daily dose above 4500 mg', () => {
-    const r = ev45(1750, 8, 12, 70, 1);           // 5,250 mg a day, AUC24 437
-    assert(JSON.stringify(r.hardFail) === '["total daily dose 5250 mg exceeds 4500 mg"]', JSON.stringify(r.hardFail));
-    assert(ev45(1500, 8, 12, 70, 1).hardFail.length === 0, '4,500 mg a day is admissible');
+  test('45.18 evalRegimen hard reject: a total daily dose above DOSE_MAX_TDD_MG', () => {
+    const cap = K45.DOSE_MAX_TDD_MG;
+    const r = ev45(1750, 8, 12, 70, 1);           // 5,250 mg a day, AUC24 437, each dose under the per-dose cap
+    assert(1750 * 3 > cap && 1750 <= K45.DOSE_MAX_PER_DOSE_MG, 'the fixture breaches the daily ceiling only');
+    assert(JSON.stringify(r.hardFail) === JSON.stringify([`total daily dose ${1750 * 3} mg exceeds ${cap} mg`]), JSON.stringify(r.hardFail));
+    assert(cap % 3 === 0 && ev45(cap / 3, 8, 12, 70, 1).hardFail.length === 0, `${cap} mg a day (q8h) is admissible`);
   });
-  test('45.19 evalRegimen hard reject: AUC24 above 700 [I4-02, I4P-3]', () => {
-    const r = ev45(1750, 12, 4.5, 50, 1);         // AUC24 778
-    assert(JSON.stringify(r.hardFail) === '["AUC24 778 exceeds the absolute ceiling 700"]', JSON.stringify(r.hardFail));
-    assert(ev45(1500, 12, 4, 50, 1).hardFail.length === 1, 'AUC24 750 is rejected');
-    assert(ev45(1750, 12, 5.25, 50, 1).hardFail.length === 0, 'AUC24 667 is not');
+  test('45.19 evalRegimen hard reject: AUC24 above AUC24_ABSOLUTE_MAX [I4-02, I4P-3]', () => {
+    const cap = K45.AUC24_ABSOLUTE_MAX;
+    const r = ev45(1750, 12, 4.5, 50, 1);         // AUC24 778, doses within both dose ceilings
+    assert(r.auc24 > cap, `the fixture's AUC24 ${r.auc24.toFixed(0)} is above ${cap}`);
+    assert(JSON.stringify(r.hardFail) === JSON.stringify([`AUC24 ${r.auc24.toFixed(0)} exceeds the absolute ceiling ${cap}`]), JSON.stringify(r.hardFail));
+    const at = ev45(1750, 12, 3500 / cap, 50, 1);  // AUC24 exactly at the ceiling: admissible
+    assert(Math.abs(at.auc24 - cap) < 1e-9 && at.hardFail.length === 0, `AUC24 ${at.auc24} at the ceiling`);
+    assert(ev45(1750, 12, 3500 / (cap + 1), 50, 1).hardFail.length === 1, 'AUC24 one above the ceiling is rejected');
   });
   test('45.20 evalRegimen flag: a predicted trough of 20 mg/L or more is danger [I4-03]', () => {
-    const r = ev45(1000, 12, 3.6, 150, 1);        // AUC24 556, trough 20.2
-    assert(r.Ctrough >= 20 && r.Ctrough < 22 && r.hardFail.length === 0, `trough ${r.Ctrough}`);
-    assert(JSON.stringify(lv45(r)) === '["danger"]' && /at or above 20/.test(r.flags[0].text), JSON.stringify(r.flags));
+    const hi = K45.TROUGH_HIGH_MGL;
+    const r = ev45(1000, 12, 3.6, 150, 1);        // AUC24 556, trough 20.2: within 1 mg/L of the threshold
+    assert(r.Ctrough >= hi && r.Ctrough < hi + 1 && r.hardFail.length === 0, `trough ${r.Ctrough}`);
+    assert(JSON.stringify(lv45(r)) === '["danger"]' && r.flags[0].text.indexOf(`at or above ${hi} `) > 0, JSON.stringify(r.flags));
   });
   test('45.21 evalRegimen flag: a predicted trough of 15 to under 20 mg/L is a warning [I4P-4]', () => {
     assert(K45.TROUGH_WARN_MGL === 15, `TROUGH_WARN_MGL ${K45.TROUGH_WARN_MGL} (Rybak 2020: AKI risk rises from 15)`);
     const r = ev45(1000, 12, 3.4, 50, 1);         // AUC24 588, trough 16.4
-    assert(r.Ctrough >= 15 && r.Ctrough < 18, `trough ${r.Ctrough}`);
-    assert(JSON.stringify(lv45(r)) === '["warning"]' && /at or above 15/.test(r.flags[0].text), JSON.stringify(r.flags));
+    assert(r.Ctrough >= K45.TROUGH_WARN_MGL && r.Ctrough < K45.TROUGH_HIGH_MGL, `trough ${r.Ctrough}`);
+    assert(JSON.stringify(lv45(r)) === '["warning"]' && r.flags[0].text.indexOf(`at or above ${K45.TROUGH_WARN_MGL},`) > 0, JSON.stringify(r.flags));
   });
   test('45.22 evalRegimen flag: a predicted trough below the MIC is information [I4-04]', () => {
     const r2 = ev45(1000, 24, 4, 30, 2), r1 = ev45(1000, 24, 4, 30, 1);   // trough 1.5 mg/L
@@ -8362,9 +8375,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('45.26 D25: regimens with a predicted trough of 20 or more are set aside in the change [I4-10]', () => {
     // CL 0.5, V 150: 250 mg q24h scores as many dots as 500 mg q48h but has a trough of 20.0.
     const r = decide45(0.5, 150, hist45(1000, 12));
-    assert(r.action === 'change' && r.Ctrough < 20 && r.dose === 500 && r.tau === 48, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
+    assert(r.action === 'change' && r.Ctrough < K45.TROUGH_HIGH_MGL && r.dose === 500 && r.tau === 48, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
     const alt = ev45(250, 24, 0.5, 150, 1);
-    assert(alt.Ctrough >= 20 && fn45('attainmentDots')(alt.auc24, row45(1)) >= r.dots, 'the danger alternative it set aside');
+    assert(alt.Ctrough >= K45.TROUGH_HIGH_MGL && fn45('attainmentDots')(alt.auc24, row45(1)) >= r.dots, 'the danger alternative it set aside');
   });
   test('45.27 D25: an unsafe current regimen is never kept when nothing admissible is better; the optimizer answers [I4-11]', () => {
     const doses = hist45(250, 48), cur = fn45('currentRegimenOf')(doses, 0.2, 49, null, 1, row45(1));
@@ -8387,8 +8400,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('45.30 rankRegimenCandidates: an exposure tie never goes to a trough of 20 or more when a lower one exists [I4P-5]', () => {
     const r = sandbox.bayesDoseOptimizer(0.85, 70, 520, null, 1);   // 250 q12h, 500 q24h, 1000 q48h all AUC24 588
-    assert(r.dose === 1000 && r.tau === 48 && r.Ctrough < 20, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
-    assert((r.tiedWith || []).some(t => t.dose === 500 && t.tau === 24 && t.Ctrough >= 20), JSON.stringify(r.tiedWith));
+    assert(r.dose === 1000 && r.tau === 48 && r.Ctrough < K45.TROUGH_HIGH_MGL, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
+    assert((r.tiedWith || []).some(t => t.dose === 500 && t.tau === 24 && t.Ctrough >= K45.TROUGH_HIGH_MGL), JSON.stringify(r.tiedWith));
   });
 
   // Profile and state (I5).
@@ -8432,15 +8445,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(JSON.stringify(ids()) === JSON.stringify([a, b, c]), 'an unknown id deletes nothing');
     });
   });
-  test('45.34 a CrCl override outside 1-250 mL/min is not applied; one inside it is [I5-4]', () => {
+  test('45.34 a CrCl override outside INPUT_LIMITS.crclOverride (1-250 mL/min) is not applied; one inside it is [I5-4]', () => {
     const els = { 'crcl-override-on': { checked: true }, 'crcl-override-val': { value: '', disabled: false },
       'crcl-override-note': { style: { display: '' }, textContent: '', innerHTML: '' } };
     const prevGet = sandbox.document.getElementById, prevUpd = sandbox.updateCrCl;
     sandbox.document.getElementById = (id) => els[id] || prevGet(id);
     sandbox.updateCrCl = () => {};
     const cg = 80 * 70 / 72, set = (v) => { els['crcl-override-val'].value = v; fn45('setCrclOverride')(); };
+    const L = K45.INPUT_LIMITS.crclOverride;
+    assert(L.min === 1 && L.max === 250, `override range ${L.min}-${L.max} (the field's own UI limit)`);
     try {
-      for (const v of ['3000', '0.5', '251']) {
+      for (const v of [String(L.max * 12), String(L.min / 2), String(L.max + 1)]) {
         set(v);
         assert(fn45('crclSourceLabel')() === 'Cockcroft-Gault', `${v} mL/min: ${fn45('crclSourceLabel')()}`);
         assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, `${v} mL/min reached calcCrCl`);

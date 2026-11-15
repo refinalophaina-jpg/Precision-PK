@@ -153,6 +153,8 @@ function extract() {
     TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
     // v3.15.0 (Task 14) — the warning-tier trough (Rybak 2020: AKI risk rises from 15)
     TROUGH_WARN_MGL:        num(src, 'TROUGH_WARN_MGL'),
+    // v3.15.0 (Task 14) — the one entry-limits table (UI plausibility limits, not clinical constants)
+    INPUT_LIMITS:           objLiteral(src, 'INPUT_LIMITS'),
     TROUGH_TIMING_WINDOW_H: num(src, 'TROUGH_TIMING_WINDOW_H'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
     VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),

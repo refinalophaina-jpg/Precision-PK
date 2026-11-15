@@ -28,8 +28,14 @@
 //   node docs/audit/mutation.cjs --list          print the mutants and exit
 //   node docs/audit/mutation.cjs --jobs 4        mutants run in parallel (default 4);
 //                                                each mutant's suites run in sequence
-// Exit 0 when every mutant is killed; 1 when any survives; 2 on a setup error.
-// Part of the release gate for clinical releases (v3.15.0, D27).
+//   node docs/audit/mutation.cjs --timeout-ms N  per-suite time limit for the mutant runs (default
+//                                                300000); the baseline always gets at least the default
+// A suite that fails kills the mutant. A suite that runs out of time does NOT: the
+// mutant is reported TIMEOUT, which is "not proven", never "killed".
+// Exit 0 only when every selected mutant is killed; 1 when any SURVIVED or TIMEOUT;
+// 2 on a setup error (no mutants selected, a find string missing or ambiguous, a
+// failing baseline, a bad argument).
+// Joins the release gate for clinical releases from v3.15.0 (D27).
 // ════════════════════════════════════════════════════════════════════════
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 
@@ -164,22 +170,26 @@ const MUTANTS = [
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];
-const SUITE_TIMEOUT_MS = 300000;
+const DEFAULT_SUITE_TIMEOUT_MS = 300000;
 
 // ─── Runner ────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const o = { only: null, list: false, jobs: 4 };
+  const o = { only: null, list: false, jobs: 4, timeoutMs: DEFAULT_SUITE_TIMEOUT_MS };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--list') o.list = true;
     else if (a === '--only') o.only = String(argv[++i] || '').split(',').map(s => s.trim()).filter(Boolean);
     else if (a === '--jobs') o.jobs = Math.max(1, parseInt(argv[++i], 10) || 1);
+    else if (a === '--timeout-ms') {
+      o.timeoutMs = parseInt(argv[++i], 10);
+      if (!(o.timeoutMs > 0)) { console.error('mutation: --timeout-ms needs a positive number of milliseconds'); process.exit(2); }
+    }
     else { console.error(`mutation: unknown argument ${a}`); process.exit(2); }
   }
   return o;
 }
 
-function runSuite(suite, mutant) {
+function runSuite(suite, mutant, timeoutMs) {
   return new Promise((resolve) => {
     const env = Object.assign({}, process.env, { [ENV_KEY]: JSON.stringify({ id: mutant.id, file: APP, find: mutant.find, replace: mutant.replace }) });
     const child = cp.spawn(process.execPath, ['--require', __filename, path.join(ROOT, suite)], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -187,7 +197,7 @@ function runSuite(suite, mutant) {
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { out += d; });
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, SUITE_TIMEOUT_MS);
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
     child.on('close', (code) => {
       clearTimeout(timer);
       // The first failing test line, for the record (phase2d "✗  name", phase3/4 their own markers).
@@ -197,12 +207,15 @@ function runSuite(suite, mutant) {
   });
 }
 
-async function runMutant(m) {
+// A failing suite kills the mutant. A suite that ran out of time proves nothing (it may have
+// hung on the mutation, or the machine may be slow), so the mutant is TIMEOUT and the run fails.
+async function runMutant(m, timeoutMs) {
   for (const s of SUITES) {
-    const r = await runSuite(s, m);
-    if (r.timedOut || r.code !== 0) return { killed: true, by: s, how: r.timedOut ? 'timeout' : (r.failLine || `exit ${r.code}`) };
+    const r = await runSuite(s, m, timeoutMs);
+    if (r.timedOut) return { outcome: 'TIMEOUT', by: s, how: `no result within ${timeoutMs} ms` };
+    if (r.code !== 0) return { outcome: 'killed', by: s, how: r.failLine || `exit ${r.code}` };
   }
-  return { killed: false };
+  return { outcome: 'SURVIVED' };
 }
 
 async function pool(items, jobs, fn) {
@@ -219,10 +232,12 @@ async function main() {
   for (const m of MUTANTS) { if (ids.has(m.id)) { console.error(`mutation: duplicate id ${m.id}`); process.exit(2); } ids.add(m.id); }
   let list = MUTANTS;
   if (o.only) {
+    if (!o.only.length) { console.error('mutation: --only selected no mutants. Name at least one id (see --list).'); process.exit(2); }
     const unknown = o.only.filter(id => !ids.has(id));
     if (unknown.length) { console.error(`mutation: unknown mutant id(s): ${unknown.join(', ')}`); process.exit(2); }
     list = MUTANTS.filter(m => o.only.includes(m.id));
   }
+  if (!list.length) { console.error('mutation: no mutants selected; an empty run proves nothing.'); return 2; }
   if (o.list) { list.forEach(m => console.log(`${m.id.padEnd(7)} ${m.what}`)); return 0; }
 
   // Every find string must occur exactly once, and change something, before anything runs.
@@ -241,7 +256,7 @@ async function main() {
   }
 
   // Baseline: the unmutated file through the same preload must pass every suite.
-  const base = await pool(SUITES, SUITES.length, (s) => runSuite(s, { id: 'baseline', find: '', replace: '' }));
+  const base = await pool(SUITES, SUITES.length, (s) => runSuite(s, { id: 'baseline', find: '', replace: '' }, Math.max(o.timeoutMs, DEFAULT_SUITE_TIMEOUT_MS)));
   const baseFail = base.filter(r => r.timedOut || r.code !== 0);
   if (baseFail.length) {
     console.error('mutation: the unmutated baseline fails, so no mutant result would mean anything:');
@@ -251,15 +266,17 @@ async function main() {
   console.log(`baseline: ${SUITES.join(', ')} pass unmutated. ${list.length} mutants, ${o.jobs} at a time.`);
 
   const t0 = Date.now();
-  const res = await pool(list, o.jobs, (m) => runMutant(m));
-  let survived = 0;
+  const res = await pool(list, o.jobs, (m) => runMutant(m, o.timeoutMs));
+  const n = { killed: 0, SURVIVED: 0, TIMEOUT: 0 };
   list.forEach((m, i) => {
     const r = res[i];
-    if (r.killed) console.log(`killed    ${m.id.padEnd(7)} ${m.what}  [${r.by}: ${r.how}]`);
-    else { survived++; console.log(`SURVIVED  ${m.id.padEnd(7)} ${m.what}`); }
+    n[r.outcome]++;
+    if (r.outcome === 'killed') console.log(`killed    ${m.id.padEnd(7)} ${m.what}  [${r.by}: ${r.how}]`);
+    else if (r.outcome === 'TIMEOUT') console.log(`TIMEOUT   ${m.id.padEnd(7)} ${m.what}  [${r.by}: ${r.how}; not proven killed]`);
+    else console.log(`SURVIVED  ${m.id.padEnd(7)} ${m.what}`);
   });
-  console.log(`\n${list.length - survived} of ${list.length} killed, ${survived} survived (${((Date.now() - t0) / 1000).toFixed(0)} s).`);
-  return survived ? 1 : 0;
+  console.log(`\n${n.killed} of ${list.length} killed, ${n.SURVIVED} survived, ${n.TIMEOUT} timed out (${((Date.now() - t0) / 1000).toFixed(0)} s).`);
+  return (n.killed === list.length) ? 0 : 1;
 }
 
 main().then(code => process.exit(code), (e) => { console.error(e && e.stack || e); process.exit(2); });
