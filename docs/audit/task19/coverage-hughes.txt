@@ -1,0 +1,48 @@
+uncertainty-by-model --early: n = 1500 per design per seed; seeds 7, 11, 23; held-out seed 31; fitter mapFit (shipped)
+
+ROWS (true/est AUC24 10th/90th percentiles as -lo / +hi; |error| p50 and p80), per seed and the mean of the seeds:
+hughes  troughs/0     | seed 7: -27.5% / +35.7% p50 16.9% p80 31.7% (n=1500) | seed 11: -27.8% / +36.8% p50 16.2% p80 31.5% (n=1500) | seed 23: -26.0% / +38.9% p50 16.3% p80 30.4% (n=1500)
+        mean -> { n:0, frac:0.31, median:0.16, lo:0.27, hi:0.37 }
+hughes  troughs/1     | seed 7: -18.1% / +26.6% p50 10.9% p80 21.7% (n=1500) | seed 11: -17.7% / +28.7% p50 11.5% p80 21.9% (n=1500) | seed 23: -17.6% / +29.1% p50 11.7% p80 21.9% (n=1500)
+        mean -> { n:1, frac:0.22, median:0.11, lo:0.18, hi:0.28 }
+hughes  troughs/2     | seed 7: -16.5% / +26.5% p50 10.4% p80 20.4% (n=1500) | seed 11: -16.7% / +25.5% p50 10.4% p80 20.2% (n=1500) | seed 23: -16.2% / +25.7% p50 10.4% p80 19.9% (n=1500)
+        mean -> { n:2, frac:0.20, median:0.10, lo:0.16, hi:0.26 }
+hughes  troughs/3     | seed 7: -16.6% / +25.1% p50 10.1% p80 20.0% (n=1500) | seed 11: -16.4% / +23.9% p50 10.1% p80 19.5% (n=1500) | seed 23: -16.9% / +25.2% p50 10.5% p80 20.3% (n=1500)
+        mean -> { n:3, frac:0.20, median:0.10, lo:0.17, hi:0.25 }
+hughes  load-one/1    | seed 7: -26.2% / +37.7% p50 15.4% p80 30.3% (n=1500) | seed 11: -24.5% / +36.0% p50 14.8% p80 29.4% (n=1500) | seed 23: -26.5% / +35.4% p50 15.8% p80 31.4% (n=1500)
+        mean -> { n:1, frac:0.30, median:0.15, lo:0.26, hi:0.36 }
+hughes  load-two/2    | seed 7: -24.0% / +36.0% p50 15.1% p80 28.0% (n=1500) | seed 11: -24.9% / +35.8% p50 16.4% p80 29.0% (n=1500) | seed 23: -23.9% / +35.1% p50 14.8% p80 27.9% (n=1500)
+        mean -> { n:2, frac:0.28, median:0.15, lo:0.24, hi:0.36 }
+hughes  load-three/3  | seed 7: -22.6% / +33.2% p50 13.7% p80 27.1% (n=1500) | seed 11: -22.7% / +32.6% p50 14.3% p80 27.3% (n=1500) | seed 23: -23.5% / +32.1% p50 14.5% p80 27.3% (n=1500)
+        mean -> { n:3, frac:0.27, median:0.14, lo:0.23, hi:0.33 }
+hughes  load-two-ss/3 | seed 7: -14.7% / +26.2% p50 9.8% p80 19.0% (n=1500) | seed 11: -15.2% / +25.3% p50 9.9% p80 19.0% (n=1500) | seed 23: -16.2% / +27.5% p50 10.7% p80 20.7% (n=1500)
+        mean -> { n:3, frac:0.20, median:0.10, lo:0.15, hi:0.26 }
+hughes  d4-trough/1   | seed 7: -23.3% / +32.5% p50 13.5% p80 26.8% (n=1500) | seed 11: -23.5% / +32.8% p50 14.4% p80 27.5% (n=1500) | seed 23: -23.8% / +32.3% p50 14.4% p80 27.0% (n=1500)
+        mean -> { n:1, frac:0.27, median:0.14, lo:0.24, hi:0.33 }
+hughes  d3d4-troughs/2 | seed 7: -23.4% / +33.7% p50 14.4% p80 27.5% (n=1500) | seed 11: -23.8% / +32.8% p50 15.1% p80 27.5% (n=1500) | seed 23: -22.4% / +32.9% p50 14.0% p80 26.5% (n=1500)
+        mean -> { n:2, frac:0.27, median:0.15, lo:0.23, hi:0.33 }
+
+COVERAGE of the shipped rows: the share of simulated patients whose true AUC24 lies in [est x (1 - lo), est x (1 + hi)].
+own = the row meant for the design (troughs: steady-state; load-*: early); app = aucUncertaintyRow(n, model, early), early from
+earlyLevelFractions on each fit. pooled = seeds 7/11/23 together; held-out = seed 31. ABOVE = true AUC above the band.
+hughes  troughs/0      hughes/steady/0 -27% / +37%: pooled 79.6% (ABOVE 10.2%), held-out 80.4% | app: pooled 79.6%, held-out 80.4% | early by the app's test 0.0%
+hughes  troughs/1      hughes/steady/1 -18% / +28%: pooled 80.2% (ABOVE 10.2%), held-out 79.2% | app: pooled 89.4%, held-out 88.1% | early by the app's test 71.5%
+hughes  troughs/2      hughes/steady/2 -17% / +26%: pooled 80.9% (ABOVE 9.8%), held-out 81.5% | app: pooled 91.4%, held-out 91.2% | early by the app's test 83.3%
+hughes  troughs/3      hughes/steady/3 -17% / +25%: pooled 80.7% (ABOVE 9.8%), held-out 81.4% | app: pooled 91.0%, held-out 90.9% | early by the app's test 93.6%
+hughes  load-one/1     hughes/early/1 -26% / +36%: pooled 80.0% (ABOVE 10.2%), held-out 80.7% | app: pooled 80.0%, held-out 80.7% | early by the app's test 100.0%
+hughes  load-two/2     hughes/early/2 -24% / +36%: pooled 79.9% (ABOVE 9.8%), held-out 81.2% | app: pooled 79.9%, held-out 81.2% | early by the app's test 100.0%
+hughes  load-three/3   hughes/early/3 -23% / +33%: pooled 80.5% (ABOVE 9.8%), held-out 81.3% | app: pooled 80.5%, held-out 81.3% | early by the app's test 100.0%
+hughes  load-two-ss/3  hughes/early/3 -23% / +33%: pooled 91.7% (ABOVE 5.8%), held-out 91.4% | app: pooled 91.7%, held-out 91.4% | early by the app's test 100.0%
+hughes  d4-trough/1    hughes/steady/1 -18% / +28%: pooled 70.9% (ABOVE 12.5%), held-out 68.5% | hughes/early/1 -26% / +36%: pooled 84.4% (ABOVE 8.2%), held-out 83.8% | app: pooled 84.4%, held-out 83.8% | early by the app's test 100.0%
+hughes  d3d4-troughs/2 hughes/steady/2 -17% / +26%: pooled 66.6% (ABOVE 14.8%), held-out 69.1% | hughes/early/2 -24% / +36%: pooled 82.7% (ABOVE 8.2%), held-out 82.8% | app: pooled 82.7%, held-out 82.8% | early by the app's test 100.0%
+
+SENSITIVITY to SS_FRACTION_NOTE (pooled seeds): app-rule coverage, and the share read as early, for each threshold
+hughes  troughs/1      0.6: 80.7% (early 2.6%) | 0.7: 81.7% (early 9.0%) | 0.75: 83.1% (early 17.2%) | 0.8: 84.9% (early 30.8%) | 0.85: 87.0% (early 50.5%) | 0.9: 89.4% (early 71.5%)
+hughes  troughs/2      0.6: 82.0% (early 5.4%) | 0.7: 84.1% (early 17.5%) | 0.75: 85.7% (early 30.3%) | 0.8: 88.0% (early 48.0%) | 0.85: 89.9% (early 66.3%) | 0.9: 91.4% (early 83.3%)
+hughes  troughs/3      0.6: 82.5% (early 11.6%) | 0.7: 84.9% (early 30.5%) | 0.75: 87.4% (early 47.9%) | 0.8: 88.9% (early 64.0%) | 0.85: 90.2% (early 80.2%) | 0.9: 91.0% (early 93.6%)
+hughes  load-one/1     0.6: 80.0% (early 100.0%) | 0.7: 80.0% (early 100.0%) | 0.75: 80.0% (early 100.0%) | 0.8: 80.0% (early 100.0%) | 0.85: 80.0% (early 100.0%) | 0.9: 80.0% (early 100.0%)
+hughes  load-two/2     0.6: 79.9% (early 100.0%) | 0.7: 79.9% (early 100.0%) | 0.75: 79.9% (early 100.0%) | 0.8: 79.9% (early 100.0%) | 0.85: 79.9% (early 100.0%) | 0.9: 79.9% (early 100.0%)
+hughes  load-three/3   0.6: 80.5% (early 100.0%) | 0.7: 80.5% (early 100.0%) | 0.75: 80.5% (early 100.0%) | 0.8: 80.5% (early 100.0%) | 0.85: 80.5% (early 100.0%) | 0.9: 80.5% (early 100.0%)
+hughes  load-two-ss/3  0.6: 91.7% (early 100.0%) | 0.7: 91.7% (early 100.0%) | 0.75: 91.7% (early 100.0%) | 0.8: 91.7% (early 100.0%) | 0.85: 91.7% (early 100.0%) | 0.9: 91.7% (early 100.0%)
+hughes  d4-trough/1    0.6: 81.8% (early 78.1%) | 0.7: 84.1% (early 96.2%) | 0.75: 84.4% (early 99.7%) | 0.8: 84.4% (early 100.0%) | 0.85: 84.4% (early 100.0%) | 0.9: 84.4% (early 100.0%)
+hughes  d3d4-troughs/2 0.6: 82.6% (early 99.1%) | 0.7: 82.7% (early 100.0%) | 0.75: 82.7% (early 100.0%) | 0.8: 82.7% (early 100.0%) | 0.85: 82.7% (early 100.0%) | 0.9: 82.7% (early 100.0%)

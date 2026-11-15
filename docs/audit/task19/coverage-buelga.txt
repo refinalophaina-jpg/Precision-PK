@@ -1,0 +1,48 @@
+uncertainty-by-model --early: n = 1500 per design per seed; seeds 7, 11, 23; held-out seed 31; fitter mapFit (shipped)
+
+ROWS (true/est AUC24 10th/90th percentiles as -lo / +hi; |error| p50 and p80), per seed and the mean of the seeds:
+buelga  troughs/0     | seed 7: -29.2% / +45.5% p50 18.6% p80 35.8% (n=1500) | seed 11: -30.8% / +46.1% p50 19.2% p80 35.6% (n=1500) | seed 23: -31.0% / +45.7% p50 19.3% p80 36.3% (n=1500)
+        mean -> { n:0, frac:0.36, median:0.19, lo:0.30, hi:0.46 }
+buelga  troughs/1     | seed 7: -19.6% / +22.4% p50 10.4% p80 20.9% (n=1500) | seed 11: -21.3% / +23.5% p50 11.1% p80 22.2% (n=1500) | seed 23: -20.8% / +22.4% p50 11.5% p80 22.3% (n=1500)
+        mean -> { n:1, frac:0.22, median:0.11, lo:0.21, hi:0.23 }
+buelga  troughs/2     | seed 7: -17.6% / +17.9% p50 8.8% p80 18.0% (n=1500) | seed 11: -18.6% / +18.6% p50 9.2% p80 18.7% (n=1500) | seed 23: -17.8% / +18.7% p50 8.8% p80 18.3% (n=1500)
+        mean -> { n:2, frac:0.18, median:0.09, lo:0.18, hi:0.18 }
+buelga  troughs/3     | seed 7: -16.2% / +17.7% p50 8.4% p80 17.2% (n=1500) | seed 11: -17.6% / +17.6% p50 8.4% p80 17.4% (n=1500) | seed 23: -15.8% / +17.4% p50 8.1% p80 16.6% (n=1500)
+        mean -> { n:3, frac:0.17, median:0.08, lo:0.17, hi:0.18 }
+buelga  load-one/1    | seed 7: -29.4% / +38.5% p50 18.2% p80 33.2% (n=1500) | seed 11: -29.4% / +37.3% p50 17.4% p80 33.2% (n=1500) | seed 23: -27.1% / +38.4% p50 17.2% p80 31.8% (n=1500)
+        mean -> { n:1, frac:0.33, median:0.18, lo:0.29, hi:0.38 }
+buelga  load-two/2    | seed 7: -26.0% / +36.6% p50 15.7% p80 30.4% (n=1500) | seed 11: -26.2% / +38.9% p50 15.6% p80 31.1% (n=1500) | seed 23: -25.1% / +37.0% p50 15.2% p80 29.8% (n=1500)
+        mean -> { n:2, frac:0.30, median:0.15, lo:0.26, hi:0.38 }
+buelga  load-three/3  | seed 7: -21.6% / +28.2% p50 12.3% p80 24.1% (n=1500) | seed 11: -21.5% / +29.0% p50 12.9% p80 24.5% (n=1500) | seed 23: -21.0% / +27.8% p50 12.2% p80 24.1% (n=1500)
+        mean -> { n:3, frac:0.24, median:0.12, lo:0.21, hi:0.28 }
+buelga  load-two-ss/3 | seed 7: -19.2% / +17.5% p50 9.4% p80 19.6% (n=1500) | seed 11: -19.4% / +17.1% p50 9.6% p80 19.6% (n=1500) | seed 23: -18.9% / +17.4% p50 9.3% p80 18.8% (n=1500)
+        mean -> { n:3, frac:0.19, median:0.09, lo:0.19, hi:0.17 }
+buelga  d4-trough/1   | seed 7: -21.0% / +32.6% p50 13.8% p80 25.4% (n=1500) | seed 11: -23.6% / +31.8% p50 13.8% p80 26.8% (n=1500) | seed 23: -23.8% / +33.7% p50 14.3% p80 27.6% (n=1500)
+        mean -> { n:1, frac:0.27, median:0.14, lo:0.23, hi:0.33 }
+buelga  d3d4-troughs/2 | seed 7: -20.5% / +30.3% p50 12.9% p80 24.6% (n=1500) | seed 11: -20.5% / +30.3% p50 12.2% p80 24.3% (n=1500) | seed 23: -20.5% / +30.5% p50 12.5% p80 24.2% (n=1500)
+        mean -> { n:2, frac:0.24, median:0.13, lo:0.21, hi:0.30 }
+
+COVERAGE of the shipped rows: the share of simulated patients whose true AUC24 lies in [est x (1 - lo), est x (1 + hi)].
+own = the row meant for the design (troughs: steady-state; load-*: early); app = aucUncertaintyRow(n, model, early), early from
+earlyLevelFractions on each fit. pooled = seeds 7/11/23 together; held-out = seed 31. ABOVE = true AUC above the band.
+buelga  troughs/0      buelga/steady/0 -30% / +46%: pooled 79.7% (ABOVE 9.9%), held-out 81.7% | app: pooled 79.7%, held-out 81.7% | early by the app's test 0.0%
+buelga  troughs/1      buelga/steady/1 -21% / +23%: pooled 80.7% (ABOVE 9.8%), held-out 81.1% | app: pooled 80.8%, held-out 81.1% | early by the app's test 1.0%
+buelga  troughs/2      buelga/steady/2 -18% / +18%: pooled 79.4% (ABOVE 10.5%), held-out 77.0% | app: pooled 79.6%, held-out 77.3% | early by the app's test 3.6%
+buelga  troughs/3      buelga/steady/3 -17% / +18%: pooled 81.0% (ABOVE 9.5%), held-out 81.5% | app: pooled 81.6%, held-out 81.8% | early by the app's test 10.3%
+buelga  load-one/1     buelga/early/1 -29% / +38%: pooled 80.3% (ABOVE 10.0%), held-out 81.7% | app: pooled 80.3%, held-out 81.7% | early by the app's test 100.0%
+buelga  load-two/2     buelga/early/2 -26% / +38%: pooled 80.4% (ABOVE 9.8%), held-out 79.1% | app: pooled 80.4%, held-out 79.1% | early by the app's test 100.0%
+buelga  load-three/3   buelga/early/3 -21% / +28%: pooled 79.4% (ABOVE 10.2%), held-out 79.7% | app: pooled 79.4%, held-out 79.7% | early by the app's test 100.0%
+buelga  load-two-ss/3  buelga/early/3 -21% / +28%: pooled 88.8% (ABOVE 3.4%), held-out 89.4% | app: pooled 88.8%, held-out 89.4% | early by the app's test 100.0%
+buelga  d4-trough/1    buelga/steady/1 -21% / +23%: pooled 71.1% (ABOVE 17.0%), held-out 71.8% | buelga/early/1 -29% / +38%: pooled 87.2% (ABOVE 7.3%), held-out 88.5% | app: pooled 80.9%, held-out 81.4% | early by the app's test 60.6%
+buelga  d3d4-troughs/2 buelga/steady/2 -18% / +18%: pooled 65.8% (ABOVE 20.9%), held-out 64.0% | buelga/early/2 -26% / +38%: pooled 88.5% (ABOVE 6.1%), held-out 87.1% | app: pooled 84.9%, held-out 83.9% | early by the app's test 86.5%
+
+SENSITIVITY to SS_FRACTION_NOTE (pooled seeds): app-rule coverage, and the share read as early, for each threshold
+buelga  troughs/1      0.6: 80.7% (early 0.0%) | 0.7: 80.7% (early 0.0%) | 0.75: 80.7% (early 0.0%) | 0.8: 80.7% (early 0.0%) | 0.85: 80.7% (early 0.0%) | 0.9: 80.8% (early 1.0%)
+buelga  troughs/2      0.6: 79.4% (early 0.0%) | 0.7: 79.4% (early 0.0%) | 0.75: 79.4% (early 0.0%) | 0.8: 79.4% (early 0.0%) | 0.85: 79.4% (early 0.4%) | 0.9: 79.6% (early 3.6%)
+buelga  troughs/3      0.6: 81.0% (early 0.0%) | 0.7: 81.0% (early 0.0%) | 0.75: 81.0% (early 0.1%) | 0.8: 81.0% (early 0.4%) | 0.85: 81.2% (early 2.7%) | 0.9: 81.6% (early 10.3%)
+buelga  load-one/1     0.6: 79.4% (early 96.2%) | 0.7: 80.1% (early 99.0%) | 0.75: 80.3% (early 99.5%) | 0.8: 80.3% (early 99.7%) | 0.85: 80.3% (early 99.8%) | 0.9: 80.3% (early 100.0%)
+buelga  load-two/2     0.6: 80.4% (early 99.9%) | 0.7: 80.4% (early 100.0%) | 0.75: 80.4% (early 100.0%) | 0.8: 80.4% (early 100.0%) | 0.85: 80.4% (early 100.0%) | 0.9: 80.4% (early 100.0%)
+buelga  load-three/3   0.6: 79.4% (early 99.9%) | 0.7: 79.4% (early 100.0%) | 0.75: 79.4% (early 100.0%) | 0.8: 79.4% (early 100.0%) | 0.85: 79.4% (early 100.0%) | 0.9: 79.4% (early 100.0%)
+buelga  load-two-ss/3  0.6: 88.8% (early 99.9%) | 0.7: 88.8% (early 100.0%) | 0.75: 88.8% (early 100.0%) | 0.8: 88.8% (early 100.0%) | 0.85: 88.8% (early 100.0%) | 0.9: 88.8% (early 100.0%)
+buelga  d4-trough/1    0.6: 71.2% (early 0.4%) | 0.7: 72.2% (early 7.4%) | 0.75: 73.5% (early 16.7%) | 0.8: 75.8% (early 29.7%) | 0.85: 78.1% (early 44.7%) | 0.9: 80.9% (early 60.6%)
+buelga  d3d4-troughs/2 0.6: 69.2% (early 15.7%) | 0.7: 74.1% (early 39.3%) | 0.75: 77.3% (early 52.3%) | 0.8: 79.8% (early 64.1%) | 0.85: 82.4% (early 75.8%) | 0.9: 84.9% (early 86.5%)
