@@ -6618,6 +6618,91 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         `"would add little" beside ${JSON.stringify(incoherent44(text))}`);
     });
   }
+
+  // Task 6b (controller ruling R12). Outside 400-600 the candidates had to beat the current
+  // regimen on the 20 dots; at high clearance every admissible regimen has 0 of 20, so none
+  // did, and "no better" continued the current regimen however small: 250 mg q24h at
+  // AUC24 16 beside 1.5 g q8h at 286. The tie is now broken on exposure: the admissible
+  // regimen nearest the band, when nearer than the current one by more than the rounding
+  // grace (half of one 250 mg step at its interval and this clearance).
+  const hist44 = (mg, tau, n) => Array.from({ length: n || 4 }, (_, i) => ({ mg, tinfH: fn44('autoTinf')(mg), timeH: i * tau }));
+  const off44 = (a) => Math.max(0, K44.AUC24_TARGET_MIN - a, a - K44.AUC24_TARGET_MAX);   // distance to the band
+  const capCL = 15.75, capRow = () => fn44('aucUncertaintyRow')(1, 'buelga');
+  const capDecide = (mg, tau) => fn44('regimenDecision')(capCL, 60, 450, null, 1, hist44(mg, tau), capRow());
+
+  test('44.14c 250 mg q24h at CL 15.75 (one level, 0 of 20, AUC24 16) changes to the regimen nearest the band, with the cap-bound alarm', () => {
+    const r = capDecide(250, 24);
+    assert(r.action === 'change' && r.decisionReason === 'attainment',
+      `${r.action} / ${r.continueReason || r.decisionReason}: ${r.dose} mg q${r.tau}h AUC ${r.auc24.toFixed(0)}`);
+    assert(r.current && r.current.dose === 250 && r.current.tau === 24 && r.current.dots === 0 && !r.current.inBand,
+      `changes from the current regimen: ${JSON.stringify(r.current && { dose: r.current.dose, tau: r.current.tau, dots: r.current.dots })}`);
+    assert(r.dose === 1500 && r.tau === 8 && Math.round(r.auc24) === 286, `the highest admissible exposure: ${r.dose} mg q${r.tau}h AUC ${r.auc24.toFixed(0)}`);
+    const grace = fn44('roundingGraceAUC')(r.tau, capCL);
+    assertClose(grace, 250 * (24 / 8) / capCL / 2, 1e-9, 'the grace is half of one 250 mg step at q8h');
+    assert(off44(r.auc24) < off44(r.current.auc24) - grace,
+      `nearer the band by more than the grace: ${off44(r.auc24).toFixed(0)} vs ${off44(r.current.auc24).toFixed(0)} - ${grace.toFixed(1)}`);
+    assert(r.dots >= r.current.dots, `never worse: ${r.current.dots} -> ${r.dots}`);
+    assert((r.flags || []).some(f => f.level === 'danger' && fn44('isCapBoundFlag')(f)), 'the cap-bound alarm: ' + (r.flags || []).map(f => f.text.slice(0, 50)).join(' | '));
+    const h = fn44('regimenActionHTML')(r, 450);
+    assert(/Change from 250 mg IV q24h/.test(h), h);
+    assert(/AUC₂₄ 16 /.test(h) && /nearer the band, to 286,/.test(h), 'the reason names both exposures: ' + h);
+    assert(!/this one puts 0 of 20 in range/.test(h), 'not a reason that gives no reason: ' + h);
+    // The same at q8h: 1.25 g (AUC24 238) is 48 mg·h/L further from the band than 1.5 g, more than the grace of 24.
+    const q8 = capDecide(1250, 8);
+    assert(q8.action === 'change' && q8.dose === 1500 && q8.tau === 8 && q8.decisionReason === 'attainment', `${q8.action} ${q8.dose} q${q8.tau}`);
+  });
+  test('44.14d end to end (22 M, 95 kg, SCr 0.4, 1 g q12h, levels 4, 1 and 0.3 mg/L): High confidence, CL 15.07, the verdict is a change, not "Continue"', () => {
+    const { r, html, text, conf } = fit44({ age: 22, tbw: 95, ht: 190, scr: 0.4, mg: 1000, tinf: fn44('autoTinf')(1000), tau: 12, n: 4, lastAgo: 10,
+      levels: [{ conc: 4, after: 2 }, { conc: 1, after: 6 }, { conc: 0.3, after: 10 }] });
+    assertClose(r.CL_ind, 15.07, 0.01, 'the reported clearance');
+    assert(conf.rank === 0, `the reported rating is High: ${conf.level}`);
+    const rec = r.rec;
+    assert(rec.action === 'change' && rec.decisionReason === 'attainment' && rec.current.dose === 1000 && rec.current.tau === 12,
+      `${rec.action} / ${rec.continueReason || rec.decisionReason}: ${rec.dose} mg q${rec.tau}h AUC ${rec.auc24.toFixed(0)}`);
+    assert(rec.dose === 1500 && rec.tau === 8 && Math.round(rec.auc24) === 299, `${rec.dose} mg q${rec.tau}h AUC ${rec.auc24.toFixed(0)}`);
+    assert(!/Continue the current regimen/.test(text), 'the verdict still says continue');
+    assert(para44(html, 'vx-action') === 'Change from 1 g IV q12h', para44(html, 'vx-action'));
+    assert(/cannot be reached within the conventional ceilings/.test(text), 'the cap-bound alarm is shown');
+    assert(!/so it is not changed/.test(text), 'the no-better flag is gone');
+  });
+  test('44.14e a genuine tie still continues; an in-range regimen is untouched by the exposure tie-break', () => {
+    // 1.4 g q8h (AUC24 267) against 1.5 g q8h (286): 19 mg·h/L nearer, inside the grace of 24.
+    const t = capDecide(1400, 8), grace = fn44('roundingGraceAUC')(8, capCL);
+    assert(off44(t.auc24) - off44(4500 / capCL) < grace && off44(t.auc24) > off44(4500 / capCL), 'the fixture is nearer, inside the grace');
+    assert(t.action === 'continue' && t.continueReason === 'no-better' && t.dose === 1400 && t.tau === 8,
+      `${t.action} / ${t.continueReason || t.decisionReason}: ${t.dose} mg q${t.tau}h`);
+    assert((t.flags || []).some(fn44('isCapBoundFlag')), 'the cap-bound alarm stays on the continue');
+    // At the ceiling itself nothing is nearer: SUITE 44.14's 1.5 g q8h at CL 12.34 is still continued.
+    const top = fn44('regimenDecision')(12.34, 60, 450, null, 1, hist44(1500, 8), fn44('aucUncertaintyRow')(0, 'buelga'));
+    assert(top.action === 'continue' && top.continueReason === 'no-better' && top.dose === 1500 && top.tau === 8, `${top.action} ${top.dose} q${top.tau}`);
+    // In range: SUITE 43's reported 1250 mg q12h (CL 4.58, 14 of 20) is continued at every target box.
+    for (let tb = 400; tb <= 600; tb += 50) {
+      const c = fn44('regimenDecision')(4.58, 61.8, tb, null, 1, hist44(1250, 12).map(d => Object.assign(d, { tinfH: 1.5 })), capRow());
+      assert(c.action === 'continue' && c.continueReason === 'in-range' && c.dose === 1250 && c.tau === 12 && c.dots === 14,
+        `target ${tb}: ${c.action} / ${c.continueReason || c.decisionReason} ${c.dose} q${c.tau}`);
+    }
+    // Above the band too: before any level Goti caps the dots at 7 of 20, so 2 g q18h at AUC24 643 (7 of 20)
+    // was continued beside in-range regimens no better on dots. It moves into the band, and says so.
+    const above = fn44('regimenDecision')(4.15, 40, 450, { Vc: 40, Vp: 45, Q: Q_GOTI }, 1, hist44(2000, 18), fn44('aucUncertaintyRow')(0, 'goti'));
+    assert(above.action === 'change' && above.nearerBand && above.current.auc24 > K44.AUC24_TARGET_MAX && above.inBand && above.dots === above.current.dots,
+      `${above.action} ${above.dose} q${above.tau}h AUC ${above.auc24.toFixed(0)} (${above.dots}) from ${above.current && above.current.auc24.toFixed(0)}`);
+    assert(/brings AUC₂₄ into the band, at \d+, with 7 of 20 in range/.test(fn44('regimenActionHTML')(above, 450)), fn44('regimenActionHTML')(above, 450));
+    // Across a grid, the exposure tie-break never acts on an in-range current regimen, and a change never lowers the dots.
+    let n = 0, ties = 0;
+    for (let nl = 0; nl <= 3; nl++) for (let cl = 1.5; cl <= 18.0001; cl += 0.75) for (const tau of [8, 12, 24, 48]) for (let mg = 250; mg <= 2000; mg += 250) {
+      const r = fn44('regimenDecision')(cl, 60, 450, null, 1, hist44(mg, tau), fn44('aucUncertaintyRow')(nl, 'buelga'));
+      if (!r || r.noSolution || r.action !== 'change') continue;
+      n++;
+      if (r.decisionReason === 'safety') continue;
+      assert(r.dots >= r.current.dots, `CL ${cl} ${mg} q${tau}h: ${r.current.dots} -> ${r.dots}`);
+      if (r.dots === r.current.dots) {
+        ties++;
+        assert(!r.current.inBand && off44(r.auc24) < off44(r.current.auc24) - fn44('roundingGraceAUC')(r.tau, cl),
+          `CL ${cl} ${mg} q${tau}h -> ${r.dose} q${r.tau}h: a change without a dot gained must be from out of range and nearer by more than the grace`);
+      }
+    }
+    assert(n > 1000 && ties > 20, `exercised ${n} changes, ${ties} on exposure`);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

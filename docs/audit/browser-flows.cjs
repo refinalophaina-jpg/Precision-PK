@@ -839,6 +839,38 @@ async function enterCourse(page) {
        cg.act === 'Continue the current regimen' && cg.reg === '1.5 g IV q8h' && /cannot be reached within the conventional ceilings/.test(cg.all)
        && /^Next Confirm the clearance with a level\.$/.test(cg.next) && !incoherent(cg.all) && !incoherent(printedC),
        JSON.stringify({ act: cg.act, reg: cg.reg, conf: cg.conf, next: cg.next, little: /would add little/.test(cg.all) }));
+    // Task 6b (R12): at high clearance every admissible regimen has 0 of 20 in range, and "no better"
+    // continued 1 g q12h at AUC24 133 beside 1.5 g q8h at 299. A fictional 22 M (95 kg, 190 cm,
+    // SCr 0.4) on Buelga, 1 g q12h x 4 over 1 h, the last at 23:30 yesterday; levels 4, 1 and
+    // 0.3 mg/L at 01:30, 05:30 and 09:30 today.
+    await n.goto(BASE + '?v=nlv3-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '22'); await typeInto(n, '#b-tbw', '95'); await typeInto(n, '#b-height', '190'); await typeInto(n, '#b-scr', '0.4');
+    await n.locator('[data-onclick="k39"]').click();
+    const lowWhen = [[D1, '11:30'], [D1, '23:30'], [D2, '11:30'], [D2, '23:30']];
+    for (let i = 1; i <= lowWhen.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1000'); await typeInto(n, `#b-dose-tinf-${i}`, '1');
+      await n.locator(`#b-dose-date-${i}`).fill(lowWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, lowWhen[i - 1][1]);
+    }
+    for (const [i, conc, t] of [[1, '4', '01:30'], [2, '1', '05:30'], [3, '0.3', '09:30']]) {
+      await n.locator('[data-onclick="k46"]').click();
+      await typeInto(n, `#b-lvl-conc-${i}`, conc); await n.locator(`#b-lvl-date-${i}`).fill(day(0)); await typeInto(n, `#b-lvl-time-${i}`, t);
+    }
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const lo = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { all: t('#b-results'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), why: t('#b-results .vx-why'),
+        next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf').slice(0, 40), said: t('#sr-announce') };
+    });
+    const printedL = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: a 0-of-20 regimen at high clearance is changed, not continued',
+       lo.act === 'Change from 1 g IV q12h' && lo.reg === '1.5 g IV q8h' && /^High confidence/.test(lo.conf)
+       && /^The current regimen gives AUC₂₄ 133 with 0 of 20 plausible AUCs in 400–600, and no admissible regimen puts more in range; this one brings AUC₂₄ nearer the band, to 299, with 0 of 20 in range\./.test(lo.why)
+       && /cannot be reached within the conventional ceilings/.test(lo.all)
+       && !/Continue the current regimen/.test(lo.all + printedL) && /Change from 1 g IV q12h/.test(printedL)
+       && !/^Result: continue/.test(lo.said) && !incoherent(lo.all),
+       JSON.stringify({ act: lo.act, reg: lo.reg, conf: lo.conf, why: lo.why, next: lo.next, said: lo.said.slice(0, 80) }));
     const nAttr = await attributeInjected(n, nProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + nAttr.injected;
     results.problems.push(...nAttr.kept);

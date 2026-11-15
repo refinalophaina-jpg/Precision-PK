@@ -10893,6 +10893,14 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
   return rankRegimenCandidates(results, targetAUC);
 }
 
+// The rounding grace: half of what one 250 mg dispensing step moves AUC24 at this interval
+// and clearance. DERIVED, not chosen. One implementation (rule 2), read by evalRegimen's band
+// flags, regimenDecision's exposure tie-break (D26, R12) and nextLevelValue's "outright"; it
+// was computed inline in two places before. NaN when the interval or clearance is not positive.
+function roundingGraceAUC(tau, CLind) {
+  return (tau > 0 && CLind > 0) ? 250 * (24 / tau) / CLind / 2 : NaN;
+}
+
 // One regimen at steady state: exposure, trough and peak, the hard rejects and the flags.
 // Moved out of bayesDoseOptimizer unchanged (v3.14.0, D25) so the decision layer judges
 // the CURRENT regimen and every lattice candidate with the same arithmetic (rule 2).
@@ -10940,9 +10948,8 @@ function evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL) {
     // band purely as a rounding artefact — most obviously when the clinician
     // targets exactly 400 or 600. Flagging those is noise, and noise trains
     // people to ignore flags. The grace is DERIVED, not chosen: half of what one
-    // 250 mg step moves AUC24 at this interval and clearance.
-    const aucPerStep = 250 * (24/tau) / CLind;
-    const grace = aucPerStep / 2;
+    // 250 mg step moves AUC24 at this interval and clearance (roundingGraceAUC).
+    const grace = roundingGraceAUC(tau, CLind);
     if (auc24 > AUC24_TARGET_MAX + grace) flags.push({ level:'warning',
       text:`AUC24 ${auc24.toFixed(0)} is above the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} target band (Rybak 2020 Rec 1, at MIC 1 mg/L).` });
     if (auc24 < AUC24_TARGET_MIN - grace) flags.push({ level:'warning',
@@ -11107,7 +11114,9 @@ function isCapBoundFlag(f) {
 //      neighbours. Danger troughs are set aside while a safe option exists; in-range
 //      AUCs are kept while any exists; and unless the current regimen is UNSAFE, only
 //      regimens with more in-range dots than it qualify — so a change can never lower
-//      attainment except for safety, and it says so. Among those within
+//      attainment except for safety, and it says so. From outside the range with no
+//      regimen scoring more, the tie is broken on exposure: the regimen nearest the band,
+//      if nearer by more than the rounding grace (D26, R12). Among those within
 //      CONTINUE_MARGIN_DOTS of the best: the fewest interval steps from the current
 //      regimen, then the smallest change in daily dose, then the target box, then the
 //      ceiling yields, then INTERVAL_PREFERENCE.
@@ -11206,7 +11215,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
     k.action = 'continue'; k.continueReason = why; k.nearestTarget = differs(k);
     if (why === 'no-better') {
       k.flags = (k.flags || []).concat([{ level: 'warning',
-        text: `The current regimen sits outside ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L (AUC₂₄ ${k.auc24.toFixed(0)}), and no admissible regimen puts more of its plausible AUCs in range, so it is not changed. Review before continuing; another level may settle it.` }]);
+        text: `The current regimen sits outside ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L (AUC₂₄ ${k.auc24.toFixed(0)}), and no admissible regimen puts more of its plausible AUCs in range or brings AUC₂₄ nearer the band by more than half a 250 mg step, so it is not changed. Review before continuing; another level may settle it.` }]);
     }
     k.regimen = k; k.noSolution = false;
     return withCap(k);
@@ -11221,7 +11230,24 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
   // Leaving an in-range regimen must deliver the whole margin that justified leaving
   // it — not merely one dot, which minimal change would otherwise pick (750 mg q8h at
   // 12/20 was moved to 1000 mg q8h at 13/20). From outside the range any gain counts.
+  const open = pool;
   if (!cur.unsafe) pool = pool.filter(c => c.dots >= cur.dots + (cur.inBand ? CONTINUE_MARGIN_DOTS : 1));
+  // From outside the range with nothing scoring more dots, break the tie on exposure
+  // (D26, controller ruling R12). The 20 dots cannot tell AUC24 16 from 286: at high
+  // clearance every admissible regimen has 0 of 20, so "no better" continued 250 mg q24h
+  // at AUC24 16 beside 1.5 g q8h at 286, and 1 g q12h at 133 on a High-confidence fit.
+  // Take the regimen whose AUC24 is nearest the band (0 inside it, else to the nearer
+  // edge), among those with no fewer dots (never worse), and change to it only when it is
+  // nearer than the current regimen by more than the rounding grace at its own interval —
+  // the dose steps cannot resolve less. An in-range current regimen never reaches this.
+  let onExposure = false;
+  if (!pool.length && !cur.unsafe && !cur.inBand) {
+    const off = a => Math.max(0, AUC24_TARGET_MIN - a, a - AUC24_TARGET_MAX);
+    const even = open.filter(c => c.dots >= cur.dots);
+    const least = even.reduce((m, c) => Math.min(m, off(c.auc24)), Infinity);
+    pool = even.filter(c => off(c.auc24) - least < 1e-9 && off(c.auc24) < off(cur.auc24) - roundingGraceAUC(c.tau, CLind));
+    onExposure = pool.length > 0;
+  }
   // Nothing admissible at all while the current regimen is unsafe: never keep it —
   // fall back to the optimizer's answer, which is then its refusal.
   if (!pool.length) return cur.unsafe ? nearest : keep('no-better');
@@ -11237,6 +11263,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row) 
   pick.action = 'change';
   pick.current = cur;
   pick.decisionReason = cur.unsafe ? 'safety' : 'attainment';
+  if (onExposure) pick.nearerBand = true;   // the same dots, nearer the band (R12)
   pick.nearestTarget = differs(pick);
   if (!pick.inBand) {
     pick.flags = (pick.flags || []).concat([{ level: 'warning',
@@ -11266,7 +11293,7 @@ function regimenActionHTML(rec, targetAUC, part) {
   if (rec.action === 'continue') {
     head = 'Continue the current regimen';
     why = rec.continueReason === 'no-better'
-      ? `Outside ${band} at AUC₂₄ ${rec.auc24.toFixed(0)} with ${rec.dots} of 20 plausible AUCs in range, but no admissible regimen puts more in range.${alt}`
+      ? `Outside ${band} at AUC₂₄ ${rec.auc24.toFixed(0)} with ${rec.dots} of 20 plausible AUCs in range, but no admissible regimen puts more in range or brings AUC₂₄ nearer the band by more than half a 250 mg step.${alt}`
       : `Within ${band} at AUC₂₄ ${rec.auc24.toFixed(0)} with ${rec.dots} of 20 plausible AUCs in range; no admissible regimen puts ${CONTINUE_MARGIN_DOTS} or more further in range.${alt}`;
   } else {
     const c = rec.current;
@@ -11274,6 +11301,8 @@ function regimenActionHTML(rec, targetAUC, part) {
     why = rec.decisionReason === 'safety'
       ? `The current regimen is set aside because ${c.unsafeReasons.join('; ')}. This one puts ${rec.dots} of 20 plausible AUCs in ${band}${rec.dots < c.dots ? `, ${c.dots - rec.dots} fewer than now: safety comes first` : ''}.`
         + (Number.isFinite(rec.Ctrough) && rec.Ctrough >= TROUGH_HIGH_MGL ? ` Its own predicted trough of ${rec.Ctrough.toFixed(1)} mg/L is also at or above ${TROUGH_HIGH_MGL}: no admissible regimen avoids that at this clearance.` : '')
+      : rec.nearerBand
+      ? `The current regimen gives AUC₂₄ ${c.auc24.toFixed(0)} with ${c.dots} of 20 plausible AUCs in ${band}, and no admissible regimen puts more in range; this one brings AUC₂₄ ${rec.inBand ? 'into the band, at' : 'nearer the band, to'} ${rec.auc24.toFixed(0)}, with ${rec.dots} of 20 in range.${alt}`
       : `The current regimen gives AUC₂₄ ${c.auc24.toFixed(0)} with ${c.dots} of 20 plausible AUCs in ${band}; this one puts ${rec.dots} of 20 in range.${alt}`;
   }
   const h = `<p class="vx-action">${escHtml(head)}</p>`, w = `<p class="vx-why">${escHtml(why)}</p>`;
@@ -11546,8 +11575,9 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   // The same derived rounding grace the optimizer uses (half of one 250 mg
   // step): otherwise a recommended regimen at AUC 379 — accepted by the
   // optimizer without a flag — was called "outside 400-600, a dose change is
-  // indicated" by this panel (engine audit 2026-09-28).
-  const grace = isFinite(stepAUC) ? stepAUC / 2 : 0;
+  // indicated" by this panel (engine audit 2026-09-28). roundingGraceAUC is that grace.
+  const graceAUC = roundingGraceAUC(tau, CLind);
+  const grace = isFinite(graceAUC) ? graceAUC : 0;
   const outright = auc24 < AUC24_TARGET_MIN - grace || auc24 > AUC24_TARGET_MAX + grace;
 
   const pct = x => Math.round(x * 100);
@@ -11562,8 +11592,8 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
     headline = 'Confirm the clearance with a level';
     detail = `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
            + `within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) reaches the band: `
-           + `the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range, so the regimen is continued `
-           + `rather than changed. A level confirms the clearance before going beyond the ceiling, or to another agent, is considered.`;
+           + `the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range or brings AUC₂₄ nearer `
+           + `the band by more than half a 250 mg step, so the regimen is continued rather than changed. A level confirms the clearance before going beyond the ceiling, or to another agent, is considered.`;
   } else if (outright) {
     kind = 'management';
     headline = 'A further level may substantially change the regimen';
