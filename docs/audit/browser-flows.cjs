@@ -472,6 +472,35 @@ async function enterCourse(page) {
   const ssKey = await page.evaluate(() => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()));
   ok('Trough steady-state key: fit, recommendation, population estimate, level',
      ssKey.some(t => /^Current /.test(t)) && ssKey.some(t => /^Recommended /.test(t)) && ssKey.includes('Population estimate') && ssKey.includes('Measured level'), JSON.stringify(ssKey));
+  // D27 (UI review I6, Task 20a): the measured-level label ("24.0") is placed where no curve segment and no
+  // peak/trough marker passes through it. The chart is redrawn through a recording of what it draws.
+  {
+    const lab = await page.evaluate(() => {
+      const P = CanvasRenderingContext2D.prototype, keep = {}, log = { seg: [], arcs: [], texts: [] };
+      let last = null;
+      const on = (ctx) => ctx.canvas && ctx.canvas.id === 'pk-graph-ss';
+      for (const n of ['moveTo', 'lineTo', 'arc', 'fillText']) keep[n] = P[n];
+      P.moveTo = function (x, y) { if (on(this)) last = [x, y]; return keep.moveTo.call(this, x, y); };
+      P.lineTo = function (x, y) { if (on(this) && last) { log.seg.push([last[0], last[1], x, y]); last = [x, y]; } return keep.lineTo.call(this, x, y); };
+      P.arc = function (x, y, r, a, b, c) { if (on(this)) log.arcs.push([x, y, r]); return keep.arc.call(this, x, y, r, a, b, c); };
+      P.fillText = function (t, x, y) { if (on(this)) log.texts.push({ t, x, y, al: this.textAlign, bl: this.textBaseline, w: this.measureText(t).width }); return keep.fillText.call(this, t, x, y); };
+      try { redrawAllCanvases(); } finally { Object.assign(P, keep); }
+      const t = log.texts.find(q => q.t === '24.0');
+      if (!t) return { found: false };
+      const x0 = t.al === 'right' ? t.x - t.w : t.al === 'center' ? t.x - t.w / 2 : t.x;
+      const y0 = t.bl === 'top' ? t.y : t.y - 10, r = { x0: x0 - 1, x1: x0 + t.w + 1, y0: y0 - 1, y1: y0 + 13 + 1 };
+      const inR = (x, y) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+      let segHits = 0, arcHits = 0;
+      for (const [ax, ay, bx, by] of log.seg) {
+        if (ax === bx || ay === by) continue;                       // gridlines, not curves
+        const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
+        for (let i = 0; i <= n; i++) if (inR(ax + (bx - ax) * i / n, ay + (by - ay) * i / n)) { segHits++; break; }
+      }
+      for (const [x, y, rad] of log.arcs) if (rad !== 5.5 && x >= r.x0 - rad && x <= r.x1 + rad && y >= r.y0 - rad && y <= r.y1 + rad) arcHits++;
+      return { found: true, segHits, arcHits, rect: r };
+    });
+    ok('D27: the measured-level label sits clear of the curves and the peak/trough markers', lab.found && lab.segHits === 0 && lab.arcHits === 0, JSON.stringify(lab));
+  }
   // "Try another regimen" on the same result: its own comparison in the Tinkerer's code —
   // the tried regimen beside the fitted current regimen and the population estimate —
   // while the result's chart and its key stay as they were (D14).

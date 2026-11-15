@@ -8523,6 +8523,26 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
   // whenever obsTime was an exact multiple of tMax (48 h at Q8H, 72 h at Q12H) and
   // pushed the marker off-canvas, and (b) a truthiness guard that dropped the
   // marker entirely for a level drawn at t = 0.
+  // The curves' vertices and the peak/trough markers: what a label must keep clear of. The band label
+  // and the measured-level label are placed by the same scan (clearestPlace), one implementation.
+  const drawn = [points, ovPoints, priorPoints].filter(Boolean).flat().map(p => [tx(p.t), ty(p.c)]);
+  const marks = [];
+  [pt, ovPT].filter(Boolean).forEach(p => { for (let i = 0; i < numCycles; i++) {
+    marks.push([tx(i * tau + Math.min(tinf, tau)), ty(p.peak)], [tx((i + 1) * tau), ty(p.trough)]); } });
+  // Candidates are {l, r, y}: a label's left and right edges and its top. The first that leaves every
+  // vertex and marker clear wins; otherwise the least crossed. A marker counts when it is within 7 px.
+  const clearestPlace = (cands, h) => {
+    let best = null, fewest = Infinity;
+    for (const c of cands) {
+      const x0 = c.l - 2, x1 = c.r + 2, y0 = c.y - 1, y1 = c.y + h + 1;
+      let n = 0;
+      for (const [x, yy] of drawn) if (x >= x0 && x <= x1 && yy >= y0 && yy <= y1) n++;
+      for (const m of marks) if (m[0] >= x0 - 7 && m[0] <= x1 + 7 && m[1] >= y0 - 7 && m[1] <= y1 + 7) n += 10;
+      if (n < fewest) { best = c; fewest = n; }
+      if (!n) break;
+    }
+    return best;
+  };
   let obsMark = null;   // [x, y] of the observed-level marker, for the band label to avoid
   if (opts.obsLevel != null && opts.obsTime != null && isFinite(opts.obsTime)) {
     const foldT = ((opts.obsTime % tau) + tau) % tau;
@@ -8535,9 +8555,20 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
       ctx.beginPath(); ctx.arc(ox, oy, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.fillStyle = themeColor('--ink', '#2d3428');
       ctx.font = FONT;
-      ctx.textAlign = ox > pad.left + gW - 44 ? 'right' : 'left';
-      ctx.textBaseline = 'alphabetic';
-      haloText(opts.obsLevel.toFixed(1), ox + (ctx.textAlign === 'right' ? -9 : 9), oy - 5);
+      ctx.textBaseline = 'top';
+      // Beside the dot: up-right, down-right, up-left, down-left, then a step further out each way
+      // (right first, left near the plot's right edge). The label never sits on a curve or a marker.
+      const txtO = opts.obsLevel.toFixed(1), hO = 13;
+      const wO = typeof ctx.measureText === 'function' ? ctx.measureText(txtO).width : txtO.length * 6.5;
+      const cands = [];
+      const sides = ox > pad.left + gW - 44 ? ['L', 'R'] : ['R', 'L'];
+      for (const dy of [-18, 6, -32, 20]) for (const sd of sides)
+        cands.push(sd === 'R' ? { l: ox + 9, r: ox + 9 + wO, y: oy + dy, a: 'left', x: ox + 9 }
+                              : { l: ox - 9 - wO, r: ox - 9, y: oy + dy, a: 'right', x: ox - 9 });
+      const inPlot = cands.filter(c => c.y >= pad.top - 2 && c.y + hO <= pad.top + gH + 2 && c.l >= pad.left && c.r <= W - pad.right);
+      const at = clearestPlace(inPlot.length ? inPlot : cands, hO) || cands[0];
+      ctx.textAlign = at.a;
+      haloText(txtO, at.x, at.y);
     }
   }
 
@@ -8581,31 +8612,16 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     const w = typeof ctx.measureText === 'function' ? ctx.measureText(txt).width : txt.length * 6.5;
     const h = 13;
     const yT = bandTop + 3, yB = Math.max(yT, bandBot - 3 - h);
-    const drawn = [points, ovPoints, priorPoints].filter(Boolean).flat().map(p => [tx(p.t), ty(p.c)]);
-    const marks = [];
-    [pt, ovPT].filter(Boolean).forEach(p => { for (let i = 0; i < numCycles; i++) {
-      marks.push([tx(i * tau + Math.min(tinf, tau)), ty(p.peak)], [tx((i + 1) * tau), ty(p.trough)]); } });
     if (obsMark) marks.push(obsMark);
-    const crossings = (xr, y) => {                 // right-aligned at xr, top at y
-      const x0 = xr - w - 2, x1 = xr + 2, y0 = y - 1, y1 = y + h + 1;
-      let n = 0;
-      for (const [x, yy] of drawn) if (x >= x0 && x <= x1 && yy >= y0 && yy <= y1) n++;
-      for (const [mx, my] of marks) if (mx >= x0 - 7 && mx <= x1 + 7 && my >= y0 - 7 && my <= y1 + 7) n += 10;
-      return n;
-    };
     const xMax = W - pad.right - 4, xMin = pad.left + 4 + w;
     // Inside the band first; then just outside its edges, still beside it —
     // with a population curve as well as one or two regimens there may be no
     // clear run inside a narrow band.
     const yBelow = Math.min(pad.top + gH - h - 2, bandBot + 3), yAbove = Math.max(pad.top + 1, bandTop - 3 - h);
-    let best = { x: xMax, y: yT }, fewest = Infinity;
-    scan: for (const y of [yB, yT, yBelow, yAbove]) {
-      for (let xr = xMax; xr >= xMin; xr -= 4) {
-        const n = crossings(xr, y);
-        if (n < fewest) { best = { x: xr, y }; fewest = n; }
-        if (!n) break scan;
-      }
-    }
+    const cands = [];
+    for (const y of [yB, yT, yBelow, yAbove]) for (let xr = xMax; xr >= xMin; xr -= 4) cands.push({ l: xr - w, r: xr, y });
+    const pick = clearestPlace(cands, h) || { r: xMax, y: yT };
+    const best = { x: pick.r, y: pick.y };
     ctx.textAlign = 'right';
     haloText(txt, best.x, best.y);
   }
