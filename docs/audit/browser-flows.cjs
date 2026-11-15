@@ -1935,6 +1935,30 @@ async function enterCourse(page) {
     results.problems.push(...eAttr.kept);
     await ectx.close();
   }
+  // D27 (UI review I1, Task 20a): tabbing to Serum creatinine at 1280 x 800 must leave the field above the
+  // pinned Calculate footer, not behind it.
+  {
+    const kctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const k = await kctx.newPage();
+    const kProblems = watch(k, 'focus-footer');
+    await k.goto(BASE + '?v=pwfoot-' + Date.now(), { waitUntil: 'networkidle' });
+    await k.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await k.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+    let hit = false;
+    for (let i = 0; i < 80 && !hit; i++) { await k.keyboard.press('Tab'); hit = await k.evaluate(() => document.activeElement && document.activeElement.id === 'scr'); }
+    await k.waitForTimeout(400);
+    const fm = await k.evaluate(() => {
+      const f = document.activeElement.getBoundingClientRect();
+      const foot = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left .panel-actions').getBoundingClientRect();
+      return { id: document.activeElement.id, bottom: f.bottom, top: f.top, footTop: foot.top, footH: foot.height,
+        pad: getComputedStyle(document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left')).scrollPaddingBottom };
+    });
+    ok('D27: tabbing to #scr at 1280x800 leaves the field above the pinned footer', hit && fm.bottom <= fm.footTop + 0.5 && fm.top >= 0, JSON.stringify(fm));
+    const kAttr = await attributeInjected(k, kProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + kAttr.injected;
+    results.problems.push(...kAttr.kept);
+    await kctx.close();
+  }
   await browser.close();
 
   results.checks = checks;

@@ -1329,6 +1329,9 @@
       height: calc(100dvh - var(--header-h)); overflow-y: auto;
       overscroll-behavior: contain; scrollbar-gutter: stable;
       padding-bottom: 0;
+      /* A focused field scrolls clear of the pinned run action, not under it: the footer's measured
+         height (--actions-h, set by actionsFooterInit) plus a little air for the focus ring. */
+      scroll-padding-bottom: calc(var(--actions-h, 0px) + 8px);
     }
     /* A fixed-height flex column shrinks its children to fit: the mode bar (overflow
        hidden) collapsed to nothing. The column scrolls instead. */
@@ -17097,6 +17100,19 @@ function a11yInitPressedSync() {
     mo.observe(root, { subtree: true, attributes: true, attributeFilter: ['class'] }));
 }
 a11yInitPressedSync();
+
+// The pinned run action's height, measured, so a focused field is scrolled clear of it (UI review I1).
+function actionsFooterInit() {
+  if (typeof ResizeObserver !== 'function') return;
+  document.querySelectorAll('.panel-left').forEach(pl => {
+    const foot = pl.querySelector(':scope > .panel-actions');
+    if (!foot) return;
+    const set = () => pl.style.setProperty('--actions-h', foot.getBoundingClientRect().height + 'px');
+    set();
+    new ResizeObserver(set).observe(foot);
+  });
+}
+actionsFooterInit();
 
 
 // ── design track B: validation & errors — insert this track's helpers below this line ──
