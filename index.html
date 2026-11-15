@@ -10038,10 +10038,20 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
 // "not before" time; the bound is how far the fitted curve is trusted to time a dose
 // before the answer becomes "recheck a level". Neither changes a dose or the threshold.
 const HOLD_SEARCH_STEP_H = 0.25, HOLD_SEARCH_MAX_H = 14 * 24;
+// "Was due" (v3.14.0, D26; UI report I2; ruling R1) is the due time of the regimen being
+// given, not of the new one: a q24h dose given 12 Nov 08:00 was due 13 Nov 08:00, and a
+// change to q12h read "was due 12 Nov 20:00", a dose missed 14 h ago. The regimen being
+// given is the one the decision read (regimenBeingGiven: currentRegimenOf's established
+// schedule or the override), and only when the caller passes a current regimen (`cur`).
+// With none, nothing was due: duePassed is false, and dueH/deltaH (the printed offset)
+// stay against the new regimen's schedule from the last dose, as before. The default
+// first dose is still keyed to the new interval (fromH below), and so is the hold.
 function firstDosePlan(r, rec, nowH, atH, cur) {
   if (!(r && (r.doses || []).length && rec && rec.tau > 0)) return null;
   const last = r.doses.reduce((a, b) => (b.timeH >= a.timeH ? b : a));
-  const dueH = last.timeH + rec.tau;
+  const given = cur ? regimenBeingGiven(rec) : null;
+  const dueTau = given ? given.tau : rec.tau;
+  const dueH = last.timeH + dueTau;
   const plannedDoses = r.doses.filter(d => d.timeH > nowH + 1e-9);
   const plannedN = plannedDoses.length;
   const chosen = Number.isFinite(atH);
@@ -10080,10 +10090,18 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     for (let k = 0; ; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
     auc24First = fittedAUC(Object.assign({}, rFit, { doses: rFit.doses.concat(regimen) }), firstH, firstH + 24);
   }
-  return { firstH, dueH, deltaH: firstH - dueH, duePassed: !chosen && dueH < nowH - 1e-9, chosen, clamped, plannedN,
+  return { firstH, dueH, dueTau, dueCurrent: !!given, deltaH: firstH - dueH, duePassed: !!given && !chosen && dueH < nowH - 1e-9, chosen, clamped, plannedN,
     pre: predictFittedAt(rFit, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
     same: !!(cur && cur.dose === rec.dose && cur.tau === rec.tau),
     hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH };
+}
+// The regimen being given, as the decision read it (D25): the one it continues, or the
+// one it changes from. A start (no established schedule, no override) has none.
+function regimenBeingGiven(rec) {
+  if (!rec) return null;
+  if (rec.action === 'continue') return rec.tau > 0 ? rec : null;
+  if (rec.action === 'change') return rec.current && rec.current.tau > 0 ? rec.current : null;
+  return null;
 }
 // The hold, said once and the same way everywhere (v3.14.0, D26): the verdict's
 // first line, the Copy summary and the announcement. '' when there is no hold.
@@ -10140,7 +10158,10 @@ function holdLineHTML(head, why) {
 // the printed block keeps the offset against the schedule, the first-day AUC and
 // the sentence on exposure.
 function firstDoseReadoutHTML(plan, rec, print) {
-  const q = fmtFreq(rec.tau), d = plan.deltaH, ad = Math.abs(d);
+  // The offset is against the schedule dueH is on (D26, R1): the current regimen's when there
+  // is one, named "current" when its interval is not the new one's, so the sentence stays true.
+  const dueTau = plan.dueTau > 0 ? plan.dueTau : rec.tau;
+  const q = `${plan.dueCurrent && dueTau !== rec.tau ? 'current ' : ''}${fmtFreq(dueTau)}`, d = plan.deltaH, ad = Math.abs(d);
   const amount = ad < 1 ? `${Math.round(ad * 60)} min` : `${+ad.toFixed(1)} h`;
   const rel = ad < 1 / 60 ? `on the ${q} schedule` : `${amount} ${d > 0 ? 'after' : 'before'} the ${q} schedule`;
   const list = (a) => a.length < 2 ? a[0] : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;

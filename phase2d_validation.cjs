@@ -4857,8 +4857,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const due = sandbox.firstDosePlan(r38, q24, 20);
     assert(due.firstH === 24 && due.dueH === 24 && due.deltaH === 0 && !due.chosen, JSON.stringify(due));
     assert(Math.abs(due.pre - sandbox.predictFittedAt(r38, 24)) < 1e-9, 'the fitted level when the first dose goes in');
+    // v3.14.0 (D26, ruling R1): "was due" is the regimen being given's due time, so with no
+    // current regimen (none passed here) nothing was due; with one, its due time had passed.
     const passed = sandbox.firstDosePlan(r38, q24, 26.5);
-    assert(passed.firstH === 26.5 && passed.deltaH === 2.5 && passed.duePassed, JSON.stringify(passed));
+    assert(passed.firstH === 26.5 && passed.deltaH === 2.5 && !passed.duePassed, JSON.stringify(passed));
+    const passedCur = sandbox.firstDosePlan(r38, Object.assign({ action: 'continue' }, q24), 26.5, null, { dose: 1750, tau: 24, tinfH: 2 });
+    assert(passedCur.firstH === 26.5 && passedCur.dueH === 24 && passedCur.deltaH === 2.5 && passedCur.duePassed, JSON.stringify(passedCur));
     const chosen = sandbox.firstDosePlan(r38, q24, 20, 26);
     assert(chosen.firstH === 26 && chosen.deltaH === 2 && chosen.chosen && !chosen.clamped, JSON.stringify(chosen));
     const early = sandbox.firstDosePlan(r38, q24, 20, 15);
@@ -5949,7 +5953,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(at44(r, plan.resumeH - 0.25) >= K44.TROUGH_HIGH_MGL, 'the first quarter hour below, not a later one');
     assert(plan.firstH === plan.resumeH, `the unchosen first dose moves to resumeH: firstH ${plan.firstH}, resumeH ${plan.resumeH}`);
     assert(plan.pre === at44(r, plan.firstH) && plan.pre < K44.TROUGH_HIGH_MGL, `pre recomputed at the new time: ${plan.pre}`);
-    assert(plan.dueH === 52 && plan.deltaH === plan.firstH - plan.dueH, `dueH and deltaH as before: ${plan.dueH}, ${plan.deltaH}`);
+    // Task 8 (ruling R1) re-points dueH: the due time of the regimen being given, 1.5 g q8h from
+    // the last dose at 40 h (48), not the new q12h's (52). deltaH still measures from it.
+    assert(plan.dueH === 40 + cur.tau && plan.dueH === 48 && plan.deltaH === plan.firstH - plan.dueH, `dueH (current q8h) and deltaH: ${plan.dueH}, ${plan.deltaH}`);
     // A chosen time is honoured: inside the hold it stays a hold; after resumeH it is not one.
     const inside = fn44('firstDosePlan')(r, rec, nowH, 60, cur);
     assert(inside.firstH === 60 && inside.chosen && inside.hold === true && inside.pre >= K44.TROUGH_HIGH_MGL && inside.resumeH > 60,
@@ -6762,6 +6768,86 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(refused(tl('steadystate', 13, 14, 12)), 'level 1 past the interval is refused');
     assert(/Level 1/.test(tl('steadystate', 13, 14, 12).text), 'and named');
     assert(refused(tl('steadystate', 2, 20, 8, 12)) && !refused(tl('steadystate', 2, 20, 8, 24)), 'the interval the patient was on decides');
+  });
+
+  // Task 8 (UI report I2; ruling R1): "was due" is the due time of the regimen being given, not
+  // of the new one. Fictional 55 M, 72 kg, 176 cm, SCr 1.0, Buelga (D25's below-range case):
+  // 1.75 g q24h over 2 h at 10, 11 and 12 Nov 08:00; one level, 6 mg/L, 13 Nov 07:30; target box
+  // 400; now 13 Nov 10:00. The answer is q12h, and v3.13.0 said "First dose 13 Nov 10:00 (was due
+  // 12 Nov 20:00)": a dose missed 14 h ago. The next q24h dose was due 13 Nov 08:00. The plan is
+  // built as renderBayesianResults builds it: the decision, and bState.curRegimen as
+  // inferCurrentRegimen reads the course. The default first-dose time is unchanged (R1).
+  const at44h = (s) => new Date(s).getTime() / 3600000;
+  const fmtClock44 = (h) => fn44('fmtClock')(h);
+  const curRegimen44 = (doses, CL, V) => {   // renderBayesianResults' bState.curRegimen
+    const c = fn44('inferCurrentRegimen')(doses, CL, V, null);
+    return c && c.dose > 0 && c.tau > 0 && c.tinfH > 0 ? { dose: c.dose, tau: c.tau, tinfH: c.tinfH } : null;
+  };
+  const i2Case = (times) => {
+    const wt = fn44('pickCrClWeight')('auto', 72, fn44('calcIBW')('M', 176)).wt;
+    const crcl = Math.max(K44.CRCL_MODEL_FLOOR, Math.min(K44.CRCL_MODEL_CAP,
+      fn44('calcCrCl')(55, 'M', 1.0, wt, vm.runInContext('SCR_POLICY.ACTUAL', sandbox))));
+    const bk = fn44('buelgaPopPK')(crcl, 72);
+    const doses = times.map(s => ({ mg: 1750, tinfH: 2, timeH: at44h(s) }));
+    const nowH = at44h('2026-11-13T10:00'), levels = [{ conc: 6, timeH: at44h('2026-11-13T07:30') }];
+    const mf = fn44('mapFit')((a, b) => fn44('burtonObjective')(a, b, bk.CL_pop, bk.V_pop, doses, levels),
+      2, K44.OMEGA2_CL_BUELGA, K44.OMEGA2_V_BUELGA, 300);
+    const CL_ind = bk.CL_pop * Math.exp(mf.eta[0]), V_ind = bk.V_pop * Math.exp(mf.eta[1]);
+    const rec = fn44('regimenDecision')(CL_ind, V_ind, 400, null, 1, doses, fn44('aucUncertaintyRow')(1, 'buelga'));
+    const r = { model: 'buelga', CL_ind, V_ind, doses, levels, fitNowH: nowH, rec };
+    return { r, rec, nowH, cur: curRegimen44(doses, CL_ind, V_ind) };
+  };
+  test('44.16 "was due" is the current regimen\'s due time; with no current regimen nothing was due; the same interval changes nothing', () => {
+    const { r, rec, nowH, cur } = i2Case(['2026-11-10T08:00', '2026-11-11T08:00', '2026-11-12T08:00']);
+    assert(rec.action === 'change' && rec.current && rec.current.tau === 24 && rec.tau === 12 && cur && cur.tau === 24,
+      `the fixture changes q24h to q12h: ${rec.action} from q${rec.current && rec.current.tau}h to ${rec.dose} mg q${rec.tau}h; cur ${JSON.stringify(cur)}`);
+    const plan = fn44('firstDosePlan')(r, rec, nowH, null, cur);
+    assert(plan.firstH === nowH, `the default first dose stays max(last + the new interval, now) (R1): ${fmtClock44(plan.firstH)}`);
+    assert(plan.dueH === at44h('2026-11-13T08:00') && plan.duePassed === true && plan.deltaH === 2,
+      `due on the current q24h: dueH ${fmtClock44(plan.dueH)}, duePassed ${plan.duePassed}, deltaH ${plan.deltaH}`);
+    const line = fn44('firstDoseReadoutHTML')(plan, rec, false), paper = fn44('firstDoseReadoutHTML')(plan, rec, true);
+    for (const [k, h] of [['screen', line], ['print', paper]]) {
+      assert(/13 Nov 10:00 \(was due 13 Nov 08:00\)/.test(h), `${k}: ${h.slice(0, 400)}`);
+      assert(!/12 Nov 20:00/.test(h), `${k}: never the new interval's due time: ${h.slice(0, 400)}`);
+    }
+    // The printed offset names the interval it is measured on: the current q24h, not the new q12h.
+    assert(/2 h after the current q24h schedule/.test(paper) && !/q12h schedule/.test(paper), paper.slice(0, 400));
+    assert(/then 10:00 and 22:00 daily/.test(line), `the new regimen's times after it: ${line}`);
+    // No current regimen from the caller: nothing was due, no parenthesis; the time is the same.
+    const none = fn44('firstDosePlan')(r, rec, nowH, null, null);
+    assert(none.duePassed === false && none.firstH === plan.firstH, JSON.stringify({ duePassed: none.duePassed, firstH: none.firstH }));
+    for (const h of [fn44('firstDoseReadoutHTML')(none, rec, false), fn44('firstDoseReadoutHTML')(none, rec, true)])
+      assert(!/was due/.test(h), h.slice(0, 400));
+    // No current regimen in the decision: a single dose (the load) is a start, and nothing was due.
+    const load = i2Case(['2026-11-12T08:00']);
+    assert(load.rec.action === 'start' && !load.rec.current, `one dose is a start: ${load.rec.action}`);
+    const lp = fn44('firstDosePlan')(load.r, load.rec, load.nowH, null, load.cur);
+    assert(lp.duePassed === false && !/was due/.test(fn44('firstDoseReadoutHTML')(lp, load.rec, false)) && !/was due/.test(fn44('firstDoseReadoutHTML')(lp, load.rec, true)),
+      JSON.stringify({ duePassed: lp.duePassed, cur: load.cur }));
+    // A schedule the decision does not read as current (a possible transition: 0, 7, 19, 22, 39 h)
+    // is not one, though inferCurrentRegimen gives it an interval: nothing was due on it.
+    const pt = i2Case([0, 7, 19, 22, 39].map(h => new Date((at44h('2026-11-11T08:00') + h) * 3600000).toISOString()));
+    assert(pt.rec.action === 'start' && pt.cur && pt.cur.tau > 0, `a possible transition is a start with an inferred interval: ${pt.rec.action}, ${JSON.stringify(pt.cur)}`);
+    const pp = fn44('firstDosePlan')(pt.r, pt.rec, pt.nowH, null, pt.cur);
+    assert(pp.duePassed === false && !/was due/.test(fn44('firstDoseReadoutHTML')(pp, pt.rec, true)), JSON.stringify({ duePassed: pp.duePassed, dueH: pp.dueH }));
+    // The current regimen's interval equal to the new one (44.3's in-range 1.25 g q12h, continued):
+    // dueH, deltaH and duePassed are v3.13.0's, and the readout wording is unchanged.
+    const CL = 4.58, V = 61.8;
+    const doses = Array.from({ length: 4 }, (_, i) => ({ mg: 1250, tinfH: 1.5, timeH: i * 12 }));
+    const cont = fn44('regimenDecision')(CL, V, 450, null, 1, doses, fn44('aucUncertaintyRow')(1, 'buelga'));
+    assert(cont.action === 'continue' && cont.tau === 12, `continued: ${cont.action}`);
+    const rc = { model: 'buelga', CL_ind: CL, V_ind: V, doses, levels: [{ conc: 15, timeH: 47.5 }], fitNowH: 50.5, rec: cont };
+    const cc = curRegimen44(doses, CL, V);
+    assert(cc && cc.tau === 12, JSON.stringify(cc));
+    for (const [nowC, atC] of [[50.5, null], [46, null], [50.5, 52]]) {
+      const p = fn44('firstDosePlan')(rc, cont, nowC, atC, cc);
+      const v313due = 36 + cont.tau, v313first = atC != null ? Math.max(atC, nowC) : Math.max(v313due, nowC);
+      assert(p.dueH === v313due && p.firstH === v313first && p.deltaH === v313first - v313due && p.duePassed === (atC == null && v313due < nowC),
+        `now ${nowC} at ${atC}: ${JSON.stringify({ dueH: p.dueH, firstH: p.firstH, deltaH: p.deltaH, duePassed: p.duePassed })}`);
+      const pr = fn44('firstDoseReadoutHTML')(p, cont, true);
+      assert(new RegExp(`${+(p.deltaH).toFixed(1)} h (after|before) the q12h schedule|on the q12h schedule`).test(pr) && !/current q12h/.test(pr), pr.slice(0, 300));
+      if (p.duePassed) assert(pr.includes(`(was due ${fmtClock44(48)})`), pr.slice(0, 300));
+    }
   });
 }
 

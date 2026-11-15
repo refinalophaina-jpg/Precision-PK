@@ -710,6 +710,21 @@ async function enterCourse(page) {
        && /^The current regimen gives AUC₂₄ (3\d\d) with (\d+) of 20 plausible AUCs in 400–600; this one puts (\d+) of 20 in range\./.test(q24.why)
        && (m => !!m && +m[2] > +m[1])(q24.why.match(/with (\d+) of 20[\s\S]*puts (\d+) of 20/)),
        JSON.stringify(q24));
+    // v3.14.0 (D26), UI report I2 (ruling R1): the last 1.75 g q24h dose went in yesterday 08:00, so
+    // the next was due today 08:00 — never "was due yesterday 20:00" (the new q12h's due time).
+    const dueRead = await c.evaluate(() => {
+      const first = (document.getElementById('b-first-readout') || {}).textContent || '';
+      window.dispatchEvent(new Event('beforeprint'));
+      const paper = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      const i = paper.indexOf('First dose');
+      return { first: first.replace(/\s+/g, ' ').trim(), paper: i < 0 ? '' : paper.slice(i, i + 200) };
+    });
+    const dd = (n) => { const d = new Date(`${day(n)}T12:00`);
+      return `${d.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]}`; };
+    ok('D26: on a change from q24h to q12h, "was due" is the q24h dose due today 08:00, on screen and in print, offset against the current q24h',
+       dueRead.first.startsWith(`${dd(0)} 10:00 (was due ${dd(0)} 08:00)`) && !dueRead.first.includes(`${dd(-1)} 20:00`)
+       && dueRead.paper.includes(`${dd(0)} 10:00 (was due ${dd(0)} 08:00)`) && /2 h after the current q24h schedule/.test(dueRead.paper),
+       JSON.stringify(dueRead));
     // v3.14.0 (D26): saving while the result is stale keeps the stale mark. The 1.75 g q24h
     // fit above is still on screen; change SCr so it is stale, then save with and without a label.
     await typeInto(c, '#b-scr', '1.4'); await c.waitForTimeout(300);
