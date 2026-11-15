@@ -5905,6 +5905,106 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const undo = sp.indexOf('clearUndo()');
     assert(emptyLabel >= 0 && undo > emptyLabel, 'clearUndo() must come after the empty-label return');
   });
+
+  // C1 (engine report): a supratherapeutic patient was given a time for the next dose
+  // with no hold — "first dose in 6 h, level by then 43.3 mg/L". The user's ruling: a
+  // fitted pre-dose concentration at or above TROUGH_HIGH_MGL (20 mg/L) means Hold.
+  // Fictional 60 M, 80 kg, 178 cm, SCr 3.0, Buelga; 1.5 g q8h x 6 over 2 h, the last
+  // 6 h ago; one level, 48 mg/L, drawn 1 h ago. The fit runs as runBayesian runs it.
+  const K44 = (() => { try { return __extractConsts(); } catch (e) { return { _err: e.message }; } })();
+  const fn44 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const c1Case = () => {
+    const wt = fn44('pickCrClWeight')('auto', 80, fn44('calcIBW')('M', 178)).wt;
+    const crcl = Math.max(K44.CRCL_MODEL_FLOOR, Math.min(K44.CRCL_MODEL_CAP,
+      fn44('calcCrCl')(60, 'M', 3.0, wt, vm.runInContext('SCR_POLICY.ACTUAL', sandbox))));
+    const bk = fn44('buelgaPopPK')(crcl, 80);
+    const doses = Array.from({ length: 6 }, (_, i) => ({ mg: 1500, tinfH: 2, timeH: i * 8 }));
+    const nowH = 46, levels = [{ conc: 48, timeH: 45 }];
+    const mf = fn44('mapFit')((a, b) => fn44('burtonObjective')(a, b, bk.CL_pop, bk.V_pop, doses, levels),
+      2, K44.OMEGA2_CL_BUELGA, K44.OMEGA2_V_BUELGA, 300);
+    const CL_ind = bk.CL_pop * Math.exp(mf.eta[0]), V_ind = bk.V_pop * Math.exp(mf.eta[1]);
+    const rec = fn44('regimenDecision')(CL_ind, V_ind, 450, null, 1, doses, fn44('aucUncertaintyRow')(1, 'buelga'));
+    const r = { model: 'buelga', CL_ind, V_ind, doses, levels, fitNowH: nowH, rec };
+    return { r, rec, nowH, cur: { dose: 1500, tau: 8, tinfH: 2 } };
+  };
+  const at44 = (r, t) => fn44('predictFittedAt')(r, t);
+
+  test('44.2 a 48 mg/L level holds the first dose until the fitted level is below 20 mg/L', () => {
+    assert(!K44._err, K44._err);
+    assert(K44.TROUGH_HIGH_MGL === 20, `TROUGH_HIGH_MGL is ${K44.TROUGH_HIGH_MGL}`);
+    const { r, rec, nowH, cur } = c1Case();
+    assert(rec && !rec.noSolution && rec.dose === 500 && rec.tau === 12, `the reported regimen: ${rec && rec.dose} mg q${rec && rec.tau}h`);
+    assertClose(at44(r, 40 + rec.tau), 43.3, 0.1, 'the reported level when due (v3.13.0 said "level by then 43.3")');
+    const plan = fn44('firstDosePlan')(r, rec, nowH, null, cur);
+    assert(plan.hold === true, `hold: ${plan.hold}`);
+    assert(plan.holdNoTime === false, `holdNoTime: ${plan.holdNoTime}`);
+    assert(plan.resumeH > nowH, `resumeH ${plan.resumeH} after now ${nowH}`);
+    assertLess(at44(r, plan.resumeH), K44.TROUGH_HIGH_MGL, 'fitted level at resumeH');
+    assert(at44(r, plan.resumeH - 0.25) >= K44.TROUGH_HIGH_MGL, 'the first quarter hour below, not a later one');
+    assert(plan.firstH === plan.resumeH, `the unchosen first dose moves to resumeH: firstH ${plan.firstH}, resumeH ${plan.resumeH}`);
+    assert(plan.pre === at44(r, plan.firstH) && plan.pre < K44.TROUGH_HIGH_MGL, `pre recomputed at the new time: ${plan.pre}`);
+    assert(plan.dueH === 52 && plan.deltaH === plan.firstH - plan.dueH, `dueH and deltaH as before: ${plan.dueH}, ${plan.deltaH}`);
+    // A chosen time is honoured: inside the hold it stays a hold; after resumeH it is not one.
+    const inside = fn44('firstDosePlan')(r, rec, nowH, 60, cur);
+    assert(inside.firstH === 60 && inside.chosen && inside.hold === true && inside.pre >= K44.TROUGH_HIGH_MGL && inside.resumeH > 60,
+      `chosen inside the hold: ${JSON.stringify({ firstH: inside.firstH, hold: inside.hold, pre: inside.pre, resumeH: inside.resumeH })}`);
+    const after = fn44('firstDosePlan')(r, rec, nowH, plan.resumeH + 1, cur);
+    assert(after.firstH === plan.resumeH + 1 && after.hold === false && after.resumeH === null && after.holdNoTime === false,
+      `chosen after resumeH: ${JSON.stringify({ firstH: after.firstH, hold: after.hold, resumeH: after.resumeH })}`);
+  });
+  test('44.3 an ordinary in-range fit does not hold, and the first-dose time is as in v3.13.0', () => {
+    const CL = 4.58, V = 61.8;                      // SUITE 43's in-range posterior (Buelga, 1 level)
+    const doses = Array.from({ length: 4 }, (_, i) => ({ mg: 1250, tinfH: 1.5, timeH: i * 12 }));
+    const rec = fn44('regimenDecision')(CL, V, 450, null, 1, doses, fn44('aucUncertaintyRow')(1, 'buelga'));
+    assert(rec.action === 'continue', `in range, continued: ${rec.action}`);
+    const r = { model: 'buelga', CL_ind: CL, V_ind: V, doses, levels: [{ conc: 15, timeH: 47.5 }], fitNowH: 46 };
+    // Ordinary times: from 8 h after the last dose (fitted 19.5 mg/L at 44 h) onward.
+    let n = 0;
+    for (const nowH of [44, 46, 48, 50.5, 70]) for (const atH of [null, 30, 45, 49.25, 60]) {
+      const p = fn44('firstDosePlan')(r, rec, nowH, atH, { dose: 1250, tau: 12, tinfH: 1.5 });
+      const dueH = 36 + rec.tau, chosen = Number.isFinite(atH);
+      const v313 = chosen ? Math.max(atH, nowH) : Math.max(dueH, nowH);      // v3.13.0's rule
+      assert(p.hold === false && p.resumeH === null && p.holdNoTime === false, `now ${nowH} at ${atH}: hold ${p.hold}`);
+      assert(p.firstH === v313 && p.dueH === dueH && p.deltaH === v313 - dueH && p.pre === at44(r, v313),
+        `now ${nowH} at ${atH}: firstH ${p.firstH} (v3.13.0 ${v313}), pre ${p.pre}`);
+      n++;
+    }
+    assert(n === 25, `${n} plans compared`);
+    // Not ordinary: a time chosen 4 h after the last 1.25 g dose (fitted 26 mg/L) holds even here.
+    const near = fn44('firstDosePlan')(r, rec, 40, 40, { dose: 1250, tau: 12, tinfH: 1.5 });
+    assert(near.hold === true && near.firstH === 40 && near.resumeH > 40 && at44(r, near.resumeH) < K44.TROUGH_HIGH_MGL, JSON.stringify({ hold: near.hold, resumeH: near.resumeH }));
+  });
+  test('44.4 a level that stays at or above 20 mg/L for 14 days gives no resume time: recheck a level', () => {
+    const r = { model: 'buelga', CL_ind: 0.05, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [{ conc: 40, timeH: 3 }], fitNowH: 4 };
+    const rec = { dose: 500, tau: 24, tinfH: 1 };
+    assert(at44(r, 24 + 14 * 24) >= K44.TROUGH_HIGH_MGL, 'the fixture stays at or above 20 for the whole search');
+    const plan = fn44('firstDosePlan')(r, rec, 4, null, null);
+    assert(plan.hold === true && plan.holdNoTime === true && plan.resumeH === null,
+      JSON.stringify({ hold: plan.hold, holdNoTime: plan.holdNoTime, resumeH: plan.resumeH }));
+  });
+  test('44.5 the readout, the verdict line, print and the summary say Hold; no time is given when there is none', () => {
+    const { r, rec, nowH, cur } = c1Case();
+    const plan = fn44('firstDosePlan')(r, rec, nowH, null, cur);
+    const line = fn44('firstDoseReadoutHTML')(plan, rec, false), paper = fn44('firstDoseReadoutHTML')(plan, rec, true);
+    for (const [k, h] of [['screen', line], ['print', paper]]) {
+      assert(/Hold/.test(h) && /not before/.test(h), `${k}: ${h.slice(0, 400)}`);
+      assert(/<strong class="tone-alarm">[\d.]+ mg\/L<\/strong>/.test(h), `${k}: the level by then in the alarm tone: ${h.slice(0, 400)}`);
+    }
+    const head = fn44('holdHeadHTML')(plan);
+    assert(/class="vx-action[^"]*tone-alarm/.test(head) && /<svg class="ic"/.test(head) && /Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d/.test(head), head);
+    assert(fn44('holdHeadHTML')(fn44('firstDosePlan')(r, rec, nowH, plan.resumeH + 1, cur)) === '', 'no hold, no line');
+    const s = fn44('resultSummary')(r, rec, null, fn44('aucUncertaintyRow')(1, 'buelga'), { level: 'Moderate' }, plan);
+    assert(/^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d/.test(s), `the copy summary leads with the hold: ${s}`);
+    const r4 = { model: 'buelga', CL_ind: 0.05, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [{ conc: 40, timeH: 3 }], fitNowH: 4 };
+    const q24 = { dose: 500, tau: 24, tinfH: 1, auc24: 500 / 0.05 };   // AUC24 = daily dose / CL
+    const none =fn44('firstDosePlan')(r4, q24, 4, null, null);
+    assert(fn44('firstDayAucHTML')(none) === '', 'no first-day AUC for a dose with no time');
+    for (const [k, h] of [['screen', fn44('firstDoseReadoutHTML')(none, q24, false)], ['print', fn44('firstDoseReadoutHTML')(none, q24, true)],
+                          ['head', fn44('holdHeadHTML')(none)], ['summary', fn44('resultSummary')(r4, q24, null, fn44('aucUncertaintyRow')(1, 'buelga'), { level: 'Moderate' }, none)]]) {
+      assert(/recheck a level/i.test(h), `${k}: ${h.slice(0, 400)}`);
+      assert(!/\d\d:\d\d/.test(h), `${k}: no clock time when there is no resume time: ${h.slice(0, 400)}`);
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

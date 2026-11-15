@@ -733,6 +733,79 @@ async function enterCourse(page) {
     await cctx.close();
   }
 
+  // v3.14.0 (D26), engine report C1: a supratherapeutic patient was given a time for the next
+  // dose with no hold. The user's ruling: a fitted pre-dose level of 20 mg/L or more is a Hold.
+  // A fictional 60 M (80 kg, 178 cm, SCr 3.0) on Buelga, 1.5 g q8h x 6 over 2 h, the last
+  // dose 6 h ago and a 48 mg/L level 1 h ago. Then the Trough module, a steady-state level of
+  // 45 mg/L on 1.5 g q8h. Fixed clock: today 10:00.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const h = await hctx.newPage();
+    const hProblems = watch(h, 'hold');
+    await h.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await h.goto(BASE + '?v=pwh-' + Date.now(), { waitUntil: 'networkidle' });
+    await h.locator('[data-onclick="k2"]').click();
+    await typeInto(h, '#b-age', '60'); await typeInto(h, '#b-tbw', '80'); await typeInto(h, '#b-height', '178'); await typeInto(h, '#b-scr', '3.0');
+    await h.locator('[data-onclick="k39"]').click();
+    const times = [[day(-2), '12:00'], [day(-2), '20:00'], [day(-1), '04:00'], [day(-1), '12:00'], [day(-1), '20:00'], [day(0), '04:00']];
+    for (let n = 1; n <= times.length; n++) {
+      await h.locator('[data-onclick="k43"]').click();
+      await typeInto(h, `#b-dose-mg-${n}`, '1500'); await typeInto(h, `#b-dose-tinf-${n}`, '2');
+      await h.locator(`#b-dose-date-${n}`).fill(times[n - 1][0]); await typeInto(h, `#b-dose-time-${n}`, times[n - 1][1]);
+    }
+    await h.locator('[data-onclick="k46"]').click();
+    await typeInto(h, '#b-lvl-conc-1', '48'); await h.locator('#b-lvl-date-1').fill(day(0)); await typeInto(h, '#b-lvl-time-1', '09:00');
+    await h.locator('[data-onclick="k47"]').click(); await h.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await h.waitForTimeout(300);
+    const held = await h.evaluate(() => {
+      const v = document.querySelector('#b-results .vx-verdict'), a = v && v.querySelector('.vx-action'), reg = document.getElementById('vx-regimen');
+      const lvl = document.querySelector('#b-first-readout strong');
+      return { first: v ? v.innerText.trim().split('\n')[0].trim() : '',
+        act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', icon: !!(a && a.querySelector('svg.ic')), alarm: !!(a && a.classList.contains('tone-alarm')),
+        before: !!(a && reg && (a.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '',
+        readout: (document.getElementById('b-first-readout') || {}).textContent || '',
+        lvlCls: lvl ? lvl.className : '', said: (document.getElementById('sr-announce') || {}).textContent || '',
+        summary: (bState && bState.summaryText) || '' };
+    });
+    const whenM = held.first.match(/^Hold: next dose not before (\d{1,2} [A-Z][a-z]{2} \d\d:\d\d)$/);
+    ok('D26: a 48 mg/L level gives Hold — the verdict\'s first line, the alarm word and icon, before the regimen to resume with',
+       !!whenM && held.act === held.first && held.icon && held.alarm && held.before && /IV q\d+h/.test(held.reg), JSON.stringify(held));
+    ok('D26: the first dose is not before the hold\'s time, and the level by then is in the alarm tone',
+       !!whenM && held.readout.indexOf(whenM[1]) >= 0 && /Hold/.test(held.readout) && held.lvlCls === 'tone-alarm', JSON.stringify(held));
+    ok('D26: the screen reader and the copy summary hear the hold', /^Result: Hold: next dose not before /.test(held.said) && /^Hold: next dose not before /.test(held.summary),
+       JSON.stringify({ said: held.said, summary: held.summary }));
+    const printedH = await h.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: the printed report says Hold', /Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d/.test(printedH),
+       printedH.slice(printedH.indexOf('Dose recommendation'), printedH.indexOf('Dose recommendation') + 600));
+
+    // The Trough module, steady-state level mode: the same hold, timed from the fitted decline.
+    await h.locator('[data-onclick="k1"]').click();
+    await typeInto(h, '#age', '60'); await typeInto(h, '#tbw', '80'); await typeInto(h, '#height', '178'); await typeInto(h, '#scr', '1.0');
+    await h.locator('[data-onclick="k9"]').first().click();
+    await h.locator('#mode-btn-level').click();
+    await typeInto(h, '#dose', '1500');
+    await h.locator('#interval').selectOption('8');
+    await typeInto(h, '#tinf', '1.5');
+    await h.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(h, '#level-val', '45');
+    await h.locator('#time-dose-given-date').fill(day(0)); await typeInto(h, '#time-dose-given-time', '0100');
+    await h.locator('#time-level-drawn-date').fill(day(0)); await typeInto(h, '#time-level-drawn-time', '0845');
+    await h.locator('[data-onclick="k31"]').click(); await h.waitForTimeout(600);
+    const tHold = await h.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), a = v && v.querySelector('.vx-action'), reg = document.getElementById('tx-regimen');
+      return { act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', icon: !!(a && a.querySelector('svg.ic')), alarm: !!(a && a.classList.contains('tone-alarm')),
+        before: !!(a && reg && (a.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        said: (document.getElementById('sr-announce') || {}).textContent || '' };
+    });
+    ok('D26: Trough level mode holds — a 45 mg/L steady-state level on 1.5 g q8h shows Hold and a re-dose time',
+       /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(tHold.act) && tHold.icon && tHold.alarm && tHold.before && /^Result: Hold: /.test(tHold.said),
+       JSON.stringify(tHold));
+    const hAttr = await attributeInjected(h, hProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + hAttr.injected;
+    results.problems.push(...hAttr.kept);
+    await hctx.close();
+  }
+
   // v3.12.0 (D23): IV vancomycin on peritoneal dialysis, typed in. A fictional CCPD patient
   // (61 kg at the load, 63 kg now, cycler 21:00 x 9.5 h), on a fixed clock (today 10:00) so the
   // answer cannot depend on the time of day.

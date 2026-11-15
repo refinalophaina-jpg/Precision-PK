@@ -2213,6 +2213,10 @@
   /* v3.14.0 (D25): continue or change, said before the regimen; why, after it */
   .vx-action { font-size: var(--fs-sm); font-weight: 600; color: var(--ink); margin: 0 0 2px; }
   .vx-why { font-size: var(--fs-sm); color: var(--ink-soft); margin: 6px 0 0; line-height: 1.5; }
+  /* v3.14.0 (D26): Hold leads the answer — the alarm word and drawn icon, then why */
+  .vx-action.vx-hold-head { display: flex; align-items: flex-start; gap: 6px; color: var(--alarm); }
+  .vx-action.vx-hold-head .ic { width: 1.05em; height: 1.05em; margin-top: .18em; }
+  .vx-hold-why { margin: 0 0 10px; }
   #b-results .rec-lowconf { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft); margin: 10px 0 0;
     padding: 0; background: none; border: 0; }
   .vx-conf { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-soft);
@@ -4187,7 +4191,7 @@ const __ACT = {
   k77: (el, ev, arg) => { switchModule('auc'); setBModel(document.getElementById('b-model-btn-gotihd'), 'gotihd'); },   /* Trough HD guard → Goti-HD (D16) */
   k78: (el, ev, arg) => { bState.hdGapH = Number(arg); if (bState.result) { renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const b = document.querySelector(`#b-results [data-onclick="k78"][data-arg="${Number(arg)}"]`); if (b) b.focus(); } },   /* HD one-time: assumed gap to the next session (D17) */
   k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { const nextId = ev && ev.type === 'focusout' && ev.relatedTarget && ev.relatedTarget.id; renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(ev && ev.type === 'focusout' ? (nextId || '') : (el && el.id ? el.id : 'b-hd-give-time')); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0); the date commits on leaving it and focus goes where the user was heading (v3.9.0) */
-  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0) */
+  k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); refreshHoldSlots(r, plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0; the hold, D26) */
   k84: (el, ev, arg) => { setCalcMode('pd'); },   /* the PD mode (D23) */
   k85: (el, ev, arg) => { pdSetGoal(arg); },   /* a goal preset */
   k86: (el, ev, arg) => { addPdRow('dose'); focusNewRow('pd-dose-tbody'); },
@@ -7002,6 +7006,10 @@ function calculate() {
 
     // Find optimal maintenance dose using individual PK
     const tlOpt = findOptimalDose(troughMin, troughMax, tlTau, tlTinf, tlPK.kel, tlPK.vd, tlPK.clv);
+    // D26: the fitted level when the next dose is due — on the interval the patient was on
+    // (steady state), else the recommended one — from level 2 down the fitted decline.
+    const tlDueH = state.tlBasis === 'steadystate' ? accumTau : tlTau;
+    const tlHold = troughHold(tlC2 * Math.exp(-tlPK.kel * (tlDueH - tlT2)), tlDueH, tlPK.kel, doseStartHourOf('tl-dose-time'));
 
     renderTwoLevels({
       age, sex:state.sex, tbw, ibw, adjbw, bmi, scr,
@@ -7010,7 +7018,7 @@ function calculate() {
       ...tlPK,
       troughMin, troughMax, mic,
       optDose:tlOpt.dose, optFlag: tlOpt.flag, optFlagMsg: tlOpt.flagMsg, optPT:calcPeakTrough(tlOpt.dose, tlTau, tlTinf, tlPK.kel, tlPK.vd),
-      optAUC:calcAUC(tlOpt.dose, tlTau, tlPK.clv)
+      optAUC:calcAUC(tlOpt.dose, tlTau, tlPK.clv), hold: tlHold
     });
     return; // done — skip the rest of calculate()
   }
@@ -7080,6 +7088,7 @@ function calculate() {
   // certified "✓ True trough … (end of dosing interval)" (audit 2026-09-28).
   let troughBasis = null;
   let popPeak, popTrough;
+  let troughHoldInfo = null;   // D26: the next dose held while the level is at or above TROUGH_HIGH_MGL
 
   // Always compute population predictions from current regimen
   const popPT = calcPeakTrough(dose, tau, tinf, popKel, vd);
@@ -7154,6 +7163,13 @@ function calculate() {
         aucMethod += ` · caution: at this Ke three doses reach only ${Math.round(f3 * 100)}% of steady state, so a level after dose 3 still understates accumulation`;
       }
     }
+    // D26: the level when the next dose is due, tau after this one. At steady state that
+    // is the trough shown; before it, the actual next pre-dose level on the doses given
+    // (the trough shown there is the steady-state projection, which is higher).
+    const nextPre = earlyLevel
+      ? predictConc1comp(Array.from({ length: fitted.doseNumber }, (_, i) => ({ mg: dose, tinfH: tinf, timeH: i * tau })), fitted.doseNumber * tau, adjKel, vd)
+      : trueTrough;
+    troughHoldInfo = troughHold(nextPre, tau, adjKel, doseStartHourOf('time-dose-given'));
   } else {
     // Pure population — predict from regimen
     peak   = popPeak;
@@ -7219,7 +7235,7 @@ function calculate() {
     assessment,
     optDose, optPT, optAUC: optResult.auc, optFlag: optResult.flag, optFlagMsg: optResult.flagMsg,
     clModel, vdModel,
-    hasLevel, hasLD, ldData
+    hasLevel, hasLD, ldData, hold: troughHoldInfo
   });
 }
 
@@ -7320,6 +7336,7 @@ function renderResults(d) {
   }) : '';
 
   const verdict = txVerdictHTML({
+    hold: troughHoldHTML(d.hold),
     dose: vDose, tau: d.tau, tinf: d.tinf,
     auc: vAUC, aucBand: showOptDose ? `approx. ±${uncertaintyPct}% (not simulated)` : aucConfText,
     trough: vTrough, troughWord: showOptDose ? 'predicted at steady state' : troughBasisWord,
@@ -7444,7 +7461,7 @@ function renderResults(d) {
           // fitted once a level exists, otherwise the recommendation.
           base: d.levelFitted ? { role: 'current', dose: d.dose, tau: d.tau } : { role: 'rec', dose: vDose, tau: d.tau },
           popKel: d.levelFitted ? d.popKel : null, popVd: d.levelFitted ? d.vd : null };
-  announceResult(`Result: ${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
+  announceResult(`Result: ${troughHoldSaid(d.hold)}${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
   // Draw the PK graph after DOM insertion
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-ss', d.dose, d.tau, d.tinf, d.kel, d.vd, {
@@ -7482,6 +7499,7 @@ function renderTwoLevels(d) {
     mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: { dose: d.optDose, tau: d.tlTau } });
 
   const verdict = txVerdictHTML({
+    hold: troughHoldHTML(d.hold),
     dose: d.optDose, tau: d.tlTau, tinf: d.tlTinf,
     auc: d.optAUC, aucBand: '',
     trough, troughWord: 'predicted at steady state', troughMin: d.troughMin, troughMax: d.troughMax,
@@ -7545,7 +7563,7 @@ function renderTwoLevels(d) {
   _pk = { tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
           base: { role: 'rec', dose: d.optDose, tau: d.tlTau }, popKel: d.popKel, popVd: d.popVd };
-  announceResult(`Result: ${fmtRegimen(d.optDose, d.tlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
+  announceResult(`Result: ${troughHoldSaid(d.hold)}${fmtRegimen(d.optDose, d.tlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-tl', d.optDose, d.tlTau, d.tlTinf, d.kel, d.vd, {
       troughMin: d.troughMin, troughMax: d.troughMax, prior: { kel: d.popKel, vd: d.popVd }
@@ -7694,6 +7712,46 @@ function projectConcAfterLevel(cObs, deltaT, kel) {
 function timeToDecayTo(cCurrent, cTarget, kel) {
   if (cTarget >= cCurrent) return 0;
   return Math.log(cCurrent / cTarget) / kel;
+}
+
+// The Trough module's hold (v3.14.0, D26; engine report C1; the user's ruling:
+// TROUGH_HIGH_MGL). A 45 mg/L steady-state level on 1.5 g q8h was told "dose
+// reduction, 500 mg q8h" with no hold and no re-dose time. cPre: the level when the
+// next dose is due, dueH hours after the last dose started, on the decline after the
+// infusion; kel: the fitted elimination rate; doseStartH: that dose's start (epoch
+// hours) when known. At or above the threshold the next dose waits until the decline
+// takes the level to it (timeToDecayTo — the one decay solver; no second one).
+// Longer than HOLD_SEARCH_MAX_H after the due time: no time, recheck a level, as in
+// AUC Precision. Returns null when there is no hold.
+function troughHold(cPre, dueH, kel, doseStartH) {
+  if (!(cPre >= TROUGH_HIGH_MGL) || !(kel > 0) || !(dueH > 0)) return null;
+  const waitH = timeToDecayTo(cPre, TROUGH_HIGH_MGL, kel);
+  const noTime = waitH > HOLD_SEARCH_MAX_H;
+  const afterDoseH = noTime ? null : dueH + waitH;
+  // The clock time is rounded up to the minute, so "not before" is never early; the
+  // added millisecond keeps the float above the minute boundary, which Date truncates.
+  return { cPre, dueH, kel, noTime, afterDoseH,
+           atH: !noTime && Number.isFinite(doseStartH) ? Math.ceil((doseStartH + afterDoseH) * 60 - 1e-6) / 60 + 1 / 3600000 : null };
+}
+function troughHoldHTML(h) {
+  if (!h) return '';
+  if (h.noTime) return holdLineHTML('Hold: recheck a level before the next dose',
+    `The level when the next dose is due is ${h.cPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L, and on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it stays there for more than ${HOLD_SEARCH_MAX_H / 24} days. Recheck a level before giving the regimen below.`);
+  const after = `${+h.afterDoseH.toFixed(1)} h after the last dose started`;
+  return holdLineHTML(`Hold: next dose not before ${h.atH != null ? fmtClock(h.atH) : after}`,
+    `The level when the next dose is due is ${h.cPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L; on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it falls to ${TROUGH_HIGH_MGL} mg/L ${after}. Resume with the regimen below.`);
+}
+// The hold, heard first (D26): '' or "Hold: next dose not before … . Then ".
+function troughHoldSaid(h) {
+  if (!h) return '';
+  return h.noTime ? 'Hold: recheck a level before the next dose. Then '
+    : `Hold: next dose not before ${h.atH != null ? fmtClock(h.atH) : `${+h.afterDoseH.toFixed(1)} h after the last dose started`}. Then `;
+}
+// The epoch hour of a dose-start field (YYYY-MM-DDTHH:MM), or NaN.
+function doseStartHourOf(id) {
+  const v = typeof document !== 'undefined' ? (document.getElementById(id) || {}).value : '';
+  const h = v ? new Date(v).getTime() / 3600000 : NaN;
+  return Number.isFinite(h) ? h : NaN;
 }
 
 // Weight-based dose guidance (clinical heuristic for AKI level-based dosing)
@@ -9636,13 +9694,37 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
 // first dose) and judged against AUC24_TARGET_MIN/MAX in words (final review).
 // cur: the detected current regimen (bState.curRegimen) — the same regimen means
 // this is simply the next dose.
+//
+// The hold (v3.14.0, D26; engine report C1; the user's ruling: TROUGH_HIGH_MGL). A
+// 48 mg/L level was told "first dose in 6 h, level by then 43.3 mg/L". When the fitted
+// concentration at the time the dose would go in is at or above TROUGH_HIGH_MGL, the
+// plan holds: resumeH is the first time after it, on a HOLD_SEARCH_STEP_H grid, at
+// which the fitted curve is below the threshold, and an unchosen first dose moves
+// there. A chosen time is honoured; at or above the threshold it stays a hold. No such
+// time within HOLD_SEARCH_MAX_H: holdNoTime, recheck a level. holdAtH / holdPre are
+// the time and the level that made it a hold.
+// SEARCH MECHANICS, not clinical constants: the step is the resolution of the
+// "not before" time; the bound is how far the fitted curve is trusted to time a dose
+// before the answer becomes "recheck a level". Neither changes a dose or the threshold.
+const HOLD_SEARCH_STEP_H = 0.25, HOLD_SEARCH_MAX_H = 14 * 24;
 function firstDosePlan(r, rec, nowH, atH, cur) {
   if (!(r && (r.doses || []).length && rec && rec.tau > 0)) return null;
   const last = r.doses.reduce((a, b) => (b.timeH >= a.timeH ? b : a));
   const dueH = last.timeH + rec.tau;
   const plannedN = r.doses.filter(d => d.timeH > nowH + 1e-9).length;
   const chosen = Number.isFinite(atH);
-  const firstH = chosen ? Math.max(atH, nowH) : Math.max(dueH, nowH);
+  const fromH = chosen ? Math.max(atH, nowH) : Math.max(dueH, nowH);   // where it would go in (v3.13.0's first dose)
+  const fromPre = predictFittedAt(r, fromH);
+  const hold = fromPre >= TROUGH_HIGH_MGL;
+  let resumeH = null;
+  if (hold) {
+    for (let k = 1; k * HOLD_SEARCH_STEP_H <= HOLD_SEARCH_MAX_H + 1e-9; k++) {
+      const t = fromH + k * HOLD_SEARCH_STEP_H;
+      if (predictFittedAt(r, t) < TROUGH_HIGH_MGL) { resumeH = t; break; }
+    }
+  }
+  const holdNoTime = hold && resumeH == null;
+  const firstH = hold && !chosen && resumeH != null ? resumeH : fromH;
   const clamped = chosen && atH < nowH - 1e-9;
   const wall = (k) => { const x = new Date(firstH * 3600000); x.setHours(x.getHours() + k * rec.tau); return x; };
   const daily = rec.tau <= 24 && 24 % rec.tau === 0;
@@ -9655,7 +9737,51 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   }
   return { firstH, dueH, deltaH: firstH - dueH, duePassed: !chosen && dueH < nowH - 1e-9, chosen, clamped, plannedN,
     pre: predictFittedAt(r, firstH), times, nextH: daily ? null : wall(1).getTime() / 3600000, nowH, auc24First,
-    same: !!(cur && cur.dose === rec.dose && cur.tau === rec.tau) };
+    same: !!(cur && cur.dose === rec.dose && cur.tau === rec.tau),
+    hold, resumeH, holdNoTime, holdAtH: hold ? fromH : null, holdPre: hold ? fromPre : null };
+}
+// The hold, said once and the same way everywhere (v3.14.0, D26): the verdict's
+// first line, the Copy summary and the announcement. '' when there is no hold.
+function holdSentence(plan) {
+  if (!(plan && plan.hold)) return '';
+  const at = `the fitted level at ${fmtClock(plan.holdAtH)} is ${plan.holdPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L`;
+  return plan.holdNoTime
+    ? `Hold: recheck a level before the next dose; the fitted level stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days.`
+    : `Hold: next dose not before ${fmtClock(plan.resumeH)}; ${at}.`;
+}
+// k82's share of the hold (v3.14.0, D26): a chosen time can make or clear a hold, so
+// the verdict's hold line, the Copy summary and the curve's label follow it. Nothing
+// else is re-rendered (k82 stays a partial update).
+function refreshHoldSlots(r, plan) {
+  if (typeof document === 'undefined') return;
+  const hh = document.getElementById('b-hold');
+  if (hh) hh.innerHTML = holdHeadHTML(plan);
+  const a = bState.summaryArgs;
+  if (!a) return;
+  const s = resultSummary(r, r.rec, a.cur, a.row, a.conf, plan);
+  bState.summaryText = s;
+  const p = document.getElementById('b-summary');
+  if (p) p.textContent = s;
+  const c = document.getElementById('b-profile-canvas');
+  if (c && c.setAttribute) c.setAttribute('aria-label', 'Concentration–time curve. ' + s);
+}
+// The hold above the regimen (v3.14.0, D26), in the D25 answer-line grammar with
+// the alarm word and drawn icon. The regimen below it is what to resume with.
+// k82 replaces it (#b-hold) when a chosen time makes or clears a hold.
+function holdHeadHTML(plan) {
+  if (!(plan && plan.hold)) return '';
+  const head = plan.holdNoTime ? 'Hold: recheck a level before the next dose' : `Hold: next dose not before ${fmtClock(plan.resumeH)}`;
+  const at = plan.chosen ? 'At the time chosen, ' : '';
+  const why = plan.holdNoTime
+    ? `The fitted level is ${plan.holdPre.toFixed(1)} mg/L ${plan.chosen ? 'at the time chosen' : 'when the next dose is due'} and stays at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days on this fit. Recheck a level before giving the regimen below.`
+    : `${at}the fitted level is ${plan.holdPre.toFixed(1)} mg/L (${fmtClock(plan.holdAtH)}), at or above ${TROUGH_HIGH_MGL} mg/L; it falls below ${TROUGH_HIGH_MGL} by ${fmtClock(plan.resumeH)}. Resume with the regimen below.`;
+  return holdLineHTML(head, why.charAt(0).toUpperCase() + why.slice(1));
+}
+// The markup of a hold, in both modules (D26): the alarm word and drawn icon on the
+// answer line, then why. Text only from numbers and fixed words (nothing typed).
+function holdLineHTML(head, why) {
+  return `<p class="vx-action vx-hold-head tone-alarm">${ICON.alarm}<span>${escHtml(head)}</span></p>
+        <p class="vx-sub vx-hold-why">${escHtml(why)}</p>`;
 }
 // The readout part, which k82 replaces on its own (no full re-render). On screen
 // it is one line (v3.11.0, D22): when, the times after it and the level by then;
@@ -9670,13 +9796,31 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const word = plan.same ? 'Next dose' : 'First dose';
   const planned = plan.plannedN ? ` · after the ${plan.plannedN} planned dose${plan.plannedN === 1 ? '' : 's'} entered` : '';
   const when = plan.clamped ? ` (not before ${fmtClock(plan.nowH)}, as of the calculation)` : plan.duePassed ? ` (was due ${fmtClock(plan.dueH)})` : '';
-  if (!print) return `${fmtClock(plan.firstH)}${when}${planned} · ${then} · level by then <strong>${plan.pre.toFixed(1)} mg/L</strong>`;
+  // The hold (D26): no time at all when the fitted curve gives none; otherwise the time,
+  // marked, and the level by then in the alarm tone.
+  // Judged on the number shown (D21's rule): a level just under the threshold that one
+  // decimal would round up to it is shown to two, rounded down, never "20.0" for 19.98.
+  const shown = plan.pre < TROUGH_HIGH_MGL && +plan.pre.toFixed(1) >= TROUGH_HIGH_MGL
+    ? (Math.floor(plan.pre * 100) / 100).toFixed(2) : plan.pre.toFixed(1);
+  const lvl = `<strong${plan.hold ? ' class="tone-alarm"' : ''}>${shown} mg/L</strong>`;
+  if (plan.holdNoTime) {
+    const stays = `at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H / 24} days on this fit`;
+    const held = `<strong class="tone-alarm">${plan.holdPre.toFixed(1)} mg/L</strong>`;
+    if (!print) return `Hold: recheck a level before the next dose${planned} · fitted level ${held}, ${stays}`;
+    return `
+      <p class="vx-sub vx-first"><span class="vx-k">${word}</span> Hold: recheck a level before the next dose${planned}</p>
+      <p class="vx-sub">Fitted level ${held} <span class="vx-muted">${plan.chosen ? 'at the time chosen' : 'when due'}, ${stays}</span></p>`;
+  }
+  const at = !plan.hold ? `${fmtClock(plan.firstH)}${when}`
+    : plan.chosen ? `${fmtClock(plan.firstH)}${when} (Hold: not before ${fmtClock(plan.resumeH)})`
+    : `not before ${fmtClock(plan.firstH)} (Hold)`;
+  if (!print) return `${at}${planned} · ${then} · level by then ${lvl}`;
   const a = plan.auc24First, an = a == null ? null : Math.round(a);   // judged on the number shown (D21's rule)
   const band = an == null ? '' : an < AUC24_TARGET_MIN ? ` <span class="tone-caution">below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`
     : an > AUC24_TARGET_MAX ? ` <span class="tone-caution">above ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>` : ` <span class="vx-muted">within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span>`;
   return `
-      <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${fmtClock(plan.firstH)}${when} · ${rel}${planned} · ${then}</p>
-      <p class="vx-sub">Level by then <strong>${plan.pre.toFixed(1)} mg/L</strong> <span class="vx-muted">fitted, before the ${plan.same ? 'next' : 'first'} dose</span></p>
+      <p class="vx-sub vx-first"><span class="vx-k">${word}</span> ${at} · ${rel}${planned} · ${then}</p>
+      <p class="vx-sub">Level by then ${lvl} <span class="vx-muted">fitted, before the ${plan.same ? 'next' : 'first'} dose</span></p>
       ${a != null ? `<p class="vx-sub">AUC₂₄ over the first 24 h <strong>${a.toFixed(0)}</strong> mg·h/L${band}</p>` : ''}
       <p class="vx-sub vx-muted">Steady-state AUC₂₄ and trough are unchanged; until then an earlier first dose raises exposure and a later one lowers it.</p>`;
 }
@@ -9684,7 +9828,7 @@ function firstDoseReadoutHTML(plan, rec, print) {
 // it, the steady-state AUC above already says what matters.
 function firstDayAucHTML(plan) {
   const a = plan && plan.auc24First;
-  if (a == null) return '';
+  if (a == null || plan.holdNoTime) return '';   // no time to give a first day from (D26)
   const n = Math.round(a);   // judged on the number shown: never "400, below 400–600" (D21's rule)
   if (n >= AUC24_TARGET_MIN && n <= AUC24_TARGET_MAX) return '';
   return `<span class="tone-caution">First 24 h AUC₂₄ ${n}, ${n < AUC24_TARGET_MIN ? 'below' : 'above'} ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span> <span class="vx-muted">steady state unchanged</span>`;
@@ -13160,9 +13304,13 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive
 }
 
 // One sentence a reader can take away without the chart — shown under the
-// figure, used as the canvas's accessible name, and printed.
-function resultSummary(r, rec, cur, row, conf) {
+// figure, used as the canvas's accessible name, and printed. plan: the first-dose
+// plan; a hold leads (v3.14.0, D26: the Copy summary carried no first-dose
+// information at all, engine report E3).
+function resultSummary(r, rec, cur, row, conf, plan) {
   const parts = [];
+  const held = rec && !rec.noSolution && !r.lowCrClHold ? holdSentence(plan) : '';
+  if (held) parts.push(held);
   if (cur && cur.dose && cur.tau && cur.auc24 != null) {
     parts.push(`On ${fmtRegimen(cur.dose, cur.tau)} the fitted AUC₂₄ is ${cur.auc24.toFixed(0)} mg·h/L`
       + (cur.Ctrough != null ? ` with a steady-state trough of ${cur.Ctrough.toFixed(1)} mg/L` : '') + '.');
@@ -13525,8 +13673,11 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       ? `<p class="vx-delta">Same as the current regimen.</p>`
       : `<p class="vx-delta">Against the current regimen: AUC₂₄ ${dAUC >= 0 ? '+' : '−'}${Math.abs(dAUC).toFixed(0)} mg·h/L${dTr != null ? `, trough ${dTr >= 0 ? '+' : '−'}${Math.abs(dTr).toFixed(1)} mg/L` : ''}.</p>`;
     }
+    // A hold (D26) leads the answer; the regimen under it is what to resume with. Its own
+    // slot, so a chosen time (k82) can make or clear it without a re-render.
     verdict = `
       <div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
+        <div id="b-hold">${holdHeadHTML(firstPlan)}</div>
         ${regimenActionHTML(rec, targetAUC, 'head')}
         <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.dose)}</span> IV <span class="vx-freq">${fmtFreq(rec.tau)}</span></h3>
         <p class="vx-inf">Infuse over ${fmtHrs(rec.tinfH)}${derated ? ' · <span class="vx-prov">provisional</span>' : ''}</p>
@@ -13595,7 +13746,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // ── The first viewport: course strip + verdict + curve ─────────────────────
   const projDefaultDose = (rec && !rec.noSolution) ? rec.dose : 1000;
   const projDefaultTau  = (rec && !rec.noSolution) ? rec.tau  : 12;
-  const summary = hdSentence || resultSummary(r, rec, cur, uRow, conf);
+  const summary = hdSentence || resultSummary(r, rec, cur, uRow, conf, firstPlan);
+  // What k82 needs to say a hold made or cleared by a chosen time in the Copy summary (D26).
+  bState.summaryArgs = hdSentence ? null : { cur, row: uRow, conf };
   html += `
     <h2 class="sr-only">Bayesian result</h2>
     <div class="pdf-print-stamp">Vancomycin AUC · Bayesian MAP report · generated ${_pdfStamp}</div>
@@ -14113,8 +14266,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   cont.innerHTML = html;
   bState.summaryText = summary;
   scrollResultsIntoView('b-results');
+  const heldSaid = !hdSentence ? holdSentence(firstPlan) : '';   // D26: a hold is heard first
   announceResult(hdSentence ? `Result: ${hdSentence}` : rec && !rec.noSolution && !r.lowCrClHold
-    ? `Result: ${rec.action === 'continue' ? 'continue ' : rec.action === 'change' ? `change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ` : ''}${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
+    ? `Result: ${heldSaid ? `${heldSaid} Then ` : ''}${rec.action === 'continue' ? 'continue ' : rec.action === 'change' ? `change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ` : ''}${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
     : 'Result: no maintenance regimen offered. See the notes.');
 
   // ── Draw graph and pre-select tinkerer interval ──
@@ -16271,6 +16425,7 @@ function txVerdictHTML(o) {
   const aucMic = o.auc / o.mic;
   return `
     <section class="tx-verdict" aria-labelledby="tx-regimen">
+      ${o.hold || ''}
       <h3 class="vx-regimen" id="tx-regimen"><span class="rec-dose">${fmtDose(o.dose)}</span> IV <span class="vx-freq">${fmtFreq(o.tau)}</span></h3>
       <p class="vx-inf">Infuse over ${fmtHrs(o.tinf)}${o.kind ? ` · ${o.kind}` : ''}</p>
       <p class="vx-auc-line"><span class="vx-k">AUC₂₄</span> <strong class="vx-auc-n">${o.auc.toFixed(0)}</strong> mg·h/L
@@ -16492,9 +16647,11 @@ function _prRecommendation(r, screen) {
   } else if (r.rec) {
     const best = r.rec;
     const tinf = best.tinfH ? best.tinfH : autoTinf(best.dose);
+    const fp = !r.lowCrClHold ? firstDosePlan(r, r.rec, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.firstDoseAtH, bState.curRegimen) : null;
+    h += holdHeadHTML(fp);                               // v3.14.0 (D26): a hold leads, as on screen
     h += regimenActionHTML(best, r.targetAUC, 'head');   // v3.14.0 (D25): continue, or change and why — as on screen
     h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? '<span class="pr-prov">provisional</span>' : ''}</p>`;
-    if (!r.lowCrClHold) { const fp = firstDosePlan(r, r.rec, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.firstDoseAtH, bState.curRegimen); if (fp) h += firstDoseHTML(fp, r.rec, true); }
+    if (fp) h += firstDoseHTML(fp, r.rec, true);
     h += `<dl class="pr-dl">`
       + `<div><dt>Infusion</dt><dd>${fmtHrs(tinf)}</dd></div>`
       + `<div><dt>Predicted AUC₂₄</dt><dd>${best.auc24.toFixed(0)} mg·h/L</dd></div>`
