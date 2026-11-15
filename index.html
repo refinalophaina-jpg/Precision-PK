@@ -11519,8 +11519,11 @@ const NEXT_LEVEL_MIN_GAIN = 0.15;   // PREFERENCE, not a literature constant
 //
 // A continued regimen the ceilings bind (capBoundContinue: the cap-bound alarm on a
 // "continue" answer, D25) is outside the band with nothing admissible doing better.
-// "A dose change is indicated" said the opposite of the verdict beside it; the
-// ceiling is what the outright branch then says.
+// "A dose change is indicated" said the opposite of the verdict beside it, so the
+// ceiling is said instead, before the outright, first-level and precision branches.
+// It is not gated on `outright`: cap-bound means AUC24 below 400, while `outright`
+// subtracts half a dose step, so a cap-bound continue at ~369-399 fell to "would add
+// little" beside the cap-bound alarm's "Confirm the clearance with a level" (Task 6 review).
 function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   if (!(auc24 > 0)) return null;
   const f = fit || {};
@@ -11554,7 +11557,7 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
     kind = 'conflict';
     headline = 'A further level is recommended';
     detail = f.reason || '';
-  } else if (outright && f.capBoundContinue) {
+  } else if (f.capBoundContinue) {
     kind = 'management';
     headline = 'Confirm the clearance with a level';
     detail = `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `

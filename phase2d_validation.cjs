@@ -6493,14 +6493,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // the one sentence about a further level, and the other panels point to it. Fictional 76 M, 70 kg,
   // 175 cm, SCr 0.5, Buelga; 1 g q12h x 4 over 1 h, the last 11.5 h ago; one level, 19.9 mg/L, now.
   // The fit, the decision and the render are runBayesian's own (DOM stubbed, then restored).
-  const e1 = (() => {
-    let memo = null;
-    return () => {
-      if (memo) return memo;
-      const H = 3600000, nowH = Date.now() / H, t0 = nowH - 47.5;
-      const doses = Array.from({ length: 4 }, (_, i) => ({ mg: 1000, tinfH: 1, timeH: t0 + i * 12, row: String(i + 1) }));
-      const levels = [{ conc: 19.9, timeH: nowH, row: '1', label: 'x' }];
-      const vals = { 'b-age': '76', 'b-tbw': '70', 'b-height': '175', 'b-scr': '0.5', 'b-auc-target': '450', 'b-mic': '1' };
+  // fit44: one fictional patient through runBayesian and the render. `lastAgo` is how long ago the
+  // last of `n` doses q`tau` h went in; each level is { conc, after } (hours after that last dose).
+  const fit44memo = {};
+  const fit44 = (p) => {
+    const key = JSON.stringify(p);
+    if (fit44memo[key]) return fit44memo[key];
+    return (fit44memo[key] = (() => {
+      const H = 3600000, nowH = Date.now() / H, lastH = nowH - p.lastAgo, t0 = lastH - (p.n - 1) * p.tau;
+      const doses = Array.from({ length: p.n }, (_, i) => ({ mg: p.mg, tinfH: p.tinf, timeH: t0 + i * p.tau, row: String(i + 1) }));
+      const levels = p.levels.map((l, i) => ({ conc: l.conc, timeH: Math.min(nowH, lastH + l.after), row: String(i + 1), label: 'x' }));
+      const vals = { 'b-age': String(p.age), 'b-tbw': String(p.tbw), 'b-height': String(p.ht), 'b-scr': String(p.scr), 'b-auc-target': '450', 'b-mic': '1' };
       const els = {};
       const el = (id) => els[id] || (els[id] = { id, value: vals[id] || '', textContent: '', innerHTML: '', checked: false, style: {}, dataset: {},
         classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, setAttribute() {}, getAttribute() { return null; },
@@ -6527,9 +6530,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       const fd = fn44('fitDiagnostics')(Object.assign({}, r, { regimen: cur2 }));
       const ag = fn44('modelAgreement')(r.agCtx, r.doses, r.levels, cur2.dose * (24 / cur2.tau));
       const conf = fn44('confidenceAssessment')(r, fd, ag);
-      return (memo = { r, html, text, threw, conf, ag, fd });
-    };
-  })();
+      return { r, html, text, threw, conf, ag, fd };
+    })());
+  };
+  const e1 = () => fit44({ age: 76, tbw: 70, ht: 175, scr: 0.5, mg: 1000, tinf: 1, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 19.9, after: 11.5 }] });
+  // One sentence about a further level: "would add little" never sits beside a sentence that asks
+  // for one — Next's conflict, the cap-bound alarm, or the no-better flag (D26 review).
+  const incoherent44 = (text) => /would add little/.test(text)
+    ? (text.match(/is recommended|Confirm the clearance with a level|another level may settle it/g) || []) : [];
   const para44 = (html, cls) => { const m = html.match(new RegExp(`<p class="${cls}[^"]*">([\\s\\S]*?)</p>`)); return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
 
   test('44.11 a one-level fit the models disagree on: "A further level is recommended", never the precision branch', () => {
@@ -6552,7 +6560,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('44.12 the rendered answer never says both "would add little" and "is recommended"; the other panels point to the Next line', () => {
     const { html, text, threw } = e1();
     assert(html.length > 5000 && !/could not be displayed/.test(html), `rendered: ${html.length} chars, ${threw && threw.message}`);
-    assert(!(/would add little/.test(text) && /is recommended/.test(text)), 'both sentences on one screen');
+    assert(!incoherent44(text).length, `"would add little" beside ${JSON.stringify(incoherent44(text))}`);
     assert(para44(html, 'vx-next') === 'Next A further level is recommended.', para44(html, 'vx-next'));
     // Fit vs measured and Models carry no sentence of their own about a further level.
     for (const re of [/further concentration is recommended/i, /level panel further down/, /next step above says/, /a second level, or cystatin C, resolves/])
@@ -6587,6 +6595,29 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // Not cap-bound: the outright branch is unchanged.
     assert(/dose change is indicated/.test(fn44('nextLevelValue')(300, 1, 'buelga', 12, 4).detail), 'an ordinary out-of-range estimate still says so');
   });
+  // The Task 6 review: cap-bound is AUC24 below 400, but "outright" subtracts half a 250 mg step,
+  // so a cap-bound continue at AUC24 ~369-399 fell to the precision branch — "A further level would
+  // add little" beside "Confirm the clearance with a level" and "another level may settle it".
+  // Fictional 25 M, 180 cm, SCr 0.5, Buelga, 1.5 g q8h x 6, the last 7.5 h ago; two levels.
+  const capGrace = [
+    ['High', { age: 25, tbw: 70, ht: 180, scr: 0.5, mg: 1500, tinf: 1.5, tau: 8, n: 6, lastAgo: 7.5, levels: [{ conc: 25, after: 2 }, { conc: 5, after: 7.5 }] }, 0],
+    ['Moderate', { age: 25, tbw: 120, ht: 180, scr: 0.5, mg: 1500, tinf: 1.5, tau: 8, n: 6, lastAgo: 7.5, levels: [{ conc: 20, after: 2 }, { conc: 9, after: 7.5 }] }, 1],
+  ];
+  for (const [word, p, rank] of capGrace) {
+    test(`44.14${rank ? 'b' : 'a'} a cap-bound continue inside the rounding grace, ${word} fit, two levels: the Next line asks for the level, never "would add little"`, () => {
+      const { r, html, text, conf } = fit44(p);
+      const rec = r.rec, nlv0 = fn44('nextLevelValue')(rec.auc24, r.levels.length, 'buelga', rec.tau, r.CL_ind);
+      assert(rec.action === 'continue' && rec.dose === 1500 && rec.tau === 8 && (rec.flags || []).some(fn44('isCapBoundFlag')),
+        `the fixture is a cap-bound continue of 1.5 g q8h: ${rec.action} ${rec.dose} q${rec.tau}`);
+      assert(rec.auc24 < K44.AUC24_TARGET_MIN && !nlv0.outright && conf.rank === rank,
+        `inside the grace (AUC24 ${rec.auc24.toFixed(0)}, outright ${nlv0.outright}), ${conf.level}`);
+      const nlv = fn44('nextLevelValue')(rec.auc24, r.levels.length, 'buelga', rec.tau, r.CL_ind, fn44('nextLevelFit')(r, conf));
+      assert(nlv.kind !== 'precision' && nlv.headline === 'Confirm the clearance with a level', `${nlv.kind}: ${nlv.headline}`);
+      assert(para44(html, 'vx-next') === 'Next Confirm the clearance with a level.', para44(html, 'vx-next'));
+      assert(!incoherent44(text).length && !/further level is not the lever/.test(text),
+        `"would add little" beside ${JSON.stringify(incoherent44(text))}`);
+    });
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════

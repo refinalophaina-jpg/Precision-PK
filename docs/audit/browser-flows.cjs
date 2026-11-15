@@ -801,8 +801,10 @@ async function enterCourse(page) {
         fit: t('#ev-fit'), models: t('#ev-models') };
     });
     const printedN = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    // "Would add little" never beside a sentence that asks for a level (D26 review).
+    const incoherent = (s) => /would add little/.test(s) && /is recommended|Confirm the clearance with a level|another level may settle it/.test(s);
     ok('D26: the 76 M on Buelga never says both "would add little" and "is recommended", on screen or in print',
-       !(/would add little/.test(nl.all) && /is recommended/.test(nl.all)) && !(/would add little/.test(printedN) && /is recommended/.test(printedN))
+       !incoherent(nl.all) && !incoherent(printedN)
        && /^Next A further level is recommended\.$/.test(nl.next),
        JSON.stringify({ next: nl.next, little: /would add little/.test(nl.all), rec: (nl.all.match(/[^.]*is recommended[^.]*\./g) || []) }));
     ok('D26: Low confidence names the model disagreement with both AUCs; "does not trust" is gone; Fit and Models point to Next',
@@ -810,6 +812,33 @@ async function enterCourse(page) {
        && !/does not trust/.test(nl.all + printedN) && /the Next line/.test(nl.fit) && /the Next line/.test(nl.models)
        && !/further concentration is recommended|next step above says|level panel further down/.test(nl.all),
        JSON.stringify({ act: nl.act, conf: nl.conf.slice(0, 220), fitPtr: /the Next line/.test(nl.fit), modelsPtr: /the Next line/.test(nl.models) }));
+    // The Task 6 review: a cap-bound continue inside the rounding grace (AUC24 just under 400) fell to
+    // "would add little" beside the cap-bound alarm. A fictional 25 M (70 kg, 180 cm, SCr 0.5) on
+    // Buelga, 1.5 g q8h x 6 over 1.5 h, the last at 02:30 today; levels 25 mg/L at 04:30 and 5 mg/L now.
+    await n.goto(BASE + '?v=nlv2-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '25'); await typeInto(n, '#b-tbw', '70'); await typeInto(n, '#b-height', '180'); await typeInto(n, '#b-scr', '0.5');
+    await n.locator('[data-onclick="k39"]').click();
+    const capWhen = [[D1, '10:30'], [D1, '18:30'], [D2, '02:30'], [D2, '10:30'], [D2, '18:30'], [day(0), '02:30']];
+    for (let i = 1; i <= capWhen.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1500'); await typeInto(n, `#b-dose-tinf-${i}`, '1.5');
+      await n.locator(`#b-dose-date-${i}`).fill(capWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, capWhen[i - 1][1]);
+    }
+    for (const [i, conc, t] of [[1, '25', '04:30'], [2, '5', '10:00']]) {
+      await n.locator('[data-onclick="k46"]').click();
+      await typeInto(n, `#b-lvl-conc-${i}`, conc); await n.locator(`#b-lvl-date-${i}`).fill(day(0)); await typeInto(n, `#b-lvl-time-${i}`, t);
+    }
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
+    const cg = await n.evaluate(() => {
+      const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
+      return { all: t('#b-results'), next: t('#b-results .vx-next'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), conf: t('#b-results .vx-conf').slice(0, 40) };
+    });
+    const printedC = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26 review: a cap-bound continue just under 400 asks to confirm the clearance with a level, never "would add little", on screen or in print',
+       cg.act === 'Continue the current regimen' && cg.reg === '1.5 g IV q8h' && /cannot be reached within the conventional ceilings/.test(cg.all)
+       && /^Next Confirm the clearance with a level\.$/.test(cg.next) && !incoherent(cg.all) && !incoherent(printedC),
+       JSON.stringify({ act: cg.act, reg: cg.reg, conf: cg.conf, next: cg.next, little: /would add little/.test(cg.all) }));
     const nAttr = await attributeInjected(n, nProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + nAttr.injected;
     results.problems.push(...nAttr.kept);
