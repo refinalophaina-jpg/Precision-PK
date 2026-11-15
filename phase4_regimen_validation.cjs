@@ -171,4 +171,10 @@ console.log('\n=== DOSE CHANGE AT THE SAME INTERVAL (engine audit 2026-09-28) ==
 }
 
 console.log('\n  passed '+pass+'  failed '+fail);
+// Pinned total: a check lost to an early exit or added without a bump changes the count.
+const EXPECTED_TOTAL = 49;   // bump with every added or removed check
+if (pass + fail !== EXPECTED_TOTAL) {
+  console.log('  \u2717 Expected '+EXPECTED_TOTAL+' checks but ran '+(pass+fail)+'. A check was lost or added without updating EXPECTED_TOTAL.');
+  process.exit(1);
+}
 process.exit(fail?1:0);

@@ -683,4 +683,10 @@ console.log('\n' + '═'.repeat(72));
 console.log(`  OVERALL: ${passCount}/${totalChecks} checks passed`);
 console.log('═'.repeat(72));
 console.log();
+// Pinned total: passCount === totalChecks is self-referential, so a lost or added check would go unseen.
+const EXPECTED_TOTAL = 21;   // bump with every added or removed check
+if (totalChecks !== EXPECTED_TOTAL) {
+  console.log(`  \u2717 Expected ${EXPECTED_TOTAL} checks but ran ${totalChecks}. A check was lost or added without updating EXPECTED_TOTAL.`);
+  process.exit(1);
+}
 process.exit(passCount === totalChecks ? 0 : 1);
