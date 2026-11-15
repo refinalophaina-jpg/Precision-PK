@@ -15,7 +15,7 @@ All patients are fictional. The repo was not edited.
 | `s2.cjs`: "continue, no better" against `nextLevelValue`, 72,000 decisions | 978 contradictions, all cap-bound (M1) |
 | `t1`–`t9.cjs`: the real page under the production CSP at `localhost:8777`, driven with Playwright | Findings below; no console or page errors in any run |
 
-Scripts are in `/private/tmp/claude-501/-Users-olaiya-Projects-Local-Pharmacy-Vancomycin-/97db9c82-2ba8-44f0-990f-9a5f5d5c7a92/scratchpad/review-2026-11-13/engine/`. `lib.cjs` and `tlib.cjs` drive the page; `vmlib.cjs` loads the engine in a Node `vm`.
+Scripts were in the reviewer's local scratch directory (not part of this repository). `lib.cjs` and `tlib.cjs` drive the page; `vmlib.cjs` loads the engine in a Node `vm`.
 
 **Not covered:** the peritoneal dialysis mode (`pdIntervals`, `pdAnswer`) was not exercised. The print report was read but not rendered (my probe called it wrongly and returned nothing). Hughes was exercised only through the shared decision code. The loading-dose calculation was read, not probed. Treat these as unreviewed in this lane.
 

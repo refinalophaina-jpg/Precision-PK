@@ -1,6 +1,6 @@
 ## Summary (UI, graphics, accessibility, wording — v3.14.0 RC, HEAD 32988d9)
 
-No Critical findings. Eight Important, mostly wording that contradicts itself and two accessibility gaps. No report.md was written, as instructed; screenshots and scripts are in `/private/tmp/claude-501/-Users-olaiya-Projects-Local-Pharmacy-Vancomycin-/97db9c82-2ba8-44f0-990f-9a5f5d5c7a92/scratchpad/review-2026-11-13/ui/` (screenshots in `shots/`, called SHOTS below).
+No Critical findings. Eight Important, mostly wording that contradicts itself and two accessibility gaps. No report.md was written, as instructed; screenshots and scripts were in the reviewer's local scratch directory, not part of this repository (screenshots in `shots/`, called SHOTS below).
 
 **Covered:** ten fictional cases (Trough initial, steady-state, two levels, random, PD; AUC Buelga continue, Buelga change, Goti, Goti-HD with sessions, Hughes) at 1280×800, 1440×900, 1920×1080 and 375×812, light and dark, plus print. Fixed clock, production CSP, no console errors or CSP violations.
 
