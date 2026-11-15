@@ -3166,8 +3166,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const both = sandbox.doseExplorerRows({ ...base, cur: { dose: 1100, tau: 12 }, rec: { dose: 2250, tau: 12 } });
     assert(/<tr class="is-cur">\s*<th scope="row">1\.1 g q12h <span class="tx-row-tag"><i class="lg lg-ind" aria-hidden="true"><\/i>current<\/span>/.test(both),
       'the current regimen carries the fit\'s line and the word');
-    assert(/<tr class="is-rec">\s*<th scope="row">2\.25 g q12h <span class="tx-row-tag"><i class="lg lg-proj"/.test(both),
-      'the recommendation carries the projection\'s line');
+    // Re-pointed (D26 review): 2.25 g is over the 2 g per-dose ceiling, so its row also carries
+    // the over-ceiling mark (class and words) beside the key.
+    assert(/<tr class="is-rec is-over">\s*<th scope="row">2\.25 g q12h <span class="tx-row-tag"><i class="lg lg-proj"[^]*?recommended<\/span> <span class="tx-row-tag">over 2 g a dose; AUC₂₄ over 700<\/span>/.test(both),
+      'the recommendation carries the projection\'s line, and the over-ceiling mark');
     const q12 = [...both.matchAll(/<th scope="row">([\d.]+ (?:mg|g)) q12h/g)].map(x => x[1]);
     assert(q12.filter(x => x === '1.1 g').length === 1 && q12.filter(x => x === '2.25 g').length === 1, 'each listed once');
     assert(q12.indexOf('1 g') < q12.indexOf('1.1 g') && q12.indexOf('1.1 g') < q12.indexOf('1.25 g') &&
@@ -6097,6 +6099,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       vm.runInContext(`state.calcMode = ${JSON.stringify(mode)}; state.dosingWt = 'auto'; state.isSS = true;
         state.rlMode = 'firstdose'; state.tlBasis = 'firstdose'; crclOverride.on = false;`, sandbox);
       fn44('setPatientSex')(sex);
+      // Choosing the sex refreshes the CrCl readout, which suggests an initial interval and
+      // overwrites the one typed; the pharmacist's choice comes after it, as on the page.
+      if (vals['init-interval'] != null) get('init-interval').value = String(vals['init-interval']);
       fn44('calculate')();
       const h = get('results-content').innerHTML;
       return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent };
@@ -6201,9 +6206,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       const m = r.h.match(HOLD_H3);
       assert(m && m[1] === 'No regimen recommended', `${k}: heading ${m && m[1]} — ${r.text.slice(0, 300)}`);
       assert(!/class="rec-dose"/.test(r.h) && !/undefined|NaN/.test(r.text), `${k}: ${r.text.slice(0, 400)}`);
-      assert(r.text.indexOf('The target cannot be reached within the conventional ceilings') > 0, `${k}: the cap-bound alarm`);
       assert(/^Result: No regimen recommended/.test(r.said), `${k}: ${r.said}`);
     }
+    // Task 3 review (ruling R7): the cap-bound line is said of the chosen interval. Two-level, CL 10.4:
+    // q8h reaches the band within the ceilings (1.5 g, AUC24 433), so the refusal names it and the
+    // specialist / alternative-agent wording is not used. Random-level, CL 12.6: no interval q6-q48h
+    // reaches it, so AUC Precision's all-interval alarm stands.
+    assert(/At q12h the target cannot be reached within the conventional ceilings/.test(tl.text) && /1\.5 g IV q8h/.test(tl.text)
+      && !/alternative agent|specialist guidance/.test(tl.text), `two-level: ${tl.text.slice(0, 700)}`);
+    assert(rl.text.indexOf('The target cannot be reached within the conventional ceilings') > 0 && /alternative agent/.test(rl.text)
+      && /No interval from q6h to q48h reaches/.test(rl.text), `random-level: ${rl.text.slice(0, 700)}`);
     assert(/id="prn-redose-thresh"/.test(rl.h), 'random-level keeps the level-based PRN calculator');
   });
 
@@ -6219,6 +6231,66 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert((r.h.match(HOLD_H3) || [])[1] === 'No regimen recommended', `heading: ${r.text.slice(0, 400)}`);
     assert(/total daily dose 7500 mg exceeds 4500 mg/.test(r.text) && /tx-action-alarm/.test(r.h), `the breach is said, in the alarm tier: ${r.text.slice(0, 600)}`);
     assert(/Current 2\.5 g IV q8h/.test(r.text), 'the current regimen is named');
+  });
+
+  // Task 3 review fixes (the coordinator's 1-4; ruling R7).
+  test('44.8d Trough level mode: a regimen over a ceiling with a low AUC is a breach, never "Dose increase indicated"', () => {
+    // The C2 patient on 2.5 g q8h with a measured trough of 2 mg/L: the fitted AUC is low, and the
+    // assessment's "increase" sat beside a refusal whose highest admissible regimen is a reduction.
+    const r = trough44('level', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, dose: 2500, interval: 8, tinf: 1,
+      'level-val': 2, 'time-dose-given': '2026-11-14T00:00', 'time-level-drawn': '2026-11-14T08:00' }, { checked: ['has-level'] });
+    assert(/Current regimen breaches a hard limit/.test(r.text) && /tx-action-alarm/.test(r.h), `the breach at alarm tier: ${r.text.slice(0, 600)}`);
+    assert(/single dose 2500 mg exceeds 2000 mg/.test(r.text) && /total daily dose 7500 mg exceeds 4500 mg/.test(r.text), `both limits named: ${r.text.slice(0, 600)}`);
+    assert(!/increase/i.test(r.text) && !/increase/i.test(r.said), `no increase wording: ${r.said} | ${r.text.slice(0, 900)}`);
+    // A reduction over a ceiling says the breach too (45 mg/L on 1.5 g q8h, AUC24 above 700).
+    const red = trough44('level', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, dose: 1500, interval: 8, tinf: 1.5,
+      'level-val': 45, 'time-dose-given': '2026-11-14T01:00', 'time-level-drawn': '2026-11-14T08:45' }, { checked: ['has-level'] });
+    assert(/Current regimen breaches a hard limit/.test(red.text) && /exceeds the absolute ceiling 700/.test(red.text) && /^Result: Hold: /.test(red.said),
+      `reduce: ${red.said} | ${red.text.slice(0, 500)}`);
+  });
+
+  test('44.8e Trough refusal (R7): the intervals that reach 400-600 within the ceilings are named; the specialist line only when none does', () => {
+    // CL 8 L/h, V 60 L: q24h is bound by the ceilings (2 g gives 250); q6h, q8h and q12h are not.
+    const o = fn44('findOptimalDose')(10, 20, 24, 1, 8 / 60, 60, 8);
+    assert(o.refused && o.capBound && Array.isArray(o.others), JSON.stringify(o).slice(0, 300));
+    const taus = o.others.map(x => x.tau);
+    assert(taus.includes(8) && taus.includes(12) && !taus.includes(24), `others: ${JSON.stringify(o.others)}`);
+    for (const x of o.others) {
+      const own = fn44('findOptimalDose')(10, 20, x.tau, 1, 8 / 60, 60, 8);   // one implementation, per interval
+      assert(!own.refused && own.dose === x.dose && x.auc >= 400 && x.auc <= 600, `q${x.tau}h: ${JSON.stringify(x)} vs ${JSON.stringify(own)}`);
+    }
+    assert(o.others.every(x => o.reason.indexOf(`${fn44('fmtRegimen')(x.dose, x.tau)} (AUC₂₄ ${x.auc.toFixed(0)})`) >= 0), `each named with its AUC: ${o.reason}`);
+    const line = fn44('troughCapBoundHTML')(o);
+    assert(/At q24h the target cannot be reached within the conventional ceilings/.test(line) && !/alternative agent|specialist/.test(line), line);
+    // Initial mode, nothing given (30 M, 80 kg, 180 cm, SCr 0.7, CrCl ~175, q24h): no "obtain a level".
+    const r = trough44('initial', 'M', { age: 30, tbw: 80, height: 180, scr: 0.7, 'init-interval': 24, 'init-tinf': 1 });
+    assert((r.h.match(HOLD_H3) || [])[1] === 'No regimen recommended', r.text.slice(0, 300));
+    assert(/IV q8h|IV q12h/.test(r.text.split('Dose explorer')[0]) && !/alternative agent|specialist guidance/.test(r.text), r.text.slice(0, 900));
+    const next = (r.h.match(/<p class="vx-next">([\s\S]*?)<\/p>/) || [])[1] || '';
+    assert(!/level/i.test(next), `initial Next asks for a level before any dose: ${next}`);
+  });
+
+  test('44.8f Trough gap refusal names the interval that works, not the dose explorer', () => {
+    // CL 0.4 L/h at q24h: 250 mg gives 625, nothing below; only q36h (250 mg, 417) lands in 400-600.
+    const o = fn44('findOptimalDose')(10, 20, 24, 1, 0.4 / 50, 50, 0.4);
+    assert(o.refused && !o.capBound && o.others.length === 1 && o.others[0].tau === 36 && o.others[0].dose === 250, JSON.stringify(o));
+    assert(/250 mg IV q36h/.test(o.reason) && !/dose explorer/i.test(o.reason), o.reason);
+    // Every dose breaching a limit gets the pointer too (CL 0.5 at q12h: q48h 250 mg gives 250 — none).
+    const all = fn44('findOptimalDose')(10, 20, 12, 1, 0.5 / 50, 50, 0.5);
+    assert(all.refused && /No interval from q6h to q48h reaches/.test(all.reason) || all.others.length > 0 && all.others.every(x => all.reason.indexOf(`q${x.tau}h`) >= 0), all.reason);
+  });
+
+  test('44.8g the dose explorer marks a regimen over a ceiling, through evalRegimen, never as in range', () => {
+    const p = c2Pk();
+    const rows = fn44('doseExplorerRows')({ tau: 8, tinf: 1, kel: p.kel, vd: p.vd, clv: p.clv, mic: 1, troughMin: 10, troughMax: 20 });
+    const row = (rows.match(/<tr[^>]*>\s*<th scope="row">2\.5 g q8h[\s\S]*?<\/tr>/) || [])[0] || '';
+    assert(row && /over 2 g a dose/.test(row) && /over 4\.5 g a day/.test(row), `2.5 g q8h: ${row}`);
+    assert(!/class="in-range"/.test(row.replace(/<td class="[^"]*">[\d.]+<\/td>\s*<td>[\d.]+<\/td>/, '')), `AUC cell coloured in range: ${row}`);
+    assert(/class="is-over"/.test(row), row);
+    const ok = (rows.match(/<tr[^>]*>\s*<th scope="row">1\.5 g q8h[\s\S]*?<\/tr>/) || [])[0] || '';
+    assert(ok && !/is-over|over 2 g|over 4\.5 g/.test(ok), `1.5 g q8h is within the ceilings: ${ok}`);
+    const low = fn44('doseExplorerRows')({ tau: 12, tinf: 1, kel: 0.5 / 50, vd: 50, clv: 0.5, mic: 1, troughMin: 10, troughMax: 20 });
+    assert(/<th scope="row">250 mg q12h <span class="tx-row-tag">AUC₂₄ over 700<\/span>/.test(low), low.slice(0, 400));
   });
 }
 

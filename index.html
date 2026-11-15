@@ -6493,7 +6493,11 @@ function calcAUC(dose, tau, clv) {
 // return one). Its CrCl stays uncapped (plan default D-c): the ceilings and the
 // augmented-clearance caution carry the safety. No new constant.
 // ══════════════════════════════════════════════════════════════
-function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
+// The intervals the Trough module offers (the interval selects' options). A list of choices,
+// not a clinical constant: a refusal names which of them reach 400–600 within the ceilings.
+const TROUGH_INTERVALS_H = [6, 8, 12, 18, 24, 36, 48];
+// alone: judge this interval only (the per-interval call a refusal makes for the others).
+function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv, alone) {
   const all = [];
   for(let d = 250; d <= DOSE_MAX_PER_DOSE_MG; d += 250) {
     const pt  = calcPeakTrough(d, tau, tinf, kel, vd);
@@ -6505,7 +6509,24 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
   // AUC rises with the dose, so the admissible doses run from 250 mg up to the first breach.
   const admissible = all.filter(x => !x.hardFail.length).map(x => x.c);
   const candidates = admissible.filter(c => c.auc >= AUC24_TARGET_MIN && c.auc <= AUC24_TARGET_MAX);
-  if (!candidates.length) return troughRefusal(all, admissible, tau);
+  if (!candidates.length) {
+    const r = troughRefusal(all, admissible, tau);
+    if (alone) return r;
+    // Task 3 review (ruling R7): the refusal stays at the chosen interval, and names the
+    // intervals that do reach 400–600 within the ceilings, each from this same function.
+    const each = TROUGH_INTERVALS_H.filter(t => t !== tau && t > tinf)
+      .map(t => ({ tau: t, r: findOptimalDose(troughMin, troughMax, t, tinf, kel, vd, clv, true) }));
+    r.others = each.filter(x => !x.r.refused).map(x => ({ tau: x.tau, dose: x.r.dose, auc: x.r.auc }));
+    // With no interval in reach, the highest exposure any interval allows within the ceilings
+    // is what AUC Precision's all-interval cap-bound alarm quotes.
+    r.highestAucAny = Math.max(r.highest && r.capBound ? r.highest.auc : -Infinity,
+      ...each.filter(x => x.r.capBound).map(x => x.r.highest.auc));
+    r.reason = `${r.why} ` + (r.others.length
+      ? `${r.others.length === 1 ? 'This interval reaches' : 'These intervals reach'} AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} within the ceilings: `
+        + r.others.map(x => `${fmtRegimen(x.dose, x.tau)} (AUC₂₄ ${x.auc.toFixed(0)})`).join('; ') + '.'
+      : `No interval from q${TROUGH_INTERVALS_H[0]}h to q${TROUGH_INTERVALS_H[TROUGH_INTERVALS_H.length - 1]}h reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} within the ceilings.`);
+    return r;
+  }
 
   // P1: AUC in range + trough fully in range — lowest qualifying dose
   const ideal = candidates.filter(c =>
@@ -6543,34 +6564,33 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
   return { ...candidates[0], flag: 'auc_borderline' };
 }
 
-// The Trough module's refusal (D26): no admissible dose at this interval lands in
+// The Trough module's refusal at one interval (D26): no admissible dose there lands in
 // 400–600. all: every 250 mg step to the per-dose ceiling, { c, hardFail } as
 // evalRegimen judged it; admissible: those with no hard reject, in dose order.
 // capBound when the highest admissible dose falls short of 400 and the next step
-// breaches a dose ceiling (per dose or per day) — said with capBoundFlag, AUC
-// Precision's own alarm. Otherwise the 250 mg lattice steps over the band, or every
-// step breaches a ceiling; the reason names the steps either side.
+// breaches a dose ceiling (per dose or per day). Otherwise the 250 mg lattice steps over
+// the band, or every step breaches a ceiling. why: what happens at this interval, naming
+// the steps either side; findOptimalDose adds the intervals that work (reason).
 function troughRefusal(all, admissible, tau) {
   const q = fmtFreq(tau), band = `${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}`;
   const at = (c) => `${fmtRegimen(c.dose, tau)} gives AUC₂₄ ${c.auc.toFixed(0)}`;
+  const out = (capBound, highest, why) => ({ refused: true, capBound, highest, tau, why, reason: why });
   if (!admissible.length) {
     const first = all[0];
-    return { refused: true, capBound: false, highest: null,
-      reason: `Every dose at ${q} on 250 mg steps breaches a hard limit: even ${fmtRegimen(first.c.dose, tau)}, `
-        + `${first.hardFail.join('; ')}. No regimen is offered at this interval.` };
+    return out(false, null, `At ${q} every dose on 250 mg steps breaches a hard limit: even ${fmtRegimen(first.c.dose, tau)}, `
+      + `${first.hardFail.join('; ')}.`);
   }
   const highest = admissible[admissible.length - 1];
   const nextDose = highest.dose + 250;
   const capBound = highest.auc < AUC24_TARGET_MIN &&
     (nextDose > DOSE_MAX_PER_DOSE_MG || nextDose * 24 / tau > DOSE_MAX_TDD_MG);
-  if (capBound) return { refused: true, capBound: true, highest,
-    reason: `No dose at ${q} within the conventional ceilings reaches AUC₂₄ ${band} mg·h/L: the highest admissible, ${at(highest)}.` };
+  if (capBound) return out(true, highest,
+    `At ${q} no dose within the conventional ceilings reaches AUC₂₄ ${band} mg·h/L: the highest admissible, ${at(highest)}.`);
   const below = admissible.filter(c => c.auc < AUC24_TARGET_MIN).pop();
   const aboveX = all.find(x => x.c.auc > AUC24_TARGET_MAX);
   const above = aboveX ? `${at(aboveX.c)}${aboveX.c.auc > AUC24_ABSOLUTE_MAX ? `, above the absolute ceiling of ${AUC24_ABSOLUTE_MAX}` : ''}` : '';
-  return { refused: true, capBound: false, highest,
-    reason: `No dose at ${q} on 250 mg steps lands in AUC₂₄ ${band} mg·h/L: `
-      + (below ? `${at(below)} and ${above}` : `even ${above}`) + '. The dose explorer lists the other intervals.' };
+  return out(false, highest, `At ${q} no dose on 250 mg steps lands in AUC₂₄ ${band} mg·h/L: `
+    + (below ? `${at(below)} and ${above}` : `even ${above}`) + '.');
 }
 
 // findOptimalDose's flag was computed and never rendered (audit 2026-09-28):
@@ -6627,12 +6647,17 @@ function doseExplorerRows(o) {
       const pt  = calcPeakTrough(dose, interval, o.tinf, o.kel, o.vd);
       const auc = calcAUC(dose, interval, o.clv);
       const tCls  = (pt.trough < o.troughMin || pt.trough > o.troughMax) ? 'out-range' : 'in-range';
-      const aUCls = (auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';
+      // D26 review: a regimen over a ceiling is never coloured in range (2.5 g q8h showed green
+      // directly under the refusal that removed it). The one judge says which limit it breaches.
+      const judged = evalRegimen(dose, interval, o.tinf, o.clv, o.vd, null);
+      const over = judged ? judged.hardFail.map(hardFailShort) : ['no steady state'];
+      const aUCls = (over.length || auc < AUC24_TARGET_MIN || auc > AUC24_TARGET_MAX) ? 'out-range' : 'in-range';
       const m = marks.find(x => x.dose === dose && x.tau === interval);
+      const cls = [m && m.cls, over.length && 'is-over'].filter(Boolean).join(' ');
       // ISMP dose and frequency; a marked row says what it is in words, beside the
       // chart legend's line for it — never a star glyph, never colour alone.
-      html += `<tr${m ? ` class="${m.cls}"` : ''}>
-        <th scope="row">${fmtDose(dose)} ${fmtFreq(interval)}${m ? ` <span class="tx-row-tag">${m.key ? `<i class="lg ${m.key}" aria-hidden="true"></i>` : ''}${m.tag}</span>` : ''}</th>
+      html += `<tr${cls ? ` class="${cls}"` : ''}>
+        <th scope="row">${fmtDose(dose)} ${fmtFreq(interval)}${m ? ` <span class="tx-row-tag">${m.key ? `<i class="lg ${m.key}" aria-hidden="true"></i>` : ''}${m.tag}</span>` : ''}${over.length ? ` <span class="tx-row-tag">${over.join('; ')}</span>` : ''}</th>
         <td class="${tCls}">${pt.trough.toFixed(1)}</td>
         <td>${pt.peak.toFixed(1)}</td>
         <td class="${aUCls}">${auc.toFixed(0)}</td>
@@ -6641,6 +6666,14 @@ function doseExplorerRows(o) {
     }
   }
   return html;
+}
+
+// evalRegimen's hard-reject sentence, short, for an explorer row (its wording is the key).
+function hardFailShort(text) {
+  if (/^single dose/.test(text))      return `over ${fmtDose(DOSE_MAX_PER_DOSE_MG)} a dose`;
+  if (/^total daily dose/.test(text)) return `over ${fmtDose(DOSE_MAX_TDD_MG)} a day`;
+  if (/^AUC24/.test(text))            return `AUC₂₄ over ${AUC24_ABSOLUTE_MAX}`;
+  return text;
 }
 
 // Assess overall clinical status with AUC as primary, trough as secondary
@@ -7153,8 +7186,10 @@ function calculate() {
     if (initOpt.refused) {
       renderTroughRefusal({ ...refusalBase, word: TROUGH_REFUSAL_WORD, reason: initOpt.reason,
         flags: troughCapBoundHTML(initOpt), notes: renalNotes,
-        next: initOpt.capBound ? 'Obtain a level to confirm the clearance before acting on any regimen.'
-                               : 'Choose another interval from the dose explorer.' });
+        // Task 3 review: nothing has been given yet, so never "obtain a level" here.
+        next: initOpt.others.length ? 'Choose one of the intervals named above.'
+            : initOpt.capBound ? 'No interval reaches the target within the conventional ceilings: see the recommendation limit.'
+            : 'No interval on 250 mg steps reaches the target: review the inputs.' });
       return;
     }
     dose = initOpt.dose;
@@ -7342,9 +7377,11 @@ function renderResults(d) {
     review:          { title:'Review PK data',              tier:'caution' },
   };
   // D26: a current regimen with a hard reject (above 2 g a dose, 4.5 g a day or AUC₂₄ 700) is
-  // never continued, as in AUC Precision (D25): where the assessment would continue (or
-  // monitor) it, the action says which limit it breaches instead. Other actions already change it.
-  const curBreach = !isInitialMode && (d.curHardFail || []).length > 0 && (a.action === 'continue' || a.action === 'monitor');
+  // never continued, as in AUC Precision (D25), and the breach leads whatever the assessment
+  // says (Task 3 review): "Dose increase indicated" on 2.5 g q8h with a low AUC sat beside a
+  // refusal whose highest admissible regimen was a reduction. Its increase / extend / reduce
+  // wording is then not shown.
+  const curBreach = !isInitialMode && (d.curHardFail || []).length > 0;
   const recAction = curBreach ? { title: 'Current regimen breaches a hard limit', tier: 'alarm' }
     : actionMap[a.action] || actionMap['review'];
   // D26: the optimiser may refuse (no admissible dose in 400–600 at this interval). Where
@@ -7374,7 +7411,7 @@ function renderResults(d) {
   const aucLoBound = Math.round(d.auc24 * (1 - aucCvPct/100));
   const aucHiBound = Math.round(d.auc24 * (1 + aucCvPct/100));
   const notes = [];
-  if (a.divergence) {
+  if (a.divergence && !curBreach) {
     notes.push({ tier: 'caution', word: 'Trough–AUC divergence detected', html: `${escHtml(a.summary)}
       <p class="tx-note-sub"><strong>AUC estimation uncertainty — clinical judgment required.</strong>
       ${d.levelFitted
@@ -7469,7 +7506,7 @@ function renderResults(d) {
           ? `<strong>Model-predicted trough</strong> — the level was drawn at ${d.tDoseToLvl.toFixed(1)} h (${d.tDoseToLvl <= d.tinf ? 'during the infusion' : 'before steady state'}), so the trough shown is the fitted steady-state projection, not a measurement`
           : `<strong>True trough</strong> — level drawn at ${d.tDoseToLvl.toFixed(1)} h (end of dosing interval)`)
     : `Population-estimated trough from ${clName} model · No measured level entered`;
-  const summaryElsewhere = a.divergence || (!isInitialMode && !showOptDose);
+  const summaryElsewhere = a.divergence || curBreach || (!isInitialMode && !showOptDose);
   const exposureBody = `
     <p class="ev-lead"><strong>${escHtml(a.primary)}.</strong>${a.secondary ? ` <span class="vx-muted">${escHtml(a.secondary)}</span>` : ''}</p>
     ${summaryElsewhere ? '' : `<p class="ev-note">${escHtml(a.summary)}</p>`}
@@ -16718,9 +16755,18 @@ function txRefusalVerdictHTML(o) {
 // The findOptimalDose refusal's verdict pieces (D26): the heading word and, when the
 // ceilings bound it, AUC Precision's cap-bound alarm as a note.
 const TROUGH_REFUSAL_WORD = 'No regimen recommended';
+// Task 3 review (R7): said of the chosen interval when another interval reaches the target
+// within the ceilings; AUC Precision's all-interval alarm (specialist guidance, another agent)
+// only when no interval from q6h to q48h does.
 function troughCapBoundHTML(refusal) {
   if (!refusal || !refusal.capBound || !refusal.highest) return '';
-  return noteHTML({ tier: 'alarm', word: 'Recommendation limit', html: escHtml(capBoundFlag(refusal.highest.auc, false).text) });
+  const others = refusal.others || [];
+  if (others.length) return noteHTML({ tier: 'caution', word: 'Recommendation limit', html: escHtml(
+    `At ${fmtFreq(refusal.tau)} the target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, `
+    + `${DOSE_MAX_TDD_MG} mg per day): the highest admissible regimen, ${fmtRegimen(refusal.highest.dose, refusal.tau)}, falls short at `
+    + `AUC₂₄ ${refusal.highest.auc.toFixed(0)}. ${others.length === 1 ? 'Another interval reaches' : 'Other intervals reach'} it within them, as named above.`) });
+  const auc = Number.isFinite(refusal.highestAucAny) ? refusal.highestAucAny : refusal.highest.auc;
+  return noteHTML({ tier: 'alarm', word: 'Recommendation limit', html: escHtml(capBoundFlag(auc, false).text) });
 }
 // The screen reader's line for a refusal: the hold first when there is one.
 function troughRefusalSaid(word, reason, hold) {

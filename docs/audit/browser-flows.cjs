@@ -438,12 +438,14 @@ async function enterCourse(page) {
   await page.waitForTimeout(200);
   await page.locator('#tinker-result-ss').screenshot({ path: path.join(OUT, 'desktop-trough-tinker.png') });
   // The dose explorer marks the rows the chart draws with the chart key's line and word (D14):
-  // the current regimen on the fit's line, the recommendation on the projection's.
-  const xRows = await page.evaluate(() => [...document.querySelectorAll('#tx-ev-explorer tbody tr[class]')].map(r => ({
+  // the current regimen on the fit's line, the recommendation on the projection's. (Since D26 a
+  // row over a ceiling carries is-over too; the key's rows are the is-cur / is-rec / is-opt ones.)
+  const xRows = await page.evaluate(() => [...document.querySelectorAll('#tx-ev-explorer tbody tr.is-cur, #tx-ev-explorer tbody tr.is-rec, #tx-ev-explorer tbody tr.is-opt')].map(r => ({
     cls: r.className, key: (r.querySelector('.tx-row-tag .lg') || {}).className || '',
     text: r.querySelector('th').textContent.replace(/\s+/g, ' ').trim() })));
   ok('dose explorer keys the chart\'s regimens: current on the fit\'s line, recommended on the projection\'s',
-     xRows.length === 2 && xRows.some(r => r.cls === 'is-cur' && /lg-ind/.test(r.key) && r.text === '1 g q12h current') &&
+     // The fitted current 1 g q12h is over AUC24 700 here, so its row also says so (D26 review).
+     xRows.length === 2 && xRows.some(r => /^is-cur( is-over)?$/.test(r.cls) && /lg-ind/.test(r.key) && /^1 g q12h current( AUC₂₄ over 700)?$/.test(r.text)) &&
      xRows.some(r => r.cls === 'is-rec' && /lg-proj/.test(r.key) && / recommended$/.test(r.text)), JSON.stringify(xRows));
   const dAttr = await attributeInjected(page, dProblems);
   results.cloudflareInjected = dAttr.injected;
@@ -840,6 +842,11 @@ async function enterCourse(page) {
        arc.reg === 'No regimen recommended' && arc.hold && !arc.dose && !!capNote && /q8h/.test(arc.why) && /^Result: No regimen recommended/.test(arc.said), JSON.stringify(arc).slice(0, 600));
     ok('D26: Trough shows the augmented-clearance caution', arc.notes.some(n => /note-caution/.test(n.cls) && /Augmented renal clearance suspected/.test(n.word) && /CrCl ≈ 303 mL\/min/.test(n.text)),
        JSON.stringify(arc.notes.map(n => n.word)));
+    // Task 3 review: under the refusal, the explorer never shows the removed 7.5 g a day as in range.
+    const over = await c.evaluate(() => { const th = [...document.querySelectorAll('#results-content .tx-explorer th, #results-content table th')].find(t => /^2\.5 g q8h/.test(t.textContent.trim()));
+      const tr = th && th.closest('tr'); return tr ? { text: tr.textContent.replace(/\s+/g, ' ').trim(), cls: tr.className, inRange: tr.querySelectorAll('td.in-range').length, aucCls: (tr.querySelectorAll('td')[2] || {}).className } : null; });
+    ok('D26 review: the dose explorer marks 2.5 g q8h over the ceilings, its AUC not in range', !!over && /over 2 g a dose/.test(over.text) && /over 4\.5 g a day/.test(over.text)
+       && /is-over/.test(over.cls) && over.aucCls !== 'in-range', JSON.stringify(over));
     // The same patient on random-level mode with an early, low level (CL 12.6 L/h): a refusal too.
     await c.locator('#mode-btn-randomlevel').click();
     await typeInto(c, '#rl-dose', '1000'); await typeInto(c, '#rl-tinf', '1'); await typeInto(c, '#rl-c', '3');
@@ -861,6 +868,25 @@ async function enterCourse(page) {
        sev.reg === 'No empiric maintenance regimen' && sev.hold && !sev.dose && /^Result: No empiric maintenance regimen/.test(sev.said)
        && sev.notes.some(n => /note-alarm/.test(n.cls) && /Severe renal impairment \(non-dialysis\) suspected/.test(n.word) && /loading dose/.test(n.text)),
        JSON.stringify(sev).slice(0, 600));
+    // Task 3 review (ruling R7): the refusal names the intervals that reach 400-600 within the ceilings.
+    // 30 M, 80 kg, 180 cm, SCr 0.7 (CrCl ~175) at q24h: bound at q24h, not at q8h or q12h.
+    await typeInto(c, '#age', '30'); await typeInto(c, '#tbw', '80'); await typeInto(c, '#height', '180'); await typeInto(c, '#scr', '0.7');
+    await c.locator('[data-onclick="k9"]').first().click();
+    await c.locator('#init-interval').selectOption('24');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const r7 = await verdictOf();
+    const r7next = await c.evaluate(() => ((document.querySelector('#results-content .tx-verdict .vx-next') || {}).textContent || ''));
+    ok('D26 review: a q24h cap-bound refusal names the shorter intervals that work, at q24h only, with no specialist line and no "obtain a level"',
+       r7.reg === 'No regimen recommended' && /IV q8h|IV q12h/.test(r7.why) && r7.notes.some(n => /At q24h the target cannot be reached/.test(n.text))
+       && !r7.notes.some(n => /alternative agent|specialist/.test(n.text)) && !/level/i.test(r7next), JSON.stringify({ r7, r7next }).slice(0, 700));
+    // 80 F, 45 kg, 155 cm, SCr 2.65 (CrCl ~12) at q24h: the 250 mg lattice steps over the band; only q36h and q48h work.
+    await typeInto(c, '#age', '80'); await typeInto(c, '#tbw', '45'); await typeInto(c, '#height', '155'); await typeInto(c, '#scr', '2.65');
+    await c.locator('[data-onclick="k10"]').first().click();
+    await c.locator('#init-interval').selectOption('24');   // the CrCl readout suggests an interval; choose q24h after it
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const gap = await verdictOf();
+    ok('D26 review: a gap refusal at q24h names q36h and q48h, not the dose explorer',
+       gap.reg === 'No regimen recommended' && /IV q36h/.test(gap.why) && /IV q48h/.test(gap.why) && !/dose explorer/i.test(gap.why), JSON.stringify(gap).slice(0, 600));
     const cAttr2 = await attributeInjected(c, cProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr2.injected;
     results.problems.push(...cAttr2.kept);
