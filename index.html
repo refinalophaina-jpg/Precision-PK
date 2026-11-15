@@ -3772,7 +3772,7 @@
     <!-- Results (hidden until calculated) -->
     <div id="results-content" style="display:none;flex-direction:column;gap:20px">
     </div>
-    <p class="rp-disclaimer">Decision support and education only — not clinically validated, and not a prescription. Clinician judgment required.</p>
+    <p class="rp-disclaimer"></p>
 
   </div><!-- /panel-right -->
 
@@ -4074,7 +4074,7 @@
 
     <!-- Results container -->
     <div id="b-results" style="display:none;flex-direction:column;gap:20px"></div>
-    <p class="rp-disclaimer">Decision support and education only — not clinically validated, and not a prescription. Clinician judgment required.</p>
+    <p class="rp-disclaimer"></p>
 
   </div><!-- /panel-right bayesian -->
 
@@ -4093,6 +4093,12 @@
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
 const APP_VERSION = '3.14.0';
+
+// The disclaimer, written once (v3.14.0, UI report I4). The two on-screen paragraphs, the static
+// print footer and the footer of every printed report (Trough and Peritoneal dialysis, AUC and
+// Haemodialysis, the empty report) all read it, so print can never carry less than the screen.
+const DISCLAIMER_TEXT = 'Decision support and education only — not clinically validated, and not a prescription. Clinician judgment required.';
+document.querySelectorAll('.rp-disclaimer, .print-footer').forEach(el => { el.textContent = DISCLAIMER_TEXT; });
 
 // ── Event binding ────────────────────────────────────────────────────────────
 // Inline on* attributes are blocked by the hash-pinned CSP: hashes do not apply
@@ -16040,7 +16046,7 @@ function _buildPrintReport() {
     if (!visible) return null;
     let h = _prHeader(now, '');
     h += '<div class="pr-section pr-clone">' + _prTroughBody(visible) + '</div>';
-    h += `<div class="pr-footer">AinaDara Vancomycin TDM Calculator &middot; Advisory only — not a prescription &middot; Clinician judgment required.</div>`;
+    h += _prFooter('');
     return h;
   }
   const modelName =
@@ -16250,10 +16256,7 @@ function _buildPrintReport() {
   html += `</div>`;   // .pr-body
 
   // Footer
-  html += `<div class="pr-footer">
-    AinaDara Vancomycin TDM Calculator &middot; Model: ${modelName}<br>
-    Advisory only — not a prescription &middot; Clinician judgment required.
-  </div>`;
+  html += _prFooter(`Model: ${modelName}`);
 
   return html;
 }
@@ -17238,6 +17241,11 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 // ─── Print report pieces (see _buildPrintReport) ────────────────────────────
 // "Generated 28 Sep 2026 14:05": fmtClock's month-by-name, 24-hour form with the
 // year added, since a printed sheet outlives the course it describes.
+// The one print footer. modelLine is plain text built by the caller (a model name, or '').
+function _prFooter(modelLine) {
+  return `<div class="pr-footer">AinaDara Vancomycin TDM Calculator${modelLine ? ' &middot; ' + modelLine : ''}<br>${escHtml(DISCLAIMER_TEXT)}</div>`;
+}
+
 function _prStamp(d) {
   d = d || new Date();
   const c = fmtClock(d.getTime() / 3600000).split(' ');   // [day, month, HH:MM]
@@ -17255,7 +17263,7 @@ function _prHeader(now, modelName) {
 function _prEmptyReport() {
   return _prHeader(_prStamp(), '')
     + '<p class="pr-empty">Nothing to print yet: the module on screen has no result. Calculate first, then print.</p>'
-    + `<div class="pr-footer">AinaDara Vancomycin TDM Calculator &middot; Advisory only — not a prescription &middot; Clinician judgment required.</div>`;
+    + _prFooter('');
 }
 
 // What the rendered AUC Precision panel concluded, for the report to carry
@@ -17479,9 +17487,7 @@ function syncCrclOverrideState() {
 
 </script>
 
-<div class="print-footer">
-  AinaDara Vancomycin TDM Calculator · Advisory only — not a prescription · Clinician judgment required.
-</div>
+<div class="print-footer"></div>
 
 </body>
 </html>

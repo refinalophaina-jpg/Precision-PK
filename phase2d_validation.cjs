@@ -7172,6 +7172,35 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     fn44('finalizeDecision')(r3, { rank: 1, level: 'Moderate', reasons: [] }); fn44('finalizeDecision')(r3, { rank: 1, level: 'Moderate', reasons: [] });
     assert(r3.rec === before && r3.rec.action === 'change', 'unchanged');
   });
+
+  // I4 (ui report): nine of ten printed reports lacked "not clinically validated". One constant
+  // holds the sentence; the two on-screen paragraphs, the static print footer and every print
+  // footer read it. The unit harness has no DOM, so the builders that need one (Trough, AUC, HD,
+  // PD) are checked structurally here and rendered in browser-flows D26; the empty report and the
+  // footer helper are rendered here.
+  test('44.23 one DISCLAIMER_TEXT feeds the screen paragraphs and every print footer, and the rendered print says "not clinically validated"', () => {
+    const m = src44.match(/const DISCLAIMER_TEXT = '([^']+)';/);
+    assert(m, 'DISCLAIMER_TEXT constant is missing');
+    const sentence = m[1];
+    assert(/not clinically validated/.test(sentence) && /not a prescription/.test(sentence) && /Clinician judgment required/.test(sentence), sentence);
+    assert((src44.match(/const DISCLAIMER_TEXT\b/g) || []).length === 1, 'one definition');
+    assert(src44.split(sentence).length === 2, `the sentence literal appears ${src44.split(sentence).length - 1} times; it must appear once, in the constant`);
+    assert(!/Advisory only — not a prescription/.test(src44), 'an old footer string remains');
+    assert(/querySelectorAll\('\.rp-disclaimer, \.print-footer'\)/.test(src44), 'the screen paragraphs and static print footer are not filled from the constant');
+    assert((src44.match(/class="pr-footer"/g) || []).length === 1, 'exactly one pr-footer element is written');
+    const ft = body44('_prFooter');
+    assert(/class="pr-footer"/.test(ft) && /DISCLAIMER_TEXT/.test(ft), '_prFooter must write the footer from the constant');
+    const pr = body44('_buildPrintReport');
+    assert((pr.match(/_prFooter\(/g) || []).length === 2, 'the Trough/PD clone path and the AUC/HD path both close with _prFooter');
+    assert(/_prFooter\(/.test(body44('_prEmptyReport')), 'the empty report closes with _prFooter');
+    const norm = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/&middot;/g, '·').replace(/\s+/g, ' ');
+    const f1 = fn44('_prFooter')('Model: Buelga'), f2 = fn44('_prFooter')('');
+    for (const f of [f1, f2, fn44('_prEmptyReport')()]) {
+      assert(norm(f).includes(sentence), 'rendered footer lacks the sentence: ' + norm(f));
+      assert(/not clinically validated/.test(norm(f)), 'rendered footer lacks "not clinically validated"');
+    }
+    assert(/Model: Buelga/.test(f1), 'the model line is kept');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

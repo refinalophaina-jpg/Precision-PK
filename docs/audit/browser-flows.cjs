@@ -141,6 +141,10 @@ async function enterCourse(page) {
   await page.waitForTimeout(200);
   await page.screenshot({ path: path.join(OUT, 'desktop-trough.png') });
 
+  {
+    const paper = await page.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+    ok('D26: print says not clinically validated (Trough result)', /not clinically validated/.test(paper) && /Clinician judgment required/.test(paper) && paper.length > 200, paper.slice(-300));
+  }
   // Stale marker on edit, cleared on revert.
   await typeInto(page, '#age', '61'); await page.waitForTimeout(250);
   ok('Trough result marked stale after an edit', await page.locator('#results-content .stale-line, .stale-line').first().isVisible().catch(() => false));
@@ -569,6 +573,10 @@ async function enterCourse(page) {
     sw: document.documentElement.scrollWidth, iw: innerWidth }));
   ok('HD one-time: no session ahead → a one-time answer, the missed post-HD dose flagged, fits 375 px',
      ot.oneTime && /IV now|No dose now|Planned/.test(ot.head) && ot.missed && ot.btns.join() === '24:false,48:true,72:false' && ot.sw <= ot.iw, JSON.stringify(ot));
+  {
+    const paper = await m.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' '); });
+    ok('D26: print says not clinically validated (HD result)', /not clinically validated/.test(paper) && /Clinician judgment required/.test(paper) && paper.length > 200, paper.slice(-300));
+  }
   await m.evaluate(() => { const el = document.querySelector('#b-results .vx-top'); window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: 'instant' }); });
   await m.waitForTimeout(250);
   await m.screenshot({ path: path.join(OUT, 'mobile-hd-onetime.png') });
@@ -698,6 +706,7 @@ async function enterCourse(page) {
        JSON.stringify(q12));
     ok('D25: the screen reader hears "continue"', /^Result: continue 1\.25 g IV q12h, AUC24 \d+/.test(q12.said), q12.said);
     const printed = await c.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
+    ok('D26: print says not clinically validated (AUC result)', /not clinically validated/.test(printed) && /Clinician judgment required/.test(printed) && !/Advisory only/.test(printed), printed.slice(-300));
     ok('D25: the printed report says continue and why, as on screen', /Continue the current regimen\s*1\.25 g IV q12h/.test(printed) && /no admissible regimen puts 2 or more further in range/.test(printed),
        printed.slice(printed.indexOf('Dose recommendation'), printed.indexOf('Dose recommendation') + 600));
     await c.goto(BASE + '?v=pwc2-' + Date.now(), { waitUntil: 'networkidle' });
