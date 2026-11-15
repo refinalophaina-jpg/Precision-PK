@@ -1928,7 +1928,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/function snapshotPatientCore\s*\(/.test(script), 'snapshotPatientCore missing');
     assert(/function applyPatientCore\s*\(/.test(script), 'applyPatientCore missing');
     // v3.14.0 (D26): the core is read from the module saved from, with its conflicts (D-e).
-    assert(/const \{ core, conflicts \} = snapshotPatientCore\(source\);/.test(script) && /snapshot\.core = core;/.test(script), 'save does not capture the core');
+    assert(/const \{ core, conflicts(, otherFilled)? \} = snapshotPatientCore\(source\);/.test(script) && /snapshot\.core = core;/.test(script), 'save does not capture the core');
     assert(/applyPatientCore\(/.test(script), 'load does not apply the core');
     const lists = (body.match(/class="profile-list"/g) || []).length;
     const inputs = (body.match(/class="profile-label-input"/g) || []).length;
@@ -7393,7 +7393,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       env.labels[1].value = 'Patient B';
       sandbox.saveCurrentProfile();
       const errs = sandbox.lastFormErrors('profile');
-      assert(errs.length === 1 && /Not saved/.test(errs[0]) && /age, weight, height and serum creatinine/.test(errs[0]), JSON.stringify(errs));
+      // R19: the lead says to make the values match; each field is named with both values.
+      assert(errs.length === 5 && /^Not saved/.test(errs[0]) && /[Mm]ake (them|the values) match/.test(errs[0]) && !/Clear the column/.test(errs.join(' ')), JSON.stringify(errs));
+      assert(JSON.stringify(errs.slice(1)) === JSON.stringify(['Age: Trough-Based 30, AUC Precision 80', 'Weight: Trough-Based 90, AUC Precision 50',
+        'Height: Trough-Based 185, AUC Precision 150', 'Serum creatinine: Trough-Based 0.8, AUC Precision 2.5']), JSON.stringify(errs));
       assert(env.localStorage.getItem(PROF_KEY44) === null && calls.snapshotBayesForm === 0, 'a mixed patient was stored, or the AUC course read');
       // The same value written differently is not a conflict; a field empty in one column is not either.
       ['age', 'tbw', 'height', 'scr'].forEach(k => { env.els['b-' + k].value = ''; });
@@ -7412,14 +7415,98 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     });
   });
 
+
+  test('44.25b R18: a Trough save stores the AUC course only when the AUC patient fields are filled and agree; otherwise without it, and says so', () => {
+    const course = () => ({ demographics: { age: '', sex: 'F', tbw: '', height: '', scr: '', icu: true, dial: false }, model: 'goti',
+      target: { auc: '450', mic: '1' }, doses: [{ mg: '1000', tinf: '1', date: '2025-11-04', time: '08:00' }], levels: [{ conc: '18', date: '2025-11-05', time: '07:30' }],
+      scrRows: [{ val: '2.5', date: '2025-11-05', time: '06:00' }], hdSessions: [{ date: '2025-11-05', time: '09:00', hours: '4' }],
+      fit: { model: 'goti', CL_ind: 2.1, V_ind: 40 }, staleFit: undefined, dirty: false });
+    const B = { age: '30', tbw: '90', height: '185', scr: '0.8', mic: '1', 'b-mic': '1', 'b-auc-target': '450' };
+    // Branch 1: patient A's course in the AUC column, its patient fields empty.
+    const env = profEnv44({}, B);
+    Object.keys(B).concat(['b-age', 'b-tbw', 'b-height', 'b-scr']).forEach(k => env.get(k));
+    env.get('app-shell-bayesian').style.display = 'none';
+    const realSnap = sandbox.snapshotBayesForm;
+    sandbox.snapshotBayesForm = course;
+    try {
+      withProf44(env, [], () => {
+        sandbox.setPatientSex('M');
+        env.labels[0].value = 'Patient B';
+        sandbox.saveCurrentProfile();
+        const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+        assert(p && p.snapshot.core.age === '30', 'not saved: ' + JSON.stringify(sandbox.lastFormErrors('profile')));
+        const sn = p.snapshot;
+        assert(sn.doses.length === 0 && sn.levels.length === 0 && sn.scrRows.length === 0 && sn.hdSessions.length === 0 && !sn.fit && !sn.staleFit,
+          'patient A\'s course travelled with B: ' + JSON.stringify(sn).slice(0, 300));
+        assert(sn.demographics.icu === false && sn.demographics.age === '30', 'the AUC column\'s ICU flag or empty demographics were kept: ' + JSON.stringify(sn.demographics));
+        assert(/Saved "Patient B"/.test(statusText44(env)) && /AUC Precision course not saved/.test(statusText44(env)), statusText44(env));
+        // Branch 2: the AUC column holds the same patient, every field filled: the course is kept.
+        ['age', 'tbw', 'height', 'scr'].forEach(k => { env.els['b-' + k].value = B[k]; });
+        env.labels[0].value = 'Patient B with course';
+        sandbox.saveCurrentProfile();
+        const q = JSON.parse(env.localStorage.getItem(PROF_KEY44))[0];
+        assert(q.label === 'Patient B with course' && q.snapshot.doses.length === 1 && q.snapshot.levels.length === 1
+          && q.snapshot.scrRows.length === 1 && q.snapshot.hdSessions.length === 1 && !!q.snapshot.fit, JSON.stringify(q.snapshot).slice(0, 300));
+        assert(!/course not saved/.test(statusText44(env)), statusText44(env));
+        // One AUC field empty is not "filled": the course is left out again.
+        env.els['b-height'].value = '';
+        env.labels[0].value = 'Patient B partial';
+        sandbox.saveCurrentProfile();
+        const r = JSON.parse(env.localStorage.getItem(PROF_KEY44))[0];
+        assert(r.label === 'Patient B partial' && r.snapshot.doses.length === 0, JSON.stringify(r.snapshot.doses));
+      });
+    } finally { sandbox.snapshotBayesForm = realSnap; }
+  });
+
+  test('44.25c R19: the refusal offers one action that copies only the conflicting fields from the saving module; a second save succeeds', () => {
+    // A same-patient follow-up: patient C (45 F) in both columns, today's SCr 1.4 typed in AUC Precision only.
+    const T = { age: '45', tbw: '70', height: '168', scr: '0.9', mic: '1', cysc: '1.1', 'trough-min': '15', 'trough-max': '20', 'scr-baseline': '0.8' };
+    const A = { 'b-age': '45', 'b-tbw': '70', 'b-height': '168', 'b-scr': '1.4', 'b-mic': '1', 'b-auc-target': '500' };
+    const env = profEnv44({}, Object.assign({}, T, A));
+    Object.keys(Object.assign({}, T, A)).forEach(k => env.get(k));
+    // AUC Precision on screen, with a profile section the refusal is written into.
+    const section = env.get('profile-section-auc');
+    section.querySelector = () => null;
+    env.get('app-shell-bayesian').querySelector = (sel) => sel === '.profile-section' ? section : null;
+    withProf44(env, [], () => {
+      sandbox.setPatientSex('F');
+      env.labels[1].value = 'Patient C day 2';
+      sandbox.saveCurrentProfile();
+      const errs = sandbox.lastFormErrors('profile');
+      assert(errs.length === 2 && errs[1] === 'Serum creatinine: Trough-Based 0.9, AUC Precision 1.4', JSON.stringify(errs));
+      assert(env.localStorage.getItem(PROF_KEY44) === null, 'saved while the columns disagree');
+      const html = section.innerHTML;
+      assert(/<button type="button" class="text-action" data-onclick="k99" data-arg="auc">Copy the AUC Precision values to Trough-Based<\/button>/.test(html), html);
+      assert(/k99: \(el, ev, arg\) => \{ copyProfileConflicts\(String\(arg\)\); \}/.test(src44), 'the action is not in __ACT as k99');
+      // The action: only Trough-Based SCr changes; nothing else in either column moves.
+      const before = Object.fromEntries(Object.keys(Object.assign({}, T, A)).map(k => [k, env.els[k].value]));
+      env.writes.length = 0;
+      sandbox.copyProfileConflicts('auc');
+      Object.keys(before).forEach(k => assert(env.els[k].value === (k === 'scr' ? '1.4' : before[k]), `${k}: "${env.els[k].value}"`));
+      const fieldWrites = env.writes.filter(w => w[1] === 'value' && w[0] in before);
+      assert(fieldWrites.length === 1 && fieldWrites[0][0] === 'scr', JSON.stringify(fieldWrites));
+      assert(/Copied serum creatinine/.test(statusText44(env)) && /[Ss]ave again/.test(statusText44(env)), statusText44(env));
+      assert(sandbox.lastFormErrors('profile').length === 0, 'the refusal stays after the copy');
+      sandbox.saveCurrentProfile();
+      const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+      assert(p && p.label === 'Patient C day 2' && p.snapshot.core.scr === '1.4' && p.snapshot.core.cysc === '1.1', JSON.stringify(p && p.snapshot.core));
+      // From the Trough module the direction reverses: the Trough value is copied to AUC Precision.
+      env.els['b-mic'].value = '2';
+      env.get('app-shell-bayesian').style.display = 'none';
+      sandbox.copyProfileConflicts('trough');
+      assert(env.els['b-mic'].value === '1' && env.els.mic.value === '1', `MIC ${env.els.mic.value} / ${env.els['b-mic'].value}`);
+    });
+  });
+
   test('44.26 profiles saved by v3.13.0 (core and fit) and before the core (legacy fit, no core) load (Review Focus 2)', () => {
     for (const p of profFixture44) {
       assert(sandbox.validProfile(JSON.parse(JSON.stringify(p))) === true, `${p.label}: not valid`);
       const prev = { cysc: '2.4', 'scr-baseline': '0.8', dose: '1500', 'level-val': '31', age: '82' };   // the previous patient
       const env = profEnv44({ [PROF_KEY44]: JSON.stringify(profFixture44) }, prev);
       Object.keys(prev).forEach(k => env.get(k));   // on screen before the load
-      withProf44(env, ['resetForm', 'resetBayesian', 'addBayesDose', 'addBayesLevel'], (calls) => {
-        assert(sandbox.loadProfiles().length === 2, 'both fixtures are listed');
+      env.get('t-hd').checked = true;   // the previous patient was on haemodialysis
+      withProf44(env, ['resetForm', 'resetBayesian', 'addBayesDose', 'addBayesLevel', 'addBayesSession'], (calls) => {
+        assert(sandbox.loadProfiles().length === profFixture44.length, 'every fixture is listed');
         let threw = null;
         try { sandbox.loadProfileIntoForm(p.id); } catch (e) { threw = e; }
         assert(!threw, `${p.label}: threw ${threw && (threw.stack || threw.message)}`);
@@ -7431,7 +7518,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         assert(env.els['b-auc-target'].value === p.snapshot.target.auc, `${p.label}: AUC target ${env.els['b-auc-target'].value}`);
         assert(vm.runInContext('state.sex', sandbox) === d.sex && vm.runInContext('bState.sex', sandbox) === d.sex, `${p.label}: sex`);
         assert(vm.runInContext('bState.model', sandbox) === p.snapshot.model, `${p.label}: model ${vm.runInContext('bState.model', sandbox)}`);
-        assert(calls.addBayesDose === p.snapshot.doses.length && calls.addBayesLevel === p.snapshot.levels.length, `${p.label}: rows ${JSON.stringify(calls)}`);
+        assert(calls.addBayesDose === p.snapshot.doses.length && calls.addBayesLevel === p.snapshot.levels.length
+          && calls.addBayesSession === (p.snapshot.hdSessions || []).length, `${p.label}: rows ${JSON.stringify(calls)}`);
+        // The Trough module's haemodialysis flag is the profile's (review item 1): a previous tick never
+        // survives, and a dialysis profile ticks it, so the Trough module refuses a CrCl regimen (D16).
+        assert(env.els['t-hd'].checked === !!d.dial, `${p.label}: #t-hd ${env.els['t-hd'].checked}, dial ${d.dial}`);
+        assert(env.els['b-dial'].checked === !!d.dial, `${p.label}: #b-dial ${env.els['b-dial'].checked}`);
         // The previous patient's Trough-only fields are gone (engine report I5).
         ['cysc', 'scr-baseline', 'dose', 'level-val'].forEach(k => assert(env.els[k].value === '', `${p.label}: ${k} kept "${env.els[k].value}"`));
         // A loaded fit is never the result on screen: the profile re-fits.
@@ -7440,6 +7532,25 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         assert(env.lists[0].innerHTML.indexOf(p.label) >= 0 && !/Invalid Date/.test(env.lists[0].innerHTML), `${p.label}: listed`);
       });
     }
+  });
+
+  test('44.26a R20: Trough "Clear all fields" resets the weight basis and amputation; an AUC save afterwards carries neither', () => {
+    const env = profEnv44({}, {});
+    withProf44(env, [], () => {
+      vm.runInContext("state.dosingWt = 'IBW'; ampState.RL = 'knee';", sandbox);
+      env.get('amp-enabled').checked = true; env.get('dosing-wt').value = 'IBW';
+      sandbox.resetForm();
+      assert(vm.runInContext('state.dosingWt', sandbox) === 'auto' && env.els['dosing-wt'].value === 'auto', `basis ${vm.runInContext('state.dosingWt', sandbox)}`);
+      assert(vm.runInContext('Object.values(ampState).every(v => v === null)', sandbox) && env.els['amp-enabled'].checked === false, 'amputation kept');
+      assert(env.els['t-hd'] && env.els['t-hd'].checked === false, 'the haemodialysis flag kept');
+      // A new patient typed into AUC Precision and saved.
+      [['b-age', '50'], ['b-tbw', '72'], ['b-height', '170'], ['b-scr', '1.0']].forEach(([k, v]) => { env.get(k).value = v; });
+      sandbox.setPatientSex('M');
+      env.labels[1].value = 'New patient';
+      sandbox.saveCurrentProfile();
+      const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+      assert(p && p.snapshot.core.dosingWt === 'auto' && Object.values(p.snapshot.core.amputation).every(v => v === null), JSON.stringify(p && p.snapshot.core));
+    });
   });
 }
 

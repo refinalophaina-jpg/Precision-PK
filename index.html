@@ -4216,6 +4216,7 @@ const __ACT = {
   k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
   k97: (el, ev, arg) => { runUndo(); },   /* Undo (D24) */
   k98: (el, ev, arg) => { markSuggestedModel(); },   /* ICU changes the suggested model (D24) */
+  k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
 };
@@ -8595,6 +8596,16 @@ function resetForm() {
   document.getElementById('scr-baseline').value = '';
   document.getElementById('aki-manual').checked = false;
   document.getElementById('aki-banner').style.display = 'none';
+  // The haemodialysis flag, the CrCl weight basis and amputation are this patient's too (review
+  // item 1; R20, engine report M3): a save after a clear carried the previous patient's.
+  const tHd = document.getElementById('t-hd');
+  if (tHd) tHd.checked = false;
+  const dwAuto = document.querySelector('[data-onclick="k73"]');
+  if (dwAuto) setDosingWt(dwAuto, 'auto');
+  else { state.dosingWt = 'auto'; const dw = document.getElementById('dosing-wt'); if (dw) dw.value = 'auto'; }
+  const ampCb = document.getElementById('amp-enabled');
+  if (ampCb) ampCb.checked = false;
+  ampToggleEnabled(ampCb);
   setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
 }
 
@@ -15687,10 +15698,10 @@ function snapshotBayesForm() {
 // Saved profiles used to be Bayesian-only, so the same patient had to be typed
 // twice to work in both modules. One mapping, applied in both directions.
 const PATIENT_CORE_FIELDS = [
-  { key:'age',       trough:'age',         bayes:'b-age',        label:'age' },
-  { key:'tbw',       trough:'tbw',         bayes:'b-tbw',        label:'weight' },
-  { key:'height',    trough:'height',      bayes:'b-height',     label:'height' },
-  { key:'scr',       trough:'scr',         bayes:'b-scr',        label:'serum creatinine' },
+  { key:'age',       trough:'age',         bayes:'b-age',        label:'age',              demographic:true },
+  { key:'tbw',       trough:'tbw',         bayes:'b-tbw',        label:'weight',           demographic:true },
+  { key:'height',    trough:'height',      bayes:'b-height',     label:'height',           demographic:true },
+  { key:'scr',       trough:'scr',         bayes:'b-scr',        label:'serum creatinine', demographic:true },
   { key:'cysc',      trough:'cysc',        bayes:null,           label:'cystatin C' },
   { key:'mic',       trough:'mic',         bayes:'b-mic',        label:'MIC' },
   { key:'troughMin', trough:'trough-min',  bayes:null,           label:'trough target minimum' },
@@ -15704,6 +15715,8 @@ const PATIENT_CORE_FIELDS = [
 // now read from the module being saved from (source: 'trough' | 'auc'); the other column fills
 // only what the source leaves empty. A field filled in both columns with different values is a
 // conflict: two patients on screen, and saveCurrentProfile refuses (default D-e).
+// otherFilled: every demographic field (age, weight, height, SCr) is filled in the other column
+// and, with no conflict, agrees; only then is the other column known to hold this patient (R18).
 function snapshotPatientCore(source) {
   const val = id => String((id && document.getElementById(id)?.value) || '').trim();
   const same = (a, b) => {
@@ -15712,17 +15725,54 @@ function snapshotPatientCore(source) {
   };
   const from = source === 'trough' ? 'trough' : 'bayes', other = from === 'trough' ? 'bayes' : 'trough';
   const core = {}, conflicts = [];
+  let otherFilled = true;
   for (const f of PATIENT_CORE_FIELDS) {
     const a = val(f[from]), b = val(f[other]);
     core[f.key] = a || b || '';
     if (a && b && !same(a, b)) conflicts.push(f.key);
+    if (f.demographic && !b) otherFilled = false;
   }
+  otherFilled = otherFilled && !conflicts.length;
+  // Haemodialysis (review item 1): the Trough flag and the AUC dialysis box. The other column's
+  // tick counts only when it holds this patient; either tick means dialysis (the refusal side, D16).
+  const hdOf = { trough: !!document.getElementById('t-hd')?.checked, bayes: !!document.getElementById('b-dial')?.checked };
+  core.hd = hdOf[from] || (otherFilled && hdOf[other]);
   core.sex       = (state.sex === 'F' || state.sex === 'M') ? state.sex : null;   // one patient attribute — see setPatientSex; unset is saved unset, never as 'M'
   core.dosingWt  = state.dosingWt || 'auto';
   core.amputation = Object.assign({}, ampState);
   core.crcl      = (crclOverride.on && crclOverride.value > 0)
                      ? { on:true, value:crclOverride.value } : { on:false, value:null };
-  return { core, conflicts };
+  return { core, conflicts, otherFilled };
+}
+
+// The Trough-Based and AUC Precision values of each conflicting field, one line each (R19).
+function profileConflictLines(conflicts) {
+  const val = id => String((id && document.getElementById(id)?.value) || '').trim();
+  return conflicts.map(k => {
+    const f = PATIENT_CORE_FIELDS.find(x => x.key === k);
+    const name = f.label.charAt(0).toUpperCase() + f.label.slice(1);
+    return `${name}: Trough-Based ${val(f.trough)}, AUC Precision ${val(f.bayes)}`;
+  });
+}
+// R19: the refusal's one action. Copies ONLY the conflicting shared fields from the module saved
+// from to the other column; the user then saves again. Each field's own handlers run, as typing would.
+function copyProfileConflicts(source) {
+  const src = source === 'trough' ? 'trough' : 'auc';
+  const from = src === 'trough' ? 'trough' : 'bayes', to = from === 'trough' ? 'bayes' : 'trough';
+  const { conflicts } = snapshotPatientCore(src);
+  const copied = [];
+  for (const k of conflicts) {
+    const f = PATIENT_CORE_FIELDS.find(x => x.key === k);
+    const a = document.getElementById(f[from]), b = document.getElementById(f[to]);
+    if (!a || !b) continue;
+    b.value = a.value;
+    copied.push(f.label);
+    try { if (typeof Event === 'function' && b.dispatchEvent) b.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+  clearFormErrors('profile');
+  if (!copied.length) { profileStatus('The two columns already match. Save again.'); return; }
+  const list = copied.length > 1 ? `${copied.slice(0, -1).join(', ')} and ${copied[copied.length - 1]}` : copied[0];
+  profileStatus(`Copied ${list} to ${to === 'trough' ? 'Trough-Based' : 'AUC Precision'}. Save again to keep the profile.`);
 }
 
 function applyPatientCore(core) {
@@ -15782,15 +15832,28 @@ function saveCurrentProfile() {
   // the course is stored only when the two columns agree on every shared field.
   const bShell = document.getElementById('app-shell-bayesian');
   const source = (bShell && bShell.style && bShell.style.display !== 'none') ? 'auc' : 'trough';
-  const { core, conflicts } = snapshotPatientCore(source);
+  const { core, conflicts, otherFilled } = snapshotPatientCore(source);
   if (conflicts.length) {
-    const names = conflicts.map(k => (PATIENT_CORE_FIELDS.find(f => f.key === k) || { label: k }).label);
-    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
-    showFormErrors('profile', `Not saved: the Trough-Based and AUC Precision columns hold different values for ${list}, `
-      + 'so they may be two patients. Clear the column that is not this patient, or make the values match, then save.', [labelEl]);
+    // R19: never pick one silently. Each field with both values, making them match first, and one
+    // action that copies this module's values across (k99).
+    const here = source === 'auc' ? 'AUC Precision' : 'Trough-Based', there = source === 'auc' ? 'Trough-Based' : 'AUC Precision';
+    showFormErrors('profile', [`Not saved: these values differ between the two columns. Make them match, then save again; `
+      + 'different values may mean two different patients.'].concat(profileConflictLines(conflicts)), [labelEl],
+      { action: { key: 'k99', arg: source, label: `Copy the ${here} values to ${there}` } });
     return;
   }
-  const snapshot = snapshotBayesForm();
+  let snapshot = snapshotBayesForm();
+  // R18: a Trough save keeps the AUC column's course only when that column holds this patient
+  // (every demographic filled and agreeing). Otherwise the Trough patient is saved without it.
+  let courseLeftOut = false;
+  if (source === 'trough' && !otherFilled) {
+    courseLeftOut = !!(snapshot.doses.length || snapshot.levels.length || (snapshot.scrRows || []).length
+      || (snapshot.hdSessions || []).length || snapshot.fit || snapshot.staleFit);
+    snapshot = Object.assign({}, snapshot, {
+      demographics: { age: core.age, sex: core.sex, tbw: core.tbw, height: core.height, scr: core.scr, icu: false, dial: !!core.hd },
+      doses: [], levels: [], scrRows: [], hdSessions: [], fit: null, staleFit: undefined, dirty: false,
+    });
+  }
   // v3.13.0 (D24): saved without the fit, and said so (a native confirm() asked).
   const savedWithoutFit = !!snapshot.dirty;
   snapshot.core = core;
@@ -15818,6 +15881,7 @@ function saveCurrentProfile() {
   profileStatus((savedWithoutFit
     ? `Saved "${label}" without the fitted PK: the inputs changed since the last calculation. Run the analysis and save again to keep a matching fit.`
     : `Saved "${label}".`)
+    + (courseLeftOut ? ' AUC Precision course not saved: its patient fields are empty or incomplete, so it may belong to another patient.' : '')
     + (replacedKey ? ` The earlier saved profiles could not be read; their text is kept in this browser's storage under "${replacedKey}".` : ''));
 }
 // One polite line in each profile section (v3.13.0, D24). Any problem reading the store, as
@@ -15893,6 +15957,10 @@ function loadProfileIntoForm(id) {
   const cellKey  = modelKey === 'goti' && s.demographics && s.demographics.dial ? 'gotihd' : modelKey;
   setBModel(document.getElementById('b-model-btn-' + cellKey), cellKey);
 
+  // The Trough haemodialysis flag is the profile's (review item 1): the previous patient's tick
+  // never survives, and a dialysis profile ticks it, so the Trough module refuses (D16).
+  const tHd = document.getElementById('t-hd');
+  if (tHd) tHd.checked = !!((s.core && s.core.hd) || s.demographics.dial);
   const icuCb  = document.getElementById('b-icu');  if (icuCb)  icuCb.checked  = !!s.demographics.icu;
   const dialCb = document.getElementById('b-dial'); if (dialCb) { dialCb.checked = !!s.demographics.dial; bState.dial = dialCb.checked; }
 
@@ -16607,7 +16675,7 @@ function showFormErrors(scope, messages, fieldIds, opts) {
   if (!formDomReady()) return false;
   try {
     clearFormInvalid(scope);
-    if (scope === 'profile') { showProfileError(run, msgs, specs); return false; }
+    if (scope === 'profile') { showProfileError(run, msgs, specs, opts); return false; }
     const targets = msgs.map((m, i) => formTargets(specs[i]));
     run.targets = targets.map(t => t.focus);
     const items = msgs.map((m, i) => {
@@ -16647,7 +16715,7 @@ function visibleProfileSection() {
   return inAuc ? bShell.querySelector('.profile-section')
                : document.querySelector('.app-shell:not(#app-shell-bayesian) .profile-section');
 }
-function showProfileError(run, msgs, specs) {
+function showProfileError(run, msgs, specs, opts) {
   document.querySelectorAll('.fe-profile').forEach(n => n.remove());
   const section = visibleProfileSection();
   if (!section) return;
@@ -16659,9 +16727,12 @@ function showProfileError(run, msgs, specs) {
   run.targets = [field];
   if (field) markFormInvalid(run, field, 'fe-profile-0');
   const row = section.querySelector('.profile-save-row');
+  // One delegated action under the messages, when the refusal offers one (R19).
+  const a = opts && opts.action;
+  const act = a ? `<p><button type="button" class="text-action" data-onclick="${escHtml(a.key)}" data-arg="${escHtml(a.arg)}">${escHtml(a.label)}</button></p>` : '';
   const html = `<div class="form-errors fe-profile note note-alarm" role="group" aria-labelledby="fe-profile-word">
     <div class="note-word">${ICON.alarm}<span id="fe-profile-word">Check these inputs</span></div>
-    <div class="note-body">${msgs.map((m, i) => `<p id="fe-profile-${i}">${escHtml(m)}</p>`).join('')}</div></div>`;
+    <div class="note-body">${msgs.map((m, i) => `<p id="fe-profile-${i}">${escHtml(m)}</p>`).join('')}${act}</div></div>`;
   if (row) row.insertAdjacentHTML('afterend', html); else section.insertAdjacentHTML('afterbegin', html);
   if (field && typeof field.focus === 'function') field.focus();
   announceResult(`Check these inputs. ${msgs.join(' ')}`);

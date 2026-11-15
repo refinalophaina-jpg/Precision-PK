@@ -1,5 +1,5 @@
 {
-  "_note": "Saved profiles in the shapes earlier versions wrote to localStorage['ainadara.profiles.v1'], for SUITE 44.26 and browser-flows D26 (Review Focus 2). Fictional patients only. 'v3130' is the v3.13.0 shape (snapshotBayesForm + snapshotPatientCore + snapshotPdForm at edc5b53), saved after a run, so it carries a fit. 'legacy' is the shape from before the patient core and the stale-fit fix: no core, no pd, no hdSessions, no dirty/staleFit, and a fit stored unconditionally.",
+  "_note": "Saved profiles in the shapes earlier versions wrote to localStorage['ainadara.profiles.v1'], for SUITE 44.26 and browser-flows D26 (Review Focus 2). Fictional patients only. 'v3130' is the v3.13.0 shape (snapshotBayesForm + snapshotPatientCore + snapshotPdForm at edc5b53), saved after a run, so it carries a fit. 'legacy' is the shape from before the patient core and the stale-fit fix: no core, no pd, no hdSessions, no dirty/staleFit, and a fit stored unconditionally. The third is a v3.13.0 Goti-HD patient (demographics.dial true, one HD session): its load must tick the Trough module's haemodialysis flag.",
   "profiles": [
     {
       "id": "p_mh3kq2a1b2c3",
@@ -51,6 +51,35 @@
         "levels": [],
         "scrRows": [],
         "fit": { "model": "buelga", "CL_ind": 3.2, "V_ind": 61, "CL_pop": 3.4, "V_pop": 59.6, "goti": null }
+      }
+    },
+    {
+      "id": "p_mh9hd0x7y8z9",
+      "schema": 1,
+      "label": "Fixture 58M Goti-HD v3.13.0",
+      "savedAt": 1762498800000,
+      "snapshot": {
+        "demographics": { "age": "58", "sex": "M", "tbw": "77", "height": "174", "scr": "6.8", "icu": false, "dial": true },
+        "model": "goti",
+        "target": { "auc": "450", "mic": "1" },
+        "doses": [ { "mg": "1500", "tinf": "1.5", "date": "2025-11-05", "time": "14:00" } ],
+        "levels": [],
+        "scrRows": [],
+        "hdSessions": [ { "date": "2025-11-05", "time": "09:00", "hours": "4" } ],
+        "fit": null,
+        "dirty": false,
+        "core": {
+          "age": "58", "tbw": "77", "height": "174", "scr": "6.8", "cysc": "", "mic": "1",
+          "troughMin": "10", "troughMax": "20", "aucTarget": "450",
+          "sex": "M", "dosingWt": "auto",
+          "amputation": { "RA": null, "LA": null, "RL": null, "LL": null },
+          "crcl": { "on": false, "value": null }
+        },
+        "pd": {
+          "modality": "", "start": "", "hours": "", "exchanges": "", "fill": "", "held": [], "stopped": false,
+          "stoppedDate": "", "stoppedTime": "", "prior": "", "urine": "", "ip": false, "loadKg": "", "vd": "bauer",
+          "goalMin": "", "goalMax": "", "doses": [], "levels": [], "giveDate": "", "giveTime": ""
+        }
       }
     }
   ]

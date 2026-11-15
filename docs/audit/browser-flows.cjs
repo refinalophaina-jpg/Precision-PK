@@ -835,23 +835,26 @@ async function enterCourse(page) {
     await s.locator('[data-onclick="k9"]').click();
     await save('Patient B');
     const p1Err = await profileErr(), p1Store = await stored();
-    // With the AUC column cleared, the same save goes through and holds patient B alone.
-    await s.locator('[data-onclick="k2"]').click(); await s.locator('[data-onclick="k48"]:visible').first().click();
+    // R18: empty only the AUC column's patient fields, by hand, leaving patient A's doses and level. The
+    // Trough save then holds patient B alone, without that course, and the status line says so.
+    await s.locator('[data-onclick="k2"]').click();
+    for (const id of ['#b-age', '#b-tbw', '#b-height', '#b-scr']) await s.locator(id).fill('');
     await s.locator('[data-onclick="k1"]').click();
-    await s.locator('[data-onclick="k9"]').click();   // sex is one attribute: clearing the AUC column unset it
     await save('Patient B');
-    const p1Ok = await stored(), pb = p1Ok[0] && p1Ok[0].snapshot;
+    const p1Ok = await stored(), pb = p1Ok[0] && p1Ok[0].snapshot, p1Status = await statusLine();
     ok('D26: a Trough save refuses a mixed patient',
-       /age/.test(p1Err) && /weight/.test(p1Err) && /height/.test(p1Err) && /serum creatinine/.test(p1Err) && p1Store.length === 0
+       ['Age: Trough-Based 30, AUC Precision 80', 'Weight: Trough-Based 90, AUC Precision 50', 'Height: Trough-Based 185, AUC Precision 150',
+        'Serum creatinine: Trough-Based 0.8, AUC Precision 2.5'].every(x => p1Err.includes(x)) && !/Clear the column/.test(p1Err) && p1Store.length === 0
        && p1Ok.length === 1 && !!pb && pb.core.age === '30' && pb.core.tbw === '90' && pb.core.height === '185' && pb.core.scr === '0.8' && pb.core.sex === 'M'
-       && pb.doses.length === 0 && pb.levels.length === 0,
-       JSON.stringify({ p1Err, p1Store: p1Store.length, core: pb && pb.core, doses: pb && pb.doses.length, levels: pb && pb.levels.length }));
+       && pb.doses.length === 0 && pb.levels.length === 0 && /AUC Precision course not saved/.test(p1Status),
+       JSON.stringify({ p1Err, p1Store: p1Store.length, core: pb && pb.core, doses: pb && pb.doses.length, levels: pb && pb.levels.length, p1Status }));
 
     // P2: patient C (45 F, 70 kg, 168 cm, SCr 0.9, no cystatin C) saved from AUC Precision; then
     // patient D in Trough (82 F, 55 kg, 160 cm, SCr 1.9, cystatin C 2.4, baseline SCr 0.8, steady-state
     // level mode, dose 1,500, level 31), and Patient C loaded from the Trough column's list.
     await s.locator('[data-onclick="k32"]:visible').first().click();
     await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k48"]:visible').first().click();   // patient A's course goes too
     await typeInto(s, '#b-age', '45'); await typeInto(s, '#b-tbw', '70'); await typeInto(s, '#b-height', '168'); await typeInto(s, '#b-scr', '0.9');
     await s.locator('[data-onclick="k40"]').click();
     await save('Patient C');
@@ -864,6 +867,7 @@ async function enterCourse(page) {
     await typeInto(s, '#dose', '1500');
     await s.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
     await typeInto(s, '#level-val', '31');
+    await s.locator('#t-hd').check();   // patient D is on haemodialysis; patient C is not
     const advisories = () => s.evaluate(() => {
       const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none' && e.textContent.trim() !== ''; };
       return { cys: shown('cysc-result'), aki: shown('aki-banner') };
@@ -874,13 +878,36 @@ async function enterCourse(page) {
     const p2 = Object.assign(await s.evaluate(() => {
       const v = (id) => document.getElementById(id).value;
       return { cysc: v('cysc'), base: v('scr-baseline'), dose: v('dose'), level: v('level-val'), age: v('age'), bAge: v('b-age'), scr: v('scr'),
-        hasLevel: document.getElementById('has-level').checked };
+        hasLevel: document.getElementById('has-level').checked, hd: document.getElementById('t-hd').checked };
     }), await advisories());
     ok('D26: a profile load clears the Trough column',
        p2Before.cys && p2Before.aki
-       && p2.cysc === '' && p2.base === '' && p2.dose === '' && p2.level === '' && !p2.hasLevel && !p2.cys && !p2.aki
+       && p2.cysc === '' && p2.base === '' && p2.dose === '' && p2.level === '' && !p2.hasLevel && !p2.cys && !p2.aki && !p2.hd
        && p2.age === '45' && p2.bAge === '45' && p2.scr === '0.9',
        JSON.stringify({ p2Before, p2 }));
+
+    // R19: a same-patient follow-up. Today's SCr 1.4 typed in AUC Precision only: the save is refused with
+    // both values and one action, which copies only that field to Trough-Based; the second save succeeds.
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-scr', '1.4');
+    await save('Patient C day 2');
+    const r19Err = await profileErr(), r19Store = (await stored()).length;
+    const trough = () => s.evaluate(() => Object.fromEntries(['age', 'tbw', 'height', 'scr', 'cysc', 'mic', 'trough-min', 'trough-max', 'b-scr', 'b-mic', 'b-auc-target']
+      .map(id => [id, document.getElementById(id).value])));
+    const r19Before = await trough();
+    const copyBtn = s.locator('.fe-profile [data-onclick="k99"]:visible');
+    const copyText = (await copyBtn.textContent() || '').trim();
+    await copyBtn.click(); await s.waitForTimeout(200);
+    const r19After = await trough();
+    await s.locator('[data-onclick="k37"]:visible').first().click(); await s.waitForTimeout(250);
+    const r19Saved = (await stored())[0];
+    const changed = Object.keys(r19Before).filter(k => r19Before[k] !== r19After[k]);
+    ok('D26: a same-patient refusal names both values; its copy action changes only that field and the second save succeeds',
+       /Serum creatinine: Trough-Based 0\.9, AUC Precision 1\.4/.test(r19Err) && /match/.test(r19Err) && !/Clear the column/.test(r19Err)
+       && copyText === 'Copy the AUC Precision values to Trough-Based' && eq(changed, ['scr']) && r19After.scr === '1.4'
+       && !!r19Saved && r19Saved.label === 'Patient C day 2' && r19Saved.snapshot.core.scr === '1.4' && (await stored()).length === r19Store + 1,
+       JSON.stringify({ r19Err, copyText, changed, saved: r19Saved && r19Saved.label }));
+    await s.locator('[data-onclick="k1"]').click();
 
     // Code report I5: delete removes one profile of three, and Undo puts it back where it was.
     await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
@@ -911,11 +938,42 @@ async function enterCourse(page) {
         icu: document.getElementById('b-icu').checked, result: !!bState.result, status: [...document.querySelectorAll('.profile-status')].map(p => p.textContent).join('') }));
     };
     const fx1 = await loadFix('Fixture 64F v3.13.0'), fx2 = await loadFix('Fixture 71M legacy');
+    const fx3 = await loadFix('Fixture 58M Goti-HD');
+    const fx3hd = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked }));
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k31"]:visible').first().click(); await s.waitForTimeout(300);
+    const fx3trough = await s.evaluate(() => ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' '));
+    ok('D26: a dialysis profile ticks the Trough haemodialysis flag, and the Trough module refuses (D16)',
+       fx3.age === '58' && fx3.model === 'goti' && fx3hd.tHd && fx3hd.bDial && /On haemodialysis/.test(fx3trough) && !/q\d+h/.test(fx3trough.slice(0, 200)),
+       JSON.stringify({ fx3, fx3hd, fx3trough: fx3trough.slice(0, 160) }));
+    await s.locator('[data-onclick="k2"]').click();
     ok('D26: profiles saved by v3.13.0 and before the patient core load (Review Focus 2)',
        fx1.age === '64' && fx1.tAge === '64' && fx1.sex === 'F' && fx1.model === 'goti' && fx1.doses === 3 && fx1.levels === 1 && !fx1.result
        && fx2.age === '71' && fx2.tAge === '71' && fx2.sex === 'M' && fx2.model === 'buelga' && fx2.doses === 2 && fx2.levels === 0 && fx2.icu && !fx2.result
        && !/could not be read/.test(fx1.status + fx2.status),
        JSON.stringify({ fx1, fx2 }));
+
+    // R20 (engine report M3): Trough "Clear all fields" resets the weight basis and amputation, so a
+    // save afterwards does not carry the previous patient's.
+    await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k15"]').click();
+    await s.evaluate(() => { const c = document.getElementById('amp-enabled'); if (c && !c.checked) c.click(); });
+    await s.locator('#jt-RL-knee').click();
+    const r20Prev = await s.evaluate(() => ({ basis: state.dosingWt, amp: Object.assign({}, ampState) }));
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k48"]:visible').first().click();
+    await typeInto(s, '#b-age', '50'); await typeInto(s, '#b-tbw', '72'); await typeInto(s, '#b-height', '170'); await typeInto(s, '#b-scr', '1.0');
+    await s.locator('[data-onclick="k39"]').click();
+    await save('Patient E');
+    const pe = (await stored())[0];
+    const r20Ui = await s.evaluate(() => ({ auto: document.querySelector('[data-onclick="k73"]').classList.contains('active'), ampOn: document.getElementById('amp-enabled').checked }));
+    ok('D26: Trough "Clear all fields" resets the weight basis and amputation; the next save carries neither',
+       r20Prev.basis === 'IBW' && r20Prev.amp.RL === 'knee'
+       && !!pe && pe.label === 'Patient E' && pe.snapshot.core.dosingWt === 'auto' && Object.values(pe.snapshot.core.amputation).every(v => v === null)
+       && r20Ui.auto && !r20Ui.ampOn,
+       JSON.stringify({ r20Prev, core: pe && { dw: pe.snapshot.core.dosingWt, amp: pe.snapshot.core.amputation }, r20Ui }));
 
     // Code report I2: truncated JSON in the store is copied to the backup key before anything is
     // written over it, and the status line says so; a save afterwards starts a new list.
