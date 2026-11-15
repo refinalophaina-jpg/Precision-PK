@@ -29,7 +29,9 @@ const ok = (name, pass, detail = '') => checks.push({ name, pass: !!pass, detail
 const HOLD_RE = /Hold: |Hold the (?:\d+ )?planned dose/;
 const incoherent = (s) => (/would add little/.test(s) && (/is recommended|Confirm the clearance with a level|another level may settle it|Draw a level|Recheck a level/.test(s) || HOLD_RE.test(s)))
   || (/cannot be reached within the conventional ceilings/.test(s) && /a dose change is indicated|how large it needs to be/.test(s))
-  || (HOLD_RE.test(s) && /Give (?:a|one) [^.]*?loading dose/.test(s));
+  || (HOLD_RE.test(s) && /Give (?:a|one) [^.]*?loading dose/.test(s))
+  // Wave 2 (N3): "No further dose until a level" never beside "Give … loading dose".
+  || (/no further dose until a level/i.test(s) && /give (?:a|one) [^.]*?loading dose/i.test(s));
 
 async function typeInto(page, sel, text) {
   const el = page.locator(sel);
@@ -1341,17 +1343,32 @@ async function enterCourse(page) {
     const c1 = await aucRun('c1', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['2000', '2', day(-4), '06:00']],
       [['52', day(-3), '10:00'], ['51', day(-2), '10:00'], ['50.2', day(0), '09:00']]);
     const c1p = await printed();
-    ok('D26: final review (Review Focus 1): the anuric flat-levels patient — Hold leads, and Next is "Recheck a level before the next dose", never "would add little", on screen and in print',
-       /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(c1.head) && c1.icon && c1.before && c1.next === 'Next Recheck a level before the next dose.'
-       && !/would add little/.test(c1.all + c1p) && !incoherent(c1.all) && !incoherent(c1p) && /Recheck a level before the next dose/.test(c1.voi),
+    // Wave 2 (the user's ruling U2, 72 h): this flat-levels patient has no resume time within the horizon.
+    ok('D26: final review (Review Focus 1): the anuric flat-levels patient — "Hold: recheck a level before the next dose" leads, and Next says it, never "would add little", on screen and in print',
+       c1.head === 'Hold: recheck a level before the next dose' && c1.icon && c1.before && c1.next === 'Next Recheck a level before the next dose.'
+       && !/would add little/.test(c1.all + c1p) && !incoherent(c1.all) && !incoherent(c1p) && /Recheck a level before the next dose/.test(c1.voi)
+       && !/not before/.test(c1.head + c1.summary + c1.said),
        JSON.stringify({ head: c1.head, next: c1.next, voi: c1.voi.slice(0, 80), little: /would add little/.test(c1.all + c1p) }));
-    ok('D26: final review: the copy summary and the announcement carry the hold\'s instruction',
-       /^Hold: next dose not before /.test(c1.summary) && /Recheck a level before the next dose\./.test(c1.summary)
-       && /^Result: Hold: next dose not before /.test(c1.said) && /Recheck a level before the next dose\./.test(c1.said), JSON.stringify({ summary: c1.summary, said: c1.said }));
+    ok('D26: final review: the copy summary and the announcement carry the hold, with no clock time',
+       /^Hold: recheck a level before the next dose/.test(c1.summary) && /^Result: Hold: recheck a level before the next dose/.test(c1.said)
+       && !/\d\d:\d\d/.test(c1.summary.split('. ')[0]), JSON.stringify({ summary: c1.summary, said: c1.said }));
     ok('D26: final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
        /No further dose until a level is drawn/.test(c1.all) && !/Give a single weight-based loading dose/.test(c1.all) && !/not the actual 8\b/.test(c1.all),
        c1.all.slice(c1.all.indexOf('Severe renal'), c1.all.indexOf('Severe renal') + 300));
-    // k82: a first-dose time after the resume time clears the hold, and the Next line and the panel follow it; a time inside it holds again.
+    // U1 (the user's ruling; was I1): 70 M, 80 kg, 185 cm, SCr 9.7 (CrCl 8), Goti; one 1.5 g dose 120 h ago; levels
+    // 35, 30.3 and 26.2 mg/L, the last at 09:00. The measured 26.2, carried down the fitted slope, holds the dose.
+    const i1 = await aucRun('i1', { age: '70', tbw: '80', ht: '185', scr: '9.7' }, [['1500', '2', day(-5), '10:00']],
+      [['35', day(-3), '09:00'], ['30.3', day(-2), '09:00'], ['26.2', day(0), '09:00']]);
+    const i1p = await printed();
+    const i1why = await a.evaluate(() => ((document.querySelector('#b-results .vx-hold-why') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D26: final review (U1): a measured 26.2 mg/L the fit reads lower holds the dose, with a resume time; the hold line names the measured basis; Next, summary, announcement and print say it',
+       /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(i1.head) && i1.icon && i1.before && /tone-alarm/.test(i1.headCls)
+       && /^The measured 26\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00, carried down the fitted slope, is [\d.]+ mg\/L at /.test(i1why)
+       && !/the fit reads it lower|vx-measured-high/.test(i1.all + i1.headCls) && i1.next === 'Next Recheck a level before the next dose.'
+       && /^Hold: next dose not before /.test(i1.summary) && /carried down the fitted slope/.test(i1.summary) && /^Result: Hold: next dose not before /.test(i1.said)
+       && /Hold: next dose not before/.test(i1p) && !incoherent(i1.all) && !incoherent(i1p),
+       JSON.stringify({ head: i1.head, why: i1why.slice(0, 160), next: i1.next, said: i1.said.slice(0, 80) }));
+    // k82: a first-dose time past the resume time clears the hold, and the Next line, panel and summary follow it; a time inside it holds again.
     const firstAt = async (d, t) => {
       const open = await a.evaluate(() => document.querySelector('#b-results [data-onclick="k83"]').getAttribute('aria-expanded'));
       if (open !== 'true') { await a.locator('#b-results [data-onclick="k83"]').click(); await a.waitForTimeout(150); }
@@ -1361,25 +1378,34 @@ async function enterCourse(page) {
         next: ((document.querySelector('#b-results .vx-next') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
         voi: ((document.getElementById('b-voi') || {}).textContent || '').replace(/\s+/g, ' ').trim(), summary: String(bState.summaryText || '') }));
     };
-    const late = await firstAt(day(7), '1200');
+    const late = await firstAt(day(5), '1200');
     const inside = await firstAt(day(1), '1200');
-    // Past the fitted resume time the hold clears, but the measured 50.2 mg/L the fit reads lower does not: the
-    // measured-level alarm (I1) takes the slot, and the Next line, panel and summary follow the chosen time.
-    ok('D26: final review: a chosen time past the hold clears the hold and the measured-level alarm leads; a time inside it holds again; Next, panel and summary follow',
-       /^Measured 50\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00: recheck a level before the next dose/.test(late.hold) && !/Hold: /.test(late.hold + late.summary)
-       && late.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(late.voi) && /^Measured 50\.2 mg\/L/.test(late.summary)
+    ok('D26: final review: a chosen time past the hold clears it and the Next line, panel and summary follow; a time inside it holds again',
+       late.hold === '' && !/Recheck a level/.test(late.next + late.voi + late.summary) && /^Next /.test(late.next) && !/Hold: /.test(late.summary)
        && /^Hold: next dose not before/.test(inside.hold) && inside.next === 'Next Recheck a level before the next dose.' && /Recheck a level/.test(inside.voi)
        && /^Hold: next dose not before/.test(inside.summary),
        JSON.stringify({ late: { hold: late.hold.slice(0, 70), next: late.next, summary: late.summary.slice(0, 40) }, inside: { hold: inside.hold.slice(0, 60), next: inside.next } }));
-    // I1: 70 M, 80 kg, 185 cm, SCr 9.7 (CrCl 8), Goti; one 1.5 g dose 120 h ago; levels 35, 30.3 and 26.2 mg/L, the last at 09:00.
-    const i1 = await aucRun('i1', { age: '70', tbw: '80', ht: '185', scr: '9.7' }, [['1500', '2', day(-5), '10:00']],
-      [['35', day(-3), '09:00'], ['30.3', day(-2), '09:00'], ['26.2', day(0), '09:00']]);
-    const i1p = await printed();
-    ok('D26: final review (I1): a newer measured 26.2 mg/L that the fit reads lower leads the answer in the alarm tone, without a hold; Next, summary, announcement and print say it',
-       /^Measured 26\.2 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00: recheck a level before the next dose$/.test(i1.head) && /vx-measured-high/.test(i1.headCls) && /tone-alarm/.test(i1.headCls)
-       && i1.icon && i1.before && /the fit reads it lower/.test(i1.all) && !/Hold: /.test(i1.all) && i1.next === 'Next Recheck a level before the next dose.'
-       && /^Measured 26\.2 mg\/L/.test(i1.summary) && /^Result: Measured 26\.2 mg\/L/.test(i1.said) && /Measured 26\.2 mg\/L/.test(i1p) && !incoherent(i1.all) && !incoherent(i1p),
-       JSON.stringify({ head: i1.head, cls: i1.headCls, next: i1.next, said: i1.said.slice(0, 80) }));
+    // U1: a routine peak never holds. The re-reviewer's case: 60 M, 80 kg, 178 cm, SCr 1.0, Buelga; 1.25 g q12h x 4 over
+    // 1.5 h, the last at 07:30; a trough of 15 mg/L at 07:00 and a peak of 35 mg/L at 10:00, 1 h after the infusion ended.
+    await a.goto(BASE + '?v=peak-' + Date.now(), { waitUntil: 'networkidle' });
+    await a.locator('[data-onclick="k2"]').click();
+    await typeInto(a, '#b-age', '60'); await typeInto(a, '#b-tbw', '80'); await typeInto(a, '#b-height', '178'); await typeInto(a, '#b-scr', '1.0');
+    await a.locator('[data-onclick="k39"]').click();
+    const pkWhen = [[day(-2), '19:30'], [day(-1), '07:30'], [day(-1), '19:30'], [day(0), '07:30']];
+    for (let i = 1; i <= pkWhen.length; i++) {
+      await a.locator('[data-onclick="k43"]').click();
+      await typeInto(a, `#b-dose-mg-${i}`, '1250'); await typeInto(a, `#b-dose-tinf-${i}`, '1.5');
+      await a.locator(`#b-dose-date-${i}`).fill(pkWhen[i - 1][0]); await typeInto(a, `#b-dose-time-${i}`, pkWhen[i - 1][1]);
+    }
+    for (const [i, conc, t] of [[1, '15', '07:00'], [2, '35', '10:00']]) {
+      await a.locator('[data-onclick="k46"]').click();
+      await typeInto(a, `#b-lvl-conc-${i}`, conc); await a.locator(`#b-lvl-date-${i}`).fill(day(0)); await typeInto(a, `#b-lvl-time-${i}`, t);
+    }
+    await a.locator('[data-onclick="k47"]').click(); await a.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await a.waitForTimeout(300);
+    const pk = await a.evaluate(() => ({ all: (document.getElementById('b-results') || {}).textContent.replace(/\s+/g, ' '), said: (document.getElementById('sr-announce') || {}).textContent || '',
+      head: !!document.querySelector('#b-results .vx-hold-head'), summary: String(bState.summaryText || '') }));
+    ok('D26: final review (U1): a routine peak (35 mg/L an hour after the infusion, trough 15) neither holds nor raises an alarm',
+       !pk.head && !/Hold: /.test(pk.all + pk.said + pk.summary) && !/Measured 35/.test(pk.all), JSON.stringify({ head: pk.head, said: pk.said.slice(0, 120) }));
     // I2: the same patient as C1 with one 1.75 g dose: every candidate hard-fails.
     const i2 = await aucRun('i2', { age: '70', tbw: '70', ht: '175', scr: '8.5' }, [['1750', '2', day(-4), '06:00']],
       [['52', day(-3), '08:00'], ['51', day(-2), '08:00'], ['50.2', day(0), '08:00']], '#vx-regimen');
