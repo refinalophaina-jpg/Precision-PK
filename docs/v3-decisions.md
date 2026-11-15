@@ -2142,7 +2142,8 @@ in `t8/w2-*`.
   - It named the institution and transcribed its guideline table and notes. Nothing linked to it, so it was
     deleted rather than scrubbed.
   - README, CLAUDE.md and the review manifest no longer list it. History is untouched.
-  - `git grep -n -i -E "harris|hhs|mhhs|hermann|olaiya"` returns no hits in tracked files.
+  - A repository-wide case-insensitive `git grep` for the institution's name, its acronyms and the username
+    returns no hits in tracked files.
 - **N2:** `troughHold` judges at the later of the due time and the draw. A level drawn after the due time is
   its own reading, and below 20 it is no hold. The sentence then says "drawn … h after the last dose
   started, after the … h due time". Pinned by 44.39.
