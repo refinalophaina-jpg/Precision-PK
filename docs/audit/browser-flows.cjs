@@ -1842,6 +1842,43 @@ async function enterCourse(page) {
     results.problems.push(...wAttr.kept);
     await wctx.close();
   }
+
+  // D27 (models review I3, Task 18): Hughes 2024 was built in CrCl on fat-free mass 13-255 mL/min
+  // (Table 1). A fictional 25 M, 200 kg, 185 cm, SCr 0.5 on Hughes has 307: one caution line in the
+  // confidence slot says so. The 45 M, 140 kg, 175 cm, SCr 1.0 patient (103) gets none. The D1/D2 course.
+  {
+    const octx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const o = await octx.newPage();
+    const oProblems = watch(o, 'hughes-range');
+    await o.goto(BASE + '?v=pwhr-' + Date.now(), { waitUntil: 'networkidle' });
+    await o.locator('[data-onclick="k2"]').click();
+    await typeInto(o, '#b-age', '25'); await typeInto(o, '#b-tbw', '200'); await typeInto(o, '#b-height', '185'); await typeInto(o, '#b-scr', '0.5');
+    await o.locator('[data-onclick="k39"]').click();
+    await o.locator('#b-model-btn-hughes').click();
+    await enterCourse(o);
+    const slot = () => o.evaluate(() => {
+      const mm = [...document.querySelectorAll('#b-results .vx-mismatch')];
+      return { n: mm.length, text: mm.map(e => e.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
+        inConf: mm.every(e => !!e.closest('.vx-conf')), caution: mm.every(e => e.classList.contains('tone-caution') && !!e.querySelector('svg.ic')),
+        alarm: mm.some(e => e.classList.contains('tone-alarm')), gist: ((document.querySelector('#ev-models .ev-gist') || {}).textContent || '').trim() };
+    });
+    await o.locator('[data-onclick="k47"]').click();
+    await o.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await o.waitForTimeout(300);
+    const out = await slot();
+    ok('D27: Hughes out-of-population line: CrCl on fat-free mass above the built range is one caution line in the confidence slot',
+       out.n === 1 && out.inConf && out.caution && !out.alarm
+       && /^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's 307 mL\/min is above that range\.$/.test(out.text)
+       && !/^Suggested:/.test(out.gist), JSON.stringify(out));
+    await typeInto(o, '#b-age', '45'); await typeInto(o, '#b-tbw', '140'); await typeInto(o, '#b-height', '175'); await typeInto(o, '#b-scr', '1.0');
+    await o.locator('[data-onclick="k47"]').click();
+    await o.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await o.waitForTimeout(300);
+    const inRange = await slot();
+    ok('D27: Hughes out-of-population line: an in-range Hughes patient gets none', inRange.n === 0, JSON.stringify(inRange));
+    const oAttr = await attributeInjected(o, oProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + oAttr.injected;
+    results.problems.push(...oAttr.kept);
+    await octx.close();
+  }
   await browser.close();
 
   results.checks = checks;

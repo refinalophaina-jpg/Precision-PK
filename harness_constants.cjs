@@ -94,6 +94,13 @@ function extract() {
     OMEGA2_VP_HUGHES:  num(src, 'OMEGA2_VP_HUGHES'),
     SIGMA_PROP_HUGHES: num(src, 'SIGMA_PROP_HUGHES'),
     SIGMA_ADD_HUGHES:  num(src, 'SIGMA_ADD_HUGHES'),
+    // Hughes 2024 Table 1 (p. 578): the population the model was built in (D27)
+    HUGHES_MIN_BMI:      num(src, 'HUGHES_MIN_BMI'),
+    HUGHES_MAX_BMI:      num(src, 'HUGHES_MAX_BMI'),
+    HUGHES_MIN_WT_KG:    num(src, 'HUGHES_MIN_WT_KG'),
+    HUGHES_MAX_WT_KG:    num(src, 'HUGHES_MAX_WT_KG'),
+    HUGHES_MIN_CRCL_FFM: num(src, 'HUGHES_MIN_CRCL_FFM'),
+    HUGHES_MAX_CRCL_FFM: num(src, 'HUGHES_MAX_CRCL_FFM'),
 
     // Body size / units
     CM_PER_IN:         num(src, 'CM_PER_IN'),

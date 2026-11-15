@@ -5716,9 +5716,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/Hughes 2024/.test(mm(c3, 'buelga')) && /43\.2/.test(mm(c3, 'buelga')) && /Buelga 2005/.test(mm(c3, 'buelga')), mm(c3, 'buelga'));
     assert(mm(c3, 'hughes') === null, 'Hughes on a class-3 patient fits');
     const c1 = rec({ tbw: 100, ht: 175 });                       // BMI 32.7
-    assert(/BMI ≥ 40|40 or more/.test(mm(c1, 'hughes') || '') && /32\.7/.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
+    // v3.15.0 (D27): the Hughes line names the built range (Table 1) and the direction.
+    assert(/BMI 40–70\.3; this patient's BMI 32\.7 is below that range\./.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
     assert(mm(rec({ n: 2, tbw: 70, ht: 175 }), 'buelga') === null, 'two levels suggest Goti, but that is not a population mismatch');
-    assert(/BMI is 39\.9\./.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
+    assert(/BMI 39\.9 is below/.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
     assert(mm(rec({ tbw: 70, ht: 175, hd: true }), 'buelga') === null, 'dialysis has its own handling (D16)');
     const v = code42.slice(code42.indexOf('const confBlock = `'), code42.indexOf('const nextBlock'));
     assert(/modelMismatchText\(/.test(code42) && /vx-mismatch/.test(v), 'the line sits in the confidence slot');
@@ -8245,6 +8246,63 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     for (const c of calls) assert(c[3] === c[1], `a ${c[1]} mapFit call does not pass OMEGA2_VP_${c[1]}: …${c[0].slice(-70).replace(/\s+/g, ' ')}`);
   });
 
+  // 45.3 (models review I3, Task 18): Hughes 2024 was built in 83 patients whose covariates span the
+  // ranges in its Table 1 (p. 578). CrCl on fat-free mass is uncapped, faithfully, and clearance rises as a
+  // power of it, so a patient outside that range is the model extrapolating. The clinician is told in one
+  // line in the confidence slot; nothing is capped or changed (rule 4). The ranges are pinned against the
+  // paper once, here; every other use reads them from harness_constants (rule 6).
+  test('45.3 Hughes out of its built range: one line in the confidence slot names the covariate and the range; in range, none', () => {
+    const K = __extractConsts(), mm = sandbox.modelMismatchText;
+    // Hughes 2024 Table 1 (p. 578), development dataset, the Range column.
+    assert(K.HUGHES_MIN_CRCL_FFM === 13 && K.HUGHES_MAX_CRCL_FFM === 255, `CrCl (based on FFM) ${K.HUGHES_MIN_CRCL_FFM}-${K.HUGHES_MAX_CRCL_FFM}: Table 1 gives 13.0-255 mL/min`);
+    assert(K.HUGHES_MIN_WT_KG === 91.6 && K.HUGHES_MAX_WT_KG === 218, `weight ${K.HUGHES_MIN_WT_KG}-${K.HUGHES_MAX_WT_KG}: Table 1 gives 91.6-218 kg`);
+    assert(K.HUGHES_MIN_BMI === 40 && K.HUGHES_MAX_BMI === 70.3, `BMI ${K.HUGHES_MIN_BMI}-${K.HUGHES_MAX_BMI}: Table 1 gives 40-70.3`);
+    const ACTUAL = vm.runInContext('SCR_POLICY.ACTUAL', sandbox);
+    const crclFFM = (age, sex, scr, tbw, ht) => Math.max(K.CRCL_MODEL_FLOOR, sandbox.calcCrClRaw(age, sex, scr, computeFFM(tbw, ht, sex), ACTUAL));   // getHughesCrCl
+    const rec = (tbw, ht) => sandbox.getModelRecommendation(0, false, tbw, ht, false);
+    // The brief's fictional patient: 25 y M, 200 kg, 185 cm (BMI 58.4), SCr 0.5 mg/dL. Independent anchor:
+    // FFM = 9270 x 200 / (6680 + 216 x 58.44) = 96.05 kg (Janmahasatian); CG = 115 x 96.05 / (72 x 0.5) = 306.8.
+    const big = crclFFM(25, 'M', 0.5, 200, 185);
+    assertClose(big, 306.8, 0.1, 'CrCl on FFM, 25 y M, 200 kg, 185 cm, SCr 0.5');
+    const r200 = rec(200, 185);
+    assert(r200.recommended === 'hughes' && r200.isClass3, 'the fixture is a class-3 patient for whom Hughes is suggested');
+    const line = mm(r200, 'hughes', { crclFFM: big, tbw: 200 });
+    assert(typeof line === 'string', `no line for CrCl on FFM ${big.toFixed(1)}: ${line}`);
+    assert(/^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's 307 mL\/min is above that range\.$/.test(line), line);
+    // One line, one sentence, caution not alarm.
+    assert(!/\n/.test(line) && !/\.\s/.test(line) && !/!/.test(line) && !/weight|BMI/.test(line), `one sentence naming only the out-of-range covariate: ${line}`);
+    // In range: the 45.1 patient, 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103).
+    const mid = crclFFM(45, 'M', 1.0, 140, 175);
+    assert(mid > 100 && mid < 110, `in-range fixture CrCl on FFM ${mid}`);
+    assert(mm(rec(140, 175), 'hughes', { crclFFM: mid, tbw: 140 }) === null, `in range: ${mm(rec(140, 175), 'hughes', { crclFFM: mid, tbw: 140 })}`);
+    // Each boundary, each side. The bound itself is in range; just beyond it is not, and the value shown
+    // never rounds onto the bound.
+    const c3 = (bmi) => ({ recommended: 'hughes', isClass3: bmi >= K.HUGHES_MIN_BMI, isObese: true, bmi });
+    const at = (o) => mm(c3(o.bmi || 46), 'hughes', { crclFFM: o.crcl || 84, tbw: o.tbw || 134 });
+    assert(at({ crcl: K.HUGHES_MAX_CRCL_FFM }) === null && at({ crcl: K.HUGHES_MIN_CRCL_FFM }) === null, 'CrCl at either bound is in range');
+    assert(/this patient's 256 mL\/min is above that range\.$/.test(at({ crcl: 255.2 }) || ''), String(at({ crcl: 255.2 })));
+    assert(/CrCl on fat-free mass 13–255 mL\/min; this patient's 12 mL\/min is below that range\.$/.test(at({ crcl: 12.9 }) || ''), String(at({ crcl: 12.9 })));
+    assert(at({ tbw: K.HUGHES_MAX_WT_KG }) === null && at({ tbw: K.HUGHES_MIN_WT_KG }) === null, 'weight at either bound is in range');
+    assert(/with weight 91\.6–218 kg; this patient's 218\.1 kg is above that range\.$/.test(at({ tbw: 218.04 }) || ''), String(at({ tbw: 218.04 })));
+    assert(/with weight 91\.6–218 kg; this patient's 91\.5 kg is below that range\.$/.test(at({ tbw: 91.58 }) || ''), String(at({ tbw: 91.58 })));
+    assert(at({ bmi: K.HUGHES_MAX_BMI }) === null && at({ bmi: K.HUGHES_MIN_BMI }) === null, 'BMI at either bound is in range');
+    assert(/with BMI 40–70\.3; this patient's BMI 70\.4 is above that range\.$/.test(at({ bmi: 70.31 }) || ''), String(at({ bmi: 70.31 })));
+    // Several at once: still one sentence, naming each.
+    const three = at({ bmi: 72, tbw: 230, crcl: 307 });
+    assert(/^Hughes 2024 was built in patients with BMI 40–70\.3, weight 91\.6–218 kg and CrCl on fat-free mass 13–255 mL\/min; this patient's BMI 72\.0, 230 kg and 307 mL\/min are above those ranges\.$/.test(three || ''), String(three));
+    const mixed = mm(rec(110, 172), 'hughes', { crclFFM: 300, tbw: 110 });   // BMI 37.18, below 40
+    assert(/^Hughes 2024 was built in patients with BMI 40–70\.3 and CrCl on fat-free mass 13–255 mL\/min; this patient's BMI 37\.2 is below and 300 mL\/min is above those ranges\.$/.test(mixed || ''), String(mixed));
+    // Another model: Hughes' range says nothing about it; the class-3 mismatch line stands.
+    assert(/^Hughes 2024 is fitted to class 3 obesity \(BMI 58\.4\); this result uses Goti 2018\.$/.test(mm(r200, 'goti', { crclFFM: big, tbw: 200 }) || ''), String(mm(r200, 'goti', { crclFFM: big, tbw: 200 })));
+    // The confidence slot passes the fitted Hughes covariate; the Models gist's "Suggested:" reads only the
+    // choice of model, so a Hughes patient on Hughes is never told Hughes is suggested.
+    const slot = html.slice(html.indexOf('const confReason = confidenceLead(conf);'), html.indexOf('const confBlock = `'));
+    assert(/modelMismatchText\(p2c\.modelRec,[^;]*r\.goti\.crclHughes[^;]*r\.tbw/.test(slot), slot);
+    assert(/if \(p2c\.modelRec && p2c\.modelRec\.recommended !== \(isHD \? 'gotihd' : r\.model\) && modelMismatchText\(p2c\.modelRec, isHD \? 'gotihd' : r\.model\)\)/.test(html), 'the gist call reads the model choice only');
+    // BMI above the range on Hughes is a line in the slot even without the fitted covariates.
+    assert(/this patient's BMI 75\.0 is above that range\.$/.test(mm(c3(75), 'hughes') || ''), String(mm(c3(75), 'hughes')));
+  });
+
   // ── Task 14: direct behaviour tests, one per mutant the code review saw survive (I3, I4, I5) ──
   // docs/audit/mutation.cjs breaks each line in memory and runs this suite; every test below
   // names the mutant id it kills. 45.2-45.4 are reserved for Tasks 17-19. Fictional values only.
@@ -8533,7 +8591,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 587;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.5-45.34 + D27 redraw)
+const EXPECTED_TOTAL = 588;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.5-45.34 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

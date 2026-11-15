@@ -10702,12 +10702,16 @@ function burtonObjective(etaCL, etaV, CL_pop, V_pop, doses, levels) {
 // ══════════════════════════════════════════════════════════════
 // ─── GOTI 2018 — 2-Compartment Bayesian Engine (Phase 2B) ───
 // ══════════════════════════════════════════════════════════════
-const Q_GOTI          = 6.5;
-const OMEGA2_CL_GOTI  = 0.1470;   // 39.8% CV → ln((0.398)²+1)
-const OMEGA2_VC_GOTI  = 0.5103;   // 81.6% CV
-const OMEGA2_VP_GOTI  = 0.2824;   // 57.1% CV
-const SIGMA_PROP_GOTI = 0.227;
-const SIGMA_ADD_GOTI  = 3.4;
+// Goti 2018 Table 2 (accepted manuscript, PDF p. 27), final model. BSV is printed
+// as %CV and converted as ω² = ln(CV² + 1); each value converts back to the
+// printed CV to the 0.1% it is printed at. The Methods do not state the
+// conversion (models review M2); the BSV figures are repeated in Results (p. 11).
+const Q_GOTI          = 6.5;      // L/h, Table 2 Q 6.5
+const OMEGA2_CL_GOTI  = 0.1470;   // Table 2 BSV on CL 39.8% CV → ln((0.398)²+1)
+const OMEGA2_VC_GOTI  = 0.5103;   // Table 2 BSV on Vc 81.6% CV
+const OMEGA2_VP_GOTI  = 0.2824;   // Table 2 BSV on Vp 57.1% CV
+const SIGMA_PROP_GOTI = 0.227;    // Table 2 proportional error 22.7% CV
+const SIGMA_ADD_GOTI  = 3.4;      // mg/L, Table 2 additive error SD 3.4
 
 /// ─── Goti-specific CrCL (erratum SCr floor: if SCr<1 AND age>65 → SCr=1) ───
 // scrOverride: optional — used when serial SCr is active
@@ -10987,28 +10991,48 @@ function gotiGraphParams(r) {
 // Source: Hughes MA et al., Therapeutic Drug Monitoring 2024;46(5):575-583
 // DOI: 10.1097/FTD.0000000000001214 · PMC11389886
 // N=83 class 3 obesity (BMI ≥40), externally validated in 576 patients
-// Structural model:
-//   CL_i = TVCL · (FFM/70) · (CrCL_FFM/100)^θ_CrCL
+// Structural model (final; Table 3 and Results, pp. 578-579):
+//   CL_i = TVCL · (CrCL_FFM/100)^θ_CrCL
 //   Vc_i = TVVc · (FFM/70)
-//   Q_i  = TVQ  · (FFM/70)
+//   Q_i  = TVQ
 //   Vp_i = TVVp · (FFM/70)
-// CrCL_FFM = Cockcroft-Gault using FFM as body-weight input (no cap)
-// FFM via Janmahasatian; final residual error per Table 3 (15.6% + 1.2 mg/L)
-// Q has no IIV (excluded — not significant); 3D Nelder-Mead on (η_CL, η_Vc, η_Vp)
+// FFM reaches clearance only through CrCL_FFM. Table 2's footnote prints the
+// full search model, with (FFM/70)^θ1 on CL and Q; the authors removed θ1
+// (Results, p. 578; audit A9 in hughesPopPK), so FFM/70 scales the volumes only.
+// CrCL_FFM = Cockcroft-Gault using FFM as body-weight input (no cap: capping
+// at 150 or 200 mL/min worsened the fit, p. 578)
+// FFM via Janmahasatian (Methods, p. 576); residual error: SIGMA_*_HUGHES below
+// Q has no IIV (BSV could not be estimated on Q, p. 578); 3D MAP on (η_CL, η_Vc, η_Vp)
 // ══════════════════════════════════════════════════════════════
 // Hughes 2024 enrolment floor: "a BMI of at least 40 kg/m2" (median 46.3,
 // range 40-70.3). Do not recommend this model below it.
 const HUGHES_MIN_BMI = 40;
-const HUGHES_TVCL    = 5.09;       // L/h, nlmixr2 SAEM final
-const HUGHES_TVVC    = 64.9;       // L
-const HUGHES_TVQ     = 6.36;       // L/h
-const HUGHES_TVVP    = 66.4;       // L
-const HUGHES_CRCL_EXP= 0.887;      // exponent on (CrCL_FFM/100)
-const OMEGA2_CL_HUGHES = 0.0602;   // 24.9% CV → ln((0.249)²+1)
-const OMEGA2_VC_HUGHES = 0.0312;   // 17.8% CV
-const OMEGA2_VP_HUGHES = 0.4974;   // 80.3% CV
-const SIGMA_PROP_HUGHES= 0.156;    // Table 3 final summary (Gus's choice)
-const SIGMA_ADD_HUGHES = 1.2;      // mg/L
+// The population the model was built in: Table 1 (p. 578), development dataset
+// (n = 83), the Range column (min-max). Outside these the model extrapolates;
+// modelMismatchText says so in one caution line and nothing is capped (rule 4).
+// CrCl (based on FFM) is the clearance covariate as getHughesCrCl computes it
+// (Cockcroft-Gault on Janmahasatian FFM, SCr as measured).
+const HUGHES_MAX_BMI      = 70.3;   // kg/m², Table 1 BMI range 40-70.3
+const HUGHES_MIN_WT_KG    = 91.6;   // kg, Table 1 weight range 91.6-218
+const HUGHES_MAX_WT_KG    = 218;    // kg, Table 1 weight range 91.6-218
+const HUGHES_MIN_CRCL_FFM = 13.0;   // mL/min, Table 1 CrCl (based on FFM) range 13.0-255
+const HUGHES_MAX_CRCL_FFM = 255;    // mL/min, Table 1 CrCl (based on FFM) range 13.0-255
+const HUGHES_TVCL    = 5.09;       // L/h, Table 2 (p. 579), nlmixr2 (SAEM) CL
+const HUGHES_TVVC    = 64.9;       // L,   Table 2 (p. 579), nlmixr2 Vc
+const HUGHES_TVQ     = 6.36;       // L/h, Table 2 (p. 579), nlmixr2 Q
+const HUGHES_TVVP    = 66.4;       // L,   Table 2 (p. 579), nlmixr2 Vp
+const HUGHES_CRCL_EXP= 0.887;      // Table 2 (p. 579), nlmixr2 θ3, exponent on (CrCL_FFM/100)
+// Table 2 (p. 579), nlmixr2 BSV, printed as %CV: ω² = ln(CV² + 1). Each value
+// below converts back to the printed CV to the 0.1% it is printed at.
+const OMEGA2_CL_HUGHES = 0.0602;   // Table 2 (p. 579), nlmixr2 BSV CL 24.9% CV → ln((0.249)²+1)
+const OMEGA2_VC_HUGHES = 0.0312;   // Table 2 (p. 579), nlmixr2 BSV Vc 17.8% CV
+const OMEGA2_VP_HUGHES = 0.4974;   // Table 2 (p. 579), nlmixr2 BSV Vp 80.3% CV (RSE of the BSV 32%)
+// Residual error: Table 3 (p. 579), parametric (nlmixr2) final model, 15.6% + 1.2 mg/L
+// (plan D-g: kept as shipped). Table 2 (p. 579) prints 16.8% proportional and no
+// additive term for nlmixr2; the paper does not reconcile the two. Models review M1:
+// fitting with 16.8% instead moved clearance -0.8% to +1.7% (10th-90th percentile).
+const SIGMA_PROP_HUGHES= 0.156;    // Table 3 (p. 579), proportional 15.6%
+const SIGMA_ADD_HUGHES = 1.2;      // Table 3 (p. 579), additive 1.2 mg/L
 
 // Janmahasatian FFM (kg)
 function computeFFM(tbw, htCm, sex) {
@@ -13017,13 +13041,34 @@ function renderModelBanner(rec, currentModel) {
 // Models section, not a mismatch; dialysis has its own handling (D16). The clinician
 // chooses the model; nothing is switched for them.
 const MODEL_NAME = { buelga: 'Buelga 2005', goti: 'Goti 2018', hughes: 'Hughes 2024', gotihd: 'Goti 2018 · HD' };
-function modelMismatchText(rec, model) {
+// v3.15.0 (D27, models review I3): on Hughes, every covariate outside the population the model was
+// built in (Table 1: BMI, weight, CrCl on fat-free mass) is named in the same one sentence. `hughes`
+// is { crclFFM, tbw } from the fit; without it only BMI (from rec) is checked. Display only: no value
+// is capped or changed. A value that rounds onto (or into) the range is shown one step beyond it.
+function modelMismatchText(rec, model, hughes) {
   if (!rec || rec.recommended === 'gotihd' || model === 'gotihd') return null;
   if (rec.isClass3 && model !== 'hughes')
     return `Hughes 2024 is fitted to class 3 obesity (BMI ${rec.bmi.toFixed(1)}); this result uses ${MODEL_NAME[model] || model}.`;
-  if (model === 'hughes' && rec.bmi != null && !rec.isClass3)
-    return `Hughes 2024 was developed only in BMI ≥ ${HUGHES_MIN_BMI}; this patient's BMI is ${rec.bmi.toFixed(1) === HUGHES_MIN_BMI.toFixed(1) ? (HUGHES_MIN_BMI - 0.1).toFixed(1) : rec.bmi.toFixed(1)}.`;   // never "40.0" below 40
-  return null;
+  if (model !== 'hughes') return null;
+  const out = [];
+  const check = (v, lo, hi, dp, range, show) => {
+    if (v == null || !isFinite(v) || (v >= lo && v <= hi)) return;
+    const f = Math.pow(10, dp), up = v > hi;
+    let s = Number(v.toFixed(dp));
+    if (up && s <= hi) s = hi + 1 / f;
+    if (!up && s >= lo) s = lo - 1 / f;
+    out.push({ range, value: show(s.toFixed(dp)), dir: up ? 'above' : 'below' });
+  };
+  check(rec.bmi, HUGHES_MIN_BMI, HUGHES_MAX_BMI, 1, `BMI ${HUGHES_MIN_BMI}–${HUGHES_MAX_BMI}`, (s) => `BMI ${s}`);
+  if (hughes) {
+    check(hughes.tbw, HUGHES_MIN_WT_KG, HUGHES_MAX_WT_KG, 1, `weight ${HUGHES_MIN_WT_KG}–${HUGHES_MAX_WT_KG} kg`, (s) => `${s.replace(/\.0$/, '')} kg`);
+    check(hughes.crclFFM, HUGHES_MIN_CRCL_FFM, HUGHES_MAX_CRCL_FFM, 0, `CrCl on fat-free mass ${HUGHES_MIN_CRCL_FFM}–${HUGHES_MAX_CRCL_FFM} mL/min`, (s) => `${s} mL/min`);
+  }
+  if (!out.length) return null;
+  const list = (a) => a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+  const group = (dir) => { const g = out.filter(o => o.dir === dir).map(o => o.value); return g.length ? `${list(g)} ${g.length > 1 ? 'are' : 'is'} ${dir}` : null; };
+  const said = [group('below'), group('above')].filter(Boolean).join(' and ');
+  return `Hughes 2024 was built in patients with ${list(out.map(o => o.range))}; this patient's ${said} ${out.length > 1 ? 'those ranges' : 'that range'}.`;
 }
 // The suggested model's tile is marked as soon as the patient is known (weight and
 // height, or dialysis). Marked, never selected: the choice stays the clinician's.
@@ -14704,7 +14749,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC24 ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
   }
   const confReason = confidenceLead(conf);
-  const mismatch = p2c && p2c.modelRec ? modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model) : null;
+  // On Hughes the fitted covariates are checked against the built range too (D27); the Models gist
+  // below reads the choice of model only, so it is called without them.
+  const mismatch = p2c && p2c.modelRec ? modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model,
+    r.model === 'hughes' && r.goti ? { crclFFM: r.goti.crclHughes, tbw: r.tbw } : null) : null;
   const confBlock = `
     <p class="vx-conf conf-${conf.rank < 0 ? 'info' : conf.rank === 0 ? 'ok' : conf.rank === 1 ? 'warn' : 'danger'}">
       <strong class="conf-level">${escHtml(conf.level)}${conf.rank >= 0 ? ' confidence' : ''}</strong>
@@ -14941,7 +14989,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.</p>
         ${caveats}`;
     }
-    if (p2c.modelRec && modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model))
+    // The choice of model only: a Hughes patient on Hughes outside its built range is never told Hughes is suggested.
+    if (p2c.modelRec && p2c.modelRec.recommended !== (isHD ? 'gotihd' : r.model) && modelMismatchText(p2c.modelRec, isHD ? 'gotihd' : r.model))
       gist = `Suggested: ${MODEL_NAME[p2c.modelRec.recommended]} · ${gist}`;
     const modelsEmpty = !body;   // no level to compare on and no model advice
     html += ev('ev-models', 'Models', gist, body, false, modelsEmpty ? 'a measured level' : null);
