@@ -28,6 +28,12 @@ const {
   HUGHES_TVVC,
   HUGHES_TVQ,
   HUGHES_TVVP,
+  HUGHES_CRCL_EXP,
+  OMEGA2_CL_HUGHES,
+  OMEGA2_VC_HUGHES,
+  OMEGA2_VP_HUGHES,
+  SIGMA_PROP_HUGHES,
+  SIGMA_ADD_HUGHES,
 } = __extractConsts();
 
 
@@ -106,13 +112,7 @@ const {
   detectVeryLowCrCl,
 } = sandbox;
 
-// ─── Hughes constants mirrored from calculator ───
-const HUGHES_CRCL_EXP= 0.887;
-const OMEGA2_CL_HUGHES = 0.0602;
-const OMEGA2_VC_HUGHES = 0.0312;
-const OMEGA2_VP_HUGHES = 0.4974;
-const SIGMA_PROP_HUGHES= 0.156;
-const SIGMA_ADD_HUGHES = 1.2;
+// ─── Hughes constants: parsed from index.html (rule 6), see the destructuring above ───
 
 // ─── 3. Test framework ────────────────────────────────────────────────
 let pass=0, fail=0;
@@ -2552,7 +2552,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log(`${'─'.repeat(60)}`);
 
   // the 76 M case, fitted with the shipped engine
-  const Hh = s => new Date(s).getTime() / 3600000;
+  // Hours from a wall-clock stamp read as UTC: the case is a spacing between doses, and a local-time
+  // parse put the 27 Sep dose across New Zealand's clock change (TZ=Pacific/Auckland failed 2 tests).
+  const Hh = s => new Date(s + 'Z').getTime() / 3600000;
   const doses = [{mg:2250,tinfH:2.5,timeH:Hh('2026-09-25T05:41')},
                  {mg:750, tinfH:1,  timeH:Hh('2026-09-26T05:08')},
                  {mg:750, tinfH:1,  timeH:Hh('2026-09-27T05:03')}];
@@ -8056,14 +8058,52 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 45 — Release 2 (v3.15.0, D27): the harness reads the Hughes variability constants
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 45 — Release 2 (v3.15.0, D27)');
+  console.log(`${'─'.repeat(60)}`);
+
+  // 45.1 (code review, rule 6): the Hughes omega^2 / sigma values were hand copies in this harness, so
+  // changing one in index.html left every Hughes test green. This runs the engine's own MAP path
+  // (mapFit over burtonObj3D_hughes, as runBayesian calls it) on a fictional obese patient with two
+  // levels and pins the posterior clearance tightly enough that doubling ANY one of the five
+  // constants moves it outside the tolerance.
+  test('45.1 Hughes MAP fit: posterior clearance pins all five variability constants', () => {
+    // Fictional: 45 y M, 140 kg, 175 cm (BMI 45.7), SCr 1.0 mg/dL; 2 g over 2 h, q12h x 4.
+    // Two measured levels (not model-generated): 1 h after the end of dose 3, and the pre-dose 4 trough.
+    const ffm = computeFFM(140, 175, 'M');
+    const crclFFM = Math.max(__extractConsts().CRCL_MODEL_FLOOR, sandbox.calcCrClRaw(45, 'M', 1.0, ffm, vm.runInContext('SCR_POLICY.ACTUAL', sandbox)));
+    const pk = hughesPopPK(crclFFM, ffm);
+    const doses = [0, 12, 24, 36].map(t => ({ mg: 2000, tinfH: 2, timeH: t }));
+    const levels = [{ conc: 38, timeH: 27 }, { conc: 21, timeH: 36 }];
+    const mf = sandbox.mapFit((a, b, c) => burtonObj3D_hughes(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, levels),
+      3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400);
+    const CL = pk.TVCL * Math.exp(mf.eta[0]);
+    // Measured 2026-11 on this fixture: 4.42996 L/h. Doubling any one constant moves it by at least
+    // 0.0067 (OMEGA2_VC_HUGHES, the weakest), and by 0.24 (OMEGA2_CL), 0.13 (OMEGA2_VP), 0.25 (SIGMA_PROP),
+    // 0.045 (SIGMA_ADD); the tolerance is a third of the smallest of those.
+    assertClose(CL, 4.4300, 0.002, 'posterior CL (L/h)');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
+const EXPECTED_TOTAL = 555;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
 console.log(`  Failed : ${fail}`);
 console.log(`  Total  : ${pass+fail}`);
+// The count is pinned (Release 2, Task 13): a test that silently stops running, or a suite that is
+// skipped by an early exit, changes the total. Every change that adds or removes a unit test bumps this.
+if (pass + fail !== EXPECTED_TOTAL) {
+  console.log(`\n  ✗ Expected ${EXPECTED_TOTAL} tests but ran ${pass+fail}. A test was lost or added without updating EXPECTED_TOTAL.\n`);
+  process.exit(1);
+}
 if (fail === 0) {
   console.log('\n  ✓ All tests passed — Phase 2D validation complete.\n');
 } else {

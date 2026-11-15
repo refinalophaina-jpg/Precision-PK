@@ -48,6 +48,9 @@ const {
   HUGHES_TVVC,
   HUGHES_TVQ,
   HUGHES_TVVP,
+  OMEGA2_CL_HUGHES,
+  OMEGA2_VC_HUGHES,
+  OMEGA2_VP_HUGHES,
 } = __extractConsts();
 
 
@@ -98,8 +101,7 @@ const {
   bayesDoseOptimizer, autoTinf,
 } = sandbox;
 
-// Constants (const-in-vm not exposed)
-const OMEGA2_CL_HUGHES = 0.0602, OMEGA2_VC_HUGHES = 0.0312, OMEGA2_VP_HUGHES = 0.4974;
+// Constants: parsed from index.html by harness_constants.cjs (rule 6); see the destructuring at the top.
 const SIGMA_PROP_CLINICAL = 0.10, SIGMA_ADD_CLINICAL = 0.8;  // realistic assay noise
 
 // ─── Seeded PRNG ──────────────────────────────────────────────────────

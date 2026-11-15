@@ -30,8 +30,11 @@ function readAppSource() {
 }
 
 // Pull `const NAME = <number>;` out of the source. Throws if absent.
+// Anchored to the start of a line and case-sensitive (review 2026-11-13): an
+// unanchored, case-insensitive match could read a commented-out or indented
+// copy, or a differently-cased name, instead of the live top-level declaration.
 function num(src, name) {
-  const m = src.match(new RegExp('const\\s+' + name + '\\s*=\\s*(-?[0-9.]+(?:e-?[0-9]+)?)\\s*;', 'i'));
+  const m = src.match(new RegExp('^const\\s+' + name + '\\s*=\\s*(-?[0-9.]+(?:e-?[0-9]+)?)\\s*;', 'm'));
   if (!m) {
     throw new Error(
       `harness_constants: could not find \`const ${name} = <number>\` in index.html.\n` +
@@ -85,6 +88,12 @@ function extract() {
     HUGHES_TVVC:       num(src, 'HUGHES_TVVC'),
     HUGHES_TVQ:        num(src, 'HUGHES_TVQ'),
     HUGHES_TVVP:       num(src, 'HUGHES_TVVP'),
+    HUGHES_CRCL_EXP:   num(src, 'HUGHES_CRCL_EXP'),
+    OMEGA2_CL_HUGHES:  num(src, 'OMEGA2_CL_HUGHES'),
+    OMEGA2_VC_HUGHES:  num(src, 'OMEGA2_VC_HUGHES'),
+    OMEGA2_VP_HUGHES:  num(src, 'OMEGA2_VP_HUGHES'),
+    SIGMA_PROP_HUGHES: num(src, 'SIGMA_PROP_HUGHES'),
+    SIGMA_ADD_HUGHES:  num(src, 'SIGMA_ADD_HUGHES'),
 
     // Body size / units
     CM_PER_IN:         num(src, 'CM_PER_IN'),
