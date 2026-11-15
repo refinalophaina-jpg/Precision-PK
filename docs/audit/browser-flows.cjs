@@ -1304,8 +1304,8 @@ async function enterCourse(page) {
 
   // v3.14.0 (D26), the final whole-branch review (rulings R25, R26). Review Focus 1: an anuric patient
   // with flat levels was told "Hold: next dose not before …" beside "Next: A further level would add
-  // little" (C1). Then a newer measured level the fit reads lower (I1) and the refusal's hold (I2).
-  // Fictional patients; fixed clock today 10:00.
+  // little" (C1). Then a newer measured level the fit reads lower (I1), the refusal's hold (I2), and the
+  // Trough random-level hold (I4) and level-mode due time (I3). Fictional patients; fixed clock today 10:00.
   {
     const actx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const a = await actx.newPage();
@@ -1389,6 +1389,41 @@ async function enterCourse(page) {
        && /^Hold: recheck a level before the next dose/.test(i2.summary) && /^Result: Hold: recheck a level before the next dose/.test(i2.said)
        && /Hold: recheck a level before the next dose/.test(i2p) && /^Next Recheck a level before the next dose\./.test(i2.next),
        JSON.stringify({ reg: i2.reg, head: i2.head, next: i2.next, said: i2.said.slice(0, 90) }));
+    // I4 and I3, the Trough module: 60 M, 80 kg, 178 cm, SCr 1.0.
+    await a.locator('[data-onclick="k1"]').click();
+    await typeInto(a, '#age', '60'); await typeInto(a, '#tbw', '80'); await typeInto(a, '#height', '178'); await typeInto(a, '#scr', '1.0');
+    await a.locator('[data-onclick="k9"]').first().click();
+    const txState = () => a.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), h = v && v.querySelector('.vx-hold-head'), reg = document.getElementById('tx-regimen');
+      return { head: h ? h.textContent.replace(/\s+/g, ' ').trim() : '', alarm: !!(h && h.classList.contains('tone-alarm')), icon: !!(h && h.querySelector('svg.ic')),
+        before: !!(h && reg && (h.compareDocumentPosition(reg) & Node.DOCUMENT_POSITION_FOLLOWING)), reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '',
+        said: (document.getElementById('sr-announce') || {}).textContent || '' };
+    });
+    // Random level at steady state on q12h: 42 mg/L 9 h after a 1 g dose (about 38 at the due time).
+    await a.locator('#mode-btn-randomlevel').click();
+    await a.locator('[data-onclick="k28"]').first().click();
+    const rlSS = await a.evaluate(() => typeof state !== 'undefined' && state.rlMode);
+    await typeInto(a, '#rl-dose', '1000'); await typeInto(a, '#rl-tinf', '1'); await typeInto(a, '#rl-c', '42');
+    await a.locator('#rl-dose-time-date').fill(day(0)); await typeInto(a, '#rl-dose-time-time', '0000');
+    await a.locator('#rl-draw-time-date').fill(day(0)); await typeInto(a, '#rl-draw-time-time', '0900');
+    await a.locator('#rl-tau').selectOption('24');
+    await a.locator('#rl-interval').selectOption('12');
+    await a.locator('[data-onclick="k31"]').click(); await a.waitForTimeout(500);
+    const rl = await txState();
+    ok('D26 final review (I4): Trough random level holds — 42 mg/L at 9 h on q12h at steady state shows Hold, the alarm word and icon, before the regimen, and is heard first',
+       rlSS === 'steadystate' && /^Hold: next dose not before \d{1,2} [A-Z][a-z]{2} \d\d:\d\d$/.test(rl.head) && rl.alarm && rl.icon && rl.before && /^Result: Hold: /.test(rl.said),
+       JSON.stringify(Object.assign({ rlMode: rlSS }, rl)));
+    // Level mode: 1.5 g q8h started 01:00, 20.5 mg/L at 08:36 — below 20 before the 09:00 due time: no hold.
+    await a.locator('#mode-btn-level').click();
+    await typeInto(a, '#dose', '1500'); await a.locator('#interval').selectOption('8'); await typeInto(a, '#tinf', '1.5');
+    await a.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(a, '#level-val', '20.5');
+    await a.locator('#time-dose-given-date').fill(day(0)); await typeInto(a, '#time-dose-given-time', '0100');
+    await a.locator('#time-level-drawn-date').fill(day(0)); await typeInto(a, '#time-level-drawn-time', '0836');
+    await a.locator('[data-onclick="k31"]').click(); await a.waitForTimeout(600);
+    const lv = await txState();
+    ok('D26 final review (I3): Trough level mode does not hold a level that falls below 20 mg/L before the due time (20.5 mg/L at 08:36 on q8h from 01:00)',
+       lv.head === '' && !/^Result: Hold/.test(lv.said) && !!lv.reg, JSON.stringify(lv));
     const aAttr = await attributeInjected(a, aProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + aAttr.injected;
     results.problems.push(...aAttr.kept);

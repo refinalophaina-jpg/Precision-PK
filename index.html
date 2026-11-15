@@ -7083,6 +7083,16 @@ function calculate() {
     const indClv = indKel * popVd;
     const indT12 = 0.693 / indKel;
     const rlOpt  = findOptimalDose(troughMin, troughMax, rlTau, rlTinf, indKel, popVd, indClv);
+    // The final review (I4): the hold, as in level and two-level modes. The next dose is due at
+    // the interval the patient is on (steady state) or, after a first dose, at the interval
+    // chosen (as the two-level first-dose basis). A level after the infusion is carried down
+    // the fitted Kel from its own time; one drawn during it, the fitted curve at the due time.
+    const rlDueH = state.rlMode === 'steadystate' ? (v('rl-interval') || 12) : rlTau;
+    const rlPost = rlT > rlTinf;
+    const rlPre  = rlPost ? rlC * Math.exp(-indKel * (rlDueH - rlT))
+      : state.rlMode === 'steadystate' ? calcPeakTrough(rlDose, rlDueH, rlTinf, indKel, popVd).trough
+      : predictConc1comp([{ mg: rlDose, tinfH: rlTinf, timeH: 0 }], rlDueH, indKel, popVd);
+    const rlHold = troughHold(rlPre, rlDueH, indKel, doseStartHourOf('rl-dose-time'), rlPost ? { c: rlC, h: rlT } : null);
     renderRandomLevel({
       age, sex:state.sex, tbw, ibw, adjbw, bmi, scr,
       crcl:crclVal, popClv, popVd, popKel,
@@ -7094,7 +7104,7 @@ function calculate() {
       optDose: rlOpt.dose, optFlag: rlOpt.flag, optFlagMsg: rlOpt.flagMsg,
       optPT:   rlOpt.refused ? null : calcPeakTrough(rlOpt.dose, rlTau, rlTinf, indKel, popVd),
       optAUC:  rlOpt.refused ? NaN : calcAUC(rlOpt.dose, rlTau, indClv),
-      optRefusal: rlOpt.refused ? rlOpt : null
+      optRefusal: rlOpt.refused ? rlOpt : null, hold: rlHold
     });
     return;
   }
@@ -7863,8 +7873,9 @@ function renderRandomLevel(d) {
     mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: refusal ? null : { dose: d.optDose, tau: d.rlTau } });
 
   const rlBasisLine = `Based on fitted Kel (Vd population) — Kel ${d.indKel.toFixed(4)} h⁻¹ from your level, Vd ${d.popVd.toFixed(1)} L fixed, t½ ${d.indT12.toFixed(1)} h`;
-  const verdict = refusal ? txRefusalVerdictHTML({ word: TROUGH_REFUSAL_WORD, reason: refusal.reason,
+  const verdict = refusal ? txRefusalVerdictHTML({ hold: troughHoldHTML(d.hold, true), word: TROUGH_REFUSAL_WORD, reason: refusal.reason,
     flags: troughCapBoundHTML(refusal), basis: rlBasisLine, next: '' }) : txVerdictHTML({
+    hold: troughHoldHTML(d.hold),
     dose: d.optDose, tau: d.rlTau, tinf: d.rlTinf, kind: 'scheduled maintenance',
     auc: d.optAUC, aucBand: '',
     trough, troughWord: 'predicted at steady state', troughMin: d.troughMin, troughMax: d.troughMax,
@@ -7946,8 +7957,8 @@ function renderRandomLevel(d) {
   _prn = { kel: d.indKel, vd: d.popVd, clv: d.indClv, tbw: d.tbw,
            rlC: d.rlC, rlT: d.rlT, rlTinf: d.rlTinf,
            troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
-  if (refusal) { announceResult(troughRefusalSaid(TROUGH_REFUSAL_WORD, refusal.reason, null)); return; }
-  announceResult(`Result: ${fmtRegimen(d.optDose, d.rlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
+  if (refusal) { announceResult(troughRefusalSaid(TROUGH_REFUSAL_WORD, refusal.reason, d.hold)); return; }
+  announceResult(`Result: ${troughHoldSaid(d.hold)}${fmtRegimen(d.optDose, d.rlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-rl', d.optDose, d.rlTau, d.rlTinf, d.indKel, d.popVd, {
       troughMin: d.troughMin, troughMax: d.troughMax, prior: { kel: d.popKel, vd: d.popVd }
@@ -7996,9 +8007,16 @@ function timeToDecayTo(cCurrent, cTarget, kel) {
 // drawn within half an hour of tau is taken as the trough AT tau (observed basis), and
 // timing the decline from tau put "not before" up to 0.4 h early (30 mg/L at 8.4 h on
 // q8h: 12.98 h shown, 13.38 h exact, 20.7 mg/L at the time shown).
+// The final review (I3): a level that falls below the threshold before the due time is no
+// hold. 20.5 mg/L at 7.6 h on q8h, with a fitted due-time level of 20 or more, read "Hold:
+// next dose not before 08:49", due 09:00. With a measured level the hold is judged on it,
+// carried down the decline to the due time: at or above TROUGH_HIGH_MGL holds (ruling 1),
+// below it is no hold (reachH before dueH).
 function troughHold(cPre, dueH, kel, doseStartH, from) {
   if (!(cPre >= TROUGH_HIGH_MGL) || !(kel > 0) || !(dueH > 0)) return null;
-  const ref = from && from.c > 0 && from.h > 0 ? from : { c: cPre, h: dueH };
+  const measured = !!(from && from.c > 0 && from.h > 0);
+  const ref = measured ? from : { c: cPre, h: dueH };
+  if (measured && !(from.c * Math.exp(-kel * (dueH - from.h)) >= TROUGH_HIGH_MGL)) return null;
   const reachH = ref.h + timeToDecayTo(ref.c, TROUGH_HIGH_MGL, kel);
   const noTime = reachH - dueH > HOLD_SEARCH_MAX_H;
   const afterDoseH = noTime ? null : reachH;

@@ -6192,7 +6192,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     sandbox.setTimeout = (f) => { if (typeof f === 'function') f(); return 0; };   // announceResult's delay
     try {
       vm.runInContext(`state.calcMode = ${JSON.stringify(mode)}; state.dosingWt = 'auto'; state.isSS = true;
-        state.rlMode = 'firstdose'; state.tlBasis = ${JSON.stringify((extra && extra.tlBasis) || 'firstdose')}; crclOverride.on = false;`, sandbox);
+        state.rlMode = ${JSON.stringify((extra && extra.rlMode) || 'firstdose')}; state.tlBasis = ${JSON.stringify((extra && extra.tlBasis) || 'firstdose')}; crclOverride.on = false;`, sandbox);
       fn44('setPatientSex')(sex);
       // Choosing the sex refreshes the CrCl readout, which suggests an initial interval and
       // overwrites the one typed; the pharmacist's choice comes after it, as on the page.
@@ -7820,6 +7820,49 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const i = src44.indexOf('const HOLD_SEARCH_MAX_H'), cmt = src44.slice(Math.max(0, i - 900), i);
     assert(i > 0 && /PREFERENCE/.test(cmt) && /rule 8/.test(cmt) && /how far the fitted curve is trusted to time a dose/.test(cmt), cmt.slice(-700));
     assert(K44.HOLD_SEARCH_MAX_H === 14 * 24, `the value is kept: ${K44.HOLD_SEARCH_MAX_H}`);
+  });
+
+  // I3: the Trough hold's "not before" could be earlier than the due time. 1.5 g q8h given 01:00, a level of
+  // 20.5 mg/L at 08:36: "Hold: next dose not before 08:49", due 09:00. Fictional 60 M, 80 kg, 178 cm, SCr 1.0.
+  test('44.30 I3: Trough holds only when the level carried down the measured decline is 20 mg/L or more at the due time', () => {
+    const lv = trough44('level', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, dose: 1500, interval: 8, tinf: 1.5, 'level-val': 20.5,
+      'time-dose-given': '2026-11-14T01:00', 'time-level-drawn': '2026-11-14T08:36' }, { checked: ['has-level'] });
+    assert(/class="rec-dose"|id="tx-regimen"/.test(lv.h) && !/undefined|NaN/.test(lv.text), lv.text.slice(0, 400));
+    assert(!/Hold: next dose not before/.test(lv.text) && !/^Result: Hold/.test(lv.said), `no hold before the due time: ${lv.text.slice(0, 500)}`);
+    const th = fn44('troughHold'), start = new Date('2026-11-14T01:00').getTime() / 3600000, kel = 0.08;
+    assert(th(20.4, 8, kel, start, { c: 20.5, h: 7.6 }) === null, 'falls below 20 before the due time: no hold');
+    const h = th(25, 8, kel, start, { c: 25, h: 7.9 });
+    assert(h && h.afterDoseH > 8 && Math.abs(h.afterDoseH - (7.9 + Math.log(25 / 20) / kel)) < 1e-9, JSON.stringify(h));
+    // Without a measured level the due-time level decides, at or above 20 (ruling 1), as before.
+    assert(th(20, 8, kel, start, null) && th(19.9, 8, kel, start, null) === null, 'cPre at the threshold still holds');
+  });
+
+  // I4: random-level mode had no hold. Steady state on q12h, 42 mg/L at 9 h (about 36 at the due time) gave
+  // "1.25 g IV q24h · scheduled maintenance". Fictional 60 M, 80 kg, 178 cm, SCr 1.0; 1 g over 1 h.
+  test('44.31 I4: random-level mode holds, from the level and its time, at the due time of its sub-mode', () => {
+    const rl = (mode, c, draw, tau, mg) => trough44('randomlevel', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, 'rl-dose': mg || 1000, 'rl-tinf': mg ? 2 : 1,
+      'rl-tau': tau || 24, 'rl-interval': 12, 'rl-c': c, 'rl-dose-time': '2026-11-14T00:00', 'rl-draw-time': draw }, { rlMode: mode });
+    const ss = rl('steadystate', 42, '2026-11-14T09:00');
+    assert(!/undefined|NaN/.test(ss.text), ss.text.slice(0, 400));
+    assert(/Hold: next dose not before \d{1,2} Nov \d\d:\d\d/.test(ss.text) && /class="vx-action vx-hold-head tone-alarm"/.test(ss.h), `steady state: ${ss.text.slice(0, 500)}`);
+    assert(/^Result: Hold: next dose not before /.test(ss.said), ss.said);
+    assert(before44(ss.h, 'vx-hold-head', 'id="tx-regimen"'), 'the hold leads the verdict');
+    // Its time is the level carried down the fitted Kel: 9 h + ln(42/20)/Kel after the dose started.
+    const m = ss.text.match(/Kel ([\d.]+) h⁻¹\) it falls to 20 mg\/L ([\d.]+) h after the last dose started/);
+    assert(m && Math.abs(+m[2] - (9 + Math.log(42 / 20) / +m[1])) < 0.11, `timed from the level: ${m && m[0]}`);
+    // Below 20 at the due time (12 h on q12h): no hold.
+    const low = rl('steadystate', 22, '2026-11-14T09:00');
+    assert(!/Hold:/.test(low.text), `22 mg/L at 9 h: ${low.text.slice(0, 400)}`);
+    // First-dose sub-mode: due at the new interval (rl-tau), as the two-level first-dose basis.
+    // After a first 2 g dose (over 2 h), 25 mg/L at 10 h: about 23 at 12 h, about 5 at 48 h.
+    const fd = rl('firstdose', 25, '2026-11-14T10:00', 12, 2000);
+    const fdNo = rl('firstdose', 25, '2026-11-14T10:00', 48, 2000);
+    const kFd = +((fd.text.match(/Kel ([\d.]+) h⁻¹ from your level/) || [])[1]);
+    assert(kFd > 0 && 25 * Math.exp(-kFd * 2) >= K44.TROUGH_HIGH_MGL && 25 * Math.exp(-kFd * 38) < K44.TROUGH_HIGH_MGL, `the fixture: Kel ${kFd}`);
+    assert(/Hold: next dose not before/.test(fd.text) && /^Result: Hold:/.test(fd.said), `first dose, due at q12h: ${fd.text.slice(0, 300)}`);
+    assert(!/Hold:/.test(fdNo.text), `first dose, due at q48h: ${fdNo.text.slice(0, 300)}`);
+    const calc = body44('calculate');
+    assert(/troughHold\([^;]*rlC[^;]*\)/.test(calc), 'the random-level path calls troughHold');
   });
 
   // I5: the severe-renal note said "Give a single weight-based loading dose, then hold further doses" beside a
