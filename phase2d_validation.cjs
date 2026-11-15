@@ -133,6 +133,63 @@ function assertLess(a,b,label) {
   if (a >= b) throw new Error(`${label}: ${a.toFixed(5)} is NOT < ${b.toFixed(5)}`);
 }
 
+// ─── A small AUC Precision form (Release 2, Task 14) ─────────────────
+// The code review found tests that asserted a function's source text instead of what it does
+// (a fingerprint that "mentions" b-mic passed with the MIC made inert). These helpers let a
+// test drive the real parseBayesCourse / readSerialScrChecked / bayesInputFingerprint /
+// snapshotBayesForm against form values, the way the page does. Fictional values only.
+// vals: { 'b-age': '60', ... } plus doses [[mg, tinf, date, time]], levels [[conc, date, time]],
+// scrRows [[val, date, time]]. Rows are numbered from 1, as the page numbers them.
+function bayesFormEnv(vals) {
+  const els = {};
+  const el = (id) => els[id] || (els[id] = { id, value: '', checked: false, textContent: '', innerHTML: '', style: {}, dataset: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, setAttribute() {}, getAttribute() { return null; },
+    removeAttribute() {}, addEventListener() {}, appendChild() {}, querySelector: () => null, querySelectorAll: () => [] });
+  const v = Object.assign({}, vals);
+  (v.doses || []).forEach(([mg, tinf, date, time], i) => {
+    el(`b-dose-row-${i + 1}`); el(`b-dose-mg-${i + 1}`).value = String(mg); el(`b-dose-tinf-${i + 1}`).value = String(tinf);
+    el(`b-dose-date-${i + 1}`).value = date; el(`b-dose-time-${i + 1}`).value = time;
+  });
+  (v.levels || []).forEach(([conc, date, time], i) => {
+    el(`b-level-row-${i + 1}`); el(`b-lvl-conc-${i + 1}`).value = String(conc);
+    el(`b-lvl-date-${i + 1}`).value = date; el(`b-lvl-time-${i + 1}`).value = time;
+  });
+  (v.scrRows || []).forEach(([val, date, time], i) => {
+    const row = el(`b-scr-row-${i + 1}`), sub = { '.b-scr-val': { value: String(val) }, '.b-scr-date': { value: date }, '.b-scr-time': { value: time } };
+    row.querySelector = (sel) => sub[sel] || null;
+  });
+  ['doses', 'levels', 'scrRows'].forEach(k => delete v[k]);
+  Object.keys(v).forEach(id => { el(id).value = String(v[id]); });
+  const document = {
+    getElementById: el, createElement: () => el('_new'), querySelector: () => null,
+    querySelectorAll: (sel) => {
+      const m = /^\[id\^="([^"]+)"\]$/.exec(sel);
+      if (!m) return [];
+      return Object.values(els).filter(e => e.id.indexOf(m[1]) === 0 && /^\d+$/.test(e.id.slice(m[1].length)))
+        .sort((a, b) => Number(a.id.slice(m[1].length)) - Number(b.id.slice(m[1].length)));
+    },
+  };
+  return { document, els, el };
+}
+// Runs fn(env) with that form installed and a fresh bState (Buelga, male, no result); restores both.
+function withBayesForm(vals, fn) {
+  const env = bayesFormEnv(vals);
+  const prevDoc = sandbox.document;
+  vm.runInContext('globalThis.__bf = bState; bState = { sex: "M", model: "buelga", dial: false, result: null, resultFingerprint: null, tinkCompare: [], regimenOverrideH: null };', sandbox);
+  sandbox.document = env.document;
+  try { return fn(env); }
+  finally { sandbox.document = prevDoc; vm.runInContext('bState = globalThis.__bf; delete globalThis.__bf;', sandbox); }
+}
+// A fictional course: 60 y, 80 kg, 178 cm, SCr 1.0; 1 g over 1 h q12h x 3; one level; one serial SCr.
+const BAYES_FORM_45 = () => ({
+  'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0', 'b-auc-target': '450', 'b-mic': '1',
+  doses: [[1000, 1, '2026-11-10', '08:00'], [1000, 1, '2026-11-10', '20:00'], [1000, 1, '2026-11-11', '08:00']],
+  levels: [[14.2, '2026-11-11', '07:30']],
+  scrRows: [['1.0', '2026-11-10', '06:00']],
+});
+// Helpers that SUITE 44 builds and SUITE 45 reuses (the profile DOM and storage).
+const __suiteShared = {};
+
 // ─── Seeded PRNG (LCG) for reproducible Monte Carlo ──────────────────
 let _seed = 20250409;
 function seededRand() {
@@ -1975,7 +2032,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log(`${'─'.repeat(60)}`);
 
   test('No inline on* event-handler attributes anywhere in the body', ()=>{
-    const found = body.match(/\son[a-z]+\s*=\s*"/g) || [];
+    // Rewritten (Release 2, Task 14; code report "tests that cannot fail"): the old regex
+    // required a double quote after "=", so an unquoted onclick=x() or a single-quoted one
+    // passed. An HTML attribute may be double-quoted, single-quoted or bare, in any case.
+    // Both detectors run: the original (any `on…="` in the body, markup in script strings
+    // included) and one that reads every tag for an on* attribute however it is quoted.
+    const inTag = /<[a-z][\w-]*(?:\s[^<>]*?)?\son[a-z]+\s*=/gi;
+    const quoted = /\son[a-z]+\s*=\s*"/g;
+    const detect = (h) => (h.match(inTag) || []).concat(h.match(quoted) || []);
+    // The detector itself must see each spelling, or this test cannot fail on what it names.
+    for (const s of ['<div onclick=resetForm()>', "<a ONCLICK='x()'>", '<b class="k" onclick="y()">', '<i\nonmouseover = z>'])
+      assert(detect(s).length > 0, `the detector misses ${JSON.stringify(s)}`);
+    assert(detect('<div data-onclick="k1" title="on=off">').length === 0, 'the detector flags data-onclick');
+    const found = detect(body);
     assert(found.length === 0,
       `${found.length} inline handler attribute(s) — CSP blocks these, so they are dead in ` +
       `production: ${[...new Set(found)].join(', ')}`);
@@ -2772,8 +2841,21 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('a changed target or MIC marks the fit as stale', ()=>{
-    const f = sandbox.bayesInputFingerprint.toString();
-    assert(/b-auc-target/.test(f) && /b-mic/.test(f), 'target and MIC must be part of the fingerprint');
+    // Rewritten as behaviour (Release 2, Task 14): the old check read the function's text for
+    // the two ids, so a fingerprint with target and MIC made inert (names left in a comment)
+    // passed. Now a fit is taken on a form, then the target or the MIC is edited.
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      const fp = sandbox.bayesInputFingerprint;
+      vm.runInContext('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55 }; bState.resultFingerprint = bayesInputFingerprint();', sandbox);
+      assert(typeof fp() === 'string' && !sandbox.bayesFitIsStale(), 'the untouched form is not stale');
+      for (const [id, to] of [['b-auc-target', '550'], ['b-mic', '2']]) {
+        const was = env.els[id].value;
+        env.els[id].value = to;
+        assert(sandbox.bayesFitIsStale(), `${id} ${was} -> ${to} did not mark the fit stale`);
+        env.els[id].value = was;
+        assert(!sandbox.bayesFitIsStale(), `${id} restored, still stale`);
+      }
+    });
   });
 
   test('a young patient at the CrCl cap is offered a regimen, not refused', ()=>{
@@ -2981,8 +3063,23 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(kdigoStage([{ scr: 1.0, timeH: 0 }, { scr: 1.5, timeH: 200 }]) === 0, 'outside 7 days and 48 h → none');
   });
   test('stale-fit fingerprint covers serial SCr and the regimen override', ()=>{
-    const b = bodyOf('bayesInputFingerprint');
-    assert(/readSerialScr\(\)/.test(b) && /regimenOverrideH/.test(b), 'fingerprint must include both');
+    // Rewritten as behaviour (Release 2, Task 14): the old check read the function's text for
+    // `readSerialScr()` and `regimenOverrideH`. Now a serial SCr reading (value, then time) and
+    // the regimen override are edited after a fit, and each must mark it stale.
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      vm.runInContext('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55 }; bState.resultFingerprint = bayesInputFingerprint();', sandbox);
+      assert(!sandbox.bayesFitIsStale(), 'the untouched form is not stale');
+      const scr = env.els['b-scr-row-1'];
+      const sub = (sel) => scr.querySelector(sel);
+      sub('.b-scr-val').value = '1.6';
+      assert(sandbox.bayesFitIsStale(), 'a serial SCr value 1.0 -> 1.6 did not mark the fit stale');
+      sub('.b-scr-val').value = '1.0'; sub('.b-scr-time').value = '18:00';
+      assert(sandbox.bayesFitIsStale(), 'a serial SCr time 06:00 -> 18:00 did not mark the fit stale');
+      sub('.b-scr-time').value = '06:00';
+      assert(!sandbox.bayesFitIsStale(), 'restored, still stale');
+      vm.runInContext('bState.regimenOverrideH = 8;', sandbox);
+      assert(sandbox.bayesFitIsStale(), 'the regimen override (q8h) did not mark the fit stale');
+    });
   });
   test('2-comp SS curve is at steady state and matches the card trough (low CL)', ()=>{
     const CL = 4.5 * Math.pow(20/120, 0.8), Vc = 58.4 * 80/70, Vp = 38.4, Q = 6.5;
@@ -7319,6 +7416,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
   };
   const statusText44 = (env) => env.status.map(s => s.textContent).join(' | ');
+  Object.assign(__suiteShared, { profEnv44, withProf44, profFixture44, PROF_KEY44 });   // SUITE 45 reuses them
 
   test('44.24 a malformed profile (no demographics, no snapshot, a non-numeric savedAt) does not throw, leaves the form untouched and says so', () => {
     const base = profFixture44[0];
@@ -8086,13 +8184,281 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // 0.045 (SIGMA_ADD); the tolerance is a third of the smallest of those.
     assertClose(CL, 4.4300, 0.002, 'posterior CL (L/h)');
   });
+
+  // ── Task 14: direct behaviour tests, one per mutant the code review saw survive (I3, I4, I5) ──
+  // docs/audit/mutation.cjs breaks each line in memory and runs this suite; every test below
+  // names the mutant id it kills. 45.2-45.4 are reserved for Tasks 17-19. Fictional values only.
+  const K45 = __extractConsts();
+  const fn45 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const run45 = (js) => vm.runInContext(js, sandbox);
+  const P45 = run45('SCR_POLICY');
+  const row45 = (n, m) => fn45('aucUncertaintyRow')(n, m || 'buelga');
+  const hist45 = (mg, tau, n) => Array.from({ length: n || 4 }, (_, i) => ({ mg, tinfH: fn45('autoTinf')(mg), timeH: i * tau }));
+  const decide45 = (cl, v, doses, row) => fn45('regimenDecision')(cl, v, 450, null, 1, doses, row || row45(1));
+
+  // Patient size and renal function. Independent anchors: the published equations.
+  test('45.5 calcCrClRaw is Cockcroft-Gault: (140 - age) x weight / (72 x SCr), x 0.85 for a woman [I4 CG]', () => {
+    const cg = fn45('calcCrClRaw');
+    assertClose(cg(60, 'M', 1.0, 70, P45.ACTUAL), 80 * 70 / 72, 1e-9, '60 y M, 70 kg, SCr 1.0');
+    assertClose(cg(60, 'F', 1.0, 70, P45.ACTUAL), 0.85 * 80 * 70 / 72, 1e-9, '60 y F, 70 kg, SCr 1.0');
+    assertClose(cg(40, 'M', 2.0, 90), 100 * 90 / 144, 1e-9, 'with no policy, SCr is used as measured');
+    // The Goti policy reads a low SCr at the floor only for the model's own covariate (rule 4).
+    assertClose(cg(70, 'M', 0.7, 70, P45.GOTI_MODEL), 70 * 70 / (72 * K45.GOTI_SCR_FLOOR), 1e-9, 'Goti policy, 70 y, SCr 0.7');
+    assertClose(cg(70, 'M', 0.7, 70, P45.ACTUAL), 70 * 70 / (72 * 0.7), 1e-9, 'as measured, 70 y, SCr 0.7');
+  });
+  test('45.6 calcCrCl returns the manual override while it is on; calcCrClRaw never does [I4-01]', () => {
+    const cg = 80 * 70 / 72;
+    try {
+      run45('crclOverride.on = true; crclOverride.value = 35;');
+      assert(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL) === 35, `override on: ${fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL)}`);
+      assertClose(fn45('calcCrClRaw')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, 'calcCrClRaw (the Hughes FFM covariate) ignores the override');
+      run45('crclOverride.value = NaN;');
+      assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, 'an override with no valid value is not applied');
+      run45('crclOverride.on = false; crclOverride.value = 35;');
+      assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, 'override off');
+    } finally { run45('crclOverride.on = false; crclOverride.value = null;'); }
+  });
+  test('45.7 calcIBW is Devine: 50 / 45.5 kg + 2.3 kg per inch over 60 in; an unknown sex takes the female base [I4-07, I4P-2]', () => {
+    const ibw = fn45('calcIBW'), inch = K45.CM_PER_IN;
+    assertClose(ibw('M', 72 * inch), 50 + 2.3 * 12, 1e-9, 'man, 6 ft');
+    assertClose(ibw('F', 66 * inch), 45.5 + 2.3 * 6, 1e-9, 'woman, 5 ft 6 in');
+    for (const sex of [null, undefined, 'X'])
+      assertClose(ibw(sex, 66 * inch), ibw('F', 66 * inch), 1e-9, `sex ${sex}: the lower (female) base, never the male`);
+  });
+  test('45.8 calcAdjBW is IBW + 0.4 x (TBW - IBW) [I4P-1]', () => {
+    assertClose(fn45('calcAdjBW')(120, 70), 90, 1e-9, 'TBW 120, IBW 70');
+    assertClose(fn45('calcAdjBW')(100, 60), 76, 1e-9, 'TBW 100, IBW 60');
+  });
+  test('45.9 applyScrPolicy: the Goti SCr floor applies above 65 (66, not 65), and only under the Goti policy [I4-06]', () => {
+    const pol = fn45('applyScrPolicy');
+    assert(K45.GOTI_SCR_FLOOR_AGE === 65, `GOTI_SCR_FLOOR_AGE ${K45.GOTI_SCR_FLOOR_AGE}: 65 per the 2019 erratum`);
+    assert(pol(0.6, 65, P45.GOTI_MODEL) === 0.6, `65 y: ${pol(0.6, 65, P45.GOTI_MODEL)} (as measured)`);
+    assert(pol(0.6, 66, P45.GOTI_MODEL) === K45.GOTI_SCR_FLOOR, `66 y: ${pol(0.6, 66, P45.GOTI_MODEL)} (the floor)`);
+    assert(pol(1.4, 80, P45.GOTI_MODEL) === 1.4, 'above the floor: as measured');
+    assert(pol(0.6, 80, P45.ACTUAL) === 0.6, 'any other policy: as measured (rule 4)');
+  });
+
+  // Concentrations and kidney injury.
+  test('45.10 predictConc1comp during an infusion: R0 / (k V) x (1 - e^(-k t)), rising to the end of the infusion [I4-05]', () => {
+    const p = fn45('predictConc1comp'), doses = [{ mg: 1000, tinfH: 2, timeH: 0 }], k = 0.1, V = 50, R0 = 500;
+    for (const t of [0.5, 1, 1.5, 2]) assertClose(p(doses, t, k, V), R0 / (k * V) * (1 - Math.exp(-k * t)), 1e-9, `${t} h into a 2 h infusion`);
+    assertLess(p(doses, 1, k, V), p(doses, 2, k, V), 'mid-infusion below the end of the infusion');
+    assertClose(p(doses, 5, k, V), R0 / (k * V) * (1 - Math.exp(-k * 2)) * Math.exp(-k * 3), 1e-9, '3 h after the end');
+    assert(p(doses, 0, k, V) === 0, 'nothing before the dose');
+  });
+  test('45.11 kdigoStage: a 0.3 mg/dL rise counts within 48 h; the same rise over 60 h (fold 1.3) is no stage [I4-14]', () => {
+    const k = fn45('kdigoStage');
+    assert(k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 60 }]) === 0, `0.3 over 60 h: stage ${k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 60 }])}`);
+    assert(k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 48 }]) === 1, '0.3 at 48 h: stage 1');
+    assert(k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 40 }]) === 1, '0.3 over 40 h: stage 1');
+  });
+  test('45.12 checkAKI: SCr at least 1.5x baseline, or 0.3 mg/dL above it, shows the AKI banner [I4-15]', () => {
+    const aki = (scr, base, manual) => {
+      const els = { scr: { value: String(scr) }, 'scr-baseline': { value: String(base) }, 'aki-manual': { checked: !!manual },
+        'aki-banner': { style: { display: '' }, innerHTML: '' } };
+      const prev = sandbox.document.getElementById;
+      sandbox.document.getElementById = (id) => els[id] || prev(id);
+      try { fn45('checkAKI')(); } finally { sandbox.document.getElementById = prev; }
+      return els['aki-banner'];
+    };
+    const on = (b) => b.style.display === 'block';
+    assert(on(aki(1.3, 1.0)) && /0\.3 mg\/dL above baseline/.test(aki(1.3, 1.0).innerHTML), 'a 0.3 rise (fold 1.3)');
+    assert(!on(aki(1.2, 1.0)), 'a 0.2 rise (fold 1.2)');
+    assert(on(aki(0.75, 0.5)) && /1\.5× baseline/.test(aki(0.75, 0.5).innerHTML), 'fold 1.5 (a 0.25 rise)');
+    assert(!on(aki(0.7, 0.5)), 'fold 1.4 (a 0.2 rise)');
+    assert(on(aki(1.0, 1.0, true)), 'flagged manually');
+    assert(!on(aki(2.0, '')), 'no baseline, no automatic flag');
+  });
+
+  // The weight-based guideline comparison and the PD load.
+  // The 2500 mg cap and the CrCl cut-points 90/50/30/15 are literals in computeGuidelineDose with no
+  // citation yet (code report M5, rule 1). They are pinned as shipped, so a change is deliberate.
+  test('45.13 computeGuidelineDose: 15 mg/kg TBW to the 250 mg step, capped at 2500 mg [I4-16]', () => {
+    const g = fn45('computeGuidelineDose');
+    assert(g(70, 80).dose === 1000 && g(100, 80).dose === 1500, `${g(70, 80).dose}, ${g(100, 80).dose}`);
+    const big = g(200, 80);
+    assert(big.dose === 2500 && big.rawDose === '3000', `200 kg: ${big.dose} mg (raw ${big.rawDose})`);
+    assert(g(300, 80).dose === 2500, 'never above 2500');
+  });
+  test('45.14 computeGuidelineDose: the interval cut-points sit at CrCl 90, 50, 30 and 15 [I4P-6a-d]', () => {
+    const g = fn45('computeGuidelineDose');
+    const want = [[90.5, 8], [90, 12], [50.5, 12], [50, 24], [30.5, 24], [30, 36], [15.5, 36], [15, 48], [5, 48]];
+    const got = want.map(([c]) => g(70, c).tau);
+    assert(JSON.stringify(got) === JSON.stringify(want.map(w => w[1])), `CrCl ${want.map(w => w[0]).join('/')}: q${got.join('/q')}h`);
+  });
+  test('45.15 pdLoadingDose: a local maximum above 3,000 mg never raises the Rec 11 cap; a lower one lowers it [I4-17]', () => {
+    const pd = fn45('pdLoadingDose');
+    assert(K45.HD_LOADING_MAX_MG === 3000, `HD_LOADING_MAX_MG ${K45.HD_LOADING_MAX_MG} (Rybak 2020 Rec 11: 3,000 mg)`);
+    const hi = pd(200, 4000);                     // 20 mg/kg x 200 kg = 4,000 mg, local maximum 4,000
+    assert(hi.mg === 3000 && hi.cap === 3000 && hi.capped === true, `local max 4000: ${JSON.stringify(hi)}`);
+    assertClose(hi.mgPerKg, 15, 1e-9, 'mg/kg given');
+    const lo = pd(200, 2500);
+    assert(lo.mg === 2500 && lo.cap === 2500 && lo.capped === true, `local max 2500: ${JSON.stringify(lo)}`);
+    const none = pd(100, 0);
+    assert(none.mg === 2000 && none.cap === 3000 && none.capped === false, `no local max: ${JSON.stringify(none)}`);
+  });
+  test('45.16 an SCr below 0.1 mg/dL is refused at entry; 0.1 to 25 is accepted [I4-18]', () => {
+    const cv = fn45('checkValue');
+    assert(!cv('0.05', 'scr').ok && !cv('0.09', 'scr').ok, 'SCr 0.05 / 0.09 accepted');
+    assert(cv('0.1', 'scr').ok && cv('25', 'scr').ok && !cv('25.5', 'scr').ok, 'the 0.1-25 range');
+  });
+
+  // evalRegimen: one case per hard reject and per flag (1-compartment, MIC 1 unless stated).
+  const ev45 = (mg, tau, cl, v, mic) => fn45('evalRegimen')(mg, tau, fn45('autoTinf')(mg), cl, v, null, mic);
+  const lv45 = (r) => r.flags.map(f => f.level);
+  test('45.17 evalRegimen hard reject: a single dose above 2000 mg', () => {
+    const r = ev45(2250, 24, 5, 50, 1);
+    assert(JSON.stringify(r.hardFail) === '["single dose 2250 mg exceeds 2000 mg"]', JSON.stringify(r.hardFail));
+    assert(ev45(2000, 24, 5, 50, 1).hardFail.length === 0, '2000 mg q24h is admissible');
+  });
+  test('45.18 evalRegimen hard reject: a total daily dose above 4500 mg', () => {
+    const r = ev45(1750, 8, 12, 70, 1);           // 5,250 mg a day, AUC24 437
+    assert(JSON.stringify(r.hardFail) === '["total daily dose 5250 mg exceeds 4500 mg"]', JSON.stringify(r.hardFail));
+    assert(ev45(1500, 8, 12, 70, 1).hardFail.length === 0, '4,500 mg a day is admissible');
+  });
+  test('45.19 evalRegimen hard reject: AUC24 above 700 [I4-02, I4P-3]', () => {
+    const r = ev45(1750, 12, 4.5, 50, 1);         // AUC24 778
+    assert(JSON.stringify(r.hardFail) === '["AUC24 778 exceeds the absolute ceiling 700"]', JSON.stringify(r.hardFail));
+    assert(ev45(1500, 12, 4, 50, 1).hardFail.length === 1, 'AUC24 750 is rejected');
+    assert(ev45(1750, 12, 5.25, 50, 1).hardFail.length === 0, 'AUC24 667 is not');
+  });
+  test('45.20 evalRegimen flag: a predicted trough of 20 mg/L or more is danger [I4-03]', () => {
+    const r = ev45(1000, 12, 3.6, 150, 1);        // AUC24 556, trough 20.2
+    assert(r.Ctrough >= 20 && r.Ctrough < 22 && r.hardFail.length === 0, `trough ${r.Ctrough}`);
+    assert(JSON.stringify(lv45(r)) === '["danger"]' && /at or above 20/.test(r.flags[0].text), JSON.stringify(r.flags));
+  });
+  test('45.21 evalRegimen flag: a predicted trough of 15 to under 20 mg/L is a warning [I4P-4]', () => {
+    assert(K45.TROUGH_WARN_MGL === 15, `TROUGH_WARN_MGL ${K45.TROUGH_WARN_MGL} (Rybak 2020: AKI risk rises from 15)`);
+    const r = ev45(1000, 12, 3.4, 50, 1);         // AUC24 588, trough 16.4
+    assert(r.Ctrough >= 15 && r.Ctrough < 18, `trough ${r.Ctrough}`);
+    assert(JSON.stringify(lv45(r)) === '["warning"]' && /at or above 15/.test(r.flags[0].text), JSON.stringify(r.flags));
+  });
+  test('45.22 evalRegimen flag: a predicted trough below the MIC is information [I4-04]', () => {
+    const r2 = ev45(1000, 24, 4, 30, 2), r1 = ev45(1000, 24, 4, 30, 1);   // trough 1.5 mg/L
+    assert(r2.Ctrough > 1 && r2.Ctrough < 2, `trough ${r2.Ctrough}`);
+    assert(r2.flags.some(f => f.level === 'info' && /below the MIC \(2 mg\/L\)/.test(f.text)), JSON.stringify(r2.flags));
+    assert(!r1.flags.some(f => f.level === 'info'), 'MIC 1: no sub-MIC flag');
+  });
+  test('45.23 evalRegimen flags: AUC24 above or below 400-600 beyond the rounding grace is a warning', () => {
+    const above = ev45(1350, 12, 4, 50, 1), below = ev45(1000, 24, 4, 30, 1);   // AUC24 675 (grace 62.5) and 250
+    assert(above.hardFail.length === 0 && above.flags.some(f => f.level === 'warning' && /AUC24 675 is above/.test(f.text)), JSON.stringify(above.flags));
+    assert(below.flags.some(f => f.level === 'warning' && /AUC24 250 is below/.test(f.text)), JSON.stringify(below.flags));
+    assert(!ev45(1000, 12, 4, 50, 1).flags.some(f => /target band/.test(f.text)), 'AUC24 500: no band flag');
+  });
+
+  // D25: one case per regimenDecision / currentRegimenOf branch the review saw survive.
+  test('45.24 D25: an in-range regimen is changed when the best puts exactly CONTINUE_MARGIN_DOTS more in range [I4-08]', () => {
+    const r = decide45(1.75, 49, hist45(500, 12));      // 500 mg q12h, AUC24 571, 13 of 20
+    assert(r.action === 'change' && r.current.inBand && !r.current.unsafe, `${r.action}`);
+    assert(r.dots - r.current.dots === K45.CONTINUE_MARGIN_DOTS, `${r.current.dots} -> ${r.dots}`);
+    assert(r.dose === 1750 && r.tau === 48, `${r.dose} mg q${r.tau}h`);
+  });
+  test('45.25 D25: when an in-range candidate exists, an out-of-range one is never the change [I4-09]', () => {
+    // No level (population row): 750 mg q36h at CL 0.6 goes to 500 mg q48h (AUC24 417), not 750 mg q48h (625).
+    const r = decide45(0.6, 49, hist45(750, 36), row45(0));
+    assert(r.action === 'change' && r.inBand && !r.outsideTargetBand, `${r.action} ${r.dose} mg q${r.tau}h AUC ${r.auc24}`);
+    assert(r.auc24 >= K45.AUC24_TARGET_MIN && r.auc24 <= K45.AUC24_TARGET_MAX && r.dose === 500 && r.tau === 48, `${r.dose} mg q${r.tau}h AUC ${r.auc24}`);
+  });
+  test('45.26 D25: regimens with a predicted trough of 20 or more are set aside in the change [I4-10]', () => {
+    // CL 0.5, V 150: 250 mg q24h scores as many dots as 500 mg q48h but has a trough of 20.0.
+    const r = decide45(0.5, 150, hist45(1000, 12));
+    assert(r.action === 'change' && r.Ctrough < 20 && r.dose === 500 && r.tau === 48, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
+    const alt = ev45(250, 24, 0.5, 150, 1);
+    assert(alt.Ctrough >= 20 && fn45('attainmentDots')(alt.auc24, row45(1)) >= r.dots, 'the danger alternative it set aside');
+  });
+  test('45.27 D25: an unsafe current regimen is never kept when nothing admissible is better; the optimizer answers [I4-11]', () => {
+    const doses = hist45(250, 48), cur = fn45('currentRegimenOf')(doses, 0.2, 49, null, 1, row45(1));
+    assert(cur && cur.unsafe, 'the current 250 mg q48h at CL 0.2 is unsafe');
+    const r = decide45(0.2, 49, doses), opt = sandbox.bayesDoseOptimizer(0.2, 49, 450, null, 1);
+    assert(r.action !== 'continue' && r.dose === opt.dose && r.tau === opt.tau, `${r.action} ${r.dose} mg q${r.tau}h`);
+  });
+  test('45.28 D25: a single charted dose is not a current regimen, even under the regimen override [I4-12]', () => {
+    try {
+      run45('bState.regimenOverrideH = 12;');
+      const one = decide45(4.58, 61.8, [{ mg: 1250, tinfH: 1.5, timeH: 0 }]);
+      const two = decide45(4.58, 61.8, [{ mg: 1250, tinfH: 1.5, timeH: 0 }, { mg: 1250, tinfH: 1.5, timeH: 12 }]);
+      assert(one.action === 'start', `one dose + override: ${one.action} ${one.dose} mg q${one.tau}h`);
+      assert(two.action === 'continue' && two.dose === 1250 && two.tau === 12, `two doses + override: ${two.action}`);
+    } finally { run45('bState.regimenOverrideH = null;'); }
+  });
+  test('45.29 D25: among equally good changes, the smaller daily-dose change wins over nearness to the target box [I4-13]', () => {
+    const r = decide45(1.4, 30, hist45(1750, 48));      // 1750 mg q48h; 1500 q48h (AUC 536) before 1250 q48h (446)
+    assert(r.action === 'change' && r.dose === 1500 && r.tau === 48, `${r.action} ${r.dose} mg q${r.tau}h AUC ${r.auc24}`);
+  });
+  test('45.30 rankRegimenCandidates: an exposure tie never goes to a trough of 20 or more when a lower one exists [I4P-5]', () => {
+    const r = sandbox.bayesDoseOptimizer(0.85, 70, 520, null, 1);   // 250 q12h, 500 q24h, 1000 q48h all AUC24 588
+    assert(r.dose === 1000 && r.tau === 48 && r.Ctrough < 20, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
+    assert((r.tiedWith || []).some(t => t.dose === 500 && t.tau === 24 && t.Ctrough >= 20), JSON.stringify(r.tiedWith));
+  });
+
+  // Profile and state (I5).
+  test('45.31 a changed dose amount, infusion time or dose time marks the fit stale [I5-5]', () => {
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      run45('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55 }; bState.resultFingerprint = bayesInputFingerprint();');
+      assert(!sandbox.bayesFitIsStale(), 'the untouched form is not stale');
+      for (const [id, to] of [['b-dose-mg-2', '1250'], ['b-dose-tinf-2', '2'], ['b-dose-time-2', '21:00'], ['b-dose-date-3', '2026-11-12']]) {
+        const was = env.els[id].value;
+        env.els[id].value = to;
+        assert(sandbox.bayesFitIsStale(), `${id} ${was} -> ${to} did not mark the fit stale`);
+        env.els[id].value = was;
+        assert(!sandbox.bayesFitIsStale(), `${id} restored, still stale`);
+      }
+    });
+  });
+  test('45.32 a stale fit is saved as staleFit, never as fit; a current one as fit [I5-3]', () => {
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      run45('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55, CL_pop: 5, V_pop: 60, goti: null }; bState.resultFingerprint = bayesInputFingerprint();');
+      const cur = sandbox.snapshotBayesForm();
+      assert(cur.fit && cur.fit.CL_ind === 4.2 && cur.staleFit === undefined && cur.dirty === false, JSON.stringify({ fit: cur.fit, dirty: cur.dirty }));
+      env.els['b-scr'].value = '3.0';
+      const st = sandbox.snapshotBayesForm();
+      assert(st.fit === null && st.staleFit && st.staleFit.CL_ind === 4.2 && st.dirty === true, JSON.stringify({ fit: st.fit, staleFit: st.staleFit, dirty: st.dirty }));
+      assert(st.demographics.scr === '3.0' && st.doses.length === 3 && st.doses[1].time === '20:00', 'the snapshot carries the form as it is');
+    });
+  });
+  test('45.33 deleting one of three profiles keeps the other two, in order; Undo puts it back where it was [I5-2]', () => {
+    const { profEnv44, withProf44, profFixture44, PROF_KEY44 } = __suiteShared;
+    assert(profEnv44 && profFixture44 && profFixture44.length === 3, 'the SUITE 44 profile harness');
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify(profFixture44) }, {});
+    const ids = () => JSON.parse(env.localStorage.getItem(PROF_KEY44)).map(p => p.id);
+    const [a, b, c] = profFixture44.map(p => p.id);
+    withProf44(env, [], () => {
+      sandbox.deleteProfile(b);
+      assert(JSON.stringify(ids()) === JSON.stringify([a, c]), `after deleting the middle one: ${ids()}`);
+      assert(/Deleted &quot;Fixture 71M legacy&quot;\./.test(env.status[0].innerHTML), env.status[0].innerHTML);
+      sandbox.runUndo();
+      assert(JSON.stringify(ids()) === JSON.stringify([a, b, c]), `after Undo: ${ids()}`);
+      sandbox.deleteProfile('p_notthere1');
+      assert(JSON.stringify(ids()) === JSON.stringify([a, b, c]), 'an unknown id deletes nothing');
+    });
+  });
+  test('45.34 a CrCl override outside 1-250 mL/min is not applied; one inside it is [I5-4]', () => {
+    const els = { 'crcl-override-on': { checked: true }, 'crcl-override-val': { value: '', disabled: false },
+      'crcl-override-note': { style: { display: '' }, textContent: '', innerHTML: '' } };
+    const prevGet = sandbox.document.getElementById, prevUpd = sandbox.updateCrCl;
+    sandbox.document.getElementById = (id) => els[id] || prevGet(id);
+    sandbox.updateCrCl = () => {};
+    const cg = 80 * 70 / 72, set = (v) => { els['crcl-override-val'].value = v; fn45('setCrclOverride')(); };
+    try {
+      for (const v of ['3000', '0.5', '251']) {
+        set(v);
+        assert(fn45('crclSourceLabel')() === 'Cockcroft-Gault', `${v} mL/min: ${fn45('crclSourceLabel')()}`);
+        assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, `${v} mL/min reached calcCrCl`);
+      }
+      set('45');
+      assert(fn45('crclSourceLabel')() === 'manual override' && fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL) === 45, '45 mL/min applied');
+    } finally {
+      sandbox.document.getElementById = prevGet; sandbox.updateCrCl = prevUpd;
+      run45('crclOverride.on = false; crclOverride.value = null;');
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 555;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1)
+const EXPECTED_TOTAL = 585;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.5-45.34)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

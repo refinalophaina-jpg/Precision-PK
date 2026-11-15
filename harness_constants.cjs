@@ -151,6 +151,8 @@ function extract() {
     // v3.14.0 — continue the current regimen (D25)
     CONTINUE_MARGIN_DOTS:   num(src, 'CONTINUE_MARGIN_DOTS'),
     TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
+    // v3.15.0 (Task 14) — the warning-tier trough (Rybak 2020: AKI risk rises from 15)
+    TROUGH_WARN_MGL:        num(src, 'TROUGH_WARN_MGL'),
     TROUGH_TIMING_WINDOW_H: num(src, 'TROUGH_TIMING_WINDOW_H'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
     VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
