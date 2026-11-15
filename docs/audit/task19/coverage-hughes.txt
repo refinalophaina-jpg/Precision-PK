@@ -26,23 +26,78 @@ COVERAGE of the shipped rows: the share of simulated patients whose true AUC24 l
 own = the row meant for the design (troughs: steady-state; load-*: early); app = aucUncertaintyRow(n, model, early), early from
 earlyLevelFractions on each fit. pooled = seeds 7/11/23 together; held-out = seed 31. ABOVE = true AUC above the band.
 hughes  troughs/0      hughes/steady/0 -27% / +37%: pooled 79.6% (ABOVE 10.2%), held-out 80.4% | app: pooled 79.6%, held-out 80.4% | early by the app's test 0.0%
-hughes  troughs/1      hughes/steady/1 -18% / +28%: pooled 80.2% (ABOVE 10.2%), held-out 79.2% | app: pooled 89.4%, held-out 88.1% | early by the app's test 71.5%
-hughes  troughs/2      hughes/steady/2 -17% / +26%: pooled 80.9% (ABOVE 9.8%), held-out 81.5% | app: pooled 91.4%, held-out 91.2% | early by the app's test 83.3%
-hughes  troughs/3      hughes/steady/3 -17% / +25%: pooled 80.7% (ABOVE 9.8%), held-out 81.4% | app: pooled 91.0%, held-out 90.9% | early by the app's test 93.6%
+hughes  troughs/1      hughes/steady/1 -18% / +28%: pooled 80.2% (ABOVE 10.2%), held-out 79.2% | app: pooled 80.4%, held-out 79.3% | early by the app's test 0.8%
+hughes  troughs/2      hughes/steady/2 -17% / +26%: pooled 80.9% (ABOVE 9.8%), held-out 81.5% | app: pooled 81.3%, held-out 81.7% | early by the app's test 2.0%
+hughes  troughs/3      hughes/steady/3 -17% / +25%: pooled 80.7% (ABOVE 9.8%), held-out 81.4% | app: pooled 81.6%, held-out 82.2% | early by the app's test 5.1%
 hughes  load-one/1     hughes/early/1 -26% / +36%: pooled 80.0% (ABOVE 10.2%), held-out 80.7% | app: pooled 80.0%, held-out 80.7% | early by the app's test 100.0%
 hughes  load-two/2     hughes/early/2 -24% / +36%: pooled 79.9% (ABOVE 9.8%), held-out 81.2% | app: pooled 79.9%, held-out 81.2% | early by the app's test 100.0%
 hughes  load-three/3   hughes/early/3 -23% / +33%: pooled 80.5% (ABOVE 9.8%), held-out 81.3% | app: pooled 80.5%, held-out 81.3% | early by the app's test 100.0%
 hughes  load-two-ss/3  hughes/early/3 -23% / +33%: pooled 91.7% (ABOVE 5.8%), held-out 91.4% | app: pooled 91.7%, held-out 91.4% | early by the app's test 100.0%
-hughes  d4-trough/1    hughes/steady/1 -18% / +28%: pooled 70.9% (ABOVE 12.5%), held-out 68.5% | hughes/early/1 -26% / +36%: pooled 84.4% (ABOVE 8.2%), held-out 83.8% | app: pooled 84.4%, held-out 83.8% | early by the app's test 100.0%
-hughes  d3d4-troughs/2 hughes/steady/2 -17% / +26%: pooled 66.6% (ABOVE 14.8%), held-out 69.1% | hughes/early/2 -24% / +36%: pooled 82.7% (ABOVE 8.2%), held-out 82.8% | app: pooled 82.7%, held-out 82.8% | early by the app's test 100.0%
+hughes  d4-trough/1    hughes/steady/1 -18% / +28%: pooled 70.9% (ABOVE 12.5%), held-out 68.5% | hughes/early/1 -26% / +36%: pooled 84.4% (ABOVE 8.2%), held-out 83.8% | app: pooled 78.9%, held-out 77.6% | early by the app's test 56.3%
+hughes  d3d4-troughs/2 hughes/steady/2 -17% / +26%: pooled 66.6% (ABOVE 14.8%), held-out 69.1% | hughes/early/2 -24% / +36%: pooled 82.7% (ABOVE 8.2%), held-out 82.8% | app: pooled 81.6%, held-out 81.7% | early by the app's test 92.1%
 
-SENSITIVITY to SS_FRACTION_NOTE (pooled seeds): app-rule coverage, and the share read as early, for each threshold
-hughes  troughs/1      0.6: 80.7% (early 2.6%) | 0.7: 81.7% (early 9.0%) | 0.75: 83.1% (early 17.2%) | 0.8: 84.9% (early 30.8%) | 0.85: 87.0% (early 50.5%) | 0.9: 89.4% (early 71.5%)
-hughes  troughs/2      0.6: 82.0% (early 5.4%) | 0.7: 84.1% (early 17.5%) | 0.75: 85.7% (early 30.3%) | 0.8: 88.0% (early 48.0%) | 0.85: 89.9% (early 66.3%) | 0.9: 91.4% (early 83.3%)
-hughes  troughs/3      0.6: 82.5% (early 11.6%) | 0.7: 84.9% (early 30.5%) | 0.75: 87.4% (early 47.9%) | 0.8: 88.9% (early 64.0%) | 0.85: 90.2% (early 80.2%) | 0.9: 91.0% (early 93.6%)
-hughes  load-one/1     0.6: 80.0% (early 100.0%) | 0.7: 80.0% (early 100.0%) | 0.75: 80.0% (early 100.0%) | 0.8: 80.0% (early 100.0%) | 0.85: 80.0% (early 100.0%) | 0.9: 80.0% (early 100.0%)
-hughes  load-two/2     0.6: 79.9% (early 100.0%) | 0.7: 79.9% (early 100.0%) | 0.75: 79.9% (early 100.0%) | 0.8: 79.9% (early 100.0%) | 0.85: 79.9% (early 100.0%) | 0.9: 79.9% (early 100.0%)
-hughes  load-three/3   0.6: 80.5% (early 100.0%) | 0.7: 80.5% (early 100.0%) | 0.75: 80.5% (early 100.0%) | 0.8: 80.5% (early 100.0%) | 0.85: 80.5% (early 100.0%) | 0.9: 80.5% (early 100.0%)
-hughes  load-two-ss/3  0.6: 91.7% (early 100.0%) | 0.7: 91.7% (early 100.0%) | 0.75: 91.7% (early 100.0%) | 0.8: 91.7% (early 100.0%) | 0.85: 91.7% (early 100.0%) | 0.9: 91.7% (early 100.0%)
-hughes  d4-trough/1    0.6: 81.8% (early 78.1%) | 0.7: 84.1% (early 96.2%) | 0.75: 84.4% (early 99.7%) | 0.8: 84.4% (early 100.0%) | 0.85: 84.4% (early 100.0%) | 0.9: 84.4% (early 100.0%)
-hughes  d3d4-troughs/2 0.6: 82.6% (early 99.1%) | 0.7: 82.7% (early 100.0%) | 0.75: 82.7% (early 100.0%) | 0.8: 82.7% (early 100.0%) | 0.85: 82.7% (early 100.0%) | 0.9: 82.7% (early 100.0%)
+SENSITIVITY hughes (pooled seeds; criterion designs: troughs/1, troughs/2, troughs/3, load-one/1, load-two/2, load-three/3, d4-trough/1, d3d4-troughs/2); shipped threshold 0.525 reproduces earlyLevelFractions
+  0.3    fails       worst |cov-80| 9.7% | troughs/1 80.2%, troughs/2 80.9%, troughs/3 80.8%, load-one/1 79.9%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 71.5%, d3d4-troughs/2 70.3%
+  0.325  fails       worst |cov-80| 8.5% | troughs/1 80.2%, troughs/2 80.9%, troughs/3 80.8%, load-one/1 79.9%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 71.8%, d3d4-troughs/2 71.5%
+  0.35   fails       worst |cov-80| 7.9% | troughs/1 80.2%, troughs/2 80.9%, troughs/3 80.8%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 72.1%, d3d4-troughs/2 72.9%
+  0.375  fails       worst |cov-80| 7.2% | troughs/1 80.2%, troughs/2 80.9%, troughs/3 80.9%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 72.8%, d3d4-troughs/2 74.8%
+  0.4    fails       worst |cov-80| 6.4% | troughs/1 80.2%, troughs/2 81.0%, troughs/3 81.0%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 73.6%, d3d4-troughs/2 76.4%
+  0.425  fails       worst |cov-80| 5.3% | troughs/1 80.3%, troughs/2 81.0%, troughs/3 81.0%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 74.7%, d3d4-troughs/2 77.9%
+  0.45   meets 75-85 worst |cov-80| 4.6% | troughs/1 80.3%, troughs/2 81.0%, troughs/3 81.1%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 75.4%, d3d4-troughs/2 78.6%
+  0.475  meets 75-85 worst |cov-80| 3.5% | troughs/1 80.3%, troughs/2 81.0%, troughs/3 81.3%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 76.5%, d3d4-troughs/2 79.7%
+  0.5    meets 75-85 worst |cov-80| 2.1% | troughs/1 80.3%, troughs/2 81.2%, troughs/3 81.4%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 77.9%, d3d4-troughs/2 81.0%
+  0.525  meets 75-85 worst |cov-80| 1.6% | troughs/1 80.4%, troughs/2 81.3%, troughs/3 81.6%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 78.9%, d3d4-troughs/2 81.6%
+  0.55   meets 75-85 worst |cov-80| 1.9% | troughs/1 80.4%, troughs/2 81.5%, troughs/3 81.9%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 79.9%, d3d4-troughs/2 81.9%
+  0.575  meets 75-85 worst |cov-80| 2.4% | troughs/1 80.6%, troughs/2 81.7%, troughs/3 82.1%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 80.9%, d3d4-troughs/2 82.4%
+  0.6    meets 75-85 worst |cov-80| 2.6% | troughs/1 80.7%, troughs/2 82.0%, troughs/3 82.5%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 81.8%, d3d4-troughs/2 82.6%
+  0.625  meets 75-85 worst |cov-80| 2.9% | troughs/1 80.9%, troughs/2 82.5%, troughs/3 82.9%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 82.6%, d3d4-troughs/2 82.6%
+  0.65   meets 75-85 worst |cov-80| 3.5% | troughs/1 81.0%, troughs/2 82.8%, troughs/3 83.5%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 83.3%, d3d4-troughs/2 82.7%
+  0.675  meets 75-85 worst |cov-80| 4.2% | troughs/1 81.4%, troughs/2 83.6%, troughs/3 84.2%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 83.8%, d3d4-troughs/2 82.7%
+  0.7    meets 75-85 worst |cov-80| 4.9% | troughs/1 81.7%, troughs/2 84.1%, troughs/3 84.9%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.1%, d3d4-troughs/2 82.7%
+  0.725  fails       worst |cov-80| 6.1% | troughs/1 82.3%, troughs/2 84.8%, troughs/3 86.1%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.75   fails       worst |cov-80| 7.4% | troughs/1 83.1%, troughs/2 85.7%, troughs/3 87.4%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.775  fails       worst |cov-80| 8.0% | troughs/1 83.9%, troughs/2 86.9%, troughs/3 88.0%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.8    fails       worst |cov-80| 8.9% | troughs/1 84.9%, troughs/2 88.0%, troughs/3 88.9%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.825  fails       worst |cov-80| 9.6% | troughs/1 85.9%, troughs/2 89.0%, troughs/3 89.6%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.85   fails       worst |cov-80| 10.2% | troughs/1 87.0%, troughs/2 89.9%, troughs/3 90.2%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.875  fails       worst |cov-80| 10.8% | troughs/1 88.2%, troughs/2 90.8%, troughs/3 90.7%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.9    fails       worst |cov-80| 11.4% | troughs/1 89.4%, troughs/2 91.4%, troughs/3 91.0%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.925  fails       worst |cov-80| 12.0% | troughs/1 90.4%, troughs/2 92.0%, troughs/3 91.2%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.95   fails       worst |cov-80| 12.4% | troughs/1 91.0%, troughs/2 92.4%, troughs/3 91.3%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  0.975  fails       worst |cov-80| 12.6% | troughs/1 91.4%, troughs/2 92.6%, troughs/3 91.3%, load-one/1 80.0%, load-two/2 79.9%, load-three/3 80.5%, d4-trough/1 84.4%, d3d4-troughs/2 82.7%
+  CHOSEN hughes: 0.525
+  Coverage at 0.525, app's row choice:
+    troughs/1       pooled 80.4%, held-out 79.3% | read as early 0.8%
+    troughs/2       pooled 81.3%, held-out 81.7% | read as early 2.0%
+    troughs/3       pooled 81.6%, held-out 82.2% | read as early 5.1%
+    load-one/1      pooled 80.0%, held-out 80.7% | read as early 100.0%
+    load-two/2      pooled 79.9%, held-out 81.2% | read as early 100.0%
+    load-three/3    pooled 80.5%, held-out 81.3% | read as early 100.0%
+    load-two-ss/3   pooled 91.7%, held-out 91.4% | read as early 100.0% (not a criterion)
+    d4-trough/1     pooled 78.9%, held-out 77.6% | read as early 56.3%
+    d3d4-troughs/2  pooled 81.6%, held-out 81.7% | read as early 92.1%
+
+DECISIONS (pooled seeds): steady-state row (before D27) against the app row (D27), per design
+hughes  troughs/1       8 of 4500 answers differ {"change -> change":7,"change -> continue":1}
+    change -> change: e.g. CL 2.67 L/h, Vc 69 L, Vp 246 L, on 1000 mg q12h (AUC24 750): hughes/steady/1 change 1250 mg q24h [answer 15/20, current 2/20] -> hughes/early/1 change 750 mg q12h [answer 11/20, current 3/20]
+    change -> continue: e.g. CL 3.71 L/h, Vc 61 L, Vp 401 L, on 1000 mg q12h (AUC24 540): hughes/steady/1 change 1750 mg q24h [answer 15/20, current 13/20] -> hughes/early/1 continue 1000 mg q12h [answer 11/20, current 11/20]
+hughes  troughs/2       14 of 4500 answers differ {"change -> change":11,"change -> continue":3}
+    change -> change: e.g. CL 1.88 L/h, Vc 66 L, Vp 121 L, on 1000 mg q12h (AUC24 1066): hughes/steady/2 change 1750 mg q48h [answer 15/20, current 0/20] -> hughes/early/2 change 500 mg q12h [answer 11/20, current 0/20]
+    change -> continue: e.g. CL 3.60 L/h, Vc 62 L, Vp 340 L, on 1000 mg q12h (AUC24 556): hughes/steady/2 change 1750 mg q24h [answer 16/20, current 13/20] -> hughes/early/2 continue 1000 mg q12h [answer 11/20, current 11/20]
+hughes  troughs/3       29 of 4500 answers differ {"change -> continue":19,"change -> change":10}
+    change -> continue: e.g. CL 3.65 L/h, Vc 70 L, Vp 333 L, on 1000 mg q12h (AUC24 548): hughes/steady/3 change 1750 mg q24h [answer 16/20, current 13/20] -> hughes/early/3 continue 1000 mg q12h [answer 12/20, current 12/20]
+    change -> change: e.g. CL 2.73 L/h, Vc 72 L, Vp 266 L, on 1000 mg q12h (AUC24 732): hughes/steady/3 change 1250 mg q24h [answer 16/20, current 2/20] -> hughes/early/3 change 750 mg q12h [answer 12/20, current 3/20]
+hughes  load-one/1      0 of 4500 answers differ {}
+hughes  load-two/2      0 of 4500 answers differ {}
+hughes  load-three/3    0 of 4500 answers differ {}
+hughes  load-two-ss/3   641 of 4500 answers differ {"change -> continue":337,"change -> change":304}
+    change -> continue: e.g. CL 3.71 L/h, Vc 62 L, Vp 60 L, on 1000 mg q12h (AUC24 539): hughes/steady/3 change 1750 mg q24h [answer 16/20, current 14/20] -> hughes/early/3 continue 1000 mg q12h [answer 12/20, current 12/20]
+    change -> change: e.g. CL 3.55 L/h, Vc 67 L, Vp 44 L, on 1000 mg q12h (AUC24 563): hughes/steady/3 change 750 mg q12h [answer 14/20, current 12/20] -> hughes/early/3 change 1750 mg q24h [answer 13/20, current 11/20]
+hughes  d4-trough/1     594 of 4500 answers differ {"change -> continue":157,"change -> change":434,"continue -> change":3}
+    change -> continue: e.g. CL 3.53 L/h, Vc 71 L, Vp 99 L, on 1000 mg q12h (AUC24 566): hughes/steady/1 change 1750 mg q24h [answer 15/20, current 12/20] -> hughes/early/1 continue 1000 mg q12h [answer 11/20, current 11/20]
+    change -> change: e.g. CL 2.77 L/h, Vc 64 L, Vp 76 L, on 1000 mg q12h (AUC24 721): hughes/steady/1 change 1250 mg q24h [answer 15/20, current 2/20] -> hughes/early/1 change 750 mg q12h [answer 11/20, current 4/20]
+    continue -> change: e.g. CL 4.52 L/h, Vc 72 L, Vp 132 L, on 1000 mg q12h (AUC24 443): hughes/steady/1 continue 1000 mg q12h [answer 14/20, current 14/20] -> hughes/early/1 change 750 mg q8h [answer 13/20, current 11/20]
+hughes  d3d4-troughs/2  741 of 4500 answers differ {"change -> change":432,"change -> continue":279,"continue -> change":30}
+    change -> change: e.g. CL 3.44 L/h, Vc 71 L, Vp 91 L, on 1000 mg q12h (AUC24 581): hughes/steady/2 change 750 mg q12h [answer 14/20, current 11/20] -> hughes/early/2 change 1750 mg q24h [answer 12/20, current 10/20]
+    change -> continue: e.g. CL 4.84 L/h, Vc 67 L, Vp 100 L, on 1000 mg q12h (AUC24 413): hughes/steady/2 change 1250 mg q12h [answer 15/20, current 13/20] -> hughes/early/2 continue 1000 mg q12h [answer 11/20, current 11/20]
+    continue -> change: e.g. CL 4.62 L/h, Vc 74 L, Vp 71 L, on 1000 mg q12h (AUC24 433): hughes/steady/2 continue 1000 mg q12h [answer 14/20, current 14/20] -> hughes/early/2 change 750 mg q8h [answer 13/20, current 11/20]

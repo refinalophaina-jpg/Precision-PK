@@ -6520,14 +6520,8 @@ function fitKelFromEarlyLevel(cObs, tSinceDose, doseNumber, dose, tau, tinf, vd)
 // doses is not steady state once the half-life approaches the interval
 // (t1/2 18 h on q12h reaches ~75%).
 // PREFERENCE (rule 8): below this fraction of steady state a level is called
-// "before steady state". In the Trough module it changes wording only. In AUC
-// Precision (v3.15.0, D27; models review I2) it also selects the uncertainty row
-// the decision reads: through earlyLevelFractions a fit with an early level reads
-// the band simulated for levels drawn before steady state (AUC_UNCERTAINTY,
-// design 'early'), so the 20 dots, the "likely" range and regimenDecision's
-// continue-or-change count all move with it. It can therefore change a dose: an
-// in-range regimen's dot count, and so whether it is continued, depends on which
-// row is read. No paper sets 0.9 (about 3.3 half-lives).
+// "before steady state" in advice text. It changes wording only, never a dose.
+// Trough module only; AUC Precision reads SS_FRACTION_EARLY (D27).
 const SS_FRACTION_NOTE = 0.9;
 
 function fractionOfSteadyState(kel, tau, n) {
@@ -6535,18 +6529,54 @@ function fractionOfSteadyState(kel, tau, n) {
   return 1 - Math.exp(-kel * tau * n);
 }
 
+// PREFERENCE (rule 8), per model: in AUC Precision a level whose fraction of steady
+// state (earlyLevelFractions) is below this is "before steady state". It SELECTS THE
+// UNCERTAINTY ROW THE DECISION READS (AUC_UNCERTAINTY, design 'early'), so the 20
+// dots, the "likely" range and regimenDecision's continue-or-change count move with
+// it: it can change a dose. It also words the "Early level" note. No paper sets it.
+// Per model because the test reads the fitted terminal half-life: on the
+// two-compartment models (about 20 h) one threshold of 0.9 read most true
+// steady-state troughs as early too, and the band over-covered them (Hughes 89-91%,
+// Goti 84-88%), while Buelga needs a high cut for its first trough to read early.
+// CALIBRATION (Task 19 controller ruling): node docs/audit/uncertainty-by-model.cjs
+// 1500 <model> --early --sensitivity=0.3,0.325,...,0.975 (seeds 7/11/23 pooled, held-out
+// 31; --decisions too; docs/audit/task19/coverage-<model>.txt). Chosen per model: (a) under the app's own
+// row choice every design simulated (one, two and three levels after a load; one, two
+// and three steady-state troughs; a trough before dose 4; troughs before doses 3 and 4)
+// covers 75-85% of simulated patients (models review I2), and (b) of those, the value
+// whose worst design is nearest 80%. Coverage of the true AUC24 at the chosen values,
+// pooled seeds (held-out seed in brackets), by the app's own choice of row:
+//   design                     Buelga 0.85     Goti 0.6        Hughes 0.525
+//   one level after a load     80.3 (81.7)     80.1 (77.9)     80.0 (80.7)
+//   two levels after a load    80.4 (79.1)     80.0 (79.0)     79.9 (81.2)
+//   three levels after a load  79.4 (79.7)     79.9 (81.9)     80.5 (81.3)
+//   one steady-state trough    80.7 (81.1)     80.8 (80.5)     80.4 (79.3)
+//   two steady-state troughs   79.4 (77.0)     80.6 (79.1)     81.3 (81.7)
+//   three steady-state troughs 81.2 (81.5)     79.5 (79.9)     81.6 (82.2)
+//   trough before dose 4       78.1 (78.9)     78.3 (77.3)     78.9 (77.6)
+//   troughs before doses 3, 4  82.4 (80.9)     83.0 (82.5)     81.6 (81.7)
+// Admissible ranges (all designs 75-85%): Buelga 0.8-0.9, Goti 0.55-0.7, Hughes 0.45-0.7.
+// Goti-HD reads Goti's (neither row was simulated on haemodialysis).
+const SS_FRACTION_EARLY = { buelga: 0.85, goti: 0.6, hughes: 0.525 };
+
+// The AUC_UNCERTAINTY / SS_FRACTION_EARLY key for a model (Goti-HD reads Goti).
+function uncertaintyTableKey(model) {
+  return model === 'hughes' ? 'hughes' : (model === 'goti' || model === 'goti-hd') ? 'goti' : 'buelga';
+}
+
 // THE test for "drawn before steady state" in AUC Precision (rule 2: one
 // implementation). The fraction of steady state each level reached, at the fitted
-// terminal half-life, counted from the first dose; returns those below
-// SS_FRACTION_NOTE. A loading dose is not credited: the band reflects how much the
-// levels can say about clearance, and levels inside the first interval say less
+// terminal half-life, counted from the first dose; returns those below the model's
+// SS_FRACTION_EARLY. A loading dose is not credited: the band reflects how much the
+// levels have been shaped by clearance, and levels inside the first interval say less
 // whatever the load. Read by the "Early level" note and by runBayesian to choose
 // the uncertainty row (aucUncertaintyRow's `early`), so the two cannot disagree.
-function earlyLevelFractions(levels, doses, t12) {
+function earlyLevelFractions(levels, doses, t12, model) {
   const kel = t12 > 0 ? Math.LN2 / t12 : NaN;
   const t0 = doses && doses.length ? doses[0].timeH : NaN;
+  const cut = SS_FRACTION_EARLY[uncertaintyTableKey(model)];
   return (levels || []).map(l => 1 - Math.exp(-kel * (l.timeH - t0)))
-    .filter(f => isFinite(f) && f < SS_FRACTION_NOTE);
+    .filter(f => isFinite(f) && f < cut);
 }
 
 function calcAUC(dose, tau, clv) {
@@ -11960,10 +11990,10 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
 // EARLY ROWS (design:'early'; v3.15.0, D27; models review I2). The rows above were simulated for
 // steady-state troughs. For levels drawn before steady state the Hughes band covered only 64.7-68% of
 // simulated patients, and the 20 dots and regimenDecision still read it. A fit with an early level
-// (earlyLevelFractions: any level below SS_FRACTION_NOTE of steady state at the fitted half-life, counted
-// from the first dose; the "Early level" note's test) now reads these rows, by aucUncertaintyRow(n, model,
+// (earlyLevelFractions: any level below its model's SS_FRACTION_EARLY of steady state at the fitted
+// half-life, counted from the first dose; the "Early level" note's test) now reads these rows, by aucUncertaintyRow(n, model,
 // true). PROVENANCE: docs/audit/uncertainty-by-model.cjs (node docs/audit/uncertainty-by-model.cjs 1500
-// <model> --early --sensitivity=0.6,0.7,0.75,0.8,0.85,0.9; output in docs/audit/task19/coverage-<model>.txt),
+// <model> --early --decisions --sensitivity=0.3,0.325,...,0.975; output in docs/audit/task19/coverage-<model>.txt),
 // the same patients, priors, residual errors and shipped mapFit as the rows above;
 // one loading dose of 25 mg/kg total body weight (250 mg steps, at most 3000 mg, autoTinf) at 0 h, then
 // 1000 mg q12h from 12 h. Designs:
@@ -11977,12 +12007,13 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
 // lo / hi: 10th and 90th percentiles of true/estimated AUC24; frac / median: 80th / 50th percentile of
 // |error|. Means of seeds 7, 11 and 23, n = 1,500 each, run on the Task 17 mapFit (nine starts).
 // Coverage in each row's own design: 79.4-80.5% with the three seeds pooled (n = 4,500), 77.9-81.9% on
-// the held-out seed 31 (docs/audit/task19/coverage-<model>.txt). By the app's own choice of row, a first
-// trough before dose 4 (no load) is now covered for 80.9% (Buelga), 84.4% (Goti) and 84.4% (Hughes) of
-// patients, against 71.1%, 69.7% and 70.9% on the steady-state row. KNOWN LIMIT: on the two-compartment
-// models the test reads the terminal half-life (about 20 h), so many troughs at true steady state are
-// read as early too, and there the band over-covers (Hughes 89-91%, Goti 84-88%; Buelga 80-82%). D27
-// records it; SS_FRACTION_NOTE is the preference that sets it. Goti-HD reads the Goti early rows.
+// the held-out seed 31 (docs/audit/task19/coverage-<model>.txt). Which fits read them is set per model
+// by SS_FRACTION_EARLY (a preference, calibrated so that every simulated design, early, intermediate and
+// steady-state, is covered 75-85% by the app's own choice of row; its comment holds the table). A first
+// trough before dose 4 (no load) is now covered for 78-79% of patients, against 70-71% on the
+// steady-state row alone. HAEMODIALYSIS: neither the steady-state nor the early rows were simulated on
+// haemodialysis. Goti-HD reads the Goti rows, chosen by the same test at Goti's threshold; on dialysis the
+// fitted half-life is long, so most Goti-HD levels read the early rows.
 const AUC_UNCERTAINTY = {
   buelga: [ { n:0, frac:0.35, median:0.19, lo:0.30, hi:0.46 }, { n:1, frac:0.21, median:0.10, lo:0.21, hi:0.23 },
             { n:2, frac:0.18, median:0.09, lo:0.18, hi:0.18 }, { n:3, frac:0.17, median:0.08, lo:0.17, hi:0.18 },
@@ -12009,7 +12040,7 @@ function aucBandText(row) {
 // (see the provenance above). `id` names the row read ('hughes/early/1'), so a test can check that
 // every consumer of one fit read the same row.
 function aucUncertaintyRow(nLevels, model, early) {
-  const key = model === 'hughes' ? 'hughes' : (model === 'goti' || model === 'goti-hd') ? 'goti' : 'buelga';
+  const key = uncertaintyTableKey(model);
   const n = Math.max(0, Math.min(3, Number(nLevels) || 0));
   const design = early && n > 0 ? 'early' : 'steady';
   const rows = AUC_UNCERTAINTY[key].filter(r => (r.design || 'steady') === design);
@@ -13404,7 +13435,7 @@ function runBayesian() {
       : null;
 
     // D27: a level before steady state reads the band simulated for early levels (earlyLevelFractions).
-    const earlyFit = earlyLevelFractions(filteredLevels, doses, t12_ind).length > 0;
+    const earlyFit = earlyLevelFractions(filteredLevels, doses, t12_ind, 'goti').length > 0;
     const decisionArgs = { CL: CL_ind, V: Vc_ind, target: targetAUC, bag: { Vc: Vc_ind, Vp: Vp_ind, Q: Q_GOTI }, mic,
       doses: decisionDoses, row: aucUncertaintyRow(filteredLevels.length, 'goti', earlyFit), nowH: fitNowH };
     const rec = regimenDecisionOf(decisionArgs);
@@ -13484,7 +13515,7 @@ function runBayesian() {
       ? burtonObj3D_hughes(etaCL_opt,etaVc_opt,etaVp_opt, pk.TVCL,pk.TVVc,pk.TVVp, pk.TVQ, doses,filteredLevels)
       : null;
 
-    const earlyFit = earlyLevelFractions(filteredLevels, doses, t12_ind).length > 0;   // D27, as Goti
+    const earlyFit = earlyLevelFractions(filteredLevels, doses, t12_ind, 'hughes').length > 0;   // D27, as Goti
     const decisionArgs = { CL: CL_ind, V: Vc_ind, target: targetAUC, bag: { Vc: Vc_ind, Vp: Vp_ind, Q: Q_h }, mic,
       doses: decisionDoses, row: aucUncertaintyRow(filteredLevels.length, 'hughes', earlyFit), nowH: fitNowH };
     const rec = regimenDecisionOf(decisionArgs);
@@ -13548,7 +13579,7 @@ function runBayesian() {
       divergeMsg = `Individual CL is ${pct.toFixed(0)}% ${dir} than population average. ${why}.`;
     }
 
-    const earlyFit = earlyLevelFractions(filteredLevels, doses, t12_ind).length > 0;   // D27, as Goti
+    const earlyFit = earlyLevelFractions(filteredLevels, doses, t12_ind, 'buelga').length > 0;   // D27, as Goti
     const decisionArgs = { CL: CL_ind, V: V_ind, target: targetAUC, bag: null, mic,
       doses: decisionDoses, row: aucUncertaintyRow(filteredLevels.length, 'buelga', earlyFit), nowH: fitNowH };
     const rec = regimenDecisionOf(decisionArgs);
@@ -14565,7 +14596,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   // 33% against 21% at steady state), so say so rather than quote the SS figure.
   {
     // The one test (rule 2) that also chose uRow in runBayesian, on the same levels, doses and half-life.
-    const early = earlyLevelFractions(r.levels, r.doses, t12_ind);
+    const early = earlyLevelFractions(r.levels, r.doses, t12_ind, uncertaintyModelKey(r));
     if (early.length) {
       const ssRow = aucUncertaintyRow(nLev, uncertaintyModelKey(r), false);
       notes.push({ tier: 'info', word: 'Early level', html: `${early.length === 1 ? 'A level was' : `${early.length} levels were`} drawn before steady state

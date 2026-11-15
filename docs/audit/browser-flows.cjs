@@ -1222,23 +1222,21 @@ async function enterCourse(page) {
        JSON.stringify({ act: lo.act, reg: lo.reg, conf: lo.conf, why: lo.why, next: lo.next, said: lo.said.slice(0, 80) }));
     // Task 9, the user's ruling 3 (UI report I8): a Low-confidence fit moved an in-range regimen for two
     // more of 20 plausible AUCs. A fictional 30 M (125 kg, 170 cm, BMI 43.3, SCr 0.9) on Hughes, 1.5 g
-    // q12h x 8 over 2 h, the last at 22:30 yesterday; one level of 16 mg/L now. The models disagree,
+    // q12h x 4 over 2 h, the last at 22:30 yesterday; one level of 14 mg/L now. The models disagree,
     // so the rating is Low; the dots alone would move to 1.25 g q12h (15 of 20 against 13). A real fit.
-    // Moved from x 4 at 14 mg/L (Task 19, D27; SUITE 44.17 records why): that level is before steady state,
-    // reads the early band, and is then a plain in-range continue, so the ruling was no longer exercised.
     await n.goto(BASE + '?v=nlv4-' + Date.now(), { waitUntil: 'networkidle' });
     await n.locator('[data-onclick="k2"]').click();
     await typeInto(n, '#b-age', '30'); await typeInto(n, '#b-tbw', '125'); await typeInto(n, '#b-height', '170'); await typeInto(n, '#b-scr', '0.9');
     await n.locator('[data-onclick="k39"]').click();
     await n.locator('#b-model-btn-hughes').click();
-    const lcWhen = [[day(-4), '10:30'], [day(-4), '22:30'], [day(-3), '10:30'], [day(-3), '22:30'], [D1, '10:30'], [D1, '22:30'], [D2, '10:30'], [D2, '22:30']];
+    const lcWhen = [[D1, '10:30'], [D1, '22:30'], [D2, '10:30'], [D2, '22:30']];
     for (let i = 1; i <= lcWhen.length; i++) {
       await n.locator('[data-onclick="k43"]').click();
       await typeInto(n, `#b-dose-mg-${i}`, '1500'); await typeInto(n, `#b-dose-tinf-${i}`, '2');
       await n.locator(`#b-dose-date-${i}`).fill(lcWhen[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, lcWhen[i - 1][1]);
     }
     await n.locator('[data-onclick="k46"]').click();
-    await typeInto(n, '#b-lvl-conc-1', '16'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '10:00');
+    await typeInto(n, '#b-lvl-conc-1', '14'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '10:00');
     await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(300);
     const lc = await n.evaluate(() => {
       const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -1895,7 +1893,7 @@ async function enterCourse(page) {
 
   // D27 (models review I2, Task 19): a level drawn before steady state reads the band simulated for early
   // levels. Fictional 45 M, 140 kg, 175 cm, SCr 1.0 on Hughes; 1.5 g at D1 08:00 and 20:00; one level,
-  // 13 mg/L, at D2 07:30 (23.5 h after the first dose). The Early level note quotes the early band, and the
+  // 26 mg/L, at D1 23:00 (15 h after the first dose). The Early level note quotes the early band, and the
   // percentages beside "likely", the likely range and the dot count are all that row's (SUITE 45.4b in Node).
   {
     const ectx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -1912,9 +1910,9 @@ async function enterCourse(page) {
     await typeInto(e, '#b-dose-time-1', '08:00');
     await e.locator('[data-onclick="k43"]').click();
     await e.locator('[data-onclick="k46"]').click();
-    await typeInto(e, '#b-lvl-conc-1', '13');
-    await e.locator('#b-lvl-date-1').fill(D2);
-    await typeInto(e, '#b-lvl-time-1', '07:30');
+    await typeInto(e, '#b-lvl-conc-1', '26');
+    await e.locator('#b-lvl-date-1').fill(D1);
+    await typeInto(e, '#b-lvl-time-1', '23:00');
     await e.waitForTimeout(300);
     await e.locator('[data-onclick="k47"]').click();
     await e.waitForSelector('#b-results .vx-likely', { timeout: 20000 }); await e.waitForTimeout(300);

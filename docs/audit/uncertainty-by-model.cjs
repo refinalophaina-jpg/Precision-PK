@@ -74,7 +74,7 @@ function sim(model,nLev,design,seed){
     if(model==='hughes'){ tbw=110+rnd()*70; }
     const crcl=Math.max(10,Math.min(140,(140-age)*tbw/(72*scr)));
     const {doses,times}=course(design,tbw,nLev);
-    let CLt,CLfit,t12fit=NaN;const levels=[];
+    let CLt,CLfit,t12fit=NaN,fit=null;const levels=[];
     if(model==='buelga'){
       const {CL_pop,V_pop}=buelgaPopPK(crcl,tbw);
       CLt=CL_pop*Math.exp(randn()*Math.sqrt(C.OMEGA2_CL_BUELGA)); const Vt=V_pop*Math.exp(randn()*Math.sqrt(C.OMEGA2_V_BUELGA));
@@ -83,7 +83,7 @@ function sim(model,nLev,design,seed){
       if(times.length){const fb=(x,y)=>burtonObjective(x,y,CL_pop,V_pop,doses,levels);
         const [a,b]=(SINGLE||!sb.mapFit)?nelderMead2D(fb,0,0,300):sb.mapFit(fb,2,C.OMEGA2_CL_BUELGA,C.OMEGA2_V_BUELGA,300).eta;
         CLfit=CL_pop*Math.exp(a); Vfit=V_pop*Math.exp(b);}
-      t12fit=Math.LN2*Vfit/CLfit;
+      t12fit=Math.LN2*Vfit/CLfit; fit={CL:CLfit,V:Vfit,bag:null};
     } else {
       let pk,Q,o,sp,sa,obj;
       if(model==='goti'){pk=gotiPopPK(crcl,tbw,false);Q=C.Q_GOTI;o=[C.OMEGA2_CL_GOTI,C.OMEGA2_VC_GOTI,C.OMEGA2_VP_GOTI];sp=C.SIGMA_PROP_GOTI;sa=C.SIGMA_ADD_GOTI;
@@ -97,13 +97,14 @@ function sim(model,nLev,design,seed){
       if(times.length){r=(SINGLE||!sb.mapFit)?nelderMead3D(obj,0,0,0,400):sb.mapFit(obj,3,o[0],o[1],400,o[2]).eta;}
       CLfit=pk.TVCL*Math.exp(r[0]);
       t12fit=t12of2comp(CLfit,pk.TVVc*Math.exp(r[1]),pk.TVVp*Math.exp(r[2]),Q);
+      fit={CL:CLfit,V:pk.TVVc*Math.exp(r[1]),bag:{Vc:pk.TVVc*Math.exp(r[1]),Vp:pk.TVVp*Math.exp(r[2]),Q}};
     }
     if(!(CLfit>0)||!isFinite(CLfit))continue;
     const aT=24000/TAU/CLt, aE=24000/TAU/CLfit;
-    const early=earlyLevelFractions?earlyLevelFractions(levels,doses,t12fit).length>0:null;
+    const early=earlyLevelFractions?earlyLevelFractions(levels,doses,t12fit,model).length>0:null;
     // For --sensitivity only: the smallest fraction of steady state among the levels, by the same formula.
     const minFrac=Math.min(...levels.map(l=>1-Math.exp(-Math.LN2/t12fit*(l.timeH-doses[0].timeH))));
-    out.push({ratio:aT/aE,err:Math.abs(aE-aT)/aT,early,minFrac});
+    out.push({ratio:aT/aE,err:Math.abs(aE-aT)/aT,early,minFrac,fit,doses,lastLevelH:Math.max(...levels.map(l=>l.timeH))});
   }
   return out;
 }
@@ -156,14 +157,61 @@ if(!EARLY){
       +`: pooled ${f(share(pooled,x=>inRow(x,own)))} (ABOVE ${f(share(pooled,x=>x.ratio>1+own.hi))}), held-out ${f(share(held,x=>inRow(x,own)))}`).join(' | ')
       +` | app: pooled ${f(share(pooled,app))}, held-out ${f(share(held,app))} | early by the app's test ${f(share(pooled,x=>x.early))}`);
   }
-  // --sensitivity=0.7,0.8: the "app" coverage had SS_FRACTION_NOTE been each value (a what-if for the
-  // preference; the shipped test is earlyLevelFractions at 0.9, which the 0.9 column must reproduce).
+  // --sensitivity=0.5,0.6,...: the "app" coverage had the model's early-level threshold (SS_FRACTION_EARLY)
+  // been each value: a what-if for the preference, by the same formula (minFrac); the shipped value's
+  // column must reproduce earlyLevelFractions. The choice (Task 19 controller ruling): (a) under the app's
+  // own row choice every criterion design covers 75-85%, pooled seeds; (b) among those, the value whose
+  // worst design is nearest 80%. Criterion designs: every simulated design with levels except the mixed
+  // load-two-ss (reported, not a criterion).
   const SENS=opt('sensitivity',null);
   if(SENS){const th=SENS.split(',').map(Number);
-    console.log('\nSENSITIVITY to SS_FRACTION_NOTE (pooled seeds): app-rule coverage, and the share read as early, for each threshold');
-    for(const m of models) for(const [d,n] of designs){if(!n)continue;const pooled=[].concat(...R[m][`${d}/${n}`].seeds);
-      const agree=pooled.every(x=>x.early===(x.minFrac<0.9));
-      console.log(`${m.padEnd(7)} ${(d+'/'+n).padEnd(14)} `+th.map(t=>{const e=x=>x.minFrac<t;
-        return `${t}: ${f(share(pooled,x=>inRow(x,aucUncertaintyRow(n,m,e(x)))))} (early ${f(share(pooled,e))})`;}).join(' | ')+(agree?'':'  [0.9 DISAGREES with earlyLevelFractions]'));}
+    const vmod=require('vm');
+    const shippedT=m=>{try{const o=vmod.runInContext('SS_FRACTION_EARLY',sb);return o[m];}catch(e){return 0.9;}};
+    const crit=designs.filter(([d,n])=>n>0&&d!=='load-two-ss');
+    const cov=(recs,m,n,t)=>share(recs,x=>inRow(x,aucUncertaintyRow(n,m,x.minFrac<t)));
+    for(const m of models){
+      const T=shippedT(m);
+      const agree=designs.every(([d,n])=>!n||[].concat(...R[m][`${d}/${n}`].seeds).every(x=>x.early===(x.minFrac<T)));
+      console.log(`\nSENSITIVITY ${m} (pooled seeds; criterion designs: ${crit.map(([d,n])=>d+'/'+n).join(', ')}); shipped threshold ${T}`
+        +(agree?' reproduces earlyLevelFractions':' DISAGREES with earlyLevelFractions'));
+      let best=null;
+      for(const t of th){
+        const c=crit.map(([d,n])=>cov([].concat(...R[m][`${d}/${n}`].seeds),m,n,t));
+        const ok=c.every(v=>v>=0.75&&v<=0.85), worst=Math.max(...c.map(v=>Math.abs(v-0.8)));
+        if(ok&&(!best||worst<best.worst-1e-12))best={t,worst};
+        console.log(`  ${String(t).padEnd(6)} ${ok?'meets 75-85':'fails      '} worst |cov-80| ${f(worst)} | `+crit.map(([d,n],i)=>`${d}/${n} ${f(c[i])}`).join(', '));
+      }
+      const pick=best?best.t:th.reduce((a,t)=>{const w=Math.max(...crit.map(([d,n])=>Math.abs(cov([].concat(...R[m][`${d}/${n}`].seeds),m,n,t)-0.8)));return !a||w<a.w?{t,w}:a;},null).t;
+      console.log(`  CHOSEN ${m}: ${pick}${best?'':' (NO value meets 75-85%: the best worst-design value is shown)'}`);
+      console.log(`  Coverage at ${pick}, app's row choice:`);
+      for(const [d,n] of designs){if(!n)continue;const k=`${d}/${n}`,pooled=[].concat(...R[m][k].seeds),held=R[m][k].held,e=x=>x.minFrac<pick;
+        console.log(`    ${k.padEnd(15)} pooled ${f(cov(pooled,m,n,pick))}, held-out ${f(cov(held,m,n,pick))} | read as early ${f(share(pooled,e))}${crit.some(([a,b])=>a===d&&b===n)?'':' (not a criterion)'}`);}
+    }
+  }
+  // --decisions: regimenDecision on each fit, with the steady-state row (the pre-D27 answer) and with the
+  // row the app chooses (earlyLevelFractions at the shipped SS_FRACTION_EARLY). The current regimen is the
+  // design's own course, every dose given before the last level; "now" is 0.5 h after the last level. A
+  // design whose levels precede the first maintenance dose has no current regimen (a load alone), so its
+  // answer is the target box, which the row does not move. Counts per design, pooled seeds.
+  if(args.includes('--decisions')){
+    const {regimenDecision,attainmentDots}=sb;
+    const sig=r=>!r?'none':r.noSolution?'refusal':`${r.action} ${r.dose} mg q${r.tau}h`;
+    console.log('\nDECISIONS (pooled seeds): steady-state row (before D27) against the app row (D27), per design');
+    for(const m of models) for(const [d,n] of designs){if(!n)continue;
+      const recs=[].concat(...R[m][`${d}/${n}`].seeds);const kinds={};let flips=0,ex={};
+      for(const x of recs){
+        const nowH=x.lastLevelH+0.5, given=x.doses.filter(q=>q.timeH<=nowH);
+        const ss=aucUncertaintyRow(n,m,false), app=aucUncertaintyRow(n,m,x.early);
+        const a=regimenDecision(x.fit.CL,x.fit.V,450,x.fit.bag,1,given,ss,{nowH}), b=regimenDecision(x.fit.CL,x.fit.V,450,x.fit.bag,1,given,app,{nowH});
+        if(sig(a)===sig(b))continue; flips++;
+        const k=`${a.noSolution?'refusal':a.action} -> ${b.noSolution?'refusal':b.action}`;kinds[k]=(kinds[k]||0)+1;
+        if(!ex[k]){const cur=a.current||(a.action==='continue'?a:null)||b.current||(b.action==='continue'?b:null);
+          ex[k]=`CL ${x.fit.CL.toFixed(2)} L/h${x.fit.bag?`, Vc ${x.fit.bag.Vc.toFixed(0)} L, Vp ${x.fit.bag.Vp.toFixed(0)} L`:`, V ${x.fit.V.toFixed(0)} L`}, on ${given[given.length-1].mg} mg q12h`
+            +(cur?` (AUC24 ${cur.auc24.toFixed(0)})`:'')+`: ${ss.id} ${sig(a)} [answer ${attainmentDots(a.auc24,ss)}/20${cur?`, current ${attainmentDots(cur.auc24,ss)}/20`:''}]`
+            +` -> ${app.id} ${sig(b)} [answer ${attainmentDots(b.auc24,app)}/20${cur?`, current ${attainmentDots(cur.auc24,app)}/20`:''}]`;}
+      }
+      console.log(`${m.padEnd(7)} ${(d+'/'+n).padEnd(15)} ${flips} of ${recs.length} answers differ ${JSON.stringify(kinds)}`);
+      for(const k in ex)console.log(`    ${k}: e.g. ${ex[k]}`);
+    }
   }
 }

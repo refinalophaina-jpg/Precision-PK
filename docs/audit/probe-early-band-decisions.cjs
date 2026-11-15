@@ -7,7 +7,9 @@
 // simulated for early levels, and regimenDecision counts its 20 dots from that row. This runs
 // regimenDecision (the shipped function, as regimenDecisionOf calls it) over a grid of fictional fits and
 // current regimens twice, once with the steady-state row and once with the early row for the same model
-// and level count, and reports every answer that differs.
+// and level count, and reports every answer that differs. It is the CEILING: as if every fit on the grid
+// were early. Which real fits read the early row is set by SS_FRACTION_EARLY; the fit-based comparison
+// (simulated patients and designs, the app's own row choice) is uncertainty-by-model.cjs --early --decisions.
 //
 // Grid, per model and level count (1, 2, 3):
 //   clearance 0.5-12 L/h in 0.25 steps; volume: Buelga V 40/55/70/90 L; Goti and Hughes Vc 30/50/80 L x

@@ -5957,8 +5957,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // Since Task 9 each path builds one decisionArgs (stored on the result, so finalizeDecision
     // re-decides on exactly the same inputs) and decides from it; it carries the fit's "now" (D-b).
     // Since Task 19 (D27) the row also carries the fit's early-level test (earlyFit, from earlyLevelFractions).
-    const calls = code43.match(/const earlyFit = earlyLevelFractions\(filteredLevels, doses, t12_ind\)\.length > 0;[^\n]*\n\s*const decisionArgs = \{[^;]*\bdoses: decisionDoses, row: aucUncertaintyRow\(filteredLevels\.length, '(goti|hughes|buelga)', earlyFit\), nowH: fitNowH \};\s*const rec = regimenDecisionOf\(decisionArgs\);/g) || [];
-    assert(calls.length === 3, `${calls.length} of 3 fit paths pass decisionDoses and their own model's row, chosen by the early-level test`);
+    const calls = code43.match(/const earlyFit = earlyLevelFractions\(filteredLevels, doses, t12_ind, '(goti|hughes|buelga)'\)\.length > 0;[^\n]*\n\s*const decisionArgs = \{[^;]*\bdoses: decisionDoses, row: aucUncertaintyRow\(filteredLevels\.length, '\1', earlyFit\), nowH: fitNowH \};\s*const rec = regimenDecisionOf\(decisionArgs\);/g) || [];
+    assert(calls.length === 3, `${calls.length} of 3 fit paths pass decisionDoses and their own model's row, chosen by the early-level test at their own model's threshold`);
     assert((code43.match(/\brec, decisionArgs, doses\b/g) || []).length === 3, 'every fit path stores its decisionArgs on the result');
     assert(!/const rec = bayesDoseOptimizer\(/.test(code43), 'no fit path calls the optimizer directly');
     assert(/const decisionDoses = \(bState\.dial \|\| isOnDial \|\| \(lowCrClInfo\.detected && filteredLevels\.length === 0\)\) \? null : doses;/.test(code43),
@@ -7086,16 +7086,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // "Low confidence", a further level). Under Low or Very low an in-range, safe current regimen is
   // continued and the answer says to draw a level; safety changes and changes from out of range
   // still happen. finalizeDecision applies it once the rating is known (renderBayesianResults).
-  // Fictional 30 M, 125 kg, 170 cm (BMI 43.3), SCr 0.9, Hughes; 1.5 g q12h x 8 over 2 h, the last
-  // 11.5 h ago; one level, 16 mg/L, now. A real fit and a real Low rating (controller ruling R2 was
+  // Fictional 30 M, 125 kg, 170 cm (BMI 43.3), SCr 0.9, Hughes; 1.5 g q12h x 4 over 2 h, the last
+  // 11.5 h ago; one level, 14 mg/L, now. A real fit and a real Low rating (controller ruling R2 was
   // not needed for 44.17; 44.18 passes constructed ratings, which finalizeDecision takes as an argument).
-  // FIXTURE MOVED (Task 19, D27; rule 9, reason recorded): it was 1.5 g q12h x 4 with 14 mg/L. That level,
-  // 47.5 h after the first dose, is before steady state at the fitted half-life (19.4 h, 82% of the way),
-  // so since D27 it reads the early band (-26% / +36%), where no admissible regimen gains 2 more plausible AUCs in
-  // range: the unprotected answer is itself a continue and the ruling is never reached. Eight doses and
-  // 16 mg/L give the same steady-state case (AUC24 540, 13 of 20; 1.25 g q12h at 450, 15 of 20) on a level
-  // that is at steady state, so the ruling is still tested. The old fixture's flip is in the Task 19 report.
-  const lowHughes = () => fit44({ model: 'hughes', age: 30, tbw: 125, ht: 170, scr: 0.9, mg: 1500, tinf: 2, tau: 12, n: 8, lastAgo: 11.5, levels: [{ conc: 16, after: 11.5 }] });
+  // Task 19 (D27): the level is at 82% of steady state at the fitted half-life, above Hughes'
+  // SS_FRACTION_EARLY, so it reads the steady-state band, as before.
+  const lowHughes = () => fit44({ model: 'hughes', age: 30, tbw: 125, ht: 170, scr: 0.9, mg: 1500, tinf: 2, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 14, after: 11.5 }] });
   // The fit's own decision, before finalizeDecision: what runBayesian decided on decisionArgs.
   const unprotected44 = (r) => { const a = r.decisionArgs; return fn44('regimenDecision')(a.CL, a.V, a.target, a.bag, a.mic, a.doses, a.row, { nowH: a.nowH }); };
   // Task 9 review (item 3): the line names the regimen set aside (lowConfidenceAlt), gives the rating's
@@ -7150,10 +7146,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/Next dose/.test(fn44('firstDoseHTML')(plan, rec, false)), 'the readout says "Next dose"');
   });
   test('44.17a Goti (Review Focus 3): the same protection, and the rating did not depend on the answer — model agreement is read on the current daily dose', () => {
-    // Fictional 30 M, 80 kg, 175 cm, SCr 0.9, Goti; 1.5 g q12h x 8 over 2 h, the last 11.5 h ago; one level, 15 mg/L, now.
-    // Moved from x 4 at 14 mg/L for the reason given at lowHughes (Task 19): that level is before steady state
-    // (88%), and on the early band the change gains fewer than 2 dots. This one is at steady state: 9 -> 11 of 20.
-    const { r, html, text, conf, ag } = fit44({ model: 'goti', age: 30, tbw: 80, ht: 175, scr: 0.9, mg: 1500, tinf: 2, tau: 12, n: 8, lastAgo: 11.5, levels: [{ conc: 15, after: 11.5 }] });
+    // Fictional 30 M, 80 kg, 175 cm, SCr 0.9, Goti; 1.5 g q12h x 4 over 2 h, the last 11.5 h ago; one level, 14 mg/L, now.
+    const { r, html, text, conf, ag } = fit44({ model: 'goti', age: 30, tbw: 80, ht: 175, scr: 0.9, mg: 1500, tinf: 2, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 14, after: 11.5 }] });
     const u = unprotected44(r);
     assert(conf.rank === 2 && u.action === 'change' && u.decisionReason === 'attainment' && u.current.inBand,
       `the fixture: ${conf.level}, ${u.action} / ${u.decisionReason} from ${u.current && u.current.dose} q${u.current && u.current.tau}h`);
@@ -8365,6 +8359,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const h1 = R(1, 'hughes', true), h1s = R(1, 'hughes', false);
     assert(h1.lo + h1.hi > h1s.lo + h1s.hi, `hughes 1 level: −${h1.lo}/+${h1.hi} vs −${h1s.lo}/+${h1s.hi}`);
     assert(fn45('aucUncertaintyRow')(1, 'goti-hd', true).key === 'goti', 'Goti-HD reads the Goti rows, as before');
+    // The early-level test is per model (SS_FRACTION_EARLY, a preference); Goti-HD reads Goti's threshold.
+    const T = run45('SS_FRACTION_EARLY'), ef = fn45('earlyLevelFractions');
+    assert(['buelga', 'goti', 'hughes'].every(m => T[m] > 0 && T[m] < 1), `SS_FRACTION_EARLY ${JSON.stringify(T)}`);
+    const lv = [{ timeH: 30 }], ds = [{ timeH: 0 }], t12For = f => -30 * Math.LN2 / Math.log(1 - f);   // the half-life that puts the level at f
+    for (const m of ['buelga', 'goti', 'hughes']) {
+      assert(ef(lv, ds, t12For(T[m] - 0.01), m).length === 1 && ef(lv, ds, t12For(T[m] + 0.01), m).length === 0, `${m}: the cut is at ${T[m]}`);
+    }
+    assert(ef(lv, ds, t12For(T.goti - 0.01), 'goti-hd').length === 1 && ef(lv, ds, t12For(T.goti + 0.01), 'goti-hd').length === 0, 'Goti-HD reads the Goti threshold');
     assert(/levels drawn before steady state/.test(fn45('aucUncertaintyText')(1, 'hughes', true)) && /steady-state troughs/.test(fn45('aucUncertaintyText')(1, 'hughes', false)),
       'the label names the design its band was simulated for');
   });
@@ -8380,12 +8382,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     sandbox.aucRangeSVG = function (...a) { seen.range.push({ auc: a[0], row: a[1] }); return real.aucRangeSVG.apply(this, a); };
     let fit;
     // Fictional: 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103, inside Hughes Table 1); 1500 mg q12h x 2;
-    // one level, 13 mg/L, 11.5 h after the second dose (23.5 h after the first).
+    // one level, 26 mg/L, 3 h after the start of the second dose (15 h after the first).
     try { fit = fit44({ model: 'hughes', age: 45, tbw: 140, ht: 175, scr: 1.0, mg: 1500, tinf: fn45('autoTinf')(1500), tau: 12, n: 2, lastAgo: 12,
-      levels: [{ conc: 13, after: 11.5 }] }); }
+      levels: [{ conc: 26, after: 3 }] }); }
     finally { Object.assign(sandbox, real); }
     const { r, html, text } = fit;
-    const early = fn45('earlyLevelFractions')(r.levels, r.doses, r.t12_ind);
+    const early = fn45('earlyLevelFractions')(r.levels, r.doses, r.t12_ind, 'hughes');
     assert(early.length === 1, `the fixture is an early level by the shared test: ${JSON.stringify(early)} (t½ ${r.t12_ind})`);
     assert(/Early level/.test(text), 'the Early level note is shown');
     const want = R(1, 'hughes', true);
