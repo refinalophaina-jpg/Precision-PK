@@ -735,6 +735,43 @@ async function enterCourse(page) {
     await cctx.close();
   }
 
+  // v3.14.0 (D26), engine report I3: a level dated in the future is refused, naming its row.
+  // A fictional 55 M (80 kg, 176 cm, SCr 1.0) on 1.25 g q12h x 4, the last 11 h ago, and a
+  // level of 15 mg/L dated 30 h ahead. A planned dose dated ahead is still allowed.
+  // Fixed clock: today 10:00.
+  {
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const f = await fctx.newPage();
+    const fProblems = watch(f, 'future-level');
+    await f.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await f.goto(BASE + '?v=fut-' + Date.now(), { waitUntil: 'networkidle' });
+    await f.locator('[data-onclick="k2"]').click();
+    await typeInto(f, '#b-age', '55'); await typeInto(f, '#b-tbw', '80'); await typeInto(f, '#b-height', '176'); await typeInto(f, '#b-scr', '1.0');
+    await f.locator('[data-onclick="k39"]').click();
+    const when = [[day(-2), '11:00'], [day(-2), '23:00'], [day(-1), '11:00'], [day(-1), '23:00']];
+    for (let n = 1; n <= when.length; n++) {
+      await f.locator('[data-onclick="k43"]').click();
+      await typeInto(f, `#b-dose-mg-${n}`, '1250'); await typeInto(f, `#b-dose-tinf-${n}`, '1.5');
+      await f.locator(`#b-dose-date-${n}`).fill(when[n - 1][0]); await typeInto(f, `#b-dose-time-${n}`, when[n - 1][1]);
+    }
+    await f.locator('[data-onclick="k46"]').click();
+    await typeInto(f, '#b-lvl-conc-1', '15'); await f.locator('#b-lvl-date-1').fill(day(1)); await typeInto(f, '#b-lvl-time-1', '16:00');
+    await f.locator('[data-onclick="k47"]').click(); await f.waitForTimeout(600);
+    const futState = () => f.evaluate(() => ({ err: (document.getElementById('fe-auc') || {}).textContent || '', result: !!bState.result,
+      rec: !!document.querySelector('#b-results .rec-dose'), invalid: ['b-lvl-date-1', 'b-lvl-time-1'].some(i => { const e = document.getElementById(i); return e.getAttribute('aria-invalid') === 'true' || e.classList.contains('fe-invalid'); }) }));
+    const fut = await futState();
+    ok('D26: a level dated 30 h ahead is refused, naming "Level row 1", with no result',
+       /Level row 1/.test(fut.err) && /future/.test(fut.err) && !fut.result && !fut.rec && fut.invalid, JSON.stringify({ result: fut.result, rec: fut.rec, invalid: fut.invalid, err: fut.err.replace(/\s+/g, ' ').trim().slice(0, 80) }));
+    await f.locator('#b-lvl-date-1').fill(day(0)); await typeInto(f, '#b-lvl-time-1', '07:30');
+    await f.locator('[data-onclick="k47"]').click(); await f.waitForSelector('#b-results .rec-dose', { timeout: 20000 });
+    const fixed = await futState();
+    ok('D26: the same level dated in the past is fitted', fixed.result && fixed.rec && !/Level row/.test(fixed.err), JSON.stringify(fixed));
+    const fAttr = await attributeInjected(f, fProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + fAttr.injected;
+    results.problems.push(...fAttr.kept);
+    await fctx.close();
+  }
+
   // v3.14.0 (D26), engine report C1: a supratherapeutic patient was given a time for the next
   // dose with no hold. The user's ruling: a fitted pre-dose level of 20 mg/L or more is a Hold.
   // A fictional 60 M (80 kg, 178 cm, SCr 3.0) on Buelga, 1.5 g q8h x 6 over 2 h, the last

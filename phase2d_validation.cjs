@@ -6452,6 +6452,40 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/Rec 10\b[\s\S]*20 to 35 mg\/kg[\s\S]*p\. ?10\b/.test(cmt) || /Rec 10\b[\s\S]*p\. ?10\b[\s\S]*20 to 35 mg\/kg/.test(cmt), `Rec 10 with its page: ${cmt}`);
     assert(/Rec 12\b/.test(cmt) && /20 to 25 mg\/kg/.test(cmt) && /obese adult/.test(cmt) && /p\. ?11\b/.test(cmt), `Rec 12 with its page: ${cmt}`);
   });
+
+  // I3 (engine report): a level dated after the fit time can only be a wrong date, and a fit on it turned an
+  // in-range regimen into a safety change. Refuse it, naming the row. A future DOSE row is a planned dose: kept.
+  test('44.10 runBayesian refuses a level dated after the fit time (one-minute tolerance) and still accepts planned future doses', () => {
+    const rb = body44('runBayesian');
+    assert(/Date\.now\(\)\s*\/\s*3600000/.test(rb) && /showFormErrors\('auc'/.test(rb.slice(rb.indexOf('Date.now()'))), 'runBayesian compares level times with the fit time and calls showFormErrors');
+    const H = 3600000, now = Date.now(), nowH = now / H;
+    const drive = (doses, levels) => {
+      const cap = { errs: null, targets: null, ran: false };
+      const keep = {}; ['parseBayesCourse', 'showFormErrors', 'beginFormRun', 'readSerialScrChecked'].forEach(n => keep[n] = sandbox[n]);
+      const prevDoc = sandbox.document, vals = { 'b-age': '55', 'b-tbw': '80', 'b-height': '180', 'b-scr': '1.0', 'b-auc-target': '450' };
+      sandbox.document = { getElementById: (id) => ({ value: vals[id] || '', checked: false, style: {}, classList: { add() {}, remove() {}, contains() { return false; } } }), querySelector: () => null, querySelectorAll: () => [] };
+      sandbox.beginFormRun = () => {};
+      sandbox.readSerialScrChecked = () => ({ errors: [], readings: [] });
+      sandbox.parseBayesCourse = () => ({ doses, levels, sessions: [], errors: [] });
+      sandbox.showFormErrors = (scope, msgs) => { cap.errs = [].concat(msgs); };
+      vm.runInContext('bState.sex = null; bState.result = null;', sandbox);
+      try { sandbox.runBayesian(); } finally { Object.assign(sandbox, keep); sandbox.document = prevDoc; }
+      cap.result = vm.runInContext('bState.result', sandbox);
+      return cap;
+    };
+    const d = (hAgo) => ({ mg: 1250, tinfH: 1.5, timeH: nowH - hAgo });
+    const doses = [d(35), d(23), d(11)];
+    const fut = drive(doses, [{ conc: 15, timeH: nowH + 30, row: '1', label: 'x' }]);
+    assert(fut.errs && fut.errs.length === 1 && /^Level row 1: .*after the time of this analysis/.test(fut.errs[0]) && fut.result === null, JSON.stringify(fut.errs));
+    const two = drive(doses, [{ conc: 12, timeH: nowH - 2, row: '1', label: 'x' }, { conc: 15, timeH: nowH + 30, row: '2', label: 'y' }]);
+    assert(two.errs && two.errs.length === 1 && /^Level row 2:/.test(two.errs[0]), JSON.stringify(two.errs));
+    // Within a minute of now is a level typed to the minute: accepted (the run goes on to the next check, the missing sex).
+    const near = drive(doses, [{ conc: 15, timeH: nowH + 30 / 3600, row: '1', label: 'x' }]);
+    assert(near.errs && near.errs.length === 1 && !/Level row/.test(near.errs[0]), JSON.stringify(near.errs));
+    // A planned dose in the future with a level in the past is accepted.
+    const planned = drive(doses.concat([d(-1), d(-13)]), [{ conc: 15, timeH: nowH - 1, row: '1', label: 'x' }]);
+    assert(planned.errs && planned.errs.length === 1 && !/Level row|Dose row/.test(planned.errs[0]), JSON.stringify(planned.errs));
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════

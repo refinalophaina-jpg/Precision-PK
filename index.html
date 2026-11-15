@@ -9050,7 +9050,7 @@ function parseBayesCourse() {
       errors.push(`Level row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
       return;
     }
-    levels.push({ conc: cChk.value, timeH: tMs / 3600000, label: `${dateS} ${timeS}` });
+    levels.push({ conc: cChk.value, timeH: tMs / 3600000, label: `${dateS} ${timeS}`, row: rowNum(id) });
   });
 
   // Haemodialysis sessions (D15): start date and time plus a length in hours.
@@ -12485,6 +12485,20 @@ function runBayesian() {
   if (!doses.length) {
     showFormErrors('auc', 'Add at least one dose to the course history before running Bayesian analysis.',
       [document.querySelector('[data-onclick="k43"]')]);
+    return;
+  }
+
+  // I3 (2026-11-13 review). A level cannot be drawn after the time of this analysis (the same "now"
+  // the fit is stamped with, fitNowH): it can only be a wrong date, and fitting it turned an in-range
+  // regimen into a safety change. Refuse it, naming the row. One minute of tolerance covers a level
+  // typed to the minute. A dose dated ahead is a planned dose and stays allowed.
+  const fitNowH = Date.now() / 3600000;
+  const futureLevels = levels.filter(l => l.timeH > fitNowH + 1 / 60);
+  if (futureLevels.length) {
+    const msgs = futureLevels.map(l => `Level row ${l.row}: dated ${fmtDT(l.timeH)}, after the time of this analysis. A level cannot be drawn in the future; check the date and time.`);
+    showFormErrors('auc', msgs, msgs.map(m => courseErrorTarget(m)), {
+      lead: 'A level is dated in the future, so the fit was not run.',
+      tail: 'Correct the date or time, or delete the row, then run again.' });
     return;
   }
 
