@@ -1947,8 +1947,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // saved from the Trough-Based module looked empty and prompted.
     assert(/const coreEmpty = !snapshot\.core/.test(script),
       'the empty-profile guard still ignores the patient core');
-    assert(/bState && bState\.result && bayesFitIsStale\(\)/.test(script),
-      'the staleness guard still fires when there is no Bayesian result to be stale about');
+    // v3.14.0 (D26): the staleness verdict comes from the snapshot (dirty), not from a
+    // guard that mutated bState; a Trough-module save has no Bayesian result to wipe.
+    assert(/const savedWithoutFit = !!snapshot\.dirty;/.test(script),
+      'the without-fit notice is derived from the snapshot, without touching bState');
   });
 }
 
@@ -5877,6 +5879,31 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('43.12 the version', () => {
     assert(/const APP_VERSION = '3\.14\.0';/.test(src43), 'v3.14.0');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 44 — the 2026-11-13 review fixes (v3.14.0, D26)
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 44 — the 2026-11-13 review fixes (v3.14.0, D26)');
+  console.log(`${'─'.repeat(60)}`);
+  const src44 = fs.readFileSync(htmlPath, 'utf8');
+  const body44 = (name) => {
+    const i = src44.indexOf(`function ${name}(`);
+    assert(i >= 0, `${name}() is missing`);
+    const j = src44.indexOf('\n}\n', i);
+    return src44.slice(i, j + 2);
+  };
+
+  test('44.1 saving a profile never un-marks a stale result', () => {
+    const sp = body44('saveCurrentProfile');
+    assert(!/bState\.result\s*=[^=]/.test(sp), 'saveCurrentProfile assigns bState.result');
+    assert(!/bState\.resultFingerprint\s*=[^=]/.test(sp), 'saveCurrentProfile assigns bState.resultFingerprint');
+    const emptyLabel = sp.indexOf("if (!label) {");
+    const undo = sp.indexOf('clearUndo()');
+    assert(emptyLabel >= 0 && undo > emptyLabel, 'clearUndo() must come after the empty-label return');
   });
 }
 

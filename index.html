@@ -14899,21 +14899,19 @@ function applyPatientCore(core) {
 }
 
 function saveCurrentProfile() {
-  let savedWithoutFit = false;
   // CODEX F-003. A profile saved after editing demographics used to keep the
   // PREVIOUS fit, so a reloaded profile would consume an old CL/V as though it
-  // belonged to the new patient data. Refuse to pair the two silently.
-  if (typeof bayesFitIsStale === 'function' && bState && bState.result && bayesFitIsStale()) {
-    // v3.13.0 (D24): saved without the fit, and said so (a native confirm() asked).
-    bState.result = null; bState.resultFingerprint = null;
-    savedWithoutFit = true;
-  }
+  // belonged to the new patient data. snapshotBayesForm() stores a stale fit as
+  // `staleFit`, never `fit`, so the two are never paired. Saving never touches the
+  // on-screen result: it stays, still marked stale (v3.14.0, D26).
   const labelEls = [...document.querySelectorAll('.profile-label-input')];
   const labelEl  = labelEls.find(e => (e.value || '').trim()) || labelEls[0];
-  clearUndo();
   const label    = (labelEl?.value || '').trim();
   if (!label) { showFormErrors('profile', 'Enter a label before saving.', [labelEl]); return; }
+  clearUndo();
   const snapshot = snapshotBayesForm();
+  // v3.13.0 (D24): saved without the fit, and said so (a native confirm() asked).
+  const savedWithoutFit = !!snapshot.dirty;
   // The core is what makes a profile usable from either module.
   snapshot.core = snapshotPatientCore();
   snapshot.pd = snapshotPdForm();   // the PD mode's fields (D23); older profiles have none

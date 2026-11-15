@@ -708,6 +708,25 @@ async function enterCourse(page) {
        && /^The current regimen gives AUC₂₄ (3\d\d) with (\d+) of 20 plausible AUCs in 400–600; this one puts (\d+) of 20 in range\./.test(q24.why)
        && (m => !!m && +m[2] > +m[1])(q24.why.match(/with (\d+) of 20[\s\S]*puts (\d+) of 20/)),
        JSON.stringify(q24));
+    // v3.14.0 (D26): saving while the result is stale keeps the stale mark. The 1.75 g q24h
+    // fit above is still on screen; change SCr so it is stale, then save with and without a label.
+    await typeInto(c, '#b-scr', '1.4'); await c.waitForTimeout(300);
+    const staleState = () => c.evaluate(() => ({
+      line: !!document.querySelector('#b-results .stale-line, .panel-right .stale-line'),
+      cls: document.getElementById('b-results').classList.contains('is-stale'),
+      result: !!bState.result }));
+    const stale0 = await staleState();
+    await c.locator('[data-onclick="k37"]:visible').first().click(); await c.waitForTimeout(200);
+    const staleA = await staleState();
+    await c.locator('.profile-label-input:visible').first().fill('D26 stale');
+    await c.locator('[data-onclick="k37"]:visible').first().click(); await c.waitForTimeout(300);
+    const staleB = await staleState();
+    const savedSnap = await c.evaluate(() => { const ps = loadProfiles(); const p = ps.find(x => x.label === 'D26 stale'); return p ? { has: true, fit: !!(p.snapshot && p.snapshot.fit) } : { has: false }; });
+    ok('D26: saving while stale keeps the stale mark (empty label, then labelled), and the profile holds no fit',
+       stale0.line && stale0.cls && stale0.result
+       && staleA.line && staleA.cls && staleA.result && staleB.line && staleB.cls && staleB.result
+       && savedSnap.has && !savedSnap.fit,
+       JSON.stringify({ stale0, staleA, staleB, savedSnap }));
     const cAttr = await attributeInjected(c, cProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr.injected;
     results.problems.push(...cAttr.kept);
