@@ -6535,9 +6535,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   };
   const e1 = () => fit44({ age: 76, tbw: 70, ht: 175, scr: 0.5, mg: 1000, tinf: 1, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 19.9, after: 11.5 }] });
   // One sentence about a further level: "would add little" never sits beside a sentence that asks
-  // for one — Next's conflict, the cap-bound alarm, or the no-better flag (D26 review).
-  const incoherent44 = (text) => /would add little/.test(text)
-    ? (text.match(/is recommended|Confirm the clearance with a level|another level may settle it/g) || []) : [];
+  // for one — Next's conflict, the cap-bound alarm, or the no-better flag (D26 review). And the
+  // cap-bound alarm ("confirm the clearance with a level before acting on it") never sits beside
+  // "a dose change is indicated" or "how large it needs to be" (Task 6b review).
+  const incoherent44 = (text) => [].concat(
+    /would add little/.test(text) ? (text.match(/is recommended|Confirm the clearance with a level|another level may settle it/g) || []) : [],
+    /cannot be reached within the conventional ceilings/.test(text) ? (text.match(/a dose change is indicated|how large it needs to be/g) || []) : []);
   const para44 = (html, cls) => { const m = html.match(new RegExp(`<p class="${cls}[^"]*">([\\s\\S]*?)</p>`)); return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ''; };
 
   test('44.11 a one-level fit the models disagree on: "A further level is recommended", never the precision branch', () => {
@@ -6545,7 +6548,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(r.rec.action === 'continue' && r.rec.dose === 1000 && r.rec.tau === 12, `the fixture continues 1 g q12h: ${r.rec.action} ${r.rec.dose} q${r.rec.tau}`);
     assert(conf.rank === 2 && ag && ag.band.tone === 'danger', `the fixture is Low confidence on model disagreement: ${conf.level}, ${ag && ag.diffPct}`);
     const fit = fn44('nextLevelFit')(r, conf);
-    assert(fit.confRank === 2 && fit.hasAlt === false && fit.capBoundContinue === false && Math.abs(fit.worstSigma - conf.worstSigma) < 1e-12, JSON.stringify(fit));
+    assert(fit.confRank === 2 && fit.hasAlt === false && fit.capBound === false && Math.abs(fit.worstSigma - conf.worstSigma) < 1e-12, JSON.stringify(fit));
     const nlv = fn44('nextLevelValue')(r.rec.auc24, r.levels.length, 'buelga', r.rec.tau, r.CL_ind, fit);
     assert(nlv.kind === 'conflict' && nlv.headline === 'A further level is recommended', `${nlv.kind}: ${nlv.headline}`);
     assert(nlv.detail === fn44('confidenceLead')(conf).text && /disagree by \d+%/.test(nlv.detail), nlv.detail);
@@ -6587,8 +6590,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const r = { model: 'buelga', CL_ind: 12.34, V_ind: 60, doses, levels: [], rec, mapAlt: null };
     const conf = fn44('confidenceAssessment')(r, null, null);
     const fit = fn44('nextLevelFit')(r, conf);
-    assert(fit.capBoundContinue === true, JSON.stringify(fit));
+    assert(fit.capBound === true && fit.action === 'continue', JSON.stringify(fit));
     const nlv = fn44('nextLevelValue')(rec.auc24, 0, 'buelga', rec.tau, 12.34, fit);
+    assert(nlv.headline === 'Confirm the clearance with a level' && /so the regimen is continued rather than changed/.test(nlv.detail), `the continue wording is kept: ${nlv.detail}`);
     const line = fn44('nextLevelLine')(nlv);
     for (const s of [nlv.headline, nlv.detail, line]) assert(!/dose change is indicated/.test(s), s);
     assert(/conventional ceilings/.test(nlv.detail) && /level/i.test(line), `${line} / ${nlv.detail}`);
@@ -6664,6 +6668,34 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(para44(html, 'vx-action') === 'Change from 1 g IV q12h', para44(html, 'vx-action'));
     assert(/cannot be reached within the conventional ceilings/.test(text), 'the cap-bound alarm is shown');
     assert(!/so it is not changed/.test(text), 'the no-better flag is gone');
+    // The Task 6b review: beside the alarm's "confirm the clearance with a level before acting on it", Next
+    // said "a dose change is indicated … how large it needs to be". One instruction, the alarm's.
+    assert(para44(html, 'vx-next') === 'Next Confirm the clearance with a level.', para44(html, 'vx-next'));
+    assert(!incoherent44(text).length, `beside the cap-bound alarm: ${JSON.stringify(incoherent44(text))}`);
+  });
+  test('44.14f the cap-bound Next line covers any cap-bound answer — continue, change or start — read off the answer, worded for each', () => {
+    const conf0 = { rank: 0, worstSigma: 0.5 };
+    const fitOf = (rec) => fn44('nextLevelFit')({ model: 'buelga', CL_ind: capCL, V_ind: 60, rec, mapAlt: null }, conf0);
+    const change = capDecide(250, 24);
+    const start = fn44('regimenDecision')(capCL, 60, 450, null, 1, null, capRow());
+    assert(change.action === 'change' && start.action === 'start' && (start.flags || []).some(fn44('isCapBoundFlag')), `${change.action} / ${start.action}`);
+    const fc = fitOf(change), fs = fitOf(start);
+    assert(fc.capBound === true && fc.action === 'change' && fs.capBound === true && fs.action === 'start', JSON.stringify({ fc, fs }));
+    // Not cap-bound: SUITE 43's below-range 1.75 g q24h changes into range, and the flag is not set.
+    const plain = fn44('regimenDecision')(4.58, 61.8, 400, null, 1, hist44(1750, 24).map(d => Object.assign(d, { tinfH: 2 })), capRow());
+    assert(plain.action === 'change' && fitOf(plain).capBound === false, `${plain.action}: ${JSON.stringify(fitOf(plain))}`);
+    for (const [word, fit, rec] of [['change', fc, change], ['start', fs, start]]) {
+      const nlv = fn44('nextLevelValue')(rec.auc24, 1, 'buelga', rec.tau, capCL, fit);
+      assert(nlv.kind === 'management' && nlv.headline === 'Confirm the clearance with a level', `${word}: ${nlv.kind} ${nlv.headline}`);
+      assert(fn44('nextLevelLine')(nlv) === 'Confirm the clearance with a level.', fn44('nextLevelLine')(nlv));
+      assert(!/dose change is indicated|how large it needs to be|continued rather than changed/.test(nlv.detail), `${word}: ${nlv.detail}`);
+      assert(/conventional ceilings/.test(nlv.detail) && /before this regimen is acted on/.test(nlv.detail), `${word}: ${nlv.detail}`);
+    }
+    // The start IS the highest admissible regimen (the optimizer's own alarm says so); a change need not be.
+    assert(/this is the highest admissible regimen/.test(fn44('nextLevelValue')(start.auc24, 1, 'buelga', start.tau, capCL, fs).detail), 'start names the ceiling regimen');
+    assert(!/this is the highest admissible regimen/.test(fn44('nextLevelValue')(change.auc24, 1, 'buelga', change.tau, capCL, fc).detail), 'a change does not claim it');
+    // A conflicted fit still asks for a level first, for its own reason.
+    assert(fn44('nextLevelValue')(change.auc24, 1, 'buelga', change.tau, capCL, Object.assign({}, fc, { confRank: 2, reason: 'x' })).kind === 'conflict', 'conflict first');
   });
   test('44.14e a genuine tie still continues; an in-range regimen is untouched by the exposure tie-break', () => {
     // 1.4 g q8h (AUC24 267) against 1.5 g q8h (286): 19 mg·h/L nearer, inside the grace of 24.

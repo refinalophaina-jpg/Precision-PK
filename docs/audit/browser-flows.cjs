@@ -802,7 +802,9 @@ async function enterCourse(page) {
     });
     const printedN = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
     // "Would add little" never beside a sentence that asks for a level (D26 review).
-    const incoherent = (s) => /would add little/.test(s) && /is recommended|Confirm the clearance with a level|another level may settle it/.test(s);
+    // And the cap-bound alarm never beside "a dose change is indicated" or "how large it needs to be" (Task 6b review).
+    const incoherent = (s) => (/would add little/.test(s) && /is recommended|Confirm the clearance with a level|another level may settle it/.test(s))
+      || (/cannot be reached within the conventional ceilings/.test(s) && /a dose change is indicated|how large it needs to be/.test(s));
     ok('D26: the 76 M on Buelga never says both "would add little" and "is recommended", on screen or in print',
        !incoherent(nl.all) && !incoherent(printedN)
        && /^Next A further level is recommended\.$/.test(nl.next),
@@ -869,7 +871,8 @@ async function enterCourse(page) {
        && /^The current regimen gives AUC₂₄ 133 with 0 of 20 plausible AUCs in 400–600, and no admissible regimen puts more in range; this one brings AUC₂₄ nearer the band, to 299, with 0 of 20 in range\./.test(lo.why)
        && /cannot be reached within the conventional ceilings/.test(lo.all)
        && !/Continue the current regimen/.test(lo.all + printedL) && /Change from 1 g IV q12h/.test(printedL)
-       && !/^Result: continue/.test(lo.said) && !incoherent(lo.all),
+       && !/^Result: continue/.test(lo.said) && /^Next Confirm the clearance with a level\.$/.test(lo.next)
+       && !incoherent(lo.all) && !incoherent(printedL),
        JSON.stringify({ act: lo.act, reg: lo.reg, conf: lo.conf, why: lo.why, next: lo.next, said: lo.said.slice(0, 80) }));
     const nAttr = await attributeInjected(n, nProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + nAttr.injected;

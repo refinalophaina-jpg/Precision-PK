@@ -11539,20 +11539,22 @@ const NEXT_LEVEL_MIN_GAIN = 0.15;   // PREFERENCE, not a literature constant
 // precision branch told a Low-confidence, one-level fit that "a further level would
 // add little" (the 1->2 narrowing is 14% on Buelga and 9% on Hughes, under the 15%
 // preference, so every such fit read that way). `fit` is { confRank, worstSigma,
-// hasAlt, capBoundContinue, reason } from nextLevelFit. A level missed by
+// hasAlt, capBound, action, reason } from nextLevelFit. A level missed by
 // CONFIDENCE_SIGMA.moderate or more, a second MAP solution, or a Low / Very low
 // rating is a conflict: a further level is recommended, for the rating's own first
 // reason, and the precision branch is never reached. The thresholds are the
 // confidence rating's (PREFERENCE, rule 8); nothing new is chosen here. Without `fit`
 // the answer is as before.
 //
-// A continued regimen the ceilings bind (capBoundContinue: the cap-bound alarm on a
-// "continue" answer, D25) is outside the band with nothing admissible doing better.
-// "A dose change is indicated" said the opposite of the verdict beside it, so the
-// ceiling is said instead, before the outright, first-level and precision branches.
-// It is not gated on `outright`: cap-bound means AUC24 below 400, while `outright`
-// subtracts half a dose step, so a cap-bound continue at ~369-399 fell to "would add
-// little" beside the cap-bound alarm's "Confirm the clearance with a level" (Task 6 review).
+// An answer the ceilings bind (capBound: the cap-bound alarm on the answer, D25) gets the
+// alarm's own instruction, "Confirm the clearance with a level", before the outright,
+// first-level and precision branches, worded for its action. On a continue, "a dose change
+// is indicated" said the opposite of the verdict beside it (Task 6). On a change or a first
+// regimen, "a dose change is indicated … a further level tells you how large it needs to
+// be" told the reader to act now and implied a larger admissible dose, beside an alarm
+// saying to confirm the clearance before acting (Task 6b review). It is not gated on
+// `outright`: cap-bound means AUC24 below 400, while `outright` subtracts half a dose
+// step, so a cap-bound continue at ~369-399 fell to "would add little" (Task 6 review).
 function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   if (!(auc24 > 0)) return null;
   const f = fit || {};
@@ -11587,13 +11589,18 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
     kind = 'conflict';
     headline = 'A further level is recommended';
     detail = f.reason || '';
-  } else if (f.capBoundContinue) {
+  } else if (f.capBound) {
     kind = 'management';
     headline = 'Confirm the clearance with a level';
-    detail = `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
-           + `within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) reaches the band: `
-           + `the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range or brings AUC₂₄ nearer `
-           + `the band by more than half a 250 mg step, so the regimen is continued rather than changed. A level confirms the clearance before going beyond the ceiling, or to another agent, is considered.`;
+    const ceilings = `within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day)`;
+    detail = f.action === 'continue'
+      ? `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
+        + `${ceilings} reaches the band: the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range `
+        + `or brings AUC₂₄ nearer the band by more than half a 250 mg step, so the regimen is continued rather than changed. `
+        + `A level confirms the clearance before going beyond the ceiling, or to another agent, is considered.`
+      : `This regimen sits below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen ${ceilings} `
+        + `reaches the band: ${f.action === 'start' ? 'this is the highest admissible regimen, and the ceiling binds' : 'the ceiling binds'}. `
+        + `A level confirms the clearance before this regimen is acted on, and before going beyond the ceiling, or to another agent, is considered.`;
   } else if (outright) {
     kind = 'management';
     headline = 'A further level may substantially change the regimen';
@@ -11635,8 +11642,8 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
 }
 
 // The fit state nextLevelValue reads, from the confidence rating and the answer as they
-// stand: nothing is judged again here. capBoundContinue is D25's cap-bound alarm on a
-// continued regimen, read off the answer's own flags.
+// stand: nothing is judged again here. capBound is D25's cap-bound alarm on the answer,
+// read off its own flags, and action is the answer's (continue, change or start).
 function nextLevelFit(r, conf) {
   const rec = r && r.rec;
   const lead = confidenceLead(conf);
@@ -11644,7 +11651,8 @@ function nextLevelFit(r, conf) {
     confRank: conf ? conf.rank : -1,
     worstSigma: conf ? conf.worstSigma : NaN,
     hasAlt: !!(r && r.mapAlt && r.mapAlt.CL > 0),
-    capBoundContinue: !!(rec && !rec.noSolution && rec.action === 'continue' && (rec.flags || []).some(isCapBoundFlag)),
+    capBound: !!(rec && !rec.noSolution && (rec.flags || []).some(isCapBoundFlag)),
+    action: rec && !rec.noSolution ? rec.action : undefined,
     reason: lead ? lead.text : '',
   };
 }
