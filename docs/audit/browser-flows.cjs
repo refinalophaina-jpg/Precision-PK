@@ -912,13 +912,18 @@ async function enterCourse(page) {
       const t = (s) => (document.querySelector(s)?.textContent || '').replace(/\s+/g, ' ').trim();
       return { model: bState.result && bState.result.model, all: t('#b-results'), act: t('#b-results .vx-action'), reg: t('#vx-regimen'), why: t('#b-results .vx-why'),
         next: t('#b-results .vx-next'), conf: t('#b-results .vx-conf'), delta: !!document.querySelector('#b-results .vx-delta'),
-        first: t('#b-first-readout'), firstK: t('#b-results .vx-first .vx-k'), said: t('#sr-announce'), summary: String(bState.summaryText || '') };
+        first: t('#b-first-readout'), firstK: t('#b-results .vx-first .vx-k'), said: t('#sr-announce'), summary: String(bState.summaryText || ''),
+        alt: bState.result && bState.result.rec.lowConfidenceAlt ? fmtRegimen(bState.result.rec.lowConfidenceAlt.dose, bState.result.rec.lowConfidenceAlt.tau) : '' };
     });
     const printedLC = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
     ok('D26: Low confidence keeps an in-range regimen and asks for a level',
        lc.model === 'hughes' && lc.act === 'Continue the current regimen' && lc.reg === '1.5 g IV q12h' && !lc.delta
        && /^Low confidence — The applicable models disagree by \d+% on exposure/.test(lc.conf)
-       && /^Within 400–600 at AUC₂₄ \d+ with 13 of 20 in range\. Another regimen would put 15 of 20 in range, but confidence in this fit is Low \(the applicable models disagree by \d+% on exposure .+\), so the regimen is not changed on it\. Draw a level\./.test(lc.why)
+       // Task 9 review: the regimen set aside is named (lowConfidenceAlt), the cause alone, no nested
+       // parentheses, and no target-box sentence after it.
+       && lc.alt === '1.25 g IV q12h'
+       && /^Within 400–600 at AUC₂₄ \d+ with 13 of 20 plausible AUCs in range\. 1\.25 g IV q12h would put 15 of 20 plausible AUCs in range, but confidence in this fit is Low \(the models disagree by \d+%\), so the regimen is not changed on it\. Draw a level\.$/.test(lc.why)
+       && lc.why.indexOf(`${lc.alt} would put`) > 0 && !/\([^)]*\(/.test(lc.why) && !/Your target of/.test(lc.why)
        && /^Next A further level is recommended\.$/.test(lc.next) && lc.firstK === 'Next dose'
        && /^Result: continue 1\.5 g IV q12h, AUC24 \d+, Low confidence\./.test(lc.said) && /Continuing 1\.5 g IV q12h is predicted to give/.test(lc.summary)
        && /Continue the current regimen\s*1\.5 g IV q12h/.test(printedLC) && /so the regimen is not changed on it\. Draw a level\./.test(printedLC)

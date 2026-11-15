@@ -6939,7 +6939,20 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   const lowHughes = () => fit44({ model: 'hughes', age: 30, tbw: 125, ht: 170, scr: 0.9, mg: 1500, tinf: 2, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 14, after: 11.5 }] });
   // The fit's own decision, before finalizeDecision: what runBayesian decided on decisionArgs.
   const unprotected44 = (r) => { const a = r.decisionArgs; return fn44('regimenDecision')(a.CL, a.V, a.target, a.bag, a.mic, a.doses, a.row, { nowH: a.nowH }); };
-  const LOW_WHY = /^Within 400–600 at AUC₂₄ (\d+) with (\d+) of 20 in range\. Another regimen would put (\d+) of 20 in range, but confidence in this fit is (Low|Very low) \((.+)\), so the regimen is not changed on it\. Draw a level\./;
+  // Task 9 review (item 3): the line names the regimen set aside (lowConfidenceAlt), gives the rating's
+  // cause alone (no nested parentheses, not the lead sentence the confidence line repeats), and carries
+  // no target-box sentence that could be read as the regimen set aside.
+  const LOW_WHY = /^Within 400–600 at AUC₂₄ (\d+) with (\d+) of 20 plausible AUCs in range\. (.+?) would put (\d+) of 20 plausible AUCs in range, but confidence in this fit is (Low|Very low) \(([^()]+)\), so the regimen is not changed on it\. Draw a level\.( Caution: its dose is above the conventional ceilings? \([^()]+\)\. [^()]*\([^()]+\)[^()]*\.)?$/;
+  const parenDepth44 = (s) => { let d = 0, m = 0; for (const ch of s) { if (ch === '(') m = Math.max(m, ++d); else if (ch === ')') d--; } return m; };
+  const lowWhyOK44 = (why, rec) => {
+    const m = why.match(LOW_WHY), alt = rec.lowConfidenceAlt || {};
+    assert(m, `the low-confidence line: ${why}`);
+    assert(+m[1] === Math.round(rec.auc24) && +m[2] === rec.dots, `the current regimen's figures: ${why}`);
+    assert(m[3] === fn44('fmtRegimen')(alt.dose, alt.tau) && +m[4] === alt.dots, `names the regimen set aside, ${fn44('fmtRegimen')(alt.dose, alt.tau)} at ${alt.dots}: ${why}`);
+    assert(m[5] === rec.lowConfidence.level && m[6] === rec.lowConfidence.cause, `the rating and its cause: ${m[5]} / ${m[6]}`);
+    assert(parenDepth44(why) <= 1 && !/Your target of/.test(why), `no nested parentheses, no target-box sentence: ${why}`);
+    return m;
+  };
 
   test('44.17 Hughes, BMI 43, 1.5 g q12h in range, one level, Low confidence: the 2-dot change is not made; continue and draw a level', () => {
     const { r, html, text, conf } = lowHughes();
@@ -6959,12 +6972,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const r2 = { rec: u, decisionArgs: r.decisionArgs };
     fn44('finalizeDecision')(r2, conf);
     assert(r2.rec.action === 'continue' && r2.rec.continueReason === 'low-confidence' && r2.recFinal === true
-      && r2.rec.lowConfidence.level === 'Low' && r2.rec.lowConfidence.reason === lead.text, JSON.stringify(r2.rec.lowConfidence));
+      && r2.rec.lowConfidence.level === 'Low' && r2.rec.lowConfidence.cause === lead.short, JSON.stringify(r2.rec.lowConfidence));
+    assert(/^the models disagree by \d+%$/.test(lead.short) && lead.text.indexOf(lead.short.replace(/^the models/, 'models')) > 0, `the cause alone: ${lead.short}`);
     // The answer, on screen: continue, why in 20-dot units with the rating's own reason, draw a level.
     assert(para44(html, 'vx-action') === 'Continue the current regimen', para44(html, 'vx-action'));
-    const why = para44(html, 'vx-why'), m = why.match(LOW_WHY);
-    assert(m && +m[1] === Math.round(rec.auc24) && +m[2] === rec.dots && +m[3] === u.dots && m[4] === 'Low', why);
-    assert(m[5] === lead.text.replace(/\.$/, '').replace(/^The /, 'the '), `the reason is the rating's lead: ${m[5]}`);
+    const m = lowWhyOK44(para44(html, 'vx-why'), rec);
+    assert(m[3] === '1.25 g IV q12h' && +m[4] === u.dots && m[5] === 'Low', para44(html, 'vx-why'));
     assert(!/vx-delta/.test(html) && !/Change from/.test(text), 'no change is shown');
     assert(para44(html, 'vx-next') === 'Next A further level is recommended.', para44(html, 'vx-next'));
     assert(!incoherent44(text).length, JSON.stringify(incoherent44(text)));
@@ -6995,7 +7008,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(ag.rows.some(x => Math.abs(x.auc24 - curTDD / r.CL_ind) < 1), `the rendered agreement is on the current 3 g a day: ${JSON.stringify(ag.rows.map(x => x.auc24))}`);
     assert(/disagree by \d+% on exposure/.test(para44(html, 'vx-conf')), para44(html, 'vx-conf'));
     // Screen, Copy summary and print read the finalized answer.
-    assert(para44(html, 'vx-action') === 'Continue the current regimen' && LOW_WHY.test(para44(html, 'vx-why')), para44(html, 'vx-why'));
+    assert(para44(html, 'vx-action') === 'Continue the current regimen', para44(html, 'vx-action'));
+    lowWhyOK44(para44(html, 'vx-why'), r.rec);
     assert(/Continuing 1\.5 g IV q12h is predicted to give/.test(text), 'the summary says continue');
     const pr = fn44('_prRecommendation')(r, {});
     assert(/Continue the current regimen/.test(pr) && /not changed on it/.test(pr) && !/Change from/.test(pr), pr.slice(0, 600));
@@ -7013,7 +7027,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const r3 = { rec: unprotected44(r), decisionArgs: r.decisionArgs };
     fn44('finalizeDecision')(r3, Object.assign({}, conf, { rank: 3, level: 'Very low' }));
     assert(r3.rec.action === 'continue' && r3.rec.continueReason === 'low-confidence' && r3.rec.lowConfidence.level === 'Very low', `${r3.rec.action}`);
-    assert(/confidence in this fit is Very low \(/.test(fn44('regimenActionHTML')(r3.rec, 450)), fn44('regimenActionHTML')(r3.rec, 450));
+    lowWhyOK44(fn44('regimenActionHTML')(r3.rec, 450, 'why').replace(/<[^>]+>/g, ''), r3.rec);
+    assert(r3.rec.lowConfidence.level === 'Very low', r3.rec.lowConfidence.level);
+    // A grid of real protections: the line always names the regimen set aside, with no nested parentheses.
+    let nk = 0;
+    const lowAny = { rank: 2, level: 'Low', reasons: [{ good: false, rank: 2, text: 'Large prior–data conflict: 3.2 SD from the model.', short: 'a level sits 3.2 SD from the model' }] };
+    for (let cl = 1.5; cl <= 9.0001; cl += 0.5) for (const tau of [8, 12, 24, 48]) for (let mg = 250; mg <= 2000; mg += 250) {
+      const a = { CL: cl, V: 49, target: 450, bag: null, mic: 1, doses: Array.from({ length: 4 }, (_, i) => ({ mg, tinfH: fn44('autoTinf')(mg), timeH: i * tau })), row: fn44('aucUncertaintyRow')(1, 'buelga') };
+      const rr = { rec: fn44('regimenDecisionOf')(a), decisionArgs: a };
+      fn44('finalizeDecision')(rr, lowAny);
+      if (rr.rec.continueReason !== 'low-confidence') continue;
+      nk++; lowWhyOK44(fn44('regimenActionHTML')(rr.rec, 450, 'why').replace(/<[^>]+>/g, ''), rr.rec);
+    }
+    assert(nk > 20, `${nk} protections checked`);
   });
   test('44.19 under Low confidence an out-of-range regimen still changes, and an unsafe one still changes for safety', () => {
     const low = { rank: 2, level: 'Low', reasons: [{ good: false, rank: 2, text: 'Large prior–data conflict: 3.2 SD from the model.' }] };
@@ -7037,11 +7063,25 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(unsafe.after.action === 'change' && unsafe.after.decisionReason === 'safety' && unsafe.p.action === 'change' && unsafe.p.decisionReason === 'safety',
       `${unsafe.after.action} / ${unsafe.after.decisionReason}`);
     // And a fitted pre-dose of 20 or more (Task 2's 48 mg/L case) is a safety change whatever the rating.
-    const { rec: c1 } = c1Case();
-    assert(c1.action === 'change' && c1.decisionReason === 'safety', `${c1.action} / ${c1.decisionReason}`);
-    const rc1 = { rec: c1, decisionArgs: null };
+    // Task 9 review (item 4): with the real decisionArgs, so finalizeDecision re-decides on them.
+    const { r: rC1, rec: c1, nowH: nowC1 } = c1Case();
+    assert(c1.action === 'change' && c1.decisionReason === 'safety' && c1.current.unsafe, `${c1.action} / ${c1.decisionReason}`);
+    const aC1 = { CL: rC1.CL_ind, V: rC1.V_ind, target: 450, bag: null, mic: 1, doses: rC1.doses, row: fn44('aucUncertaintyRow')(1, 'buelga'), nowH: nowC1 };
+    const again = fn44('regimenDecisionOf')(aC1);
+    assert(again.action === 'change' && again.dose === c1.dose && again.tau === c1.tau && again.decisionReason === 'safety', 'the args reproduce the fit\'s decision');
+    const pC1 = fn44('regimenDecisionOf')(aC1, { protectInRange: true });
+    assert(pC1.action === 'change' && pC1.decisionReason === 'safety' && pC1.dose === c1.dose, `protectInRange leaves a safety change: ${pC1.action}`);
+    const rc1 = { rec: c1, decisionArgs: aC1 };
     fn44('finalizeDecision')(rc1, low);
-    assert(rc1.rec === c1 && c1.action === 'change', 'never protected');
+    assert(rc1.rec === c1 && c1.action === 'change' && !rc1.recFinal, 'never protected');
+    // The same call protects when the gate is open: relabel the same answer as an attainment change from
+    // in range (as an unprotected fit would read) and finalizeDecision re-decides — so the check above can fail.
+    const fake = Object.assign({}, again, { decisionReason: 'attainment', current: Object.assign({}, again.current, { inBand: true }) });
+    const rFake = { rec: fake, decisionArgs: aC1 };
+    let redecided = 0; const real = sandbox.regimenDecisionOf;
+    sandbox.regimenDecisionOf = function () { redecided++; return real.apply(this, arguments); };
+    try { fn44('finalizeDecision')(rFake, low); } finally { sandbox.regimenDecisionOf = real; }
+    assert(redecided === 1 && rFake.rec === fake, `the gate reached the re-decision (${redecided}), which kept the safety change`);
   });
   test('44.20 a schedule of future rows only is not a current regimen (D-b): a start, and runBayesian decides on the fit\'s "now"', () => {
     const CL = 4.58, V = 61.8, row = fn44('aucUncertaintyRow')(0, 'buelga'), nowH = at44h('2026-11-14T10:00');
@@ -7057,6 +7097,34 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(r.doses.every(d => d.timeH > r.fitNowH) && r.rec.action === 'start', `${r.rec.action} ${r.rec.dose} q${r.rec.tau}h`);
     assert(!/Continue the current regimen|Change from/.test(html), 'no action line for a first regimen');
     assert(Number.isFinite(r.decisionArgs.nowH) && Math.abs(r.decisionArgs.nowH - r.fitNowH) < 0.01, `decided on the fit's now: ${r.decisionArgs.nowH} vs ${r.fitNowH}`);
+  });
+  // Controller ruling R17 (Task 9 review, item 2): a current regimen needs a GIVEN dose of the detected
+  // maintenance schedule — the detected dose at a schedule time. A given load followed only by planned
+  // maintenance is a start: "continue 1.25 g q12h" for an order of which no dose has been given.
+  test('44.20a a given load with only planned maintenance is a start; once one maintenance dose is given it is a current regimen', () => {
+    const CL = 4.58, V = 61.8, row = fn44('aucUncertaintyRow')(1, 'buelga'), nowH = at44h('2026-11-14T10:00');
+    const probe = [{ mg: 2000, tinfH: 2, timeH: nowH - 1 }].concat([11, 23, 35].map(h => ({ mg: 1250, tinfH: 1.5, timeH: nowH + h })));
+    const det = fn44('detectRegimen')(probe);
+    assert(det.status === 'established' && det.intervalHours === 12 && det.maintenanceDoseMg === 1250, `detection reads q12h 1.25 g: ${det.status} q${det.intervalHours} ${det.maintenanceDoseMg}`);
+    assert(fn44('currentRegimenOf')(probe, CL, V, null, 1, row, nowH) === null, 'no maintenance dose given: no current regimen');
+    const p = fn44('regimenDecision')(CL, V, 450, null, 1, probe, row, { nowH });
+    assert(p.action === 'start', `a load given, maintenance planned: ${p.action} ${p.dose} q${p.tau}h`);
+    // One 1.25 g dose given (the load 13 h ago, the first maintenance dose 1 h ago): a current regimen.
+    const one = [{ mg: 2000, tinfH: 2, timeH: nowH - 13 }].concat([-1, 11, 23].map(h => ({ mg: 1250, tinfH: 1.5, timeH: nowH + h })));
+    const c = fn44('currentRegimenOf')(one, CL, V, null, 1, row, nowH);
+    assert(c && c.dose === 1250 && c.tau === 12, `one maintenance dose given: ${JSON.stringify(c && { dose: c.dose, tau: c.tau })}`);
+    const d = fn44('regimenDecision')(CL, V, 450, null, 1, one, row, { nowH });
+    assert(d.action === 'continue' || d.action === 'change', `a current regimen: ${d.action}`);
+    // An old amount given, the new amount only planned (1 g q12h x3 given, then 1.25 g planned): a start.
+    const chg = [-25, -13, -1].map(h => ({ mg: 1000, tinfH: 1, timeH: nowH + h })).concat([11, 23, 35].map(h => ({ mg: 1250, tinfH: 1.5, timeH: nowH + h })));
+    assert(fn44('currentRegimenOf')(chg, CL, V, null, 1, row, nowH) === null, 'the new amount not yet given');
+  });
+  // Task 9 review (item 1, rule 8): the rating now gates one decision, and the comment beside its
+  // preference steps must say so, not "it never changes a dose".
+  test('44.20b the CONFIDENCE_SIGMA preference comment states what the rating gates', () => {
+    assert(src44.indexOf('The rating changes presentation — it never changes a dose.') < 0, 'the false sentence is gone');
+    const i = src44.indexOf('const CONFIDENCE_SIGMA'), before = src44.slice(Math.max(0, i - 1500), i);
+    assert(/PREFERENCE/.test(before) && /ruling 3/.test(before) && /finalizeDecision/.test(before), 'the comment names ruling 3 and finalizeDecision');
   });
   test('44.21 a charted dose above a ceiling is not recommendable but not unsafe (D-a): 2.25 g q48h in range, trough under 20, is continued with the ceiling caution', () => {
     const row = fn44('aucUncertaintyRow')(2, 'buelga');
