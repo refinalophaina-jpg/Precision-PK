@@ -54,7 +54,6 @@ git hash-object index.html   # must equal the deployed blob sha
 | `Phase2_Plan.md` | The real architecture reference for the Bayesian engine |
 | `Vancomycin_TDM_Software_Instructions.md` | Clinical source-of-truth: guideline rationale, equations, special populations |
 | `validation_report.md` | Phase 1 validation, April 2026 — **predates the Bayesian engine** |
-| `archive/v0-march-2026-superseded.html` | The earlier March build. Not deployed, kept for reference |
 | `archive/react-branch-abandoned/` | An abandoned React/recharts rewrite (see below) |
 
 Reference PDFs (`Literature/`, `DoseMeRx/`, `Clin Calc/`, `VancoPk/`, and the user's institutional protocol, private) live

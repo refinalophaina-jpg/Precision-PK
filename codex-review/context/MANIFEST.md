@@ -29,6 +29,6 @@ Matzke 1984, Fewel 2021, Duong 2024 (eight-model evaluation), Broeker 2019,
 plus `Sources.md` recording provenance for each.
 
 ## Deliberately NOT sent
-- `archive/` — a superseded build and an abandoned React branch. Not under review.
+- `archive/` — an abandoned React branch. Not under review.
 - Reference PDFs beyond `Literature/` (DoseMeRx, protocols) — third-party, and
   not needed to check the maths.

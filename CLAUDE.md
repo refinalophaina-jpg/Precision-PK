@@ -471,7 +471,7 @@ one must go through `escHtml()`** — most sites currently do not, which is an o
 | `Phase2_Plan.md` | Bayesian architecture reference |
 | `Vancomycin_TDM_Software_Instructions.md` | Clinical source-of-truth |
 | `validation_report.md` | **Phase 1 only, April 2026** — predates the Bayesian engine |
-| `archive/` | Superseded March build and the abandoned React branch |
+| `archive/` | The abandoned React branch and a superseded recommendations note (the March build was removed 2026-11-15: it carried an institution's private guideline) |
 
 Reference PDFs live one level up, outside this repo — it is public and they are third-party
 papers.
