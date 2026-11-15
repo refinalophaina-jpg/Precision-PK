@@ -9713,7 +9713,9 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   const dueH = last.timeH + rec.tau;
   const plannedN = r.doses.filter(d => d.timeH > nowH + 1e-9).length;
   const chosen = Number.isFinite(atH);
-  const fromH = chosen ? Math.max(atH, nowH) : Math.max(dueH, nowH);   // where it would go in (v3.13.0's first dose)
+  // Where it would go in: v3.13.0's first dose, keyed to the new regimen's interval
+  // (written out, not via dueH, so that a later change to dueH leaves it alone; ruling R1).
+  const fromH = chosen ? Math.max(atH, nowH) : Math.max(last.timeH + rec.tau, nowH);
   const fromPre = predictFittedAt(r, fromH);
   const hold = fromPre >= TROUGH_HIGH_MGL;
   let resumeH = null;
