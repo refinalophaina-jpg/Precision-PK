@@ -1927,7 +1927,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('Both save/load helpers exist and are wired to the shared class', ()=>{
     assert(/function snapshotPatientCore\s*\(/.test(script), 'snapshotPatientCore missing');
     assert(/function applyPatientCore\s*\(/.test(script), 'applyPatientCore missing');
-    assert(/snapshot\.core = snapshotPatientCore\(\)/.test(script), 'save does not capture the core');
+    // v3.14.0 (D26): the core is read from the module saved from, with its conflicts (D-e).
+    assert(/const \{ core, conflicts \} = snapshotPatientCore\(source\);/.test(script) && /snapshot\.core = core;/.test(script), 'save does not capture the core');
     assert(/applyPatientCore\(/.test(script), 'load does not apply the core');
     const lists = (body.match(/class="profile-list"/g) || []).length;
     const inputs = (body.match(/class="profile-label-input"/g) || []).length;
@@ -3697,9 +3698,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(sandbox.getBayesCrCl() === null, 'no CrCl on an assumed sex');
       sandbox.updateBayesCrCl();
       assert(/—/.test(dom.els['b-crcl-result'].textContent) && !/NaN/.test(dom.els['b-crcl-result'].textContent), 'AUC CrCl line');
-      assert(sandbox.snapshotPatientCore().sex === null, 'an unset sex must not be saved as M');
+      assert(sandbox.snapshotPatientCore().core.sex === null, 'an unset sex must not be saved as M');
       sandbox.setPatientSex('M');
-      assert(sandbox.getBayesCrCl() > 0 && sandbox.snapshotPatientCore().sex === 'M', 'chosen sex unchanged');
+      assert(sandbox.getBayesCrCl() > 0 && sandbox.snapshotPatientCore().core.sex === 'M', 'chosen sex unchanged');
     });
   });
 
@@ -7206,6 +7207,239 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(/not clinically validated/.test(norm(f)), 'rendered footer lacks "not clinically validated"');
     }
     assert(/Model: Buelga/.test(f1), 'the model line is kept');
+  });
+
+  // ── Saved profiles (Task 11): code report I2, M1, M2; engine report I4, I5; Review Focus 2 ──
+  // A small DOM in which every element records what is written to it, and a localStorage.
+  // Fictional patients only. The fixture holds profiles in the shapes v3.13.0 and earlier saved.
+  const PROF_KEY44 = 'ainadara.profiles.v1';
+  const profFixture44 = JSON.parse(fs.readFileSync(path.join(__dirname, 'docs/audit/profile-fixtures-v3.13.0.json'), 'utf8')).profiles;
+  const profEnv44 = (store, vals) => {
+    const writes = [], els = {};
+    class PEl {
+      constructor(id, tag) {
+        this.id = id || ''; this.tagName = tag || 'INPUT'; this._v = vals && id in vals ? String(vals[id]) : '';
+        this._t = ''; this._h = ''; this._c = false; this.style = { display: '' }; this.dataset = {}; this.attrs = {};
+        this.children = []; this.parentNode = null; this.className = ''; this.type = 'number'; this.title = '';
+        const cls = new Set();
+        this.classList = { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c),
+          toggle: (c, on) => { const v = on === undefined ? !cls.has(c) : !!on; if (v) cls.add(c); else cls.delete(c); return v; } };
+      }
+      get value() { return this._v; }        set value(x) { writes.push([this.id, 'value', x]); this._v = String(x); }
+      get checked() { return this._c; }      set checked(x) { writes.push([this.id, 'checked', x]); this._c = !!x; }
+      get textContent() { return this._t; }  set textContent(x) { writes.push([this.id, 'textContent', x]); this._t = String(x); }
+      get innerHTML() { return this._h; }    set innerHTML(x) { writes.push([this.id, 'innerHTML', x]); this._h = String(x); }
+      setAttribute(k, v) { this.attrs[k] = String(v); } getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+      removeAttribute(k) { delete this.attrs[k]; } addEventListener() {} dispatchEvent() { return true; }
+      appendChild(c) { this.children.push(c); return c; } removeChild() {} remove() {} focus() {} scrollIntoView() {}
+      insertAdjacentHTML(pos, h) { this.innerHTML = this._h + h; } closest() { return null; } contains() { return false; }
+      querySelector() { return null; } querySelectorAll() { return []; }
+    }
+    const get = (id) => els[id] || (els[id] = new PEl(id));
+    const status = [new PEl('profile-status-1', 'P'), new PEl('profile-status-2', 'P')];
+    const lists = [new PEl('profile-list-1', 'DIV'), new PEl('profile-list-2', 'DIV')];
+    const document = {
+      body: new PEl('body', 'BODY'), documentElement: undefined,
+      getElementById: get, createElement: (t) => new PEl('', String(t).toUpperCase()),
+      querySelector: () => null,
+      // resetForm empties the Trough column's number inputs: here, every field not of the AUC column.
+      querySelectorAll: (sel) => sel === '.profile-status' ? status : sel === '.profile-list' ? lists
+        : sel === '.profile-label-input' ? labels
+        : sel === 'input[type="number"]' ? Object.values(els).filter(e => !/^b-/.test(e.id)) : [],
+    };
+    const labels = [new PEl('profile-label-1', 'INPUT'), new PEl('profile-label-2', 'INPUT')];
+    const localStorage = {
+      _d: store, get length() { return Object.keys(this._d).length; },
+      key(i) { return Object.keys(this._d)[i] ?? null; },
+      getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+      setItem(k, v) { writes.push(['localStorage', k, v]); this._d[k] = String(v); },
+      removeItem(k) { delete this._d[k]; },
+    };
+    return { document, localStorage, els, get, status, lists, labels, writes };
+  };
+  // Runs fn with the profile DOM and storage installed; spies count calls to the named functions.
+  const withProf44 = (env, spies, fn) => {
+    const prev = { document: sandbox.document, localStorage: sandbox.localStorage, setTimeout: sandbox.setTimeout };
+    const real = {}, calls = {};
+    sandbox.document = env.document; sandbox.localStorage = env.localStorage; sandbox.setTimeout = (f) => f();
+    (spies || []).forEach(n => { real[n] = sandbox[n]; calls[n] = 0; sandbox[n] = function () { calls[n]++; return real[n].apply(this, arguments); }; });
+    try { return fn(calls); }
+    finally {
+      Object.keys(real).forEach(n => { sandbox[n] = real[n]; });
+      sandbox.document = prev.document; sandbox.localStorage = prev.localStorage; sandbox.setTimeout = prev.setTimeout;
+      vm.runInContext('state.sex = null; bState.sex = null; bState.result = null;', sandbox);
+    }
+  };
+  const statusText44 = (env) => env.status.map(s => s.textContent).join(' | ');
+
+  test('44.24 a malformed profile (no demographics, no snapshot, a non-numeric savedAt) does not throw, leaves the form untouched and says so', () => {
+    const base = profFixture44[0];
+    const bad = {
+      noDemographics: Object.assign({}, base, { id: 'p_nodemo1', label: 'No demographics', snapshot: Object.assign({}, base.snapshot, { demographics: undefined }) }),
+      noSnapshot: { id: 'p_nosnap1', schema: 1, label: 'No snapshot', savedAt: base.savedAt },
+      textSavedAt: Object.assign({}, base, { id: 'p_textat1', label: 'Text savedAt', savedAt: 'yesterday' }),
+    };
+    const form = { 'b-age': '77', age: '77', 'b-tbw': '60', tbw: '60', 'b-scr': '1.2', scr: '1.2', cysc: '1.9', 'scr-baseline': '0.8', dose: '1500', 'level-val': '31' };
+    const spies = ['resetForm', 'resetBayesian', 'applyPatientCore', 'applyPdForm', 'setPatientSex', 'addBayesDose'];
+    for (const [name, p] of Object.entries(bad)) {
+      assert(typeof sandbox.validProfile === 'function', 'validProfile() is missing');
+      assert(sandbox.validProfile(JSON.parse(JSON.stringify(p))) === false, `${name}: validProfile accepts it`);
+      const env = profEnv44({ [PROF_KEY44]: JSON.stringify([p, base]) }, form);
+      Object.keys(form).forEach(k => env.get(k));   // the form exists before the click
+      env.writes.length = 0;
+      withProf44(env, spies, (calls) => {
+        let threw = null;
+        try { sandbox.loadProfileIntoForm(p.id); } catch (e) { threw = e; }
+        assert(!threw, `${name}: threw ${threw && threw.message}`);
+        assert(spies.every(n => calls[n] === 0), `${name}: the form was touched: ${JSON.stringify(calls)}`);
+        const formWrites = env.writes.filter(w => !/^profile-status-/.test(w[0]) && w[0] !== 'localStorage');
+        assert(formWrites.length === 0, `${name}: ${JSON.stringify(formWrites.slice(0, 4))}`);
+        assert(!env.writes.some(w => w[0] === 'localStorage' && w[1] === PROF_KEY44), `${name}: the store was rewritten`);
+        Object.keys(form).forEach(k => assert(env.els[k].value === form[k], `${name}: ${k} is now "${env.els[k].value}"`));
+        assert(/could not be read/.test(statusText44(env)) && /unchanged/.test(statusText44(env)), `${name}: status "${statusText44(env)}"`);
+        // The list shows only the readable profile and says one could not be read.
+        sandbox.renderProfileList();
+        const html = env.lists[0].innerHTML;
+        assert(html.indexOf(base.label) >= 0 && html.indexOf(p.label) < 0, `${name}: list ${html.slice(0, 200)}`);
+        assert(!/Invalid Date/.test(html), `${name}: Invalid Date in the list`);
+        assert(/1 saved profile could not be read/.test(statusText44(env)), `${name}: no read problem reported: "${statusText44(env)}"`);
+      });
+    }
+    // The checks themselves.
+    const ok = JSON.parse(JSON.stringify(base));
+    assert(sandbox.validProfile(ok) === true, 'the v3.13.0 fixture is valid');
+    const mut = (f) => { const c = JSON.parse(JSON.stringify(base)); f(c); return sandbox.validProfile(c); };
+    assert(!mut(c => { c.id = 'p1" data-x="y'; }) && !mut(c => { c.id = 'x_abc'; }) && !mut(c => { c.label = 7; })
+      && !mut(c => { c.savedAt = NaN; }) && !mut(c => { c.snapshot.doses = 'none'; }) && !mut(c => { c.snapshot.levels = null; })
+      && !mut(c => { c.snapshot.demographics = []; }) && !mut(c => { c.snapshot = 'x'; }), 'every rule refuses');
+    assert(!sandbox.validProfile(null) && !sandbox.validProfile([]) && !sandbox.validProfile('p_abc'), 'non-objects refused');
+  });
+
+  test('44.24a unreadable storage: the raw text is copied to ainadara.profiles.v1.bak before anything is written, the status says so, and a save keeps unreadable entries', () => {
+    const raw = '[{"id":"p_trunc1","label":"Truncated","savedAt":1762412400000,"snapshot":{"demographics":{"age":"5';
+    const env = profEnv44({ [PROF_KEY44]: raw }, {});
+    withProf44(env, [], () => {
+      assert(sandbox.loadProfiles().length === 0, 'nothing listed');
+      assert(env.localStorage.getItem(PROF_KEY44 + '.bak') === raw, 'the backup holds the raw text');
+      const first = env.writes.findIndex(w => w[0] === 'localStorage');
+      assert(first >= 0 && env.writes[first][1] === PROF_KEY44 + '.bak', 'the first storage write is the backup: ' + JSON.stringify(env.writes.filter(w => w[0] === 'localStorage').map(w => w[1])));
+      assert(vm.runInContext('profileReadProblems', sandbox) === 1, 'profileReadProblems');
+      sandbox.renderProfileList();
+      assert(/could not be read/.test(statusText44(env)) && /ainadara\.profiles\.v1\.bak/.test(statusText44(env)), `status "${statusText44(env)}"`);
+      // Reading again writes no second copy.
+      const n = env.writes.filter(w => w[0] === 'localStorage').length;
+      sandbox.loadProfiles(); sandbox.renderProfileList();
+      assert(env.writes.filter(w => w[0] === 'localStorage').length === n, 'a second read wrote again');
+      // A different earlier backup is never overwritten.
+      const env2 = profEnv44({ [PROF_KEY44]: raw, [PROF_KEY44 + '.bak']: 'an older backup' }, {});
+      sandbox.localStorage = env2.localStorage;
+      sandbox.loadProfiles();
+      assert(env2.localStorage.getItem(PROF_KEY44 + '.bak') === 'an older backup', 'the older backup was overwritten');
+      assert(Object.keys(env2.localStorage._d).some(k => k.indexOf(PROF_KEY44 + '.bak.') === 0 && env2.localStorage._d[k] === raw), 'the new text has its own backup key');
+      // Storage that refuses the backup: nothing is ever written over the unreadable list.
+      const env3 = profEnv44({ [PROF_KEY44]: raw }, {});
+      env3.localStorage.setItem = function () { throw new Error('QuotaExceededError'); };
+      sandbox.localStorage = env3.localStorage;
+      sandbox.loadProfiles();
+      assert(sandbox.persistProfiles([]) === false && env3.localStorage.getItem(PROF_KEY44) === raw, 'written over an unreadable list with no backup');
+    });
+    // A readable list with one bad entry: the bad entry is not listed, and a save writes it back.
+    const good = profFixture44[0], broken = { id: 'p_broken1', label: 'Broken', savedAt: 'x', snapshot: {} };
+    const env4 = profEnv44({ [PROF_KEY44]: JSON.stringify([good, broken]) }, {});
+    withProf44(env4, [], () => {
+      const list = sandbox.loadProfiles();
+      assert(list.length === 1 && list[0].id === good.id && vm.runInContext('profileReadProblems', sandbox) === 1, 'one listed, one problem');
+      assert(sandbox.persistProfiles(list) === true, 'persist');
+      const stored = JSON.parse(env4.localStorage.getItem(PROF_KEY44));
+      assert(stored.length === 2 && stored.some(p => p.id === 'p_broken1'), 'the unreadable entry was dropped: ' + stored.map(p => p.id));
+    });
+  });
+
+  test('44.25 a profile id "p1\\" data-x=\\"y" renders no injected attribute; renderProfileList has no second escaper', () => {
+    const rp = body44('renderProfileList');
+    assert(!/const esc\s*=/.test(rp), 'the local esc escaper is still there (rule 2: escHtml is the one escaper)');
+    assert(/escHtml\(p\.label\)/.test(rp) && (rp.match(/data-arg="\$\{escHtml\(p\.id\)\}"/g) || []).length === 2, 'label and id go through escHtml');
+    const hostile = Object.assign(JSON.parse(JSON.stringify(profFixture44[0])), { id: 'p1" data-x="y', label: '<img src=x>"' });
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify([hostile]) }, {});
+    withProf44(env, [], () => {
+      // Validation keeps it out of the list.
+      sandbox.renderProfileList();
+      assert(!/data-x=/.test(env.lists[0].innerHTML) && env.lists[0].innerHTML.indexOf('p1&quot;') < 0, 'an invalid id was listed');
+      // And were it listed, the escaping holds: the check is lifted for this render only.
+      const realValid = sandbox.validProfile;
+      sandbox.validProfile = () => true;
+      try { sandbox.renderProfileList(); } finally { sandbox.validProfile = realValid; }
+      const html = env.lists[0].innerHTML;
+      assert(/data-arg="p1&quot; data-x=&quot;y"/.test(html), 'the id is not escaped: ' + html.slice(0, 600));
+      assert(!/\sdata-x="/.test(html), 'an attribute was injected');
+      assert(html.indexOf('<img') < 0 && html.indexOf('&lt;img src=x&gt;&quot;') >= 0, 'the label is not escaped');
+    });
+  });
+
+  test('44.25a the core is read from the module saved from; a shared field filled differently in the two columns refuses the save (D-e, engine report I4)', () => {
+    // Patient A (80 F, 50 kg, 150 cm, SCr 2.5) in the AUC column; patient B (30 M, 90 kg, 185 cm, SCr 0.8) typed into the Trough column.
+    const A = { 'b-age': '80', 'b-tbw': '50', 'b-height': '150', 'b-scr': '2.5', 'b-mic': '1', 'b-auc-target': '450' };
+    const B = { age: '30', tbw: '90', height: '185', scr: '0.8', mic: '1', 'trough-min': '10', 'trough-max': '20', cysc: '' };
+    const env = profEnv44({}, Object.assign({}, A, B));
+    Object.keys(Object.assign({}, A, B)).forEach(k => env.get(k));
+    env.get('app-shell-bayesian').style.display = 'none';   // the Trough module is on screen
+    withProf44(env, ['snapshotBayesForm'], (calls) => {
+      sandbox.setPatientSex('M');
+      const t = sandbox.snapshotPatientCore('trough');
+      assert(t.core.age === '30' && t.core.tbw === '90' && t.core.height === '185' && t.core.scr === '0.8' && t.core.sex === 'M', JSON.stringify(t.core));
+      assert(JSON.stringify(t.conflicts) === JSON.stringify(['age', 'tbw', 'height', 'scr']), JSON.stringify(t.conflicts));
+      const a = sandbox.snapshotPatientCore('auc');
+      assert(a.core.age === '80' && a.core.scr === '2.5' && a.conflicts.length === 4, JSON.stringify(a));
+      env.labels[1].value = 'Patient B';
+      sandbox.saveCurrentProfile();
+      const errs = sandbox.lastFormErrors('profile');
+      assert(errs.length === 1 && /Not saved/.test(errs[0]) && /age, weight, height and serum creatinine/.test(errs[0]), JSON.stringify(errs));
+      assert(env.localStorage.getItem(PROF_KEY44) === null && calls.snapshotBayesForm === 0, 'a mixed patient was stored, or the AUC course read');
+      // The same value written differently is not a conflict; a field empty in one column is not either.
+      ['age', 'tbw', 'height', 'scr'].forEach(k => { env.els['b-' + k].value = ''; });
+      env.els['b-age'].value = '30.0';
+      const ok = sandbox.snapshotPatientCore('trough');
+      assert(ok.conflicts.length === 0 && ok.core.age === '30', JSON.stringify(ok));
+      // A field only the other column holds fills the core (an AUC-only field from a Trough save).
+      assert(ok.core.aucTarget === '450' && ok.core.troughMin === '10', JSON.stringify(ok.core));
+      // A different MIC is a different patient field too.
+      env.els['b-mic'].value = '2';
+      assert(JSON.stringify(sandbox.snapshotPatientCore('trough').conflicts) === '["mic"]', 'MIC 1 vs 2');
+      env.els['b-mic'].value = '1';
+      sandbox.saveCurrentProfile();
+      const stored = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]');
+      assert(stored.length === 1 && stored[0].label === 'Patient B' && stored[0].snapshot.core.age === '30' && stored[0].snapshot.core.sex === 'M', JSON.stringify(stored).slice(0, 300));
+    });
+  });
+
+  test('44.26 profiles saved by v3.13.0 (core and fit) and before the core (legacy fit, no core) load (Review Focus 2)', () => {
+    for (const p of profFixture44) {
+      assert(sandbox.validProfile(JSON.parse(JSON.stringify(p))) === true, `${p.label}: not valid`);
+      const prev = { cysc: '2.4', 'scr-baseline': '0.8', dose: '1500', 'level-val': '31', age: '82' };   // the previous patient
+      const env = profEnv44({ [PROF_KEY44]: JSON.stringify(profFixture44) }, prev);
+      Object.keys(prev).forEach(k => env.get(k));   // on screen before the load
+      withProf44(env, ['resetForm', 'resetBayesian', 'addBayesDose', 'addBayesLevel'], (calls) => {
+        assert(sandbox.loadProfiles().length === 2, 'both fixtures are listed');
+        let threw = null;
+        try { sandbox.loadProfileIntoForm(p.id); } catch (e) { threw = e; }
+        assert(!threw, `${p.label}: threw ${threw && (threw.stack || threw.message)}`);
+        assert(calls.resetForm === 1 && calls.resetBayesian === 1, `${p.label}: both columns cleared ${JSON.stringify(calls)}`);
+        const d = p.snapshot.demographics;
+        for (const [tr, b, v] of [['age', 'b-age', d.age], ['tbw', 'b-tbw', d.tbw], ['height', 'b-height', d.height], ['scr', 'b-scr', d.scr]]) {
+          assert(env.els[tr].value === v && env.els[b].value === v, `${p.label}: ${tr} ${env.els[tr].value} / ${b} ${env.els[b].value}, expected ${v}`);
+        }
+        assert(env.els['b-auc-target'].value === p.snapshot.target.auc, `${p.label}: AUC target ${env.els['b-auc-target'].value}`);
+        assert(vm.runInContext('state.sex', sandbox) === d.sex && vm.runInContext('bState.sex', sandbox) === d.sex, `${p.label}: sex`);
+        assert(vm.runInContext('bState.model', sandbox) === p.snapshot.model, `${p.label}: model ${vm.runInContext('bState.model', sandbox)}`);
+        assert(calls.addBayesDose === p.snapshot.doses.length && calls.addBayesLevel === p.snapshot.levels.length, `${p.label}: rows ${JSON.stringify(calls)}`);
+        // The previous patient's Trough-only fields are gone (engine report I5).
+        ['cysc', 'scr-baseline', 'dose', 'level-val'].forEach(k => assert(env.els[k].value === '', `${p.label}: ${k} kept "${env.els[k].value}"`));
+        // A loaded fit is never the result on screen: the profile re-fits.
+        assert(vm.runInContext('bState.result', sandbox) === null, `${p.label}: a stored fit became the result`);
+        sandbox.renderProfileList();
+        assert(env.lists[0].innerHTML.indexOf(p.label) >= 0 && !/Invalid Date/.test(env.lists[0].innerHTML), `${p.label}: listed`);
+      });
+    }
   });
 }
 

@@ -1,0 +1,57 @@
+{
+  "_note": "Saved profiles in the shapes earlier versions wrote to localStorage['ainadara.profiles.v1'], for SUITE 44.26 and browser-flows D26 (Review Focus 2). Fictional patients only. 'v3130' is the v3.13.0 shape (snapshotBayesForm + snapshotPatientCore + snapshotPdForm at edc5b53), saved after a run, so it carries a fit. 'legacy' is the shape from before the patient core and the stale-fit fix: no core, no pd, no hdSessions, no dirty/staleFit, and a fit stored unconditionally.",
+  "profiles": [
+    {
+      "id": "p_mh3kq2a1b2c3",
+      "schema": 1,
+      "label": "Fixture 64F v3.13.0",
+      "savedAt": 1762412400000,
+      "snapshot": {
+        "demographics": { "age": "64", "sex": "F", "tbw": "68", "height": "165", "scr": "1.1", "icu": false, "dial": false },
+        "model": "goti",
+        "target": { "auc": "475", "mic": "1" },
+        "doses": [
+          { "mg": "1000", "tinf": "1", "date": "2025-11-04", "time": "08:00" },
+          { "mg": "1000", "tinf": "1", "date": "2025-11-04", "time": "20:00" },
+          { "mg": "1000", "tinf": "1", "date": "2025-11-05", "time": "08:00" }
+        ],
+        "levels": [ { "conc": "14.2", "date": "2025-11-05", "time": "07:30" } ],
+        "scrRows": [ { "val": "1.1", "date": "2025-11-05", "time": "06:00" } ],
+        "hdSessions": [],
+        "fit": { "model": "goti", "CL_ind": 3.91, "V_ind": 52.4, "CL_pop": 4.12, "V_pop": 50.1,
+                 "goti": { "Vc_ind": 41.2, "Vp_ind": 38.9, "Vc_pop": 39.4, "Vp_pop": 38.4, "Q": 6.5 } },
+        "dirty": false,
+        "core": {
+          "age": "64", "tbw": "68", "height": "165", "scr": "1.1", "cysc": "", "mic": "1",
+          "troughMin": "10", "troughMax": "20", "aucTarget": "475",
+          "sex": "F", "dosingWt": "auto",
+          "amputation": { "RA": null, "LA": null, "RL": null, "LL": null },
+          "crcl": { "on": false, "value": null }
+        },
+        "pd": {
+          "modality": "", "start": "", "hours": "", "exchanges": "", "fill": "", "held": [], "stopped": false,
+          "stoppedDate": "", "stoppedTime": "", "prior": "", "urine": "", "ip": false, "loadKg": "", "vd": "bauer",
+          "goalMin": "", "goalMax": "", "doses": [], "levels": [], "giveDate": "", "giveTime": ""
+        }
+      }
+    },
+    {
+      "id": "p_lz8w0k4d5e6f",
+      "schema": 1,
+      "label": "Fixture 71M legacy",
+      "savedAt": 1750000000000,
+      "snapshot": {
+        "demographics": { "age": "71", "sex": "M", "tbw": "84", "height": "178", "scr": "1.4", "icu": true, "dial": false },
+        "model": "buelga",
+        "target": { "auc": "500", "mic": "1" },
+        "doses": [
+          { "mg": "1250", "tinf": "1.5", "date": "2025-06-14", "time": "09:00" },
+          { "mg": "1250", "tinf": "1.5", "date": "2025-06-14", "time": "21:00" }
+        ],
+        "levels": [],
+        "scrRows": [],
+        "fit": { "model": "buelga", "CL_ind": 3.2, "V_ind": 61, "CL_pop": 3.4, "V_pop": 59.6, "goti": null }
+      }
+    }
+  ]
+}

@@ -373,6 +373,11 @@ async function enterCourse(page) {
   const cards = () => page.evaluate(() => [...document.querySelectorAll('.model-grid .model-opt')]
     .map(b => b.id.replace('b-model-btn-', '') + ':' + b.classList.contains('active') + '/' + b.getAttribute('aria-pressed')).join(','));
   await page.locator('#b-model-btn-goti').click();
+  // The stale check above typed SCr 1.3 here only; the Trough column still holds this patient's
+  // 1.0. Since v3.14.0 (D26, D-e) a save is refused while the two columns disagree on a shared
+  // field, so the AUC value is put back to match before saving.
+  const troughScr = await page.evaluate(() => document.getElementById('scr').value);
+  if (troughScr) await typeInto(page, '#b-scr', troughScr);
   await typeInto(page, '#profile-label-input', 'Test A');
   await page.locator('[data-onclick="k37"]:visible').click();
   await page.waitForTimeout(200);
@@ -794,6 +799,142 @@ async function enterCourse(page) {
     results.cloudflareInjected = (results.cloudflareInjected || 0) + fAttr.injected;
     results.problems.push(...fAttr.kept);
     await fctx.close();
+  }
+
+  // v3.14.0 (D26), saved profiles: engine report I4 (P1) and I5 (P2), code report I2 and I5, and
+  // Review Focus 2. Fictional patients A–D only; the v3.13.0 fixture is fictional too.
+  {
+    const sctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const s = await sctx.newPage();
+    const sProblems = watch(s, 'profiles');
+    await s.goto(BASE + '?v=prof-' + Date.now(), { waitUntil: 'networkidle' });
+    const KEY = 'ainadara.profiles.v1';
+    const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const save = async (label) => {
+      await s.locator('.profile-label-input:visible').first().fill(label);
+      await s.locator('[data-onclick="k37"]:visible').first().click(); await s.waitForTimeout(250);
+    };
+    const stored = () => s.evaluate((k) => JSON.parse(localStorage.getItem(k) || '[]'), KEY);
+    const profileErr = () => s.evaluate(() => ((document.querySelector('.fe-profile') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    const statusLine = () => s.evaluate(() => [...document.querySelectorAll('.profile-status')].map(p => p.textContent).join(' '));
+    // P1: patient A (80 F, 50 kg, 150 cm, SCr 2.5, two doses, one level) in AUC Precision.
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-age', '80'); await typeInto(s, '#b-tbw', '50'); await typeInto(s, '#b-height', '150'); await typeInto(s, '#b-scr', '2.5');
+    await s.locator('[data-onclick="k40"]').click();
+    for (const [n, d] of [[1, D1], [2, D2]]) {
+      await s.locator('[data-onclick="k43"]').click();
+      await typeInto(s, `#b-dose-mg-${n}`, '1000'); await typeInto(s, `#b-dose-tinf-${n}`, '1');
+      await s.locator(`#b-dose-date-${n}`).fill(d); await typeInto(s, `#b-dose-time-${n}`, '08:00');
+    }
+    await s.locator('[data-onclick="k46"]').click();
+    await typeInto(s, '#b-lvl-conc-1', '18'); await s.locator('#b-lvl-date-1').fill(D2); await typeInto(s, '#b-lvl-time-1', '07:30');
+    // Trough-Based: clear the column, type patient B (30 M, 90 kg, 185 cm, SCr 0.8) and save.
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await typeInto(s, '#age', '30'); await typeInto(s, '#tbw', '90'); await typeInto(s, '#height', '185'); await typeInto(s, '#scr', '0.8');
+    await s.locator('[data-onclick="k9"]').click();
+    await save('Patient B');
+    const p1Err = await profileErr(), p1Store = await stored();
+    // With the AUC column cleared, the same save goes through and holds patient B alone.
+    await s.locator('[data-onclick="k2"]').click(); await s.locator('[data-onclick="k48"]:visible').first().click();
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k9"]').click();   // sex is one attribute: clearing the AUC column unset it
+    await save('Patient B');
+    const p1Ok = await stored(), pb = p1Ok[0] && p1Ok[0].snapshot;
+    ok('D26: a Trough save refuses a mixed patient',
+       /age/.test(p1Err) && /weight/.test(p1Err) && /height/.test(p1Err) && /serum creatinine/.test(p1Err) && p1Store.length === 0
+       && p1Ok.length === 1 && !!pb && pb.core.age === '30' && pb.core.tbw === '90' && pb.core.height === '185' && pb.core.scr === '0.8' && pb.core.sex === 'M'
+       && pb.doses.length === 0 && pb.levels.length === 0,
+       JSON.stringify({ p1Err, p1Store: p1Store.length, core: pb && pb.core, doses: pb && pb.doses.length, levels: pb && pb.levels.length }));
+
+    // P2: patient C (45 F, 70 kg, 168 cm, SCr 0.9, no cystatin C) saved from AUC Precision; then
+    // patient D in Trough (82 F, 55 kg, 160 cm, SCr 1.9, cystatin C 2.4, baseline SCr 0.8, steady-state
+    // level mode, dose 1,500, level 31), and Patient C loaded from the Trough column's list.
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-age', '45'); await typeInto(s, '#b-tbw', '70'); await typeInto(s, '#b-height', '168'); await typeInto(s, '#b-scr', '0.9');
+    await s.locator('[data-onclick="k40"]').click();
+    await save('Patient C');
+    await s.locator('[data-onclick="k1"]').click();
+    await s.locator('[data-onclick="k32"]:visible').first().click();
+    await typeInto(s, '#age', '82'); await typeInto(s, '#tbw', '55'); await typeInto(s, '#height', '160'); await typeInto(s, '#scr', '1.9');
+    await s.locator('[data-onclick="k10"]').click();
+    await typeInto(s, '#cysc', '2.4'); await typeInto(s, '#scr-baseline', '0.8');
+    await s.locator('#mode-btn-level').click();
+    await typeInto(s, '#dose', '1500');
+    await s.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(s, '#level-val', '31');
+    const advisories = () => s.evaluate(() => {
+      const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none' && e.textContent.trim() !== ''; };
+      return { cys: shown('cysc-result'), aki: shown('aki-banner') };
+    });
+    const p2Before = await advisories();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Patient C' }).locator('.profile-item-btn.load').click();
+    await s.waitForTimeout(300);
+    const p2 = Object.assign(await s.evaluate(() => {
+      const v = (id) => document.getElementById(id).value;
+      return { cysc: v('cysc'), base: v('scr-baseline'), dose: v('dose'), level: v('level-val'), age: v('age'), bAge: v('b-age'), scr: v('scr'),
+        hasLevel: document.getElementById('has-level').checked };
+    }), await advisories());
+    ok('D26: a profile load clears the Trough column',
+       p2Before.cys && p2Before.aki
+       && p2.cysc === '' && p2.base === '' && p2.dose === '' && p2.level === '' && !p2.hasLevel && !p2.cys && !p2.aki
+       && p2.age === '45' && p2.bAge === '45' && p2.scr === '0.9',
+       JSON.stringify({ p2Before, p2 }));
+
+    // Code report I5: delete removes one profile of three, and Undo puts it back where it was.
+    await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
+    for (const l of ['Profile one', 'Profile two', 'Profile three']) await save(l);
+    const labels = async () => ({ store: (await stored()).map(p => p.label),
+      list: (await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item-label').allTextContents()).map(x => x.trim()) });
+    const before3 = await labels();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Profile two' }).locator('.profile-item-btn.delete').click();
+    await s.waitForTimeout(200);
+    const after3 = await labels();
+    await s.locator('.app-shell:not(#app-shell-bayesian) .profile-status [data-onclick="k97"]').click();
+    await s.waitForTimeout(200);
+    const undone3 = await labels();
+    ok('D26: delete removes one profile of three',
+       eq(before3.store, ['Profile three', 'Profile two', 'Profile one']) && eq(after3.store, ['Profile three', 'Profile one'])
+       && eq(after3.list, ['Profile three', 'Profile one']) && eq(undone3.store, before3.store) && eq(undone3.list, before3.store),
+       JSON.stringify({ before3, after3, undone3 }));
+
+    // Review Focus 2: profiles saved by v3.13.0 (core and fit) and before the core (legacy fit) load.
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'profile-fixtures-v3.13.0.json'), 'utf8')).profiles;
+    await s.evaluate(([k, list]) => { localStorage.setItem(k, JSON.stringify(list)); renderProfileList(); }, [KEY, fixture]);
+    await s.locator('[data-onclick="k2"]').click();
+    const loadFix = async (label) => {
+      await s.locator('#app-shell-bayesian .profile-item', { hasText: label }).locator('.profile-item-btn.load').click();
+      await s.waitForTimeout(300);
+      return s.evaluate(() => ({ age: document.getElementById('b-age').value, tAge: document.getElementById('age').value, sex: bState.sex, model: bState.model,
+        doses: document.querySelectorAll('[id^="b-dose-row-"]').length, levels: document.querySelectorAll('[id^="b-level-row-"]').length,
+        icu: document.getElementById('b-icu').checked, result: !!bState.result, status: [...document.querySelectorAll('.profile-status')].map(p => p.textContent).join('') }));
+    };
+    const fx1 = await loadFix('Fixture 64F v3.13.0'), fx2 = await loadFix('Fixture 71M legacy');
+    ok('D26: profiles saved by v3.13.0 and before the patient core load (Review Focus 2)',
+       fx1.age === '64' && fx1.tAge === '64' && fx1.sex === 'F' && fx1.model === 'goti' && fx1.doses === 3 && fx1.levels === 1 && !fx1.result
+       && fx2.age === '71' && fx2.tAge === '71' && fx2.sex === 'M' && fx2.model === 'buelga' && fx2.doses === 2 && fx2.levels === 0 && fx2.icu && !fx2.result
+       && !/could not be read/.test(fx1.status + fx2.status),
+       JSON.stringify({ fx1, fx2 }));
+
+    // Code report I2: truncated JSON in the store is copied to the backup key before anything is
+    // written over it, and the status line says so; a save afterwards starts a new list.
+    const trunc = '[{"id":"p_trunc1","label":"Truncated","savedAt":1762412400000,"snapshot":{"demographics":{"age":"5';
+    await s.evaluate(([k, t]) => { localStorage.setItem(k, t); localStorage.removeItem(k + '.bak'); }, [KEY, trunc]);
+    await s.reload({ waitUntil: 'networkidle' });
+    const bak = Object.assign(await s.evaluate((k) => ({ bak: localStorage.getItem(k + '.bak'), main: localStorage.getItem(k) }), KEY), { status: await statusLine() });
+    await typeInto(s, '#age', '60');
+    await save('After the backup');
+    const bak2 = Object.assign(await s.evaluate((k) => ({ bak: localStorage.getItem(k + '.bak'), list: JSON.parse(localStorage.getItem(k)).map(p => p.label) }), KEY),
+      { status: await statusLine() });
+    ok('D26: an unreadable profile store is kept under ainadara.profiles.v1.bak and the status line says so',
+       bak.bak === trunc && bak.main === trunc && /could not be read/.test(bak.status) && /ainadara\.profiles\.v1\.bak/.test(bak.status)
+       && bak2.bak === trunc && eq(bak2.list, ['After the backup']) && /ainadara\.profiles\.v1\.bak/.test(bak2.status),
+       JSON.stringify({ bak: Object.assign({}, bak, { bak: bak.bak && bak.bak.length, main: bak.main && bak.main.length }), bak2: Object.assign({}, bak2, { bak: bak2.bak && bak2.bak.length }) }));
+    const sAttr = await attributeInjected(s, sProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + sAttr.injected;
+    results.problems.push(...sAttr.kept);
+    await sctx.close();
   }
 
   // v3.14.0 (D26), engine report I2 and UI report I3: "Low confidence … a fit the tool itself does

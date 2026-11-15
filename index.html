@@ -8586,6 +8586,12 @@ function resetForm() {
   document.getElementById('rl-warning').style.display = 'none';
   ['time-dose-given', 'time-level-drawn', 'tl-dose-time', 'tl-t1-time', 'tl-t2-time', 'rl-dose-time', 'rl-draw-time'].forEach(id => setDtPair(id, ''));
   document.getElementById('crcl-result').style.display = 'none';
+  // The renal advisories go with the fields that drove them (D26, engine report I5): the
+  // cystatin C discordance and low-muscle-mass lines stayed on screen after a clear or a load.
+  ['cysc-result', 'crcl-advisory'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+  });
   document.getElementById('scr-baseline').value = '';
   document.getElementById('aki-manual').checked = false;
   document.getElementById('aki-banner').style.display = 'none';
@@ -15486,18 +15492,87 @@ function resetBayesian() {
 //  PHASE 3 — SAVED PATIENT PROFILES (localStorage)
 // ══════════════════════════════════════════
 const PROFILE_STORAGE_KEY = 'ainadara.profiles.v1';
+const PROFILE_BACKUP_KEY  = PROFILE_STORAGE_KEY + '.bak';
 const PROFILE_SCHEMA      = 1;
+const PROFILE_ID_RE       = /^p_[a-z0-9]+$/i;
+
+// v3.14.0 (D26), code report I2 and M1. The store was read as "any array": a profile without
+// its demographics cleared the form and then threw, a non-numeric savedAt listed "Invalid
+// Date", a tampered id reached a data-arg attribute, and truncated JSON read as an empty list,
+// so the next save overwrote every stored profile without a word. Now each entry is checked
+// on read, an entry that fails is neither listed nor loaded but stays in storage (a save
+// writes it back), and unparseable text is copied to PROFILE_BACKUP_KEY before anything is
+// written to the store. Nothing the user saved is ever discarded silently.
+let profileReadProblems = 0;      // stored entries (or the whole store) that cannot be read
+let profileUnreadable   = [];     // those entries as stored; persistProfiles writes them back
+let profileBackupKey    = null;   // where unparseable store text was copied, if it was
+let profileStoreLocked  = false;  // unparseable and the copy failed: nothing is written over it
+
+function validProfile(p) {
+  const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+  if (!isObj(p)) return false;
+  if (typeof p.id !== 'string' || !PROFILE_ID_RE.test(p.id)) return false;
+  if (typeof p.label !== 'string') return false;
+  if (typeof p.savedAt !== 'number' || !Number.isFinite(p.savedAt)) return false;
+  const s = p.snapshot;
+  if (!isObj(s) || !isObj(s.demographics)) return false;
+  if (!Array.isArray(s.doses) || !Array.isArray(s.levels)) return false;
+  // What the load reads beyond those: optional (older versions lack them), but never the wrong type.
+  if (!s.doses.every(isObj) || !s.levels.every(isObj)) return false;
+  if (['scrRows', 'hdSessions'].some(k => s[k] != null && !(Array.isArray(s[k]) && s[k].every(isObj)))) return false;
+  if (['core', 'target', 'pd'].some(k => s[k] != null && !isObj(s[k]))) return false;
+  return true;
+}
+
+// Copies unparseable store text to the backup key, never over a different earlier copy.
+// Returns the key that holds it, or null when it could not be kept.
+function backupProfileStore(raw) {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(PROFILE_BACKUP_KEY) === 0 && localStorage.getItem(k) === raw) return k;
+    }
+    const key = localStorage.getItem(PROFILE_BACKUP_KEY) == null ? PROFILE_BACKUP_KEY : `${PROFILE_BACKUP_KEY}.${Date.now()}`;
+    localStorage.setItem(key, raw);
+    return localStorage.getItem(key) === raw ? key : null;
+  } catch (e) { return null; }
+}
 
 function loadProfiles() {
-  try {
-    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) { return []; }
+  profileReadProblems = 0; profileUnreadable = []; profileBackupKey = null; profileStoreLocked = false;
+  let raw = null;
+  try { raw = localStorage.getItem(PROFILE_STORAGE_KEY); } catch (e) { return []; }
+  if (!raw) return [];
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (e) { parsed = undefined; }
+  if (!Array.isArray(parsed)) {
+    profileReadProblems = 1;
+    profileBackupKey = backupProfileStore(raw);
+    profileStoreLocked = !profileBackupKey;
+    return [];
+  }
+  const good = [];
+  parsed.forEach(p => { (validProfile(p) ? good : profileUnreadable).push(p); });
+  profileReadProblems = profileUnreadable.length;
+  return good;
+}
+// What the status line says about the store as last read ('' when it read cleanly).
+function profileReadNote() {
+  if (!profileReadProblems) return '';
+  if (profileUnreadable.length) {
+    const n = profileUnreadable.length;
+    return `${n} saved profile${n === 1 ? '' : 's'} could not be read and ${n === 1 ? 'is' : 'are'} not listed; ${n === 1 ? 'it stays' : 'they stay'} in this browser's storage.`;
+  }
+  return profileBackupKey
+    ? `The saved profiles could not be read. Their text is kept in this browser's storage under "${profileBackupKey}".`
+    : 'The saved profiles could not be read, and a copy could not be kept, so nothing will be saved over them.';
 }
 function persistProfiles(list) {
-  try { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(list)); return true; }
+  if (profileStoreLocked) {
+    showFormErrors('profile', 'Not saved: the saved profiles could not be read or copied, so nothing is written over them.', []);
+    return false;
+  }
+  try { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(list.concat(profileUnreadable))); return true; }
   catch (e) {
     showFormErrors('profile', 'Unable to save profile — browser storage may be full or disabled.', []);
     return false;
@@ -15612,37 +15687,51 @@ function snapshotBayesForm() {
 // Saved profiles used to be Bayesian-only, so the same patient had to be typed
 // twice to work in both modules. One mapping, applied in both directions.
 const PATIENT_CORE_FIELDS = [
-  { key:'age',       trough:'age',         bayes:'b-age' },
-  { key:'tbw',       trough:'tbw',         bayes:'b-tbw' },
-  { key:'height',    trough:'height',      bayes:'b-height' },
-  { key:'scr',       trough:'scr',         bayes:'b-scr' },
-  { key:'cysc',      trough:'cysc',        bayes:null },
-  { key:'mic',       trough:'mic',         bayes:'b-mic' },
-  { key:'troughMin', trough:'trough-min',  bayes:null },
-  { key:'troughMax', trough:'trough-max',  bayes:null },
-  { key:'aucTarget', trough:null,          bayes:'b-auc-target' },
+  { key:'age',       trough:'age',         bayes:'b-age',        label:'age' },
+  { key:'tbw',       trough:'tbw',         bayes:'b-tbw',        label:'weight' },
+  { key:'height',    trough:'height',      bayes:'b-height',     label:'height' },
+  { key:'scr',       trough:'scr',         bayes:'b-scr',        label:'serum creatinine' },
+  { key:'cysc',      trough:'cysc',        bayes:null,           label:'cystatin C' },
+  { key:'mic',       trough:'mic',         bayes:'b-mic',        label:'MIC' },
+  { key:'troughMin', trough:'trough-min',  bayes:null,           label:'trough target minimum' },
+  { key:'troughMax', trough:'trough-max',  bayes:null,           label:'trough target maximum' },
+  { key:'aucTarget', trough:null,          bayes:'b-auc-target', label:'AUC target' },
 ];
 
-function snapshotPatientCore() {
-  const val = id => (id && document.getElementById(id)?.value) || '';
-  const core = {};
+// v3.14.0 (D26), engine report I4: the core preferred the AUC column's value whichever module
+// was saved, so a patient typed into a cleared Trough column was saved with the previous
+// patient's age, weight, height and SCr (and doses), under the new patient's sex. The core is
+// now read from the module being saved from (source: 'trough' | 'auc'); the other column fills
+// only what the source leaves empty. A field filled in both columns with different values is a
+// conflict: two patients on screen, and saveCurrentProfile refuses (default D-e).
+function snapshotPatientCore(source) {
+  const val = id => String((id && document.getElementById(id)?.value) || '').trim();
+  const same = (a, b) => {
+    const x = Number(a), y = Number(b);
+    return (Number.isFinite(x) && Number.isFinite(y)) ? x === y : a === b;
+  };
+  const from = source === 'trough' ? 'trough' : 'bayes', other = from === 'trough' ? 'bayes' : 'trough';
+  const core = {}, conflicts = [];
   for (const f of PATIENT_CORE_FIELDS) {
-    // Prefer whichever module actually has a value, so saving from either works.
-    core[f.key] = val(f.bayes) || val(f.trough) || '';
+    const a = val(f[from]), b = val(f[other]);
+    core[f.key] = a || b || '';
+    if (a && b && !same(a, b)) conflicts.push(f.key);
   }
   core.sex       = (state.sex === 'F' || state.sex === 'M') ? state.sex : null;   // one patient attribute — see setPatientSex; unset is saved unset, never as 'M'
   core.dosingWt  = state.dosingWt || 'auto';
   core.amputation = Object.assign({}, ampState);
   core.crcl      = (crclOverride.on && crclOverride.value > 0)
                      ? { on:true, value:crclOverride.value } : { on:false, value:null };
-  return core;
+  return { core, conflicts };
 }
 
 function applyPatientCore(core) {
   if (!core) return;
+  // A field the core carries empty is cleared (engine report I5: the previous patient's value
+  // stayed). A field it does not carry at all (an older profile) keeps what the reset left.
   const set = (id, v) => {
     const el = id && document.getElementById(id);
-    if (el && v != null && v !== '') { el.value = v; }
+    if (el && v !== undefined) { el.value = v == null ? '' : v; }
   };
   for (const f of PATIENT_CORE_FIELDS) {
     set(f.trough, core[f.key]);
@@ -15687,11 +15776,24 @@ function saveCurrentProfile() {
   const label    = (labelEl?.value || '').trim();
   if (!label) { showFormErrors('profile', 'Enter a label before saving.', [labelEl]); return; }
   clearUndo();
+  // The core is what makes a profile usable from either module. It is read from the module
+  // on screen; two different patients in the two columns are refused, never merged (D-e).
+  // That refusal is also what keeps the AUC course out of a Trough save of another patient:
+  // the course is stored only when the two columns agree on every shared field.
+  const bShell = document.getElementById('app-shell-bayesian');
+  const source = (bShell && bShell.style && bShell.style.display !== 'none') ? 'auc' : 'trough';
+  const { core, conflicts } = snapshotPatientCore(source);
+  if (conflicts.length) {
+    const names = conflicts.map(k => (PATIENT_CORE_FIELDS.find(f => f.key === k) || { label: k }).label);
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    showFormErrors('profile', `Not saved: the Trough-Based and AUC Precision columns hold different values for ${list}, `
+      + 'so they may be two patients. Clear the column that is not this patient, or make the values match, then save.', [labelEl]);
+    return;
+  }
   const snapshot = snapshotBayesForm();
   // v3.13.0 (D24): saved without the fit, and said so (a native confirm() asked).
   const savedWithoutFit = !!snapshot.dirty;
-  // The core is what makes a profile usable from either module.
-  snapshot.core = snapshotPatientCore();
+  snapshot.core = core;
   snapshot.pd = snapshotPdForm();   // the PD mode's fields (D23); older profiles have none
   // "Is anything entered" must look at the CORE, not only the Bayesian form — a
   // profile saved from the Trough-Based module has no dose history and its
@@ -15707,18 +15809,23 @@ function saveCurrentProfile() {
     schema: PROFILE_SCHEMA,
     label, savedAt: Date.now(), snapshot
   };
+  // A store that could not be parsed is replaced by this new list; its text was copied first.
+  const replacedKey = profileBackupKey;
   profiles.unshift(entry);
   if (!persistProfiles(profiles)) return;
   labelEls.forEach(e => { e.value = ''; });
   renderProfileList();
-  profileStatus(savedWithoutFit
+  profileStatus((savedWithoutFit
     ? `Saved "${label}" without the fitted PK: the inputs changed since the last calculation. Run the analysis and save again to keep a matching fit.`
-    : `Saved "${label}".`);
+    : `Saved "${label}".`)
+    + (replacedKey ? ` The earlier saved profiles could not be read; their text is kept in this browser's storage under "${replacedKey}".` : ''));
 }
-// One polite line in each profile section (v3.13.0, D24).
+// One polite line in each profile section (v3.13.0, D24). Any problem reading the store, as
+// last read, follows the message (D26).
 function profileStatus(msg) {
   clearUndo();
-  document.querySelectorAll('.profile-status').forEach(p => { p.textContent = msg || ''; });
+  const text = [msg || '', profileReadNote()].filter(Boolean).join(' ');
+  document.querySelectorAll('.profile-status').forEach(p => { p.textContent = text; });
 }
 
 function deleteProfile(id) {
@@ -15737,44 +15844,47 @@ function deleteProfile(id) {
 
 function loadProfileIntoForm(id) {
   clearUndo();   // a cleared form is never restored over a loaded profile (D24 review)
+  // Validate before anything is cleared (code report I2): a damaged profile used to clear the
+  // form and then throw, with nothing said. loadProfiles() lists only valid entries.
   const profiles = loadProfiles();
   const entry = profiles.find(p => p.id === id);
-  if (!entry) return;
+  if (!entry) {
+    const damaged = profileUnreadable.some(p => p && p.id === id) || profileReadProblems > 0;
+    profileStatus(damaged
+      ? 'That profile could not be read, so nothing was loaded; the form is unchanged.'
+      : 'That profile is no longer saved; the form is unchanged.');
+    return;
+  }
   const s = entry.snapshot;
 
+  // Both columns are cleared first (engine report I5): resetBayesian() alone left the
+  // previous patient's Trough-only fields (cystatin C, baseline SCr, dose, level), and the
+  // advisories they drove, beside the loaded patient.
+  resetForm();
   resetBayesian();
 
   // Patient core first, so BOTH modules carry this patient. Older profiles have
-  // no core; fall back to their Bayesian demographics so they still load.
+  // no core; fall back to their Bayesian demographics so they still load. They
+  // carry no weight basis, amputation or CrCl override, so those are a new
+  // patient's (resetForm leaves the first two as the previous patient had them).
   applyPatientCore(s.core || {
-    age: s.demographics?.age, tbw: s.demographics?.tbw, height: s.demographics?.height,
-    scr: s.demographics?.scr, sex: s.demographics?.sex,
+    age: s.demographics.age, tbw: s.demographics.tbw, height: s.demographics.height,
+    scr: s.demographics.scr, sex: s.demographics.sex,
     aucTarget: s.target?.auc, mic: s.target?.mic,
+    dosingWt: 'auto', amputation: {}, crcl: { on: false, value: null },
   });
   // The PD mode's fields (D23). A PD profile ticks AUC Precision's PD box, so its
-  // course never reaches the fit.
+  // course never reaches the fit, and opens the Trough module's PD mode (the reset
+  // above returned it to initial dosing).
   applyPdForm(s.pd || null);
   const bpd = document.getElementById('b-pd');
   if (bpd) bpd.checked = !!(s.pd && s.pd.modality);
-
-  // Skip empties: resetBayesian() has already cleared the form, and the patient
-  // core was applied above. A profile saved from the Trough-Based module carries
-  // empty Bayesian demographics, and writing those back would clobber the core.
-  const set = (elId, v) => {
-    const el = document.getElementById(elId);
-    if (el && v != null && v !== '') el.value = v;
-  };
-  set('b-age',    s.demographics.age);
-  set('b-tbw',    s.demographics.tbw);
-  set('b-height', s.demographics.height);
-  set('b-scr',    s.demographics.scr);
-  set('b-auc-target', s.target?.auc);
-  set('b-mic',        s.target?.mic);
+  if (s.pd && s.pd.modality) setCalcMode('pd');
 
   // setPatientSex styles both modules' toggles (rule 2: one implementation).
   // The core, when present, is authoritative — demographics.sex of a profile
   // saved before the fix may carry the old bState default of 'M'.
-  setPatientSex((s.core && s.core.sex) || s.demographics.sex);
+  setPatientSex(s.core ? s.core.sex : s.demographics.sex);
 
   // The picker is a .model-grid of #b-model-btn-* cells. The old .toggle-opt
   // lookup found nothing, so setBModel got undefined: the model changed and the
@@ -15833,11 +15943,14 @@ function renderProfileList() {
   const wraps = [...document.querySelectorAll('.profile-list')];
   if (!wraps.length) return;
   const profiles = loadProfiles();
+  // A store that could not be read is said in the status line, not left to look empty (D26).
+  const note = profileReadNote();
+  if (note) document.querySelectorAll('.profile-status').forEach(p => { p.textContent = note; });
   if (!profiles.length) {
     wraps.forEach(w => { w.innerHTML = '<div class="profile-empty-msg">No saved profiles yet.</div>'; });
     return;
   }
-  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // escHtml is the one escaper (rule 2), on the label and on the id in data-arg (code report M1).
   const html = profiles.map(p => {
     const dt = new Date(p.savedAt);
     const dtStr = dt.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
@@ -15851,12 +15964,12 @@ function renderProfileList() {
     return `
       <div class="profile-item">
         <div class="profile-item-body">
-          <div class="profile-item-label">${esc(p.label)}${fitTag}</div>
-          <div class="profile-item-meta">${dtStr} · ${model} · ${nDoses}d/${nLevels}l</div>
+          <div class="profile-item-label">${escHtml(p.label)}${fitTag}</div>
+          <div class="profile-item-meta">${escHtml(dtStr)} · ${model} · ${nDoses}d/${nLevels}l</div>
         </div>
         <div class="profile-item-actions">
-          <button class="profile-item-btn load"   data-onclick="k69" data-arg="${p.id}">Load</button>
-          <button class="profile-item-btn delete" data-onclick="k70" data-arg="${p.id}">Delete</button>
+          <button class="profile-item-btn load"   data-onclick="k69" data-arg="${escHtml(p.id)}">Load</button>
+          <button class="profile-item-btn delete" data-onclick="k70" data-arg="${escHtml(p.id)}">Delete</button>
         </div>
       </div>`;
   }).join('');
