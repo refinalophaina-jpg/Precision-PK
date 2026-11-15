@@ -2673,6 +2673,10 @@
   .tx-verdict { grid-area: verdict; min-width: 0; }
   .tx-curve   { grid-area: curve; margin: 0; min-width: 0; }
   .tx-ld      { grid-area: ld; min-width: 0; }
+  /* A refusal has no curve (D26): the verdict takes the column, at a reading measure. */
+  .tx-top.tx-top-solo { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "verdict" "ld"; }
+  .tx-top-solo .tx-verdict, .tx-top-solo .tx-ld { max-width: 68ch; }
+  .tx-top.tx-top-solo .tx-verdict { border-bottom: 0; margin-bottom: 0; }   /* the block's own rule closes it */
   @container results (max-width: 760px) {
     .tx-top { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "verdict" "ld" "curve"; }
     .tx-verdict { padding: 0 0 18px; border-bottom: 1px solid var(--rule); margin-bottom: 14px; }
@@ -6474,15 +6478,34 @@ function calcAUC(dose, tau, clv) {
 //  2. AUC₂₄ 400–600, trough slightly low (>8)    → AUC is primary, acceptable
 //  3. AUC₂₄ 400–600, trough above max             → flag high trough but AUC ok
 //  4. AUC₂₄ <400 (subtherapeutic)                 → increase dose
-//  5. AUC₂₄ >600 (supratherapeutic)               → reduce dose or extend interval
+//  5. Nothing admissible in AUC₂₄ 400–600         → a refusal, never the closest
+//
+// THE CEILINGS (v3.14.0, D26; engine report C2; the user's ruling 2). Candidates
+// used to run to 4,000 mg a dose with no daily ceiling and no AUC ceiling, so a
+// 25 M with SCr 0.5 (CrCl 303.5, uncapped) was told 2 g q8h — 6 g a day — where AUC
+// Precision gave 1.5 g q8h and its cap-bound alarm, and a 190 mg/L level led with
+// 250 mg q12h at AUC₂₄ 1,187. The Trough module now obeys AUC Precision's limits:
+// candidates stop at DOSE_MAX_PER_DOSE_MG, and each is judged by evalRegimen — the
+// one judge of the hard rejects (D25, rule 2; one-compartment, goti2comp null) —
+// so DOSE_MAX_TDD_MG and AUC24_ABSOLUTE_MAX bind here exactly as there. When no
+// admissible candidate lands in 400–600 the answer is a refusal,
+// { refused, reason, capBound, highest }, never the closest regimen (P5 used to
+// return one). Its CrCl stays uncapped (plan default D-c): the ceilings and the
+// augmented-clearance caution carry the safety. No new constant.
 // ══════════════════════════════════════════════════════════════
 function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
-  const candidates = [];
-  for(let d = 250; d <= 4000; d += 250) {
+  const all = [];
+  for(let d = 250; d <= DOSE_MAX_PER_DOSE_MG; d += 250) {
     const pt  = calcPeakTrough(d, tau, tinf, kel, vd);
     const auc = calcAUC(d, tau, clv);
-    candidates.push({ dose:d, trough:pt.trough, peak:pt.peak, auc });
+    const judged = evalRegimen(d, tau, tinf, clv, vd, null);
+    all.push({ c: { dose:d, trough:pt.trough, peak:pt.peak, auc },
+               hardFail: judged ? judged.hardFail : ['no steady state can be formed at this clearance'] });
   }
+  // AUC rises with the dose, so the admissible doses run from 250 mg up to the first breach.
+  const admissible = all.filter(x => !x.hardFail.length).map(x => x.c);
+  const candidates = admissible.filter(c => c.auc >= AUC24_TARGET_MIN && c.auc <= AUC24_TARGET_MAX);
+  if (!candidates.length) return troughRefusal(all, admissible, tau);
 
   // P1: AUC in range + trough fully in range — lowest qualifying dose
   const ideal = candidates.filter(c =>
@@ -6515,16 +6538,39 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv) {
     flagMsg: `Trough ${aucOkTroughHigh[0].trough.toFixed(1)} mg/L exceeds the ${troughMax} mg/L upper target. Consider extending the dosing interval to lower the trough while maintaining therapeutic AUC.`
   };
 
-  // P4: AUC subtherapeutic — find dose achieving AUC ≥400 with lowest trough risk
-  const subThera = candidates.filter(c => c.auc >= AUC24_TARGET_MIN && c.auc <= 650);
-  if(subThera.length > 0) return { ...subThera[0], flag: 'auc_borderline' };
+  // P4: AUC in range, trough well below the target (< 80% of min) — the lowest such dose.
+  // (Its window used to run to AUC 650; since D26 only an in-band candidate reaches here.)
+  return { ...candidates[0], flag: 'auc_borderline' };
+}
 
-  // P5: Nothing meets AUC — find closest to AUC 500 target
-  const target = 500;
-  const best = candidates.reduce((a,b) =>
-    Math.abs(b.auc - target) < Math.abs(a.auc - target) ? b : a
-  );
-  return { ...best, flag: best.auc > AUC24_TARGET_MAX ? 'auc_supra' : 'auc_sub' };
+// The Trough module's refusal (D26): no admissible dose at this interval lands in
+// 400–600. all: every 250 mg step to the per-dose ceiling, { c, hardFail } as
+// evalRegimen judged it; admissible: those with no hard reject, in dose order.
+// capBound when the highest admissible dose falls short of 400 and the next step
+// breaches a dose ceiling (per dose or per day) — said with capBoundFlag, AUC
+// Precision's own alarm. Otherwise the 250 mg lattice steps over the band, or every
+// step breaches a ceiling; the reason names the steps either side.
+function troughRefusal(all, admissible, tau) {
+  const q = fmtFreq(tau), band = `${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}`;
+  const at = (c) => `${fmtRegimen(c.dose, tau)} gives AUC₂₄ ${c.auc.toFixed(0)}`;
+  if (!admissible.length) {
+    const first = all[0];
+    return { refused: true, capBound: false, highest: null,
+      reason: `Every dose at ${q} on 250 mg steps breaches a hard limit: even ${fmtRegimen(first.c.dose, tau)}, `
+        + `${first.hardFail.join('; ')}. No regimen is offered at this interval.` };
+  }
+  const highest = admissible[admissible.length - 1];
+  const nextDose = highest.dose + 250;
+  const capBound = highest.auc < AUC24_TARGET_MIN &&
+    (nextDose > DOSE_MAX_PER_DOSE_MG || nextDose * 24 / tau > DOSE_MAX_TDD_MG);
+  if (capBound) return { refused: true, capBound: true, highest,
+    reason: `No dose at ${q} within the conventional ceilings reaches AUC₂₄ ${band} mg·h/L: the highest admissible, ${at(highest)}.` };
+  const below = admissible.filter(c => c.auc < AUC24_TARGET_MIN).pop();
+  const aboveX = all.find(x => x.c.auc > AUC24_TARGET_MAX);
+  const above = aboveX ? `${at(aboveX.c)}${aboveX.c.auc > AUC24_ABSOLUTE_MAX ? `, above the absolute ceiling of ${AUC24_ABSOLUTE_MAX}` : ''}` : '';
+  return { refused: true, capBound: false, highest,
+    reason: `No dose at ${q} on 250 mg steps lands in AUC₂₄ ${band} mg·h/L: `
+      + (below ? `${at(below)} and ${above}` : `even ${above}`) + '. The dose explorer lists the other intervals.' };
 }
 
 // findOptimalDose's flag was computed and never rendered (audit 2026-09-28):
@@ -6955,8 +7001,9 @@ function calculate() {
       indKel, indClv, indT12,
       troughMin, troughMax, mic,
       optDose: rlOpt.dose, optFlag: rlOpt.flag, optFlagMsg: rlOpt.flagMsg,
-      optPT:   calcPeakTrough(rlOpt.dose, rlTau, rlTinf, indKel, popVd),
-      optAUC:  calcAUC(rlOpt.dose, rlTau, indClv)
+      optPT:   rlOpt.refused ? null : calcPeakTrough(rlOpt.dose, rlTau, rlTinf, indKel, popVd),
+      optAUC:  rlOpt.refused ? NaN : calcAUC(rlOpt.dose, rlTau, indClv),
+      optRefusal: rlOpt.refused ? rlOpt : null
     });
     return;
   }
@@ -7017,8 +7064,9 @@ function calculate() {
       tlDose, tlTinf, tlTau,
       ...tlPK,
       troughMin, troughMax, mic,
-      optDose:tlOpt.dose, optFlag: tlOpt.flag, optFlagMsg: tlOpt.flagMsg, optPT:calcPeakTrough(tlOpt.dose, tlTau, tlTinf, tlPK.kel, tlPK.vd),
-      optAUC:calcAUC(tlOpt.dose, tlTau, tlPK.clv), hold: tlHold
+      optDose:tlOpt.dose, optFlag: tlOpt.flag, optFlagMsg: tlOpt.flagMsg, optPT: tlOpt.refused ? null : calcPeakTrough(tlOpt.dose, tlTau, tlTinf, tlPK.kel, tlPK.vd),
+      optAUC: tlOpt.refused ? NaN : calcAUC(tlOpt.dose, tlTau, tlPK.clv), hold: tlHold,
+      optRefusal: tlOpt.refused ? tlOpt : null
     });
     return; // done — skip the rest of calculate()
   }
@@ -7053,12 +7101,6 @@ function calculate() {
   const popKel   = popClv / vd;
   const popT12   = 0.693 / popKel;
 
-  // ── Initial Dosing mode: auto-solve optimal dose from population PK ──
-  if (isInitial) {
-    const initOpt = findOptimalDose(troughMin, troughMax, tau, tinf, popKel, vd, popClv);
-    dose = initOpt.dose;
-  }
-
   // ── Level-based PK fitting ──
   // Gated on the mode: Initial Dosing used to fit a level left behind, hidden,
   // from Steady State mode (engine audit 2026-09-28).
@@ -7077,6 +7119,45 @@ function calculate() {
     showFormErrors('trough', 'A level is entered, but its draw time is missing or dated before the dose. '
         + 'Fix the dose and draw dates, or switch the level off to dose from population values.', [['time-level-drawn', 'time-dose-given']]);
     return;
+  }
+
+  // ── Loading dose (before the refusals below: a withheld maintenance regimen keeps it) ──
+  const hasLD = document.getElementById('has-ld').checked;
+  const ldTargetPeak = v('ld-target-peak') || 25;
+  const ldDeltaRaw   = v('ld-delta');
+  const ldDeltaT     = ldDeltaRaw || tau; // default: same as dosing interval
+  let ldData = null;
+  if (hasLD) {
+    const ld = calcLoadingDose(popClv, vd, ldTargetPeak);
+    const ldLevelAtMaint = calcLDLevelAtTime(ld.peak, ld.kelLD, ld.tinf, ldDeltaT);
+    ldData = { ...ld, targetPeak: ldTargetPeak, deltaT: ldDeltaT, levelAtMaint: ldLevelAtMaint };
+  }
+
+  // ── Before a level (D26): the dose rests on the CrCl alone. The user's ruling 2: no
+  //    empiric maintenance regimen at CrCl under 10 without a level (as in AUC Precision; the
+  //    HD box returned above), and the augmented-clearance caution from the same detectARC. ──
+  const levelUsed = !!(hasLevel && levelVal && tDoseToLvl);
+  const renalNotes = levelUsed ? [] : troughRenalNotes(crclVal, age, scr);
+  const refusalBase = { tbw, ibw, adjbw, bmi, crcl: crclVal, popClv, vd, popKel, popT12,
+    tau, tinf, troughMin, troughMax, mic, clModel, vdModel, hasLD, ldData };
+  if (!levelUsed && detectVeryLowCrCl(crclVal)) {
+    renderTroughRefusal({ ...refusalBase, word: SEVERE_RENAL.word,
+      reason: `CrCl is below ${VERY_LOW_CRCL_THRESHOLD} mL/min and no level has been measured. ${SEVERE_RENAL.follow} The dose explorer is shown for reference only.`,
+      notes: [troughSevereRenalNote(crclVal)], next: SEVERE_RENAL.next });
+    return;
+  }
+
+  // ── Initial Dosing mode: auto-solve optimal dose from population PK ──
+  if (isInitial) {
+    const initOpt = findOptimalDose(troughMin, troughMax, tau, tinf, popKel, vd, popClv);
+    if (initOpt.refused) {
+      renderTroughRefusal({ ...refusalBase, word: TROUGH_REFUSAL_WORD, reason: initOpt.reason,
+        flags: troughCapBoundHTML(initOpt), notes: renalNotes,
+        next: initOpt.capBound ? 'Obtain a level to confirm the clearance before acting on any regimen.'
+                               : 'Choose another interval from the dose explorer.' });
+      return;
+    }
+    dose = initOpt.dose;
   }
 
   let adjKel = popKel, adjClv = popClv;
@@ -7181,10 +7262,10 @@ function calculate() {
   const t12 = 0.693 / adjKel;
 
   // ── Optimal dose recommendation ──
+  // A refusal (D26) leaves optDose undefined; renderResults shows it in the regimen's place.
   const optResult = findOptimalDose(troughMin, troughMax, tau, tinf, adjKel, vd, adjClv);
   const optDose   = optResult.dose;
-  const optPT     = calcPeakTrough(optDose, tau, tinf, adjKel, vd);
-  const optAUC    = calcAUC(optDose, tau, adjClv);
+  const optPT     = optResult.refused ? null : calcPeakTrough(optDose, tau, tinf, adjKel, vd);
 
   // ── Composite AUC-primary clinical assessment ──
   const assessment = assessClinicalStatus(auc24, trough, troughMin, troughMax);
@@ -7210,18 +7291,6 @@ function calculate() {
   const aucLo = Math.round(auc24 * (1 - aucUncertainty));
   const aucHi = Math.round(auc24 * (1 + aucUncertainty));
 
-  // ── Loading dose ──
-  const hasLD = document.getElementById('has-ld').checked;
-  const ldTargetPeak = v('ld-target-peak') || 25;
-  const ldDeltaRaw   = v('ld-delta');
-  const ldDeltaT     = ldDeltaRaw || tau; // default: same as dosing interval
-  let ldData = null;
-  if (hasLD) {
-    const ld = calcLoadingDose(popClv, vd, ldTargetPeak);
-    const ldLevelAtMaint = calcLDLevelAtTime(ld.peak, ld.kelLD, ld.tinf, ldDeltaT);
-    ldData = { ...ld, targetPeak: ldTargetPeak, deltaT: ldDeltaT, levelAtMaint: ldLevelAtMaint };
-  }
-
   renderResults({
     age, sex:state.sex, tbw, ibw, adjbw, bmi, ht, scr,
     crcl:crclVal, crclWt, dosingWt:state.dosingWt,
@@ -7234,6 +7303,9 @@ function calculate() {
     aucStatus, mic,
     assessment,
     optDose, optPT, optAUC: optResult.auc, optFlag: optResult.flag, optFlagMsg: optResult.flagMsg,
+    optRefusal: optResult.refused ? optResult : null, renalNotes,
+    // D26: the current regimen judged by the one judge (evalRegimen): one with a hard reject is never continued.
+    curHardFail: isInitial ? [] : ((evalRegimen(dose, tau, tinf, adjClv, vd, null) || {}).hardFail || []),
     clModel, vdModel,
     hasLevel, hasLD, ldData, hold: troughHoldInfo
   });
@@ -7269,13 +7341,24 @@ function renderResults(d) {
     monitor:         { title:'Continue — monitor closely',  tier:'caution' },
     review:          { title:'Review PK data',              tier:'caution' },
   };
-  const recAction = actionMap[a.action] || actionMap['review'];
-  const showOptDose = a.action !== 'continue' && d.optDose !== d.dose;
+  // D26: a current regimen with a hard reject (above 2 g a dose, 4.5 g a day or AUC₂₄ 700) is
+  // never continued, as in AUC Precision (D25): where the assessment would continue (or
+  // monitor) it, the action says which limit it breaches instead. Other actions already change it.
+  const curBreach = !isInitialMode && (d.curHardFail || []).length > 0 && (a.action === 'continue' || a.action === 'monitor');
+  const recAction = curBreach ? { title: 'Current regimen breaches a hard limit', tier: 'alarm' }
+    : actionMap[a.action] || actionMap['review'];
+  // D26: the optimiser may refuse (no admissible dose in 400–600 at this interval). Where
+  // the verdict would have named its dose, the refusal takes the regimen's place; where the
+  // current regimen is continued (or monitored), it stays, and the refusal is said in the
+  // dose explorer. Initial dosing never reaches here with a refusal (renderTroughRefusal).
+  const refusal = d.optRefusal || null;
+  const headRefused = !!refusal && !isInitialMode && (curBreach || (a.action !== 'continue' && a.action !== 'monitor'));
+  const showOptDose = !refusal && (curBreach || a.action !== 'continue') && d.optDose !== d.dose;
   const vDose   = showOptDose ? d.optDose       : d.dose;
   const vAUC    = showOptDose ? d.optAUC        : d.auc24;
   const vTrough = showOptDose ? d.optPT.trough  : d.trough;
   const vPeak   = showOptDose ? d.optPT.peak    : d.peak;
-  const verdictIsOpt = vDose === d.optDose;
+  const verdictIsOpt = !refusal && vDose === d.optDose;
 
   // AUC uncertainty display (approximate; see calculate()).
   const uncertaintyPct = Math.round(d.aucUncertainty * 100);
@@ -7309,8 +7392,9 @@ function renderResults(d) {
     notes.push({ tier: 'caution', word: 'Steady state',
       html: escHtml(ssCaution.charAt(0).toUpperCase() + ssCaution.slice(1)) + '.' });
   }
+  (d.renalNotes || []).forEach(n => notes.push(n));   // D26: augmented clearance, before a level
 
-  const recRat = a.divergence ? '' :
+  const recRat = a.divergence || (curBreach && !showOptDose) ? '' :
     showOptDose
     ? `PK (CL ${d.adjClv.toFixed(2)} L/h, Vd ${d.vd.toFixed(1)} L, t½ ${d.t12.toFixed(1)} h) — adjusting to ${fmtDose(d.optDose)} estimated to achieve trough ${d.optPT.trough.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.`
     : escHtml(a.summary);
@@ -7322,20 +7406,24 @@ function renderResults(d) {
     const tier = a.status === 'danger' ? 'alarm' : a.status === 'warn' ? 'caution' : 'ok';
     actionBlock = txActionHTML(tier, escHtml(a.primary), '', '');
   } else {
-    const delta = showOptDose
+    const delta = showOptDose || headRefused
       ? `<p class="tx-action-body">Current ${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, trough ${d.trough.toFixed(1)} mg/L (${troughBasisWord}).</p>`
       : '';
-    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(a.primary),
+    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(curBreach ? d.curHardFail.join('; ') : a.primary),
       (recRat ? `<p class="tx-action-body">${recRat}</p>` : '') + delta);
   }
 
   const ldHTML = d.hasLD && d.ldData ? txLoadingDoseHTML(d.ldData, {
     tbw: d.tbw, troughMin: d.troughMin, troughMax: d.troughMax,
-    firstMaint: fmtRegimen(d.optDose, d.tau),
-    firstMaintBasis: d.levelFitted ? 'from the level-fitted Ke' : 'pop-estimated optimal dose',
+    firstMaint: refusal ? 'none offered' : fmtRegimen(d.optDose, d.tau),
+    firstMaintBasis: refusal ? 'no admissible regimen at this interval' : d.levelFitted ? 'from the level-fitted Ke' : 'pop-estimated optimal dose',
   }) : '';
 
-  const verdict = txVerdictHTML({
+  const basis = d.levelFitted ? `From your level — ${escHtml(methodMain)}` : `Population estimate — ${modelsLine}`;
+  const verdict = headRefused ? txRefusalVerdictHTML({
+    hold: troughHoldHTML(d.hold, true), word: TROUGH_REFUSAL_WORD, reason: refusal.reason,
+    action: actionBlock, flags: troughCapBoundHTML(refusal), basis, next: '',
+  }) : txVerdictHTML({
     hold: troughHoldHTML(d.hold),
     dose: vDose, tau: d.tau, tinf: d.tinf,
     auc: vAUC, aucBand: showOptDose ? `approx. ±${uncertaintyPct}% (not simulated)` : aucConfText,
@@ -7345,7 +7433,7 @@ function renderResults(d) {
     action: actionBlock,
     flags: (verdictIsOpt ? optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin) : '')
          + troughRailHTML(vTrough, vAUC, d.troughMin),
-    basis: d.levelFitted ? `From your level — ${escHtml(methodMain)}` : `Population estimate — ${modelsLine}`,
+    basis,
     next: d.levelFitted ? '' : 'Initial dose is population-estimated. Obtain a steady-state level (≥3 doses) to individualise PK and confirm AUC target is met.',
   });
 
@@ -7353,7 +7441,9 @@ function renderResults(d) {
   //    level has been fitted — the population estimate for the same regimen ──
   const band = { cls: 'tx-lg-band', text: `Trough target ${d.troughMin}–${d.troughMax} mg/L` };
   const legend = [];
-  if (showOptDose) {
+  if (headRefused) {
+    legend.push({ cls: 'lg-ind', text: `Current ${fmtRegimen(d.dose, d.tau)}` });
+  } else if (showOptDose) {
     legend.push({ cls: 'lg-ind', text: `Current ${fmtRegimen(d.dose, d.tau)}` });
     legend.push({ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.tau)}` });
   } else {
@@ -7422,10 +7512,13 @@ function renderResults(d) {
     // As the chart above draws them (its legend's words): the recommendation, the
     // current regimen when it is drawn beside it, and the optimiser's dose when it
     // is not the recommendation.
-    rec: { dose: vDose, tau: d.tau, tag: showOptDose || isInitialMode ? 'recommended' : 'recommended (current)' },
-    cur: showOptDose ? { dose: d.dose, tau: d.tau } : null,
-    opt: verdictIsOpt ? null : { dose: d.optDose, tau: d.tau } });
-  const explorerBody = `
+    rec: headRefused ? null : { dose: vDose, tau: d.tau, tag: showOptDose || isInitialMode ? 'recommended' : 'recommended (current)' },
+    cur: showOptDose || headRefused ? { dose: d.dose, tau: d.tau } : null,
+    opt: verdictIsOpt || refusal ? null : { dose: d.optDose, tau: d.tau } });
+  const explorerBody = refusal ? `
+    <p class="ev-lead">${escHtml(refusal.reason)}</p>
+    ${headRefused ? '' : troughCapBoundHTML(refusal)}
+    ${txExplorerHTML(explorerHTML, 'Projected steady-state outcomes by dose and interval')}` : `
     <p class="ev-lead">At ${fmtFreq(d.tau)} the optimiser's dose is <strong>${fmtRegimen(d.optDose, d.tau)}</strong>.</p>
     <p class="ev-note">Based on ${d.levelFitted ? 'the level-fitted Ke (not population PK)' : 'population PK'} — estimated SS trough ${d.optPT.trough.toFixed(1)} mg/L, peak ${d.optPT.peak.toFixed(1)} mg/L, AUC₂₄ ${d.optAUC.toFixed(0)} mg·h/L.</p>
     ${!verdictIsOpt ? optFlagHTML(d.optFlag, d.optFlagMsg, d.tau, d.optAUC, d.optPT.trough, d.troughMin) : ''}
@@ -7459,20 +7552,77 @@ function renderResults(d) {
           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
           // "Try another regimen" compares against this (D14): the current regimen as
           // fitted once a level exists, otherwise the recommendation.
-          base: d.levelFitted ? { role: 'current', dose: d.dose, tau: d.tau } : { role: 'rec', dose: vDose, tau: d.tau },
+          base: d.levelFitted || headRefused ? { role: 'current', dose: d.dose, tau: d.tau } : { role: 'rec', dose: vDose, tau: d.tau },
           popKel: d.levelFitted ? d.popKel : null, popVd: d.levelFitted ? d.vd : null };
-  announceResult(`Result: ${troughHoldSaid(d.hold)}${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
+  announceResult(headRefused ? troughRefusalSaid(TROUGH_REFUSAL_WORD, `${recAction.title}. ${refusal.reason}`, d.hold)
+    : `Result: ${troughHoldSaid(d.hold)}${fmtRegimen(vDose, d.tau)}, AUC24 ${vAUC.toFixed(0)}${isInitialMode ? '' : ', ' + recAction.title.toLowerCase()}.`);
   // Draw the PK graph after DOM insertion
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-ss', d.dose, d.tau, d.tinf, d.kel, d.vd, {
       troughMin: d.troughMin, troughMax: d.troughMax,
       obsLevel: d.levelFitted ? d.levelVal : null,
       obsTime: d.levelFitted ? d.tDoseToLvl : null,
-      role: showOptDose ? 'current' : 'rec',
+      role: showOptDose || headRefused ? 'current' : 'rec',
       overlay: showOptDose ? { dose: d.optDose } : null,
       prior: d.levelFitted ? { kel: d.popKel, vd: d.vd } : null,
     });
   });
+}
+
+// ══════════════════════════════════════════
+//  RENDER — A REFUSAL BEFORE A LEVEL (D26)
+// ══════════════════════════════════════════
+// Initial dosing (or steady-state mode with no level) when there is no regimen to
+// give: severe renal impairment (no empiric maintenance regimen, the user's ruling 2),
+// or no admissible dose in 400–600 at the chosen interval. The answer is the refusal,
+// its notes and the population PK; no curve, because nothing is recommended. The
+// loading dose stays when ticked, and the dose explorer stays, for reference.
+function renderTroughRefusal(d) {
+  document.getElementById('results-placeholder').style.display = 'none';
+  const rc = document.getElementById('results-content');
+  rc.style.display = 'flex';
+  const clModelNames = {vancopk:'VancoPK',matzke:'Matzke',matzke_pooled:'Matzke',buelga:'Buelga',bauer:'Bauer'};
+  const vdModelNames = {vancopk:'VancoPK',buelga:'Buelga',bauer:'Bauer',matzke:'Matzke (CrCl-split)',matzke_pooled:'Matzke (pooled)'};
+  const modelsLine = `${escHtml(clModelNames[d.clModel] || d.clModel)} CL · ${escHtml(vdModelNames[d.vdModel] || d.vdModel)} Vd`;
+
+  const verdict = txRefusalVerdictHTML({ word: d.word, reason: d.reason, flags: d.flags || '',
+    basis: `Population estimate — ${modelsLine}`, next: d.next ? escHtml(d.next) : '' });
+  const ldHTML = d.hasLD && d.ldData ? txLoadingDoseHTML(d.ldData, {
+    tbw: d.tbw, troughMin: d.troughMin, troughMax: d.troughMax,
+    firstMaint: 'none offered', firstMaintBasis: d.word.toLowerCase(),
+  }) : '';
+
+  const pkBody = `
+    ${txTableHTML(['Parameter', 'Population', 'Units'], [
+      ['CrCl (CG)', d.crcl.toFixed(1), 'mL/min'],
+      ['CLv', d.popClv.toFixed(2), 'L/h'],
+      ['Vd', `${d.vd.toFixed(1)} <span class="vx-muted">(${(d.vd / d.tbw).toFixed(2)} L/kg)</span>`, 'L'],
+      ['Kel', d.popKel.toFixed(4), 'h⁻¹'],
+      ['Half-life', d.popT12.toFixed(1), 'h'],
+      ['IBW / AdjBW', `${d.ibw.toFixed(1)} / ${d.adjbw.toFixed(1)}`, 'kg'],
+      ['BMI', d.bmi.toFixed(1), 'kg/m²'],
+    ], 'Population PK parameters')}
+    <p class="ev-note">Models: ${modelsLine}.</p>`;
+  const explorerHTML = doseExplorerRows({ tau: d.tau, tinf: d.tinf, kel: d.popKel, vd: d.vd, clv: d.popClv,
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax });
+  const sections = [
+    txEvHTML('tx-ev-pk', 'PK parameters', `CL ${d.popClv.toFixed(2)} L/h · Vd ${d.vd.toFixed(1)} L · t½ ${d.popT12.toFixed(1)} h`, pkBody, false),
+    txEvHTML('tx-ev-explorer', 'Dose explorer', 'For reference only: no regimen is recommended',
+      `<p class="ev-lead">For reference only. ${escHtml(d.reason)}</p>
+      ${txExplorerHTML(explorerHTML, 'Projected steady-state outcomes by dose and interval')}`, false),
+    txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
+      txDisclaimerHTML('This tool is intended to support, not replace, clinical pharmacokinetic judgment. Dose recommendations should be verified against institutional protocols, patient-specific clinical context, and current guidelines (Rybak et al., ASHP/IDSA 2020). AinaDara v1.0 · Phase 1 (Trough-Based)'), false),
+  ];
+  rc.innerHTML = `
+    <div class="tx-result">
+      <h2 class="sr-only">Trough-based result</h2>
+      <div class="tx-top tx-top-solo">${verdict}${ldHTML}</div>
+      ${txNotesHTML(d.notes || [])}
+      <div class="vx-evidence">${sections.join('')}</div>
+    </div>`;
+  updateModelInfo();
+  _pk = {};   // no regimen to try against
+  announceResult(troughRefusalSaid(d.word, d.reason, null));
 }
 
 // ══════════════════════════════════════════
@@ -7483,8 +7633,10 @@ function renderTwoLevels(d) {
   const rc = document.getElementById('results-content');
   rc.style.display = 'flex';
 
+  // D26: no admissible dose in 400–600 at this interval — the refusal takes the regimen's place.
+  const refusal = d.optRefusal || null;
   // Trough of the recommended dose
-  const trough = d.optPT.trough;
+  const trough = refusal ? NaN : d.optPT.trough;
 
   // PK comparison vs population
   const kelDiff   = ((d.kel - d.popKel) / d.popKel * 100).toFixed(0);
@@ -7496,9 +7648,11 @@ function renderTwoLevels(d) {
 
   // Dose explorer using individual PK
   const explorerHTML = doseExplorerRows({ tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
-    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: { dose: d.optDose, tau: d.tlTau } });
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: refusal ? null : { dose: d.optDose, tau: d.tlTau } });
 
-  const verdict = txVerdictHTML({
+  const tlBasisLine = `Based on individual PK from two levels (${basisLabel.toLowerCase()}) — Kel ${d.kel.toFixed(4)} h⁻¹, Vd ${d.vd.toFixed(1)} L, t½ ${t12Ind} h`;
+  const verdict = refusal ? txRefusalVerdictHTML({ hold: troughHoldHTML(d.hold, true), word: TROUGH_REFUSAL_WORD,
+    reason: refusal.reason, flags: troughCapBoundHTML(refusal), basis: tlBasisLine, next: '' }) : txVerdictHTML({
     hold: troughHoldHTML(d.hold),
     dose: d.optDose, tau: d.tlTau, tinf: d.tlTinf,
     auc: d.optAUC, aucBand: '',
@@ -7507,10 +7661,10 @@ function renderTwoLevels(d) {
     action: '',
     flags: optFlagHTML(d.optFlag, d.optFlagMsg, d.tlTau, d.optAUC, d.optPT.trough, d.troughMin)
          + troughRailHTML(trough, d.optAUC, d.troughMin),
-    basis: `Based on individual PK from two levels (${basisLabel.toLowerCase()}) — Kel ${d.kel.toFixed(4)} h⁻¹, Vd ${d.vd.toFixed(1)} L, t½ ${t12Ind} h`,
+    basis: tlBasisLine,
     next: '',
   });
-  const figure = txCurveHTML({ id: 'pk-graph-tl', suffix: 'tl',
+  const figure = refusal ? '' : txCurveHTML({ id: 'pk-graph-tl', suffix: 'tl',
     legend: [{ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.tlTau)}` },
              { cls: 'lg-pop', text: 'Population estimate' },
              { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
@@ -7555,14 +7709,15 @@ function renderTwoLevels(d) {
   rc.innerHTML = `
     <div class="tx-result">
       <h2 class="sr-only">Two-level result</h2>
-      <div class="tx-top">${verdict}${figure}</div>
+      <div class="tx-top${refusal ? ' tx-top-solo' : ''}">${verdict}${figure}</div>
       <div class="vx-evidence">${sections.join('')}</div>
     </div>`;
 
   updateModelInfo();
   _pk = { tau: d.tlTau, tinf: d.tlTinf, kel: d.kel, vd: d.vd, clv: d.clv,
           troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
-          base: { role: 'rec', dose: d.optDose, tau: d.tlTau }, popKel: d.popKel, popVd: d.popVd };
+          base: refusal ? null : { role: 'rec', dose: d.optDose, tau: d.tlTau }, popKel: d.popKel, popVd: d.popVd };
+  if (refusal) { announceResult(troughRefusalSaid(TROUGH_REFUSAL_WORD, refusal.reason, d.hold)); return; }
   announceResult(`Result: ${troughHoldSaid(d.hold)}${fmtRegimen(d.optDose, d.tlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-tl', d.optDose, d.tlTau, d.tlTinf, d.kel, d.vd, {
@@ -7579,7 +7734,10 @@ function renderRandomLevel(d) {
   const rc = document.getElementById('results-content');
   rc.style.display = 'flex';
 
-  const trough     = d.optPT.trough;
+  // D26: no admissible dose in 400–600 at this interval — the refusal takes the regimen's place;
+  // the level-based PRN calculator below stays.
+  const refusal    = d.optRefusal || null;
+  const trough     = refusal ? NaN : d.optPT.trough;
   const kelPctDiff  = ((d.indKel  - d.popKel) / d.popKel  * 100).toFixed(0);
   const clvPctDiff  = ((d.indClv  - d.popClv) / d.popClv  * 100).toFixed(0);
   const t12Pop      = (0.693 / d.popKel).toFixed(1);
@@ -7595,9 +7753,11 @@ function renderRandomLevel(d) {
 
   // Dose explorer
   const explorerHTML = doseExplorerRows({ tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
-    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: { dose: d.optDose, tau: d.rlTau } });
+    mic: d.mic, troughMin: d.troughMin, troughMax: d.troughMax, rec: refusal ? null : { dose: d.optDose, tau: d.rlTau } });
 
-  const verdict = txVerdictHTML({
+  const rlBasisLine = `Based on fitted Kel (Vd population) — Kel ${d.indKel.toFixed(4)} h⁻¹ from your level, Vd ${d.popVd.toFixed(1)} L fixed, t½ ${d.indT12.toFixed(1)} h`;
+  const verdict = refusal ? txRefusalVerdictHTML({ word: TROUGH_REFUSAL_WORD, reason: refusal.reason,
+    flags: troughCapBoundHTML(refusal), basis: rlBasisLine, next: '' }) : txVerdictHTML({
     dose: d.optDose, tau: d.rlTau, tinf: d.rlTinf, kind: 'scheduled maintenance',
     auc: d.optAUC, aucBand: '',
     trough, troughWord: 'predicted at steady state', troughMin: d.troughMin, troughMax: d.troughMax,
@@ -7605,10 +7765,10 @@ function renderRandomLevel(d) {
     action: '',
     flags: optFlagHTML(d.optFlag, d.optFlagMsg, d.rlTau, d.optAUC, d.optPT.trough, d.troughMin)
          + troughRailHTML(trough, d.optAUC, d.troughMin),
-    basis: `Based on fitted Kel (Vd population) — Kel ${d.indKel.toFixed(4)} h⁻¹ from your level, Vd ${d.popVd.toFixed(1)} L fixed, t½ ${d.indT12.toFixed(1)} h`,
+    basis: rlBasisLine,
     next: '',
   });
-  const figure = txCurveHTML({ id: 'pk-graph-rl', suffix: 'rl',
+  const figure = refusal ? '' : txCurveHTML({ id: 'pk-graph-rl', suffix: 'rl',
     legend: [{ cls: 'lg-proj', text: `Recommended ${fmtRegimen(d.optDose, d.rlTau)}` },
              { cls: 'lg-pop', text: 'Population estimate' },
              { cls: 'tx-lg-peak', text: 'Peak' }, { cls: 'tx-lg-trough', text: 'Trough' },
@@ -7668,17 +7828,18 @@ function renderRandomLevel(d) {
   rc.innerHTML = `
     <div class="tx-result">
       <h2 class="sr-only">Random-level result</h2>
-      <div class="tx-top">${verdict}${figure}</div>
+      <div class="tx-top${refusal ? ' tx-top-solo' : ''}">${verdict}${figure}</div>
       <div class="vx-evidence">${sections.join('')}</div>
     </div>`;
 
   updateModelInfo();
   _pk  = { tau: d.rlTau, tinf: d.rlTinf, kel: d.indKel, vd: d.popVd, clv: d.indClv,
            troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic,
-           base: { role: 'rec', dose: d.optDose, tau: d.rlTau }, popKel: d.popKel, popVd: d.popVd };
+           base: refusal ? null : { role: 'rec', dose: d.optDose, tau: d.rlTau }, popKel: d.popKel, popVd: d.popVd };
   _prn = { kel: d.indKel, vd: d.popVd, clv: d.indClv, tbw: d.tbw,
            rlC: d.rlC, rlT: d.rlT, rlTinf: d.rlTinf,
            troughMin: d.troughMin, troughMax: d.troughMax, mic: d.mic };
+  if (refusal) { announceResult(troughRefusalSaid(TROUGH_REFUSAL_WORD, refusal.reason, null)); return; }
   announceResult(`Result: ${fmtRegimen(d.optDose, d.rlTau)}, AUC24 ${d.optAUC.toFixed(0)}.`);
   requestAnimationFrame(() => {
     drawPKGraph('pk-graph-rl', d.optDose, d.rlTau, d.rlTinf, d.indKel, d.popVd, {
@@ -7739,13 +7900,15 @@ function troughHold(cPre, dueH, kel, doseStartH, from) {
   return { cPre, dueH, kel, noTime, afterDoseH,
            atH: !noTime && Number.isFinite(doseStartH) ? Math.ceil((doseStartH + afterDoseH) * 60 - 1e-6) / 60 + 1 / 3600000 : null };
 }
-function troughHoldHTML(h) {
+// refused (D26): no regimen is recommended below the hold, so the closing sentence says
+// so rather than pointing at one.
+function troughHoldHTML(h, refused) {
   if (!h) return '';
   if (h.noTime) return holdLineHTML('Hold: recheck a level before the next dose',
-    `The level when the next dose is due is ${h.cPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L, and on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it stays there for more than ${HOLD_SEARCH_MAX_H / 24} days. Recheck a level before giving the regimen below.`);
+    `The level when the next dose is due is ${h.cPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L, and on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it stays there for more than ${HOLD_SEARCH_MAX_H / 24} days. ${refused ? 'Recheck a level before any further dose; no regimen is recommended below.' : 'Recheck a level before giving the regimen below.'}`);
   const after = `${+h.afterDoseH.toFixed(1)} h after the last dose started`;
   return holdLineHTML(`Hold: next dose not before ${h.atH != null ? fmtClock(h.atH) : after}`,
-    `The level when the next dose is due is ${h.cPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L; on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it falls to ${TROUGH_HIGH_MGL} mg/L ${after}. Resume with the regimen below.`);
+    `The level when the next dose is due is ${h.cPre.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L; on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it falls to ${TROUGH_HIGH_MGL} mg/L ${after}. ${refused ? 'No regimen is recommended at this interval; see below.' : 'Resume with the regimen below.'}`);
 }
 // The hold, heard first (D26): '' or "Hold: next dose not before … . Then ".
 function troughHoldSaid(h) {
@@ -8491,6 +8654,56 @@ function crclSpreadNote(s, rec, scr, modelLabel, renal) {
 const VERY_LOW_CRCL_THRESHOLD = 10;
 function detectVeryLowCrCl(crclUncapped) {
   return crclUncapped != null && crclUncapped < VERY_LOW_CRCL_THRESHOLD;
+}
+
+// The severe-renal advisory, in one place for both modules (v3.14.0, D26; engine report
+// I1; rule 2). AUC Precision withheld the maintenance regimen at CrCl under 10 without a
+// level while the Trough module dosed the same patient 500 mg q48h; both now withhold, and
+// both read this text. modelNote is each module's sentence on what its model did with the
+// CrCl (AUC Precision's clamp; the Trough module's uncapped use). Text as it stood in
+// AUC Precision; its numbers are revisited, with sources, separately (Task 4).
+const SEVERE_RENAL = {
+  word:   'No empiric maintenance regimen',
+  follow: 'Follow the severe renal impairment advisory: one loading dose, then dose by measured levels.',
+  next:   'Give one loading dose, then dose by measured levels — see the severe renal impairment note.',
+};
+function severeRenalNote(crclTrue, modelNote) {
+  return { tier: 'alarm', word: 'Severe renal impairment (non-dialysis) suspected', html: `
+      CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${modelNote || ''}
+      <ul class="note-list">
+        <li>Give a single weight-based loading dose (15–20 mg/kg, max 2 g) — then HOLD further doses</li>
+        <li>Wait 24–48 h after the loading dose, draw a random level, and re-fit Bayesian before next dose</li>
+        <li>Anticipate very long intervals (q24h–q72h or longer); avoid empiric maintenance dosing</li>
+        <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
+        <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
+        <li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>; for peritoneal dialysis use Trough-based · Peritoneal dialysis. CRRT is not modelled here.</li>
+      </ul>` };
+}
+// What to do if clearance is truly augmented: one list for both modules (D26, rule 2).
+function arcAdviceListHTML() {
+  return `
+        <ul class="note-list">
+          <li>Consider shorter dosing intervals (q6h–q8h) to maintain AUC₂₄</li>
+          <li>Consider a higher loading dose (25–30 mg/kg, max 3 g) to reach target rapidly</li>
+          <li>Obtain an early steady-state level (within 24–48 h) — ARC patients often need dose escalation</li>
+          <li>Re-check renal function frequently — ARC can resolve abruptly with clinical improvement</li>
+        </ul>`;
+}
+// The Trough module's renal notes before a level (D26). Its CrCl is not capped (plan
+// default D-c), so an augmented reading drives the population clearance directly; the
+// caution says so. Only the plain augmented case: an older patient's low creatinine
+// ('elderly-arc') already has the input panel's low-creatinine advisory. Severe renal
+// impairment is the refusal's own note (troughSevereRenalNote).
+function troughRenalNotes(crcl, age, scr) {
+  const kind = renalAdvisoryKind({ arcDetected: detectARC(crcl), levelsN: 0, clRatio: NaN, age, scr });
+  if (kind !== 'arc') return [];
+  return [{ tier: 'caution', word: 'Augmented renal clearance suspected', html: `
+      CrCl ≈ ${crcl.toFixed(0)} mL/min (Cockcroft-Gault, at or above ${ARC_THRESHOLD}). This module uses it without
+      an upper limit, so the population clearance, and every dose here, rest on it. Confirm with a level.
+      If clearance is truly augmented:${arcAdviceListHTML()}` }];
+}
+function troughSevereRenalNote(crcl) {
+  return severeRenalNote(crcl, 'The population clearance here comes from this CrCl, with no level to check it.');
 }
 
 function updateBayesCrCl() {
@@ -13450,7 +13663,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
       : 'Give the loading dose, then draw a pre-HD level before the next session.';
     if (rec && rec.noSolution) return 'Every candidate breached a hard safety limit. Confirm the inputs; if they hold, seek specialist guidance.';
-    if (r.lowCrClHold) return 'Give one loading dose, then dose by measured levels — see the severe renal impairment note.';
+    if (r.lowCrClHold) return SEVERE_RENAL.next;
     if (r.mapAlt && r.mapAlt.CL > 0) return 'Two parameter sets fit these levels. Check the draw times; a level at a different point in the interval separates them.';
     // "Would add little", read alone under a Low confidence word, looks like a
     // contradiction. Its own detail says why it is not; carry that clause
@@ -13554,13 +13767,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
             : `Buelga 2005 was developed at CrCl ${BUELGA_CLCR_MEAN}±${BUELGA_CLCR_SD} mL/min and has no cap; this calculator limits its input to ${CRCL_MODEL_CAP} mL/min as an extrapolation guard`)
           + ` — the prior used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the estimated ${crclTrue.toFixed(0)}. With measured levels the posterior clearance can move above the prior.`;
       pushRenal({ tier: 'caution', word: 'Augmented renal clearance suspected', ifReal: true, head: `CrCl ≈ ${crclTrue.toFixed(0)} mL/min.`, lead: `
-        ${cappingNote}`, list: `
-        <ul class="note-list">
-          <li>Consider shorter dosing intervals (q6h–q8h) to maintain AUC₂₄</li>
-          <li>Consider a higher loading dose (25–30 mg/kg, max 3 g) to reach target rapidly</li>
-          <li>Obtain an early steady-state level (within 24–48 h) — ARC patients often need dose escalation</li>
-          <li>Re-check renal function frequently — ARC can resolve abruptly with clinical improvement</li>
-        </ul>` });
+        ${cappingNote}`, list: arcAdviceListHTML() });
     } else if (kind === 'elderly') {
       pushRenal({ tier: 'info', word: 'Low creatinine in an older patient', lead: `
         SCr ${scrNum.toFixed(2)} mg/dL at age ${ageNum.toFixed(0)}: Cockcroft-Gault may overstate clearance when
@@ -13582,16 +13789,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     const cappingNote = isHughesLow
       ? 'Hughes 2024 uses its own CrCl computed on fat-free mass (floored at 5 mL/min), a different scale from the Cockcroft-Gault value shown.'
       : `${modelName} clamps CrCl ≥ 5 mL/min in this calculator — the Bayesian fit used <strong>${crclModel.toFixed(0)} mL/min</strong>, not the actual ${crclTrue.toFixed(0)}. None of the implemented popPK models were validated below CrCl 10; treat individual CL estimates with caution.`;
-    notes.push({ tier: 'alarm', word: 'Severe renal impairment (non-dialysis) suspected', html: `
-      CrCl ≈ ${crclTrue.toFixed(0)} mL/min. ${cappingNote}
-      <ul class="note-list">
-        <li>Give a single weight-based loading dose (15–20 mg/kg, max 2 g) — then HOLD further doses</li>
-        <li>Wait 24–48 h after the loading dose, draw a random level, and re-fit Bayesian before next dose</li>
-        <li>Anticipate very long intervals (q24h–q72h or longer); avoid empiric maintenance dosing</li>
-        <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
-        <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
-        <li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>; for peritoneal dialysis use Trough-based · Peritoneal dialysis. CRRT is not modelled here.</li>
-      </ul>` });
+    notes.push(severeRenalNote(crclTrue, cappingNote));
   }
 
   // ── 1-level Goti advisory (Cunio 2021) ──
@@ -13682,9 +13880,9 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   let verdict = '', lowConfSpan = '';
   if (r.lowCrClHold && rec && !rec.noSolution) {
     verdict = `
-      <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">No empiric maintenance regimen</h3>
+      <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">${SEVERE_RENAL.word}</h3>
       <p class="vx-hold">CrCl is below the range any implemented model was developed in and no level has been
-        measured. Follow the severe renal impairment advisory: one loading dose, then dose by measured levels.
+        measured. ${SEVERE_RENAL.follow}
         The exposure matrix under "Regimens" is shown for reference only.</p>`;
   } else if (rec && !rec.noSolution) {
     // Under Low / Very low confidence the dose is still shown — hiding it would
@@ -16493,8 +16691,40 @@ function txVerdictHTML(o) {
       ${o.flags ? `<div class="tx-flags">${o.flags}</div>` : ''}
       <p class="tx-basis">${o.basis}</p>
       ${o.next ? `<p class="vx-next"><span class="vx-k">Next</span> ${o.next}</p>` : ''}
-      <div class="vx-actions"><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>
+      ${txPrintActionHTML()}
     </section>`;
+}
+
+// The Trough answer's print action: one, for the verdict and the refusal alike.
+function txPrintActionHTML() {
+  return `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
+}
+// A refusal in the regimen's place (D26): the hold heading, why, any alarm, and no dose
+// or exposure numbers — there is no regimen to describe. A Trough hold on a measured level
+// (o.hold) still leads: it governs the next dose time; the refusal is the regimen answer.
+function txRefusalVerdictHTML(o) {
+  return `
+    <section class="tx-verdict" aria-labelledby="tx-regimen">
+      ${o.hold || ''}
+      <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(o.word)}</h3>
+      <p class="vx-hold">${escHtml(o.reason)}</p>
+      ${o.action || ''}
+      ${o.flags ? `<div class="tx-flags">${o.flags}</div>` : ''}
+      <p class="tx-basis">${o.basis}</p>
+      ${o.next ? `<p class="vx-next"><span class="vx-k">Next</span> ${o.next}</p>` : ''}
+      ${txPrintActionHTML()}
+    </section>`;
+}
+// The findOptimalDose refusal's verdict pieces (D26): the heading word and, when the
+// ceilings bound it, AUC Precision's cap-bound alarm as a note.
+const TROUGH_REFUSAL_WORD = 'No regimen recommended';
+function troughCapBoundHTML(refusal) {
+  if (!refusal || !refusal.capBound || !refusal.highest) return '';
+  return noteHTML({ tier: 'alarm', word: 'Recommendation limit', html: escHtml(capBoundFlag(refusal.highest.auc, false).text) });
+}
+// The screen reader's line for a refusal: the hold first when there is one.
+function troughRefusalSaid(word, reason, hold) {
+  return `Result: ${troughHoldSaid(hold).replace(/ Then $/, ' ')}${word}. ${reason}`;
 }
 
 // Loading dose, in the verdict block (its own grid area: under the curve on a
@@ -16696,7 +16926,7 @@ function _prRecommendation(r, screen) {
     h += `<p class="pr-metric">${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</p>`;
     h += `<p class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</p>`;
   } else if (r.rec && r.lowCrClHold) {
-    h += `<p class="pr-regimen pr-hold">No empiric maintenance regimen.</p>`;
+    h += `<p class="pr-regimen pr-hold">${SEVERE_RENAL.word}.</p>`;
     h += `<p class="pr-metric">Very low CrCl without RRT and no measured level: one loading dose, then dose by levels.</p>`;
   } else if (r.rec) {
     const best = r.rec;

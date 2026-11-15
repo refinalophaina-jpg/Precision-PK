@@ -3146,7 +3146,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('dose explorer: both sides of the band coloured alike; own interval listed', ()=>{
     assert(!/'border-range' : 'in-range'/.test(code), 'supratherapeutic must not be downplayed');
     // 2026-09-28 second pass: the three copies are one helper (rule 2), called by all three renderers.
-    assert((code.match(/doseExplorerRows\(\{ tau: d\.(tau|tlTau|rlTau),/g) || []).length === 3, 'three renderers, one helper');
+    // Four since v3.14.0 (D26): renderTroughRefusal lists the explorer for reference too.
+    assert((code.match(/doseExplorerRows\(\{ tau: d\.(tau|tlTau|rlTau),/g) || []).length === 4, 'four renderers, one helper');
     assert(/new Set\(\[8, 12, 24, o\.tau, \.\.\.marks\.map\(m => m\.tau\)\]\)/.test(code), 'own interval listed');
     const rows = sandbox.doseExplorerRows({ tau: 48, tinf: 1, kel: 0.03, vd: 60, clv: 1.8, mic: 1, troughMin: 10, troughMax: 20,
       rec: { dose: 1000, tau: 48 } });
@@ -3177,9 +3178,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/<tr class="is-opt">\s*<th scope="row">750 mg q12h <span class="tx-row-tag">optimiser's dose<\/span>/.test(cont),
       'the optimiser\'s dose is named, with no line and no terracotta');
     assert((cont.match(/class="is-rec"/g) || []).length === 1, 'terracotta marks the recommendation only');
-    // The Trough renderer passes what its chart draws.
-    assert(/cur: showOptDose \? \{ dose: d\.dose, tau: d\.tau \} : null/.test(code) &&
-           /rec: \{ dose: vDose, tau: d\.tau,/.test(code), 'steady-state explorer mirrors its chart');
+    // The Trough renderer passes what its chart draws. Re-pointed (D26): under a refusal in the
+    // regimen's place the chart draws the current regimen alone, so the explorer marks it and no
+    // recommendation (and the chart's role follows the same condition).
+    assert(/cur: showOptDose \|\| headRefused \? \{ dose: d\.dose, tau: d\.tau \} : null/.test(code) &&
+           /rec: headRefused \? null : \{ dose: vDose, tau: d\.tau,/.test(code) &&
+           /role: showOptDose \|\| headRefused \? 'current' : 'rec'/.test(code), 'steady-state explorer mirrors its chart');
   });
   test('the AUC band is one pair of constants, not 400/600 literals', ()=>{
     const hits = code.match(/\bauc(?:24)?\s*(?:>=|<=|>|<)\s*(?:400|600)\b/g) || [];
@@ -6061,6 +6065,160 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(fp.hold && !p1.refused && p1.doses.length === 4 && p1.doses[0].timeH === fp.resumeH && p1.doses[1].timeH === fp.resumeH + 12, JSON.stringify(p1));
     const rp = body44('refreshProfileGraph');
     assert(/projectedDoses\(fpProj, /.test(rp) && /recheck a level/i.test(rp), 'refreshProfileGraph draws through projectedDoses and says why when it refuses');
+  });
+
+  // Task 3 (engine report C2, I1; the user's ruling 2): the Trough module obeys AUC Precision's
+  // limits — 2 g per dose, 4.5 g per day, AUC24 700 — judged by evalRegimen (one judge, D25),
+  // and gives no empiric maintenance regimen at CrCl under 10 without a level.
+  // calculate() runs end to end here on a small fake DOM: the values a pharmacist types, the
+  // result as rendered. Fictional patients only.
+  const trough44 = (mode, sex, vals, extra) => {
+    const els = {};
+    function El(id) {
+      this.id = id; this.value = ''; this.innerHTML = ''; this.textContent = ''; this.style = { display: '' }; this.checked = false; this.attrs = {};
+      const c = new Set();
+      this.classList = { add: x => c.add(x), remove: x => c.delete(x), contains: x => c.has(x),
+        toggle: (x, f) => { const on = f === undefined ? !c.has(x) : !!f; if (on) c.add(x); else c.delete(x); return on; } };
+    }
+    El.prototype.setAttribute = function (k, v) { this.attrs[k] = String(v); };
+    El.prototype.getAttribute = function (k) { return k in this.attrs ? this.attrs[k] : null; };
+    El.prototype.removeAttribute = function (k) { delete this.attrs[k]; };
+    El.prototype.querySelectorAll = () => []; El.prototype.querySelector = () => null;
+    El.prototype.focus = () => {}; El.prototype.scrollIntoView = () => {}; El.prototype.closest = () => null;
+    El.prototype.addEventListener = () => {}; El.prototype.insertAdjacentHTML = function (p, h) { this.innerHTML += h; };
+    const get = (id) => els[id] || (els[id] = new El(id));
+    const defaults = { 'cl-model': 'vancopk', 'vd-model': 'vancopk', 'trough-min': '10', 'trough-max': '20', mic: '1' };
+    Object.entries(Object.assign(defaults, vals)).forEach(([k, val]) => { get(k).value = String(val); });
+    ((extra && extra.checked) || []).forEach(id => { get(id).checked = true; });
+    const prevDoc = sandbox.document, prevST = sandbox.setTimeout;
+    sandbox.document = { getElementById: get, querySelector: () => null, querySelectorAll: () => [], createElement: () => new El(''), body: {} };
+    sandbox.setTimeout = (f) => { if (typeof f === 'function') f(); return 0; };   // announceResult's delay
+    try {
+      vm.runInContext(`state.calcMode = ${JSON.stringify(mode)}; state.dosingWt = 'auto'; state.isSS = true;
+        state.rlMode = 'firstdose'; state.tlBasis = 'firstdose'; crclOverride.on = false;`, sandbox);
+      fn44('setPatientSex')(sex);
+      fn44('calculate')();
+      const h = get('results-content').innerHTML;
+      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent };
+    } finally {
+      sandbox.document = prevDoc; sandbox.setTimeout = prevST;
+      vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null;`, sandbox);
+    }
+  };
+  const HOLD_H3 = /<h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">([^<]*)<\/h3>/;
+  // The engine report's C2 patient: 25 M, 95 kg, 185 cm, SCr 0.5 (CrCl 303.5 on Cockcroft-Gault).
+  const c2Pk = () => {
+    const ibw = fn44('calcIBW')('M', 185), wt = fn44('pickCrClWeight')('auto', 95, ibw).wt;
+    const crcl = fn44('calcCrCl')(25, 'M', 0.5, wt, vm.runInContext('SCR_POLICY.ACTUAL', sandbox));
+    const clv = fn44('calcCLv')('vancopk', crcl, 95), vd = fn44('calcVd')('vancopk', 25, 95, crcl);
+    return { crcl, clv, vd, kel: clv / vd };
+  };
+
+  test('44.6 Trough: no dose above 2,000 mg and no daily dose above 4,500 mg (25 M, 95 kg, SCr 0.5 at q8h, q12h, q24h)', () => {
+    assert(K44.DOSE_MAX_PER_DOSE_MG === 2000 && K44.DOSE_MAX_TDD_MG === 4500 && K44.AUC24_ABSOLUTE_MAX === 700,
+      `ceilings ${K44.DOSE_MAX_PER_DOSE_MG}/${K44.DOSE_MAX_TDD_MG}/${K44.AUC24_ABSOLUTE_MAX}`);
+    const p = c2Pk();
+    assertClose(p.crcl, 303.5, 0.05, 'the reported CrCl (uncapped: plan default D-c)');
+    for (const tau of [8, 12, 24]) {
+      const o = fn44('findOptimalDose')(10, 20, tau, 1, p.kel, p.vd, p.clv);
+      assert(o.refused || (o.dose <= K44.DOSE_MAX_PER_DOSE_MG && o.dose * 24 / tau <= K44.DOSE_MAX_TDD_MG),
+        `q${tau}h: ${o.dose} mg, ${o.dose * 24 / tau} mg a day`);
+      // Nothing within the ceilings reaches 400 at CL 13.9 L/h: a refusal, bound by the ceilings.
+      assert(o.refused === true && o.capBound === true && !(o.dose > 0) && typeof o.reason === 'string' && o.reason.length > 0,
+        `q${tau}h: ${JSON.stringify(o)}`);
+      assert(o.highest && o.highest.dose * 24 / tau <= K44.DOSE_MAX_TDD_MG && o.highest.dose <= K44.DOSE_MAX_PER_DOSE_MG && o.highest.auc < 400,
+        `q${tau}h: the highest admissible ${JSON.stringify(o.highest)}`);
+    }
+    // Ordinary clearance is untouched: SUITE 29's patient (CL 4.5 L/h, V 52 L, q12h) still gets the dose
+    // the file at baa265e gave (1 g q12h, AUC24 444, trough 11.0). Over a CL 0.3-20 x V x q6-q48h grid,
+    // every answer that was in band and within the ceilings before is identical now (4,501 of 4,501).
+    const ord = fn44('findOptimalDose')(10, 20, 12, 1, 4.5 / 52, 52, 4.5);
+    assert(!ord.refused && ord.dose === 1000 && ord.flag === null, JSON.stringify(ord));
+    // One judge: findOptimalDose builds to the per-dose ceiling and asks evalRegimen (D25).
+    const f = body44('findOptimalDose');
+    assert(/evalRegimen\(/.test(f) && /d <= DOSE_MAX_PER_DOSE_MG/.test(f) && !/4000/.test(f), 'findOptimalDose: evalRegimen judges, candidates stop at the ceiling');
+  });
+
+  test('44.7 Trough: every candidate above AUC24 700 at the interval is a refusal, not a regimen', () => {
+    const CL = 0.5, V = 50;                                   // 250 mg q12h is AUC24 1000
+    const o = fn44('findOptimalDose')(10, 20, 12, 1, CL / V, V, CL);
+    assert(o.refused === true && o.capBound === false && !(o.dose > 0), JSON.stringify(o));
+    assert(/700/.test(o.reason), `the reason names the ceiling: ${o.reason}`);
+    // Admissible but none in 400-600 is a refusal too (CL 1.5: 250 mg q12h 333, 500 mg 667).
+    const gap = fn44('findOptimalDose')(10, 20, 12, 1, 1.5 / 50, 50, 1.5);
+    assert(gap.refused === true && gap.capBound === false && /333/.test(gap.reason) && /667/.test(gap.reason), JSON.stringify(gap));
+    // evalRegimen works one-compartment (goti2comp = null): the judge the refusal relies on.
+    const e = fn44('evalRegimen')(250, 12, 1, CL, V, null, 1);
+    assert(e && e.hardFail.length === 1 && /absolute ceiling 700/.test(e.hardFail[0]) && Number.isFinite(e.Ctrough), JSON.stringify(e));
+  });
+
+  test('44.8 Trough: CrCl under 10, no HD, initial mode — "No empiric maintenance regimen" with the severe-renal advisory', () => {
+    // The engine report's I1 patient: 85 F, 45 kg, 155 cm, SCr 4.5 (CrCl 6.5).
+    const r = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 });
+    const m = r.h.match(HOLD_H3);
+    assert(m && m[1] === 'No empiric maintenance regimen', `heading: ${m && m[1]} — ${r.text.slice(0, 300)}`);
+    assert(!/class="rec-dose"/.test(r.h) && !/IV q48h/.test(r.text.split('Dose explorer')[0]), `a regimen is offered: ${r.text.slice(0, 300)}`);
+    // The advisory is AUC Precision's, from the one implementation both modules read.
+    const note = fn44('severeRenalNote')(6.5, '');
+    assert(note.tier === 'alarm' && note.word === 'Severe renal impairment (non-dialysis) suspected', JSON.stringify(note).slice(0, 200));
+    assert(r.h.indexOf(note.word) > 0 && r.h.indexOf('Give a single weight-based loading dose') > 0, 'the severe-renal advisory is shown');
+    assert(/CrCl ≈ 6 mL\/min/.test(r.text) || /CrCl ≈ 7 mL\/min/.test(r.text), 'the advisory names the CrCl');
+    assert(/^Result: No empiric maintenance regimen/.test(r.said), r.said);
+    const script44 = src44.match(/<script>([\s\S]*?)<\/script>/)[1];
+    assert((script44.match(/Give a single weight-based loading dose/g) || []).length === 1, 'the advisory text exists once');
+    assert(/severeRenalNote\(/.test(body44('renderBayesianResults')), 'AUC Precision reads the same advisory');
+    // The HD box still gives the HD notice, never a number.
+    const hd = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 }, { checked: ['t-hd'] });
+    assert(/On haemodialysis — use AUC Precision/.test(hd.text) && !HOLD_H3.test(hd.h), hd.text.slice(0, 200));
+    // Steady-state mode with no level entered is empiric too: withheld the same way.
+    const ss = trough44('level', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, dose: 500, interval: 48, tinf: 1 });
+    assert((ss.h.match(HOLD_H3) || [])[1] === 'No empiric maintenance regimen', ss.text.slice(0, 300));
+  });
+
+  test('44.8a Trough initial: the ceilings refuse 7.5 g a day with the cap-bound alarm and the augmented-clearance caution', () => {
+    const r = trough44('initial', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'init-interval': 8, 'init-tinf': 1 });
+    const m = r.h.match(HOLD_H3);
+    assert(m && m[1] === 'No regimen recommended', `heading: ${m && m[1]} — ${r.text.slice(0, 300)}`);
+    assert(!/class="rec-dose"/.test(r.h), 'no headline dose');
+    assert(r.text.indexOf('The target cannot be reached within the conventional ceilings (2000 mg per dose, 4500 mg per day)') > 0, 'the cap-bound alarm');
+    assert(/note note-alarm/.test(r.h), 'the alarm tier');
+    assert(/Augmented renal clearance suspected/.test(r.text) && /CrCl ≈ 303 mL\/min/.test(r.text), `the augmented-clearance caution: ${r.text.slice(0, 600)}`);
+    // A normal patient keeps a regimen and gains no renal note.
+    const n = trough44('initial', 'M', { age: 60, tbw: 80, height: 175, scr: 1.0, 'init-interval': 12, 'init-tinf': 1 });
+    assert(/class="rec-dose"/.test(n.h) && !HOLD_H3.test(n.h) && !/Augmented renal clearance|Severe renal impairment/.test(n.text), n.text.slice(0, 300));
+  });
+
+  test('44.8b Two-level and random-level modes render the refusal (Review Focus 4)', () => {
+    // Two levels after a first 1 g dose (1 h): 20 mg/L at 2 h and 5 mg/L at 6 h — CL 10.4 L/h; at q12h
+    // 2 g reaches AUC24 386, so nothing within the ceilings is in 400-600.
+    const tl = trough44('twolevels', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'tl-dose': 1000, 'tl-tinf': 1, 'tl-tau': 12,
+      'tl-c1': 20, 'tl-c2': 5, 'tl-dose-time': '2026-11-14T00:00', 'tl-t1-time': '2026-11-14T02:00', 'tl-t2-time': '2026-11-14T06:00',
+      'tl-t1-hours': 2, 'tl-t2-hours': 6 });   // the hidden hours the page's oninput fills
+    // One level 8 h after a first 1 g dose: 3 mg/L — CL 12.6 L/h; at q12h 2 g reaches AUC24 317.
+    const rl = trough44('randomlevel', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'rl-dose': 1000, 'rl-tinf': 1, 'rl-tau': 12,
+      'rl-c': 3, 'rl-dose-time': '2026-11-14T00:00', 'rl-draw-time': '2026-11-14T08:00' });
+    for (const [k, r] of [['two-level', tl], ['random-level', rl]]) {
+      const m = r.h.match(HOLD_H3);
+      assert(m && m[1] === 'No regimen recommended', `${k}: heading ${m && m[1]} — ${r.text.slice(0, 300)}`);
+      assert(!/class="rec-dose"/.test(r.h) && !/undefined|NaN/.test(r.text), `${k}: ${r.text.slice(0, 400)}`);
+      assert(r.text.indexOf('The target cannot be reached within the conventional ceilings') > 0, `${k}: the cap-bound alarm`);
+      assert(/^Result: No regimen recommended/.test(r.said), `${k}: ${r.said}`);
+    }
+    assert(/id="prn-redose-thresh"/.test(rl.h), 'random-level keeps the level-based PRN calculator');
+  });
+
+  test('44.8c Trough level mode: a current regimen above a ceiling is never "continue" (2.5 g q8h, 7.5 g a day)', () => {
+    // The C2 patient on 2.5 g q8h (1 h) with a true trough that matches the population fit: AUC24 ~540
+    // and a low trough read "AUC therapeutic despite low trough — continue". AUC Precision never
+    // continues a regimen with a hard reject (D25); nor does the Trough module now.
+    const p = c2Pk();
+    const tr = fn44('calcPeakTrough')(2500, 8, 1, p.kel, p.vd).trough;
+    const r = trough44('level', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, dose: 2500, interval: 8, tinf: 1,
+      'level-val': tr.toFixed(1), 'time-dose-given': '2026-11-14T00:00', 'time-level-drawn': '2026-11-14T08:00' }, { checked: ['has-level'] });
+    assert(!/Continue current regimen/.test(r.text), `continued: ${r.text.slice(0, 400)}`);
+    assert((r.h.match(HOLD_H3) || [])[1] === 'No regimen recommended', `heading: ${r.text.slice(0, 400)}`);
+    assert(/total daily dose 7500 mg exceeds 4500 mg/.test(r.text) && /tx-action-alarm/.test(r.h), `the breach is said, in the alarm tier: ${r.text.slice(0, 600)}`);
+    assert(/Current 2\.5 g IV q8h/.test(r.text), 'the current regimen is named');
   });
 }
 

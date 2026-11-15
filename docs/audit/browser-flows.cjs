@@ -813,6 +813,60 @@ async function enterCourse(page) {
     await hctx.close();
   }
 
+  // v3.14.0 (D26), engine report C2 and I1; the user's ruling 2: the Trough module obeys AUC
+  // Precision's ceilings (2 g a dose, 4.5 g a day, AUC24 700) and gives no empiric maintenance
+  // regimen at CrCl under 10 without a level. Fictional patients: 25 M, 95 kg, 185 cm, SCr 0.5
+  // (CrCl 303.5) at q8h, which was told 7.5 g a day; and 85 F, 45 kg, 155 cm, SCr 4.5 (CrCl 6.5).
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const c = await cctx.newPage();
+    const cProblems = watch(c, 'ceilings');
+    await c.goto(BASE + '?v=pwc-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.locator('[data-onclick="k1"]').click();
+    const verdictOf = () => c.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), reg = document.getElementById('tx-regimen');
+      const notes = [...document.querySelectorAll('#results-content .note')].map(n => ({ cls: n.className, word: (n.querySelector('.note-word') || {}).textContent || '', text: n.textContent.replace(/\s+/g, ' ') }));
+      return { reg: reg ? reg.textContent.replace(/\s+/g, ' ').trim() : '', hold: !!(reg && reg.classList.contains('vx-regimen-hold')),
+        dose: !!(v && v.querySelector('.rec-dose')), why: ((v && v.querySelector('.vx-hold')) || {}).textContent || '', notes,
+        said: (document.getElementById('sr-announce') || {}).textContent || '' };
+    });
+    await typeInto(c, '#age', '25'); await typeInto(c, '#tbw', '95'); await typeInto(c, '#height', '185'); await typeInto(c, '#scr', '0.5');
+    await c.locator('[data-onclick="k9"]').first().click();
+    await c.locator('#init-interval').selectOption('8');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const arc = await verdictOf();
+    const capNote = arc.notes.find(n => /note-alarm/.test(n.cls) && /The target cannot be reached within the conventional ceilings/.test(n.text));
+    ok('D26: Trough refuses 7.5 g a day — "No regimen recommended", no dose, the cap-bound alarm',
+       arc.reg === 'No regimen recommended' && arc.hold && !arc.dose && !!capNote && /q8h/.test(arc.why) && /^Result: No regimen recommended/.test(arc.said), JSON.stringify(arc).slice(0, 600));
+    ok('D26: Trough shows the augmented-clearance caution', arc.notes.some(n => /note-caution/.test(n.cls) && /Augmented renal clearance suspected/.test(n.word) && /CrCl ≈ 303 mL\/min/.test(n.text)),
+       JSON.stringify(arc.notes.map(n => n.word)));
+    // The same patient on random-level mode with an early, low level (CL 12.6 L/h): a refusal too.
+    await c.locator('#mode-btn-randomlevel').click();
+    await typeInto(c, '#rl-dose', '1000'); await typeInto(c, '#rl-tinf', '1'); await typeInto(c, '#rl-c', '3');
+    await c.locator('#rl-dose-time-date').fill(day(0)); await typeInto(c, '#rl-dose-time-time', '0000');
+    await c.locator('#rl-draw-time-date').fill(day(0)); await typeInto(c, '#rl-draw-time-time', '0800');
+    await c.locator('#rl-tau').selectOption('12');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const rl = await verdictOf();
+    ok('D26: Trough random level renders the refusal with the cap-bound alarm',
+       rl.reg === 'No regimen recommended' && rl.hold && !rl.dose && rl.notes.some(n => /note-alarm/.test(n.cls) && /conventional ceilings/.test(n.text)), JSON.stringify(rl).slice(0, 600));
+    // I1: CrCl 6.5, no HD, initial mode, no level.
+    await c.locator('#mode-btn-initial').click();
+    await typeInto(c, '#age', '85'); await typeInto(c, '#tbw', '45'); await typeInto(c, '#height', '155'); await typeInto(c, '#scr', '4.5');
+    await c.locator('[data-onclick="k10"]').first().click();
+    await c.locator('#init-interval').selectOption('48');
+    await c.locator('[data-onclick="k31"]').click(); await c.waitForTimeout(500);
+    const sev = await verdictOf();
+    ok('D26: Trough withholds at CrCl 6.5 — "No empiric maintenance regimen" with the severe-renal advisory, no dose',
+       sev.reg === 'No empiric maintenance regimen' && sev.hold && !sev.dose && /^Result: No empiric maintenance regimen/.test(sev.said)
+       && sev.notes.some(n => /note-alarm/.test(n.cls) && /Severe renal impairment \(non-dialysis\) suspected/.test(n.word) && /loading dose/.test(n.text)),
+       JSON.stringify(sev).slice(0, 600));
+    const cAttr2 = await attributeInjected(c, cProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + cAttr2.injected;
+    results.problems.push(...cAttr2.kept);
+    await cctx.close();
+  }
+
   // v3.12.0 (D23): IV vancomycin on peritoneal dialysis, typed in. A fictional CCPD patient
   // (61 kg at the load, 63 kg now, cycler 21:00 x 9.5 h), on a fixed clock (today 10:00) so the
   // answer cannot depend on the time of day.
