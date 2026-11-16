@@ -8744,13 +8744,26 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       run45('crclOverride.on = false; crclOverride.value = null;');
     }
   });
+
+  // Task 21 (code report M3, rule 2): ln 2 was spelled three ways (0.693, Math.LN2, Math.log(2)), 0.02%
+  // apart, and halfLife() was dead. One constant and one helper now; this fails if a spelling returns.
+  test('45.35 one ln 2 (Math.LN2) and one half-life helper; no 0.693 or Math.log(2) left in the script', () => {
+    const script = fs.readFileSync(htmlPath, 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+    const code = script.replace(/\/\/[^\n]*/g, '');   // comments may still name the old spellings
+    assert(/^const LN2\s*=\s*Math\.LN2;/m.test(code), 'LN2 is not declared as Math.LN2');
+    const stray = (code.match(/0\.693\b|Math\.log\(\s*2\s*\)|Math\.LN2/g) || []).length;
+    assert(stray === 1, `${stray} spellings of ln 2 (only the LN2 declaration may use Math.LN2)`);
+    assert((code.match(/function halfLife\s*\(/g) || []).length === 1, 'not exactly one halfLife()');
+    assertClose(fn45('halfLife')(Math.LN2 / 8), 8, 1e-12, 'halfLife(ln2 / 8)');
+    assertClose(fn45('solveTwoLevelsPK')(1000, 1, 30, 2, 15, 10, 12, 'firstdose').t12, 8, 1e-9, 'two-level t½ from kel = ln2/8');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 593;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.34 + D27 redraw)
+const EXPECTED_TOTAL = 594;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.35 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

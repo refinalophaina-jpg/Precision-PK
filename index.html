@@ -4827,7 +4827,7 @@ function pdResultsHTML(a, input, nowH) {
           : `<tr class="pd-tp"><td colspan="4" class="vx-muted">Set a target peak under Your settings to compare the target-peak calculation, V × (peak − level now).</td></tr>`}
       </tbody>
     </table>`, true);
-  const t12 = (k) => (Math.LN2 / k).toFixed(0), ctx = a.context || {};
+  const t12 = (k) => halfLife(k).toFixed(0), ctx = a.context || {};
   const decline = txEvHTML('pd-decline', 'The decline', `${a.rate.n} interval${a.rate.n === 1 ? '' : 's'} · half-life ${t12(a.rate.kMax)}–${t12(a.rate.kMin)} h`, `
     <table class="ev-table">
       <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Half-life</th><th scope="col">Cycler nights</th><th scope="col">Notes</th></tr></thead>
@@ -5226,7 +5226,7 @@ function solveTwoLevelsPK(dose, tinf, c1, t1, c2, t2, tauTarget, basis) {
   if (vd <= 0 || !isFinite(vd)) return null;
 
   const clv   = kel * vd;
-  const t12   = LN2 / kel;
+  const t12   = halfLife(kel);
   const pt    = calcPeakTrough(dose, tauTarget, tinf, kel, vd);
   const auc24 = calcAUC(dose, tauTarget, clv);
   return { kel, vd, clv, t12, peak, c1, t1, c2, t2,
@@ -5929,7 +5929,12 @@ function redrawAllCanvases() {
 // ══════════════════════════════════════════
 const CM_PER_IN      = 2.54;
 const ML_MIN_TO_L_H  = 0.06;   // (mL/min) x 60 min/h / 1000 mL/L
-const LN2            = 0.693;  // for t1/2 = ln2 / kel
+// ln 2, exactly (code report M3). It was spelled three ways: 0.693 here and in the Trough
+// module, Math.LN2 and Math.log(2) elsewhere, 0.02% apart. Every half-life now reads this.
+const LN2            = Math.LN2;
+// The one half-life helper: t½ (h) from a first-order rate constant k (h⁻¹). Unguarded, as
+// every call site was: a caller that can meet k <= 0 tests for it itself.
+function halfLife(k) { return LN2 / k; }
 
 // ══════════════════════════════════════════
 //  INPUT VALIDATION  (audit A3 / A4)
@@ -6515,7 +6520,7 @@ function uncertaintyTableKey(model) {
 // whatever the load. Read by the "Early level" note and by runBayesian to choose
 // the uncertainty row (aucUncertaintyRow's `early`), so the two cannot disagree.
 function earlyLevelFractions(levels, doses, t12, model) {
-  const kel = t12 > 0 ? Math.LN2 / t12 : NaN;
+  const kel = t12 > 0 ? LN2 / t12 : NaN;
   const t0 = doses && doses.length ? doses[0].timeH : NaN;
   const cut = SS_FRACTION_EARLY[uncertaintyTableKey(model)];
   return (levels || []).map(l => 1 - Math.exp(-kel * (l.timeH - t0)))
@@ -6539,7 +6544,7 @@ function latestLevelEarly(levels, doses, t12, model) {
 // the two agree on either side of it). The Next line uses it to say when a further
 // level would move the fit onto the steady-state row.
 function steadyFromH(doses, t12, model) {
-  const kel = t12 > 0 ? Math.LN2 / t12 : NaN;
+  const kel = t12 > 0 ? LN2 / t12 : NaN;
   const t0 = doses && doses.length ? doses[0].timeH : NaN;
   return t0 - Math.log(1 - SS_FRACTION_EARLY[uncertaintyTableKey(model)]) / kel;
 }
@@ -7102,7 +7107,7 @@ function calculate() {
     if (!indKel) { showFormErrors('trough', 'Could not fit Kel — check that the level and timing are physiologically plausible (level may be too high or too low for the dose given).', [['rl-c', 'rl-dose-time', 'rl-draw-time']]); return; }
 
     const indClv = indKel * popVd;
-    const indT12 = 0.693 / indKel;
+    const indT12 = halfLife(indKel);
     const rlOpt  = findOptimalDose(troughMin, troughMax, rlTau, rlTinf, indKel, popVd, indClv);
     // The final review (I4): the hold, as in level and two-level modes. The next dose is due at
     // the interval the patient is on (steady state) or, after a first dose, at the interval
@@ -7233,7 +7238,7 @@ function calculate() {
   const popClv   = calcCLv(clModel, crclVal, tbw);
   const vd       = calcVd(vdModel, age, tbw, crclVal);
   const popKel   = popClv / vd;
-  const popT12   = 0.693 / popKel;
+  const popT12   = halfLife(popKel);
 
   // ── Level-based PK fitting ──
   // Gated on the mode: Initial Dosing used to fit a level left behind, hidden,
@@ -7395,7 +7400,7 @@ function calculate() {
     aucMethod = `Population: ${s('cl-model').toUpperCase()} CL · AUC = Daily Dose ÷ CLv`;
   }
 
-  const t12 = 0.693 / adjKel;
+  const t12 = halfLife(adjKel);
 
   // ── Optimal dose recommendation ──
   // A refusal (D26) leaves optDose undefined; renderResults shows it in the regimen's place.
@@ -7799,8 +7804,8 @@ function renderTwoLevels(d) {
   const kelDiff   = ((d.kel - d.popKel) / d.popKel * 100).toFixed(0);
   const vdDiff    = ((d.vd  - d.popVd)  / d.popVd  * 100).toFixed(0);
   const clvDiff   = ((d.clv - d.popClv) / d.popClv * 100).toFixed(0);
-  const t12Ind    = (0.693 / d.kel).toFixed(1);
-  const t12Pop    = (0.693 / d.popKel).toFixed(1);
+  const t12Ind    = halfLife(d.kel).toFixed(1);
+  const t12Pop    = halfLife(d.popKel).toFixed(1);
   const basisLabel = d.basis === 'steadystate' ? 'At Steady State' : 'First Dose';
 
   // Dose explorer using individual PK
@@ -7897,7 +7902,7 @@ function renderRandomLevel(d) {
   const trough     = refusal ? NaN : d.optPT.trough;
   const kelPctDiff  = ((d.indKel  - d.popKel) / d.popKel  * 100).toFixed(0);
   const clvPctDiff  = ((d.indClv  - d.popClv) / d.popClv  * 100).toFixed(0);
-  const t12Pop      = (0.693 / d.popKel).toFixed(1);
+  const t12Pop      = halfLife(d.popKel).toFixed(1);
   const diffPct = (pct) => {
     const n = parseFloat(pct), sign = n > 0 ? '+' : '';
     return `<span class="${Math.abs(n) > 15 ? 'tone-caution' : 'vx-muted'}">${sign}${pct}%</span>`;
@@ -8144,7 +8149,7 @@ function calcPRNDose() {
 
   // What peak and AUC-like metric will that dose achieve?
   const actualPeak = cAtRedose * Math.exp(-kel * prnTinf) + (roundedDose / (prnTinf * kel * vd)) * (1 - Math.exp(-kel * prnTinf));
-  const t12 = 0.693 / kel;
+  const t12 = halfLife(kel);
 
   // Time to trough (when concentration falls back to troughMin from actualPeak)
   const timePostPeakToTrough = timeToDecayTo(actualPeak, troughMin, kel);
@@ -9386,7 +9391,7 @@ function hdRedistributionWindowH(k10, k12, k21) {
   if (!(k12 > 0 && k21 > 0 && k10 >= 0)) return 0;
   const s = k10 + k12 + k21, disc = Math.sqrt((k10 + k12 - k21) ** 2 + 4 * k12 * k21);
   const alpha = 0.5 * (s + disc);
-  return HD_POSTSESSION_HALF_LIVES * Math.LN2 / alpha;
+  return HD_POSTSESSION_HALF_LIVES * halfLife(alpha);
 }
 // The fitted (individual) concentration at t, from whichever model was fitted.
 function predictFittedAt(r, tH) {
@@ -9764,7 +9769,7 @@ function pdInterval(anchor, level, doses, vL, sc, naive) {
   if (pred(hi) > level.conc) return none('unexplained-low');
   for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pred(m) > level.conc) lo = m; else hi = m; }
   const k = (lo + hi) / 2;
-  return Object.assign(base, { k, t12: Math.LN2 / k, flags, used: true });
+  return Object.assign(base, { k, t12: halfLife(k), flags, used: true });
 }
 
 // The loading dose: PD_LOAD_MG_PER_KG x the weight now, rounded to the 250 mg step,
@@ -9800,9 +9805,9 @@ function pdPublishedContext(schedule, nowH) {
   if (sc.stoppedAtH != null && sc.stoppedAtH <= nowH) return { dailyFactor: null, t12Range: null, label: 'PD stopped: no published value for this state' };
   if (sc.modality === 'capd') return { dailyFactor: null, t12Range: [PD_CAPD_T12_MIN_H, PD_CAPD_T12_MAX_H], label: `CAPD: half-life ${PD_CAPD_T12_MIN_H}–${PD_CAPD_T12_MAX_H} h (Lam 2020)` };
   if ((sc.modality === 'ccpd' || sc.modality === 'nipd') && sc.hours > 0) {
-    const kOn = Math.LN2 / PD_APD_T12_ON_H, kOff = Math.LN2 / PD_APD_T12_OFF_H, h = Math.min(24, sc.hours);
+    const kOn = LN2 / PD_APD_T12_ON_H, kOff = LN2 / PD_APD_T12_OFF_H, h = Math.min(24, sc.hours);
     const kDay = kOn * h + kOff * (24 - h);
-    return { dailyFactor: Math.exp(-kDay), t12Range: null, t12Equiv: 24 * Math.LN2 / kDay,
+    return { dailyFactor: Math.exp(-kDay), t12Range: null, t12Equiv: 24 * halfLife(kDay),
       label: `APD: half-life ${PD_APD_T12_ON_H} h on the cycler, ${PD_APD_T12_OFF_H} h off it (Manley 2001)` };
   }
   return { dailyFactor: null, t12Range: null, label: 'No published value for this schedule' };
@@ -10965,7 +10970,7 @@ function ssCycles2comp(tau, k10, k12, k21) {
   const disc = Math.max(0, sum*sum - 4*k21*k10);
   const beta = (sum - Math.sqrt(disc)) / 2;      // slow (terminal) root
   if (!(beta > 0) || !(tau > 0)) return SS_2C_MAX_CYCLES;
-  const tHalfTerminal = Math.LN2 / beta;
+  const tHalfTerminal = halfLife(beta);
   const need = Math.ceil((10 * tHalfTerminal) / tau);
   return Math.min(SS_2C_MAX_CYCLES, Math.max(SS_2C_MIN_CYCLES, need));
 }
@@ -13414,11 +13419,11 @@ function runBayesian() {
     const disc_ind= Math.sqrt(Math.max(0, s_ind*s_ind - 4*k10_ind*k21_ind));
     const alpha   = 0.5*(s_ind+disc_ind);
     const beta    = 0.5*(s_ind-disc_ind);
-    t12_ind = Math.log(2) / beta;          // use terminal (beta) half-life
+    t12_ind = halfLife(beta);          // use terminal (beta) half-life
     const s_pop   = k10_pop+k12_pop+k21_pop;
     const disc_pop= Math.sqrt(Math.max(0, s_pop*s_pop - 4*k10_pop*k21_pop));
     const beta_pop= 0.5*(s_pop - disc_pop);
-    t12_pop = Math.log(2) / beta_pop;
+    t12_pop = halfLife(beta_pop);
 
     // 1-comp proxy for kel (for AUC-based tinkerer formulas)
     kel_ind = CL_ind / Vc_ind;
@@ -13496,11 +13501,11 @@ function runBayesian() {
     const disc_ind= Math.sqrt(Math.max(0, s_ind*s_ind - 4*k10_ind*k21_ind));
     const alpha   = 0.5*(s_ind+disc_ind);
     const beta    = 0.5*(s_ind-disc_ind);
-    t12_ind = Math.log(2) / beta;
+    t12_ind = halfLife(beta);
     const s_pop   = k10_pop+k12_pop+k21_pop;
     const disc_pop= Math.sqrt(Math.max(0, s_pop*s_pop - 4*k10_pop*k21_pop));
     const beta_pop= 0.5*(s_pop - disc_pop);
-    t12_pop = Math.log(2) / beta_pop;
+    t12_pop = halfLife(beta_pop);
 
     kel_ind = CL_ind / Vc_ind;
     V_ind   = Vc_ind;
@@ -13558,8 +13563,8 @@ function runBayesian() {
 
     CL_ind = CL_pop * Math.exp(etaCL_opt);
     V_ind  = V_pop  * Math.exp(etaV_opt);
-    kel_ind= CL_ind / V_ind;  t12_ind = Math.log(2)/kel_ind;
-    kel_pop= CL_pop / V_pop;  t12_pop = Math.log(2)/kel_pop;
+    kel_ind= CL_ind / V_ind;  t12_ind = halfLife(kel_ind);
+    kel_pop= CL_pop / V_pop;  t12_pop = halfLife(kel_pop);
 
     objFinal = filteredLevels.length
       ? burtonObjective(etaCL_opt, etaV_opt, CL_pop, V_pop, doses, filteredLevels)
@@ -14260,7 +14265,7 @@ function profileDomain(doses, kelInd, sessions, levels, nowH) {
   const span = lastD.timeH - tStart;
   // Enough tail to show the terminal decay without letting it dominate: about
   // three half-lives, at least 12 h, never more than 48 h.
-  const tail = Math.min(48, Math.max(12, span * 0.5, (kelInd > 0 ? 3 * Math.LN2 / kelInd : 24)));
+  const tail = Math.min(48, Math.max(12, span * 0.5, (kelInd > 0 ? 3 * halfLife(kelInd) : 24)));
   let tEnd = lastD.timeH + lastD.tinfH + tail;
   // Reach a planned haemodialysis session (D15) so its start — the pre-HD
   // reading — is on the axis; layout only, at most PROFILE_REACH_H further.
