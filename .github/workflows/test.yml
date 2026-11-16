@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  node-suites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      # No install step: the repository has no dependencies.
+      # Each step fails the job on a non-zero exit.
+      - name: JS syntax check
+        run: |
+          node -e "const fs=require('fs');const m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/);try{new Function(m[1]);console.log('JS syntax: OK')}catch(e){console.log('JS BROKEN:',e.message);process.exit(1)}"
+
+      - name: Unit suite (phase2d)
+        run: node phase2d_validation.cjs
+
+      - name: Unit suite (phase2d) in Pacific/Auckland
+        run: node phase2d_validation.cjs
+        env:
+          TZ: Pacific/Auckland
+
+      - name: Simulation (phase3)
+        run: node phase3_simulation.cjs
+
+      - name: Regimen detection (phase4)
+        run: node phase4_regimen_validation.cjs
+
+      - name: Mutation gate
+        run: node docs/audit/mutation.cjs

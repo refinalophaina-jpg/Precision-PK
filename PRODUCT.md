@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Primary: clinical pharmacists verifying or building a vancomycin regimen at work, often between other tasks and on a phone as often as a desktop. They are expert readers: they want the regimen, the exposure it produces and how far to trust it within seconds, with the evidence one step away rather than in the way. Residents, students and board-exam learners are a secondary audience; the teaching content serves them without blocking the expert path. (Confirmed 2026-09-28.)
+Primary: clinical pharmacists verifying or building a vancomycin regimen at a pharmacy workstation (office or central pharmacy), desktop first, often between other tasks; never at the bedside. They are expert readers: they want the regimen, the exposure it produces and how far to trust it within seconds, with the evidence one step away rather than in the way. Residents, students and board-exam learners are a secondary audience; the teaching content serves them without blocking the expert path. (Confirmed 2026-09-28.)
 
 ## Product Purpose
 
@@ -20,7 +20,7 @@ The calculator's mechanism is honesty about its own limits: every clinical const
 
 ## Operating Context
 
-- Two modules: Trough-Based (initial dosing, steady-state level, two levels, random level) and AUC Precision (MAP Bayesian with Buelga 2005, Goti 2018, Goti-HD and Hughes 2024 priors).
+- Two modules: Trough-Based (initial dosing, steady-state level, two levels, random level, IV vancomycin on peritoneal dialysis) and AUC Precision (MAP Bayesian with Buelga 2005, Goti 2018, Goti-HD and Hughes 2024 priors).
 - Inputs: age, sex, weight, height, SCr (and serial SCr), cystatin C, dose rows with date/time and infusion time, level rows with date/time.
 - Used at a pharmacy workstation (office or central pharmacy), desktop first; not at the bedside.
 - Outputs: a regimen, its predicted AUC₂₄ and trough, confidence, a printable report for handoff.
@@ -42,7 +42,7 @@ AinaDara house style: quiet · precise · clinical. Tokens, type (DM Serif Displ
 ## Evidence on Hand
 
 - Literature PDFs for every model in `../Literature/` (Buelga 2005, Goti 2018 + erratum, Hughes 2024, Matzke 1984, Fewel 2021, Bauer one-pager).
-- Audit and decision records: `docs/v3-decisions.md` (D1–D11), `docs/audit/`.
+- Audit and decision records: `docs/v3-decisions.md` (D1 onward), `docs/audit/`.
 - Design critique 2026-09-28: `.impeccable/critique/`.
 - No user research, testimonials or usage data exist; do not invent them.
 

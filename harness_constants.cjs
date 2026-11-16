@@ -30,8 +30,11 @@ function readAppSource() {
 }
 
 // Pull `const NAME = <number>;` out of the source. Throws if absent.
+// Anchored to the start of a line and case-sensitive (review 2026-11-13): an
+// unanchored, case-insensitive match could read a commented-out or indented
+// copy, or a differently-cased name, instead of the live top-level declaration.
 function num(src, name) {
-  const m = src.match(new RegExp('const\\s+' + name + '\\s*=\\s*(-?[0-9.]+(?:e-?[0-9]+)?)\\s*;', 'i'));
+  const m = src.match(new RegExp('^const\\s+' + name + '\\s*=\\s*(-?[0-9.]+(?:e-?[0-9]+)?)\\s*;', 'm'));
   if (!m) {
     throw new Error(
       `harness_constants: could not find \`const ${name} = <number>\` in index.html.\n` +
@@ -85,6 +88,25 @@ function extract() {
     HUGHES_TVVC:       num(src, 'HUGHES_TVVC'),
     HUGHES_TVQ:        num(src, 'HUGHES_TVQ'),
     HUGHES_TVVP:       num(src, 'HUGHES_TVVP'),
+    HUGHES_CRCL_EXP:   num(src, 'HUGHES_CRCL_EXP'),
+    OMEGA2_CL_HUGHES:  num(src, 'OMEGA2_CL_HUGHES'),
+    OMEGA2_VC_HUGHES:  num(src, 'OMEGA2_VC_HUGHES'),
+    OMEGA2_VP_HUGHES:  num(src, 'OMEGA2_VP_HUGHES'),
+    SIGMA_PROP_HUGHES: num(src, 'SIGMA_PROP_HUGHES'),
+    SIGMA_ADD_HUGHES:  num(src, 'SIGMA_ADD_HUGHES'),
+    // Hughes 2024 Table 1 (p. 578): the population the model was built in (D27)
+    HUGHES_MIN_BMI:      num(src, 'HUGHES_MIN_BMI'),
+    HUGHES_MAX_BMI:      num(src, 'HUGHES_MAX_BMI'),
+    HUGHES_MIN_WT_KG:    num(src, 'HUGHES_MIN_WT_KG'),
+    HUGHES_MAX_WT_KG:    num(src, 'HUGHES_MAX_WT_KG'),
+    HUGHES_MIN_HT_CM:    num(src, 'HUGHES_MIN_HT_CM'),
+    HUGHES_MAX_HT_CM:    num(src, 'HUGHES_MAX_HT_CM'),
+    HUGHES_MIN_AGE_Y:    num(src, 'HUGHES_MIN_AGE_Y'),
+    HUGHES_MAX_AGE_Y:    num(src, 'HUGHES_MAX_AGE_Y'),
+    HUGHES_MIN_SCR:      num(src, 'HUGHES_MIN_SCR'),
+    HUGHES_MAX_SCR:      num(src, 'HUGHES_MAX_SCR'),
+    HUGHES_MIN_CRCL_FFM: num(src, 'HUGHES_MIN_CRCL_FFM'),
+    HUGHES_MAX_CRCL_FFM: num(src, 'HUGHES_MAX_CRCL_FFM'),
 
     // Body size / units
     CM_PER_IN:         num(src, 'CM_PER_IN'),
@@ -115,7 +137,6 @@ function extract() {
     MATRIX_ROWS:            num(src, 'MATRIX_ROWS'),
     MATRIX_DOSE_STEP:       num(src, 'MATRIX_DOSE_STEP'),
     MATRIX_DOSE_MIN:        num(src, 'MATRIX_DOSE_MIN'),
-    MATRIX_DOSE_MAX:        num(src, 'MATRIX_DOSE_MAX'),
     AUC24_TARGET_MIN:       num(src, 'AUC24_TARGET_MIN'),
     AUC24_TARGET_MAX:       num(src, 'AUC24_TARGET_MAX'),
     AUC24_ABSOLUTE_MAX:     num(src, 'AUC24_ABSOLUTE_MAX'),
@@ -142,11 +163,17 @@ function extract() {
     // v3.14.0 — continue the current regimen (D25)
     CONTINUE_MARGIN_DOTS:   num(src, 'CONTINUE_MARGIN_DOTS'),
     TROUGH_HIGH_MGL:        num(src, 'TROUGH_HIGH_MGL'),
+    // v3.15.0 (Task 14) — the warning-tier trough (Rybak 2020: AKI risk rises from 15)
+    TROUGH_WARN_MGL:        num(src, 'TROUGH_WARN_MGL'),
+    // v3.15.0 (Task 14) — the one entry-limits table (UI plausibility limits, not clinical constants)
+    INPUT_LIMITS:           objLiteral(src, 'INPUT_LIMITS'),
     TROUGH_TIMING_WINDOW_H: num(src, 'TROUGH_TIMING_WINDOW_H'),
     HD_LOADING_MAX_MG:      num(src, 'HD_LOADING_MAX_MG'),
     VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
     // v3.14.0 (D26, final review I2) — the hold search horizon, a PREFERENCE (rule 8)
     HOLD_SEARCH_MAX_H:      num(src, 'HOLD_SEARCH_MAX_H'),
+    // v3.15.0 (D27, the user's ruling U7) — the first-interval caution window, a PREFERENCE (rule 8)
+    FIRST_INTERVAL_CAUTION_H: num(src, 'FIRST_INTERVAL_CAUTION_H'),
     // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state
     CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
   };

@@ -89,6 +89,10 @@ cases.push(['kdigoStage', [[{ scr: 1.0, timeH: 0 }, { scr: 1.4, timeH: 30 }, { s
 cases.push(['selectEffectiveScr', [[{ scr: 1.0, timeH: 14 }, { scr: 2.0, timeH: 29 }], 20]]);
 
 // MAP fits through the exact objective functions the app uses.
+// The omega^2 literals below (0.0793 / 0.138 Buelga, 0.147 / 0.5103 / 0.2824 Goti, 0.0602 / 0.0312 / 0.4974
+// Hughes) are deliberate: they are battery INPUTS, passed identically to the baseline and the candidate, so
+// a difference can only come from the engine code. Rule 6 (parse, never hand-copy) is about a test checking
+// the shipped values; this battery checks nothing against them, so do not "fix" these into parsed constants.
 function fits(S) {
   const out = [];
   if (typeof S.mapFit !== 'function') return ['mapFit absent (predates the multi-start fit)'];
@@ -97,8 +101,17 @@ function fits(S) {
     const bp = S.buelgaPopPK(80, 80);
     out.push(S.mapFit((a, b) => S.burtonObjective(a, b, bp.CL_pop, bp.V_pop, q12, lev), 2, 0.0793, 0.138, 300));
     const gp = S.gotiPopPK(80, 80, false);
-    out.push(S.mapFit((a, b, c) => S.burtonObj3D(a, b, c, gp.TVCL, gp.TVVc, gp.TVVp, q12, lev), 3, 0.147, 0.5103, 400));
+    // The 6th argument is each model's omega^2 Vp (Task 17, D27); a mapFit that predates it ignores it.
+    out.push(S.mapFit((a, b, c) => S.burtonObj3D(a, b, c, gp.TVCL, gp.TVVc, gp.TVVp, q12, lev), 3, 0.147, 0.5103, 400, 0.2824));
+    const hp = S.hughesPopPK(110, 75);
+    out.push(S.mapFit((a, b, c) => S.burtonObj3D_hughes(a, b, c, hp.TVCL, hp.TVVc, hp.TVVp, hp.TVQ, q12, lev), 3, 0.0602, 0.0312, 400, 0.4974));
   }
+  // A Hughes case the 5-start fit got wrong (docs/audit/probe-map-starts.cjs; SUITE 45.2 fixture 1; fictional):
+  // F, 48 y, 198.1 kg, 175 cm, SCr 1.99; 2.5 g over 2.5 h q24h x 8; a peak and a trough.
+  const ffm = S.computeFFM(198.1, 175, 'F'), hp = S.hughesPopPK(Math.max(5, S.calcCrClRaw(48, 'F', 1.99, ffm, 'actual')), ffm);
+  const q24 = Array.from({ length: 8 }, (_, i) => ({ mg: 2500, tinfH: 2.5, timeH: i * 24 }));
+  const lev = [{ timeH: 147.5, conc: 44.13 }, { timeH: 167.5, conc: 6.37 }];
+  out.push(S.mapFit((a, b, c) => S.burtonObj3D_hughes(a, b, c, hp.TVCL, hp.TVVc, hp.TVVp, hp.TVQ, q24, lev), 3, 0.0602, 0.0312, 400, 0.4974));
   return out;
 }
 

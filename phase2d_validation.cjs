@@ -28,6 +28,12 @@ const {
   HUGHES_TVVC,
   HUGHES_TVQ,
   HUGHES_TVVP,
+  HUGHES_CRCL_EXP,
+  OMEGA2_CL_HUGHES,
+  OMEGA2_VC_HUGHES,
+  OMEGA2_VP_HUGHES,
+  SIGMA_PROP_HUGHES,
+  SIGMA_ADD_HUGHES,
 } = __extractConsts();
 
 
@@ -106,13 +112,7 @@ const {
   detectVeryLowCrCl,
 } = sandbox;
 
-// ─── Hughes constants mirrored from calculator ───
-const HUGHES_CRCL_EXP= 0.887;
-const OMEGA2_CL_HUGHES = 0.0602;
-const OMEGA2_VC_HUGHES = 0.0312;
-const OMEGA2_VP_HUGHES = 0.4974;
-const SIGMA_PROP_HUGHES= 0.156;
-const SIGMA_ADD_HUGHES = 1.2;
+// ─── Hughes constants: parsed from index.html (rule 6), see the destructuring above ───
 
 // ─── 3. Test framework ────────────────────────────────────────────────
 let pass=0, fail=0;
@@ -132,6 +132,63 @@ function assertLess(a,b,label) {
   if (!isFinite(a)||!isFinite(b)) throw new Error(`${label}: non-finite value (${a} vs ${b})`);
   if (a >= b) throw new Error(`${label}: ${a.toFixed(5)} is NOT < ${b.toFixed(5)}`);
 }
+
+// ─── A small AUC Precision form (Release 2, Task 14) ─────────────────
+// The code review found tests that asserted a function's source text instead of what it does
+// (a fingerprint that "mentions" b-mic passed with the MIC made inert). These helpers let a
+// test drive the real parseBayesCourse / readSerialScrChecked / bayesInputFingerprint /
+// snapshotBayesForm against form values, the way the page does. Fictional values only.
+// vals: { 'b-age': '60', ... } plus doses [[mg, tinf, date, time]], levels [[conc, date, time]],
+// scrRows [[val, date, time]]. Rows are numbered from 1, as the page numbers them.
+function bayesFormEnv(vals) {
+  const els = {};
+  const el = (id) => els[id] || (els[id] = { id, value: '', checked: false, textContent: '', innerHTML: '', style: {}, dataset: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, setAttribute() {}, getAttribute() { return null; },
+    removeAttribute() {}, addEventListener() {}, appendChild() {}, querySelector: () => null, querySelectorAll: () => [] });
+  const v = Object.assign({}, vals);
+  (v.doses || []).forEach(([mg, tinf, date, time], i) => {
+    el(`b-dose-row-${i + 1}`); el(`b-dose-mg-${i + 1}`).value = String(mg); el(`b-dose-tinf-${i + 1}`).value = String(tinf);
+    el(`b-dose-date-${i + 1}`).value = date; el(`b-dose-time-${i + 1}`).value = time;
+  });
+  (v.levels || []).forEach(([conc, date, time], i) => {
+    el(`b-level-row-${i + 1}`); el(`b-lvl-conc-${i + 1}`).value = String(conc);
+    el(`b-lvl-date-${i + 1}`).value = date; el(`b-lvl-time-${i + 1}`).value = time;
+  });
+  (v.scrRows || []).forEach(([val, date, time], i) => {
+    const row = el(`b-scr-row-${i + 1}`), sub = { '.b-scr-val': { value: String(val) }, '.b-scr-date': { value: date }, '.b-scr-time': { value: time } };
+    row.querySelector = (sel) => sub[sel] || null;
+  });
+  ['doses', 'levels', 'scrRows'].forEach(k => delete v[k]);
+  Object.keys(v).forEach(id => { el(id).value = String(v[id]); });
+  const document = {
+    getElementById: el, createElement: () => el('_new'), querySelector: () => null,
+    querySelectorAll: (sel) => {
+      const m = /^\[id\^="([^"]+)"\]$/.exec(sel);
+      if (!m) return [];
+      return Object.values(els).filter(e => e.id.indexOf(m[1]) === 0 && /^\d+$/.test(e.id.slice(m[1].length)))
+        .sort((a, b) => Number(a.id.slice(m[1].length)) - Number(b.id.slice(m[1].length)));
+    },
+  };
+  return { document, els, el };
+}
+// Runs fn(env) with that form installed and a fresh bState (Buelga, male, no result); restores both.
+function withBayesForm(vals, fn) {
+  const env = bayesFormEnv(vals);
+  const prevDoc = sandbox.document;
+  vm.runInContext('globalThis.__bf = bState; bState = { sex: "M", model: "buelga", dial: false, result: null, resultFingerprint: null, tinkCompare: [], regimenOverrideH: null };', sandbox);
+  sandbox.document = env.document;
+  try { return fn(env); }
+  finally { sandbox.document = prevDoc; vm.runInContext('bState = globalThis.__bf; delete globalThis.__bf;', sandbox); }
+}
+// A fictional course: 60 y, 80 kg, 178 cm, SCr 1.0; 1 g over 1 h q12h x 3; one level; one serial SCr.
+const BAYES_FORM_45 = () => ({
+  'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0', 'b-auc-target': '450', 'b-mic': '1',
+  doses: [[1000, 1, '2026-11-10', '08:00'], [1000, 1, '2026-11-10', '20:00'], [1000, 1, '2026-11-11', '08:00']],
+  levels: [[14.2, '2026-11-11', '07:30']],
+  scrRows: [['1.0', '2026-11-10', '06:00']],
+});
+// Helpers that SUITE 44 builds and SUITE 45 reuses (the profile DOM and storage).
+const __suiteShared = {};
 
 // ─── Seeded PRNG (LCG) for reproducible Monte Carlo ──────────────────
 let _seed = 20250409;
@@ -1516,9 +1573,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const refresh = sandbox.refreshProfileGraph.toString();
     assert(/const arrive = r !== _profileArrivedFor && profileMotionOK\(\);/.test(refresh) && /_profileArrivedFor = r;/.test(refresh), 'gated on a new result');
     // v3.11.0: both also take the same clock (nowH) after the gate — SUITE 40.8.
-    assert(/drawCourseStrip\([\s\S]*arrive, nowH\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive, nowH \}/.test(refresh), 'the strip and the curve share the gate');
+    assert(/drawCourseStrip\([\s\S]*arrive, nowH, course\.held\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive, nowH, held: course\.held \}/.test(refresh), 'the strip and the curve share the gate');   // Task 21b: and the held rows
     assert(/prefers-reduced-motion: reduce/.test(sandbox.profileMotionOK.toString()), 'reduced motion is honoured');
-    const pr = src.slice(src.indexOf('const gp = gotiGraphParams(r);\n    drawProfileGraph(off'), src.indexOf('const url = off.toDataURL'));
+    const pr = src.slice(src.indexOf('drawProfileGraph(off'), src.indexOf('const url = off.toDataURL'));   // Task 21b: its dose list is computed above it
     assert(pr.length > 0 && !/arrive/.test(pr), 'print draws without the arrival');
     // The static path settles synchronously: the plot geometry exists straight away.
     assert(runProfile(q8h, lev, 4.5, 60).plot, 'no arrival requested: drawn and settled at once');
@@ -1892,7 +1949,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('Continue Course is gone, with no orphans left behind', ()=>{
     const dead = ['continueState','loadContinueProfile','runContinueTinker','runContinueOptimizer',
                   'app-shell-continue','continue-placeholder','continue-results',
-                  'continue-profile-select','renderContinueProfileList','statusClassFor'];
+                  'continue-profile-select','renderContinueProfileList','statusClassFor',
+                  // v3.15.0 (Task 21, code report M6): its last orphans, and the result tabs before it.
+                  "'c-tinf'", 'showResultTab', 'result-tab', 'extrapolateTrough', 'continue-banner',
+                  'continue-pk-', 'continue-result-', 'CONTINUE COURSE'];
     const found = dead.filter(d => src.includes(d));
     assert(found.length === 0, `orphaned references remain: ${found.join(', ')}`);
   });
@@ -1975,7 +2035,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log(`${'─'.repeat(60)}`);
 
   test('No inline on* event-handler attributes anywhere in the body', ()=>{
-    const found = body.match(/\son[a-z]+\s*=\s*"/g) || [];
+    // Rewritten (Release 2, Task 14; code report "tests that cannot fail"): the old regex
+    // required a double quote after "=", so an unquoted onclick=x() or a single-quoted one
+    // passed. An HTML attribute may be double-quoted, single-quoted or bare, in any case.
+    // Both detectors run: the original (any `on…="` in the body, markup in script strings
+    // included) and one that reads every tag for an on* attribute however it is quoted.
+    const inTag = /<[a-z][\w-]*(?:\s[^<>]*?)?\son[a-z]+\s*=/gi;
+    const quoted = /\son[a-z]+\s*=\s*"/g;
+    const detect = (h) => (h.match(inTag) || []).concat(h.match(quoted) || []);
+    // The detector itself must see each spelling, or this test cannot fail on what it names.
+    for (const s of ['<div onclick=resetForm()>', "<a ONCLICK='x()'>", '<b class="k" onclick="y()">', '<i\nonmouseover = z>'])
+      assert(detect(s).length > 0, `the detector misses ${JSON.stringify(s)}`);
+    assert(detect('<div data-onclick="k1" title="on=off">').length === 0, 'the detector flags data-onclick');
+    const found = detect(body);
     assert(found.length === 0,
       `${found.length} inline handler attribute(s) — CSP blocks these, so they are dead in ` +
       `production: ${[...new Set(found)].join(', ')}`);
@@ -2078,8 +2150,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('formatElapsed names the days for a multi-day span', ()=>{
-    assert(/2d/.test(formatElapsed(49.63)), `expected days in "${formatElapsed(49.63)}"`);
-    assert(!/\dd /.test(formatElapsed(16.9)), `no day part for a short span: "${formatElapsed(16.9)}"`);
+    assert(/2 d/.test(formatElapsed(49.63)), `expected days in "${formatElapsed(49.63)}"`);
+    assert(!/\d d /.test(formatElapsed(16.9)), `no day part for a short span: "${formatElapsed(16.9)}"`);
   });
 
   test('the silent-corruption case now computes the right volume', ()=>{
@@ -2235,7 +2307,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const lo = mx.rows[0].dose, hi = mx.rows[mx.rows.length-1].dose;
     for (const tau of mx.intervals) {
       const want = 450 * CL * tau / 24;
-      const clamped = Math.min(K.MATRIX_DOSE_MAX, Math.max(K.MATRIX_DOSE_MIN, want));
+      const clamped = Math.min(K.DOSE_MAX_PER_DOSE_MG, Math.max(K.MATRIX_DOSE_MIN, want));   // the matrix's ceiling is the per-dose one (Task 21)
       assert(clamped >= lo - K.MATRIX_DOSE_STEP && clamped <= hi + K.MATRIX_DOSE_STEP,
         `Q${tau}H needs ~${want.toFixed(0)} mg but the ladder is ${lo}-${hi}`);
     }
@@ -2552,7 +2624,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log(`${'─'.repeat(60)}`);
 
   // the 76 M case, fitted with the shipped engine
-  const Hh = s => new Date(s).getTime() / 3600000;
+  // Hours from a wall-clock stamp read as UTC: the case is a spacing between doses, and a local-time
+  // parse put the 27 Sep dose across New Zealand's clock change (TZ=Pacific/Auckland failed 2 tests).
+  const Hh = s => new Date(s + 'Z').getTime() / 3600000;
   const doses = [{mg:2250,tinfH:2.5,timeH:Hh('2026-09-25T05:41')},
                  {mg:750, tinfH:1,  timeH:Hh('2026-09-26T05:08')},
                  {mg:750, tinfH:1,  timeH:Hh('2026-09-27T05:03')}];
@@ -2770,8 +2844,21 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('a changed target or MIC marks the fit as stale', ()=>{
-    const f = sandbox.bayesInputFingerprint.toString();
-    assert(/b-auc-target/.test(f) && /b-mic/.test(f), 'target and MIC must be part of the fingerprint');
+    // Rewritten as behaviour (Release 2, Task 14): the old check read the function's text for
+    // the two ids, so a fingerprint with target and MIC made inert (names left in a comment)
+    // passed. Now a fit is taken on a form, then the target or the MIC is edited.
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      const fp = sandbox.bayesInputFingerprint;
+      vm.runInContext('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55 }; bState.resultFingerprint = bayesInputFingerprint();', sandbox);
+      assert(typeof fp() === 'string' && !sandbox.bayesFitIsStale(), 'the untouched form is not stale');
+      for (const [id, to] of [['b-auc-target', '550'], ['b-mic', '2']]) {
+        const was = env.els[id].value;
+        env.els[id].value = to;
+        assert(sandbox.bayesFitIsStale(), `${id} ${was} -> ${to} did not mark the fit stale`);
+        env.els[id].value = was;
+        assert(!sandbox.bayesFitIsStale(), `${id} restored, still stale`);
+      }
+    });
   });
 
   test('a young patient at the CrCl cap is offered a regimen, not refused', ()=>{
@@ -2979,8 +3066,23 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(kdigoStage([{ scr: 1.0, timeH: 0 }, { scr: 1.5, timeH: 200 }]) === 0, 'outside 7 days and 48 h → none');
   });
   test('stale-fit fingerprint covers serial SCr and the regimen override', ()=>{
-    const b = bodyOf('bayesInputFingerprint');
-    assert(/readSerialScr\(\)/.test(b) && /regimenOverrideH/.test(b), 'fingerprint must include both');
+    // Rewritten as behaviour (Release 2, Task 14): the old check read the function's text for
+    // `readSerialScr()` and `regimenOverrideH`. Now a serial SCr reading (value, then time) and
+    // the regimen override are edited after a fit, and each must mark it stale.
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      vm.runInContext('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55 }; bState.resultFingerprint = bayesInputFingerprint();', sandbox);
+      assert(!sandbox.bayesFitIsStale(), 'the untouched form is not stale');
+      const scr = env.els['b-scr-row-1'];
+      const sub = (sel) => scr.querySelector(sel);
+      sub('.b-scr-val').value = '1.6';
+      assert(sandbox.bayesFitIsStale(), 'a serial SCr value 1.0 -> 1.6 did not mark the fit stale');
+      sub('.b-scr-val').value = '1.0'; sub('.b-scr-time').value = '18:00';
+      assert(sandbox.bayesFitIsStale(), 'a serial SCr time 06:00 -> 18:00 did not mark the fit stale');
+      sub('.b-scr-time').value = '06:00';
+      assert(!sandbox.bayesFitIsStale(), 'restored, still stale');
+      vm.runInContext('bState.regimenOverrideH = 8;', sandbox);
+      assert(sandbox.bayesFitIsStale(), 'the regimen override (q8h) did not mark the fit stale');
+    });
   });
   test('2-comp SS curve is at steady state and matches the card trough (low CL)', ()=>{
     const CL = 4.5 * Math.pow(20/120, 0.8), Vc = 58.4 * 80/70, Vp = 38.4, Q = 6.5;
@@ -3130,8 +3232,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/ctx\.activeModel === 'goti' && ctx\.dial\) \? 'goti-hd'/.test(code), 'active key must map to goti-hd');
   });
   test('formatElapsed never prints "24.0h" of remainder', ()=>{
-    assert(formatElapsed(47.96) === '2d 0.0h (total 48.0h)', formatElapsed(47.96));
-    assert(formatElapsed(23.96) === '1d 0.0h (total 24.0h)', formatElapsed(23.96));
+    assert(formatElapsed(47.96) === '2 d 0.0 h (total 48.0 h)', formatElapsed(47.96));
+    assert(formatElapsed(23.96) === '1 d 0.0 h (total 24.0 h)', formatElapsed(23.96));
   });
   test('CrCl override is range-checked, not clamped or passed through', ()=>{
     assert(checkValue('3000', 'crclOverride').ok === false && checkValue('45', 'crclOverride').ok === true, '');
@@ -3213,7 +3315,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     for (let i = 0; i < n; i++) doses.push({ mg: dose, tinfH: tinf, timeH: i * tau });
     const f = (a, b, c) => burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels);
     const auc = e => dose * 24 / tau / (pk.TVCL * Math.exp(e[0]));
-    return { f, auc, single: nelderMead3D(f, 0, 0, 0, 400), multi: mapFit(f, 3, om('OMEGA2_CL_GOTI'), om('OMEGA2_VC_GOTI'), 400) };
+    return { f, auc, single: nelderMead3D(f, 0, 0, 0, 400), multi: mapFit(f, 3, om('OMEGA2_CL_GOTI'), om('OMEGA2_VC_GOTI'), 400, om('OMEGA2_VP_GOTI')) };
   };
 
   test('multi-start finds the better MAP minimum a single start missed', ()=>{
@@ -3319,14 +3421,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   console.log('  SUITE 28 — redraw after resize or theme toggle');
   console.log(`${'─'.repeat(60)}`);
 
-  test('every value the redraw passes is stored by the render it repeats', ()=>{
-    const redraw = bodyOf('redrawAllCanvases');
+  test('every value a re-render repeats is stored by the render (Explain and the HD controls re-render from them)', ()=>{
     const render = bodyOf('renderBayesianResults');
     for (const k of ['divergeMsg', 'levelWarnings', 'mic', 'p2c']) {
-      assert(new RegExp('bState\\.' + k).test(redraw), `redraw no longer reads ${k}?`);
       assert(new RegExp('bState\\.' + k + '\\s*=').test(render), `renderBayesianResults must store bState.${k}`);
     }
     assert(/levelWarnings = Array\.isArray\(levelWarnings\) \? levelWarnings : \[\]/.test(render), 'a missing list must not throw');
+  });
+  test('D27: a resize or theme redraw repaints the canvases and the strip; it does not rebuild the result', ()=>{
+    const redraw = bodyOf('redrawAllCanvases');
+    assert(!/renderBayesianResults\s*\(/.test(redraw), 'redrawAllCanvases must not call renderBayesianResults');
+    assert(/refreshProfileGraph\s*\(/.test(redraw), 'the profile curve and the course strip are redrawn');
+    assert(/_tinkSSRedraw/.test(redraw) && /_txTinkView/.test(redraw) && /renderComparisonSection/.test(redraw),
+      'the Tinkerer, Trough tinker and comparison charts are redrawn');
   });
   test('the Tinkerer steady-state canvas never paints default black: it clears, like drawPKGraph', ()=>{
     // A bare fillRect with no fillStyle painted a black slab (design audit 2026-09-28).
@@ -4633,7 +4740,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const pk = sandbox.gotiPopPK(10, 70, true);
     const doses = [{ mg: 1000, tinfH: sandbox.autoTinf(1000), timeH: 9.3 }];
     const levels = [{ conc: 10.3, timeH: 29.7 }];
-    const mf = sandbox.mapFit((a, b, c) => sandbox.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels), 3, K37.OMEGA2_CL_GOTI, K37.OMEGA2_VC_GOTI, 400);
+    const mf = sandbox.mapFit((a, b, c) => sandbox.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, levels), 3, K37.OMEGA2_CL_GOTI, K37.OMEGA2_VC_GOTI, 400, K37.OMEGA2_VP_GOTI);
     const [eCL, eVc, eVp] = mf.eta;
     const r = { model: 'goti', dial: true, CL_ind: pk.TVCL * Math.exp(eCL), V_ind: pk.TVVc * Math.exp(eVc), tbw: 70,
       goti: { Vc_ind: pk.TVVc * Math.exp(eVc), Vp_ind: pk.TVVp * Math.exp(eVp), Q: pk.Q }, levels, doses,
@@ -5226,9 +5333,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(near.tStart === base.tStart && near.tEnd > base.tEnd + 20, `reached with a margin: ${JSON.stringify(near)}`);
     assert(sandbox.profileDomain(doses, 0.1, [], [], base.tEnd + 200).tEnd === base.tEnd, 'a profile opened days later is not flattened to reach it');
     assert(/const nowH = Date\.now\(\) \/ 3600000;/.test(bodyOf40('refreshProfileGraph')), 'one clock read per redraw');
-    assert(/arrive, nowH \}\)/.test(bodyOf40('refreshProfileGraph')) && /r\.hdSessions \|\| \[\], arrive, nowH\);/.test(bodyOf40('refreshProfileGraph')), 'handed to both');
-    assert(/profileDomain\(doses, kelInd, opts\.sessions, levels, tNow\)/.test(bodyOf40('drawProfileGraph')), 'the curve');
-    assert(/profileDomain\(doses, kelInd, sessions, levels, tNow\)/.test(bodyOf40('drawCourseStrip')), 'the strip');
+    assert(/arrive, nowH, held: course\.held \}\)/.test(bodyOf40('refreshProfileGraph')) && /r\.hdSessions \|\| \[\], arrive, nowH, course\.held\);/.test(bodyOf40('refreshProfileGraph')), 'handed to both');   // Task 21b: with the held rows
+    assert(/profileDomain\(doses, kelInd, opts\.sessions, levels, tNow, opts\.held\)/.test(bodyOf40('drawProfileGraph')), 'the curve');   // Task 21b: the held rows stay on the axis
+    assert(/profileDomain\(doses, kelInd, sessions, levels, tNow, held\)/.test(bodyOf40('drawCourseStrip')), 'the strip');
   });
   // Final review (v3.11.0), raised by the reviewer and approved by the user: the model advice was
   // never told the patient is on dialysis, so Goti-HD read "Standard adult — Buelga 2005 is
@@ -5612,9 +5719,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/Hughes 2024/.test(mm(c3, 'buelga')) && /43\.2/.test(mm(c3, 'buelga')) && /Buelga 2005/.test(mm(c3, 'buelga')), mm(c3, 'buelga'));
     assert(mm(c3, 'hughes') === null, 'Hughes on a class-3 patient fits');
     const c1 = rec({ tbw: 100, ht: 175 });                       // BMI 32.7
-    assert(/BMI ≥ 40|40 or more/.test(mm(c1, 'hughes') || '') && /32\.7/.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
+    // v3.15.0 (D27): the Hughes line names the built range (Table 1) and the direction.
+    assert(/BMI 40–70\.3; this patient's BMI \(32\.7\) is below that range\./.test(mm(c1, 'hughes') || ''), String(mm(c1, 'hughes')));
     assert(mm(rec({ n: 2, tbw: 70, ht: 175 }), 'buelga') === null, 'two levels suggest Goti, but that is not a population mismatch');
-    assert(/BMI is 39\.9\./.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
+    assert(/BMI \(39\.9\) is below/.test(mm(rec({ tbw: 129.43, ht: 180 }), 'hughes') || ''), 'BMI 39.95 on Hughes never reads "40.0": ' + mm(rec({ tbw: 129.43, ht: 180 }), 'hughes'));
     assert(mm(rec({ tbw: 70, ht: 175, hd: true }), 'buelga') === null, 'dialysis has its own handling (D16)');
     const v = code42.slice(code42.indexOf('const confBlock = `'), code42.indexOf('const nextBlock'));
     assert(/modelMismatchText\(/.test(code42) && /vx-mismatch/.test(v), 'the line sits in the confidence slot');
@@ -5709,7 +5817,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[34]\.0';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[345]\.0';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -5851,8 +5959,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('43.10 every fit path decides through regimenDecision; dialysis and the severe-renal hold pass no current regimen', () => {
     // Since Task 9 each path builds one decisionArgs (stored on the result, so finalizeDecision
     // re-decides on exactly the same inputs) and decides from it; it carries the fit's "now" (D-b).
-    const calls = code43.match(/const decisionArgs = \{[^;]*\bdoses: decisionDoses, row: aucUncertaintyRow\(filteredLevels\.length, '(goti|hughes|buelga)'\), nowH: fitNowH \};\s*const rec = regimenDecisionOf\(decisionArgs\);/g) || [];
-    assert(calls.length === 3, `${calls.length} of 3 fit paths pass decisionDoses and their own model's row`);
+    // Since Task 19 (D27) the row also carries the fit's early-level test (earlyFit, from earlyLevelFractions).
+    // Since Task 19 fix round 2 (R47) the row follows the most recent level (latestLevelEarly).
+    const calls = code43.match(/const earlyFit = latestLevelEarly\(filteredLevels, doses, t12_ind, '(goti|hughes|buelga)'\);[^\n]*\n\s*const decisionArgs = \{[^;]*\bdoses: decisionDoses, row: aucUncertaintyRow\(filteredLevels\.length, '\1', earlyFit\), nowH: fitNowH \};\s*const rec = regimenDecisionOf\(decisionArgs\);/g) || [];
+    assert(calls.length === 3, `${calls.length} of 3 fit paths pass decisionDoses and their own model's row, chosen by the early-level test at their own model's threshold`);
     assert((code43.match(/\brec, decisionArgs, doses\b/g) || []).length === 3, 'every fit path stores its decisionArgs on the result');
     assert(!/const rec = bayesDoseOptimizer\(/.test(code43), 'no fit path calls the optimizer directly');
     assert(/const decisionDoses = \(bState\.dial \|\| isOnDial \|\| \(lowCrClInfo\.detected && filteredLevels\.length === 0\)\) \? null : doses;/.test(code43),
@@ -5921,7 +6031,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.14\.0';/.test(src43), 'v3.14.0');
+    assert(/const APP_VERSION = '3\.1[45]\.0';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -6146,9 +6256,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const shownAfter = h.atH - start, lvl = 30 * Math.exp(-kel * (shownAfter - 8.4));
     assert(shownAfter >= exact - 1e-9 && lvl < K44.TROUGH_HIGH_MGL, `shown ${shownAfter.toFixed(3)} h, level there ${lvl.toFixed(3)} mg/L`);
     const calc = body44('calculate');
-    assert(/troughHold\(nextPre, tau, adjKel, doseStartHourOf\('time-dose-given'\), tDoseToLvl > tinf \? \{ c: levelVal, h: tDoseToLvl \} : null\)/.test(calc),
+    assert(/troughHold\(nextPre, tau, adjKel, doseStartHourOf\('time-dose-given'\), tDoseToLvl > tinf \? \{ c: levelVal, h: tDoseToLvl \} : null, calculationNowH\(\)\)/.test(calc),   // Task 21b: and now
       'level mode passes the level and its time to troughHold');
-    assert(/troughHold\([^;]*\{ c: tlC2, h: tlT2 \}\)/.test(calc), 'two-level mode times from level 2');
+    assert(/troughHold\([^;]*\{ c: tlC2, h: tlT2 \}, calculationNowH\(\)\)/.test(calc), 'two-level mode times from level 2');   // Task 21b: and now
   });
   test('44.5d the projection: none under "recheck a level", and it starts at the resume time under a hold', () => {
     const pd = fn44('projectedDoses');
@@ -6187,7 +6297,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const defaults = { 'cl-model': 'vancopk', 'vd-model': 'vancopk', 'trough-min': '10', 'trough-max': '20', mic: '1' };
     Object.entries(Object.assign(defaults, vals)).forEach(([k, val]) => { get(k).value = String(val); });
     ((extra && extra.checked) || []).forEach(id => { get(id).checked = true; });
-    const prevDoc = sandbox.document, prevST = sandbox.setTimeout;
+    const prevDoc = sandbox.document, prevST = sandbox.setTimeout, prevNow = sandbox.calculationNowH;
+    // The calculation's "now" (Task 21b): half an hour after the latest date-time typed, so a fixture's hold does not
+    // depend on the day the suite runs (a level that has fallen to 20 by now is no hold).
+    const stamps = Object.values(vals).filter(x => typeof x === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(x)).map(x => new Date(x).getTime() / 3600000);
+    if (stamps.length) sandbox.calculationNowH = () => Math.max(...stamps) + 0.5;
     sandbox.document = { getElementById: get, querySelector: () => null, querySelectorAll: () => [], createElement: () => new El(''), body: {} };
     sandbox.setTimeout = (f) => { if (typeof f === 'function') f(); return 0; };   // announceResult's delay
     try {
@@ -6199,9 +6313,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       if (vals['init-interval'] != null) get('init-interval').value = String(vals['init-interval']);
       fn44('calculate')();
       const h = get('results-content').innerHTML;
-      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent };
+      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent, hint: get('interval-hint').textContent };
     } finally {
-      sandbox.document = prevDoc; sandbox.setTimeout = prevST;
+      sandbox.document = prevDoc; sandbox.setTimeout = prevST; sandbox.calculationNowH = prevNow;
       vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null;`, sandbox);
     }
   };
@@ -6310,7 +6424,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/At q12h the target cannot be reached within the conventional ceilings/.test(tl.text) && /1\.5 g IV q8h/.test(tl.text)
       && !/alternative agent|specialist guidance/.test(tl.text), `two-level: ${tl.text.slice(0, 700)}`);
     assert(rl.text.indexOf('The target cannot be reached within the conventional ceilings') > 0 && /alternative agent/.test(rl.text)
-      && /No interval from q6h to q48h reaches/.test(rl.text), `random-level: ${rl.text.slice(0, 700)}`);
+      && /No interval from q8h to q48h reaches/.test(rl.text), `random-level: ${rl.text.slice(0, 700)}`);   // Task 21b: random-level offers q8h-q48h
     assert(/id="prn-redose-thresh"/.test(rl.h), 'random-level keeps the level-based PRN calculator');
   });
 
@@ -6983,6 +7097,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // Fictional 30 M, 125 kg, 170 cm (BMI 43.3), SCr 0.9, Hughes; 1.5 g q12h x 4 over 2 h, the last
   // 11.5 h ago; one level, 14 mg/L, now. A real fit and a real Low rating (controller ruling R2 was
   // not needed for 44.17; 44.18 passes constructed ratings, which finalizeDecision takes as an argument).
+  // Task 19 (D27): the level is at 82% of steady state at the fitted half-life, above Hughes'
+  // SS_FRACTION_EARLY, so it reads the steady-state band, as before.
   const lowHughes = () => fit44({ model: 'hughes', age: 30, tbw: 125, ht: 170, scr: 0.9, mg: 1500, tinf: 2, tau: 12, n: 4, lastAgo: 11.5, levels: [{ conc: 14, after: 11.5 }] });
   // The fit's own decision, before finalizeDecision: what runBayesian decided on decisionArgs.
   const unprotected44 = (r) => { const a = r.decisionArgs; return fn44('regimenDecision')(a.CL, a.V, a.target, a.bag, a.mic, a.doses, a.row, { nowH: a.nowH }); };
@@ -7317,6 +7433,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
   };
   const statusText44 = (env) => env.status.map(s => s.textContent).join(' | ');
+  Object.assign(__suiteShared, { profEnv44, withProf44, profFixture44, PROF_KEY44, fit44, c1Case, trough44 });   // SUITE 45 reuses them
 
   test('44.24 a malformed profile (no demographics, no snapshot, a non-numeric savedAt) does not throw, leaves the form untouched and says so', () => {
     const base = profFixture44[0];
@@ -8056,14 +8173,1378 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 45 — Release 2 (v3.15.0, D27): the harness reads the Hughes variability constants
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 45 — Release 2 (v3.15.0, D27)');
+  console.log(`${'─'.repeat(60)}`);
+
+  // 45.1 (code review, rule 6): the Hughes omega^2 / sigma values were hand copies in this harness, so
+  // changing one in index.html left every Hughes test green. This runs the engine's own MAP path
+  // (mapFit over burtonObj3D_hughes, as runBayesian calls it) on a fictional obese patient with two
+  // levels and pins the posterior clearance tightly enough that doubling ANY one of the five
+  // constants moves it outside the tolerance.
+  test('45.1 Hughes MAP fit: posterior clearance pins all five variability constants', () => {
+    // Fictional: 45 y M, 140 kg, 175 cm (BMI 45.7), SCr 1.0 mg/dL; 2 g over 2 h, q12h x 4.
+    // Two measured levels (not model-generated): 1 h after the end of dose 3, and the pre-dose 4 trough.
+    const ffm = computeFFM(140, 175, 'M');
+    const crclFFM = Math.max(__extractConsts().CRCL_MODEL_FLOOR, sandbox.calcCrClRaw(45, 'M', 1.0, ffm, vm.runInContext('SCR_POLICY.ACTUAL', sandbox)));
+    const pk = hughesPopPK(crclFFM, ffm);
+    const doses = [0, 12, 24, 36].map(t => ({ mg: 2000, tinfH: 2, timeH: t }));
+    const levels = [{ conc: 38, timeH: 27 }, { conc: 21, timeH: 36 }];
+    const mf = sandbox.mapFit((a, b, c) => burtonObj3D_hughes(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, levels),
+      3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES);
+    const CL = pk.TVCL * Math.exp(mf.eta[0]);
+    // Measured 2026-11 on this fixture: 4.42996 L/h. Doubling any one constant moves it by at least
+    // 0.0067 (OMEGA2_VC_HUGHES, the weakest), and by 0.24 (OMEGA2_CL), 0.13 (OMEGA2_VP), 0.25 (SIGMA_PROP),
+    // 0.045 (SIGMA_ADD); the tolerance is a third of the smallest of those.
+    assertClose(CL, 4.4300, 0.002, 'posterior CL (L/h)');
+  });
+
+  // 45.2 (models review I1, Task 17): the 3-parameter MAP fit never started away from zero on Vp, so on
+  // Hughes (Vp 80.3% CV, the widest prior) it could settle in the higher of two minima along the CL-Vp
+  // ridge and say nothing. These seven fictional patients are every case docs/audit/probe-map-starts.cjs
+  // found missed (seeded; 1,500 per design; four from --regimen=guideline, three from --regimen=target;
+  // concentrations rounded to 0.01 mg/L and re-checked). Each carries the objective and clearance of the
+  // lowest minimum a 27-start reference ({-1,0,+1} SD on CL, Vc and Vp) reaches. Before the fix mapFit
+  // stopped 0.026-0.38 objective units above it, with clearance 11-55% higher. Fixture 2 is the one that
+  // +/-1 SD on Vp alone did not reach (its lower minimum sits at eta Vp 1.39, about 2 SD). Tolerance:
+  // 1e-4 objective units (-2 log posterior), 260x smaller than the smallest of those gaps; clearance
+  // within 0.01 L/h. All are slow clearers on q24h or q36h.
+  test('45.2 Hughes MAP fit starts on Vp too: seven missed Hughes cases reach the lower minimum; all four Goti/Hughes call sites pass their omega2 Vp', () => {
+    const fixtures = [
+      { design: 'peak-trough',   patient: { sex: 'F', ht: 175, tbw: 198.1, age: 48, scr: 1.99 }, course: { mg: 2500, tinfH: 2.5, tau: 24 },
+        levels: [{ timeH: 147.5, conc: 44.13 }, { timeH: 167.5, conc: 6.37 }],                                 refObj: 16.661163, refCL: 3.1852 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 179, tbw: 209.5, age: 24, scr: 2.16 }, course: { mg: 2500, tinfH: 2.5, tau: 24 },
+        levels: [{ timeH: 119.5, conc: 9.4 }, { timeH: 143.5, conc: 10.82 }, { timeH: 167.5, conc: 10.88 }],     refObj: 7.311188,  refCL: 4.1201 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 164, tbw: 117.4, age: 65, scr: 2.34 }, course: { mg: 1750, tinfH: 2,   tau: 36 },
+        levels: [{ timeH: 179.5, conc: 8.98 }, { timeH: 215.5, conc: 19.6 }, { timeH: 251.5, conc: 18.36 }],     refObj: 10.405557, refCL: 1.6273 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 150, tbw: 112.7, age: 20, scr: 2.17 }, course: { mg: 1750, tinfH: 2,   tau: 24 },
+        levels: [{ timeH: 119.5, conc: 10.66 }, { timeH: 143.5, conc: 16.78 }, { timeH: 167.5, conc: 17.86 }],   refObj: 6.752988,  refCL: 2.5218 },
+      { design: 'one-trough',    patient: { sex: 'M', ht: 187, tbw: 238.2, age: 75, scr: 1.61 }, course: { mg: 1500, tinfH: 1.5, tau: 24 },
+        levels: [{ timeH: 167.5, conc: 2.61 }],                                                                  refObj: 11.618928, refCL: 4.8723 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 153, tbw: 128,   age: 58, scr: 1.98 }, course: { mg: 750,  tinfH: 1,   tau: 24 },
+        levels: [{ timeH: 119.5, conc: 5.73 }, { timeH: 143.5, conc: 3.23 }, { timeH: 167.5, conc: 4.99 }],      refObj: 11.687872, refCL: 2.0305 },
+      { design: 'three-troughs', patient: { sex: 'F', ht: 161, tbw: 108.5, age: 46, scr: 2.47 }, course: { mg: 750,  tinfH: 1,   tau: 24 },
+        levels: [{ timeH: 119.5, conc: 5.69 }, { timeH: 143.5, conc: 10.02 }, { timeH: 167.5, conc: 4.22 }],     refObj: 13.179912, refCL: 1.8788 },
+    ];
+    const ACTUAL = vm.runInContext('SCR_POLICY.ACTUAL', sandbox), FLOOR = __extractConsts().CRCL_MODEL_FLOOR;
+    const sd = [OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, OMEGA2_VP_HUGHES].map(Math.sqrt);
+    for (const [k, f] of fixtures.entries()) {
+      const p = f.patient, ffm = computeFFM(p.tbw, p.ht, p.sex);
+      const pk = hughesPopPK(Math.max(FLOOR, sandbox.calcCrClRaw(p.age, p.sex, p.scr, ffm, ACTUAL)), ffm);   // getHughesCrCl
+      const doses = Array.from({ length: 8 }, (_, i) => ({ mg: f.course.mg, tinfH: f.course.tinfH, timeH: i * f.course.tau }));
+      const obj = (a, b, c) => burtonObj3D_hughes(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, doses, f.levels);
+      // As runBayesian calls it.
+      const mf = sandbox.mapFit(obj, 3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES);
+      // The wide reference, recomputed here so the pinned value is not the only anchor.
+      let ref = Infinity;
+      for (const i of [-1, 0, 1]) for (const j of [-1, 0, 1]) for (const m of [-1, 0, 1]) {
+        const x = nelderMead3D(obj, i * sd[0], j * sd[1], m * sd[2], 400); ref = Math.min(ref, obj(...x));
+      }
+      const tag = `fixture ${k + 1} (${f.design}, ${p.sex} ${p.age} y ${p.tbw} kg)`;
+      assertClose(ref, f.refObj, 1e-4, `${tag}: 27-start reference objective`);
+      assertClose(mf.obj, f.refObj, 1e-4, `${tag}: mapFit objective (the lower minimum)`);
+      assertClose(pk.TVCL * Math.exp(mf.eta[0]), f.refCL, 0.01, `${tag}: posterior CL (L/h)`);
+    }
+    // Every 3-parameter call site passes its own model's peripheral-volume variance (Goti and Hughes, in
+    // runBayesian and in modelAgreement). A call that omits it silently loses the Vp starts.
+    const calls = [...html.matchAll(/mapFit\([^;]*?,\s*3,\s*OMEGA2_CL_(GOTI|HUGHES),\s*OMEGA2_VC_\1,\s*\d+\s*(,\s*OMEGA2_VP_(\w+)\s*)?\)/g)];
+    // Exactly four: Goti and Hughes in runBayesian and in modelAgreement. A fifth 3-parameter call (or one
+    // the regex stops matching) changes the count and must be added here deliberately.
+    assert(calls.length === 4, `expected exactly 4 three-parameter mapFit calls, found ${calls.length}`);
+    for (const c of calls) assert(c[3] === c[1], `a ${c[1]} mapFit call does not pass OMEGA2_VP_${c[1]}: …${c[0].slice(-70).replace(/\s+/g, ' ')}`);
+  });
+
+  // 45.3 (models review I3, Task 18): Hughes 2024 was built in 83 patients whose covariates span the
+  // ranges in its Table 1 (p. 578). CrCl on fat-free mass is uncapped, faithfully, and clearance rises as a
+  // power of it, so a patient outside that range is the model extrapolating. The clinician is told in one
+  // line in the confidence slot; nothing is capped or changed (rule 4). The ranges are pinned against the
+  // paper once, here; every other use reads them from harness_constants (rule 6).
+  test('45.3 Hughes out of its built range: one line in the confidence slot names the covariate and the range; in range, none', () => {
+    const K = __extractConsts(), mm = sandbox.modelMismatchText;
+    // Hughes 2024 Table 1 (p. 578), development dataset (n = 83), the Range column.
+    const T1 = [['HUGHES_MIN_WT_KG', 91.6], ['HUGHES_MAX_WT_KG', 218], ['HUGHES_MIN_HT_CM', 122], ['HUGHES_MAX_HT_CM', 190],
+      ['HUGHES_MIN_BMI', 40], ['HUGHES_MAX_BMI', 70.3], ['HUGHES_MIN_AGE_Y', 24.2], ['HUGHES_MAX_AGE_Y', 89.3],
+      ['HUGHES_MIN_SCR', 0.40], ['HUGHES_MAX_SCR', 2.51], ['HUGHES_MIN_CRCL_FFM', 13.0], ['HUGHES_MAX_CRCL_FFM', 255]];
+    for (const [n, v] of T1) assert(K[n] === v, `${n} ${K[n]}: Table 1 gives ${v}`);
+    // The shipped covariate function, fed a fictional patient (getHughesCrCl reads the form through readBayesPatient).
+    const hughesCrCl = (age, sex, scr, tbw, ht) => {
+      const prev = sandbox.readBayesPatient;
+      sandbox.readBayesPatient = () => ({ age, sex, scr, tbw, ht });
+      try { return sandbox.getHughesCrCl(); } finally { sandbox.readBayesPatient = prev; }
+    };
+    const rec = (tbw, ht) => sandbox.getModelRecommendation(0, false, tbw, ht, false);
+    const cov = (age, scr, tbw, ht, sex) => ({ age, scr, tbw, ht, crclFFM: hughesCrCl(age, sex || 'M', scr, tbw, ht) });
+    // The brief's fictional patient: 25 y M, 200 kg, 185 cm (BMI 58.4), SCr 0.5 mg/dL. Independent anchor:
+    // FFM = 9270 x 200 / (6680 + 216 x 58.44) = 96.05 kg (Janmahasatian); CG = 115 x 96.05 / (72 x 0.5) = 306.8.
+    const big = cov(25, 0.5, 200, 185);
+    assertClose(big.crclFFM, 306.8, 0.1, 'getHughesCrCl, 25 y M, 200 kg, 185 cm, SCr 0.5');
+    const r200 = rec(200, 185);
+    assert(r200.recommended === 'hughes' && r200.isClass3, 'the fixture is a class-3 patient for whom Hughes is suggested');
+    const line = mm(r200, 'hughes', big);
+    assert(/^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's CrCl on fat-free mass \(307 mL\/min\) is above that range\.$/.test(line || ''), String(line));
+    // One line, one sentence, caution not alarm.
+    assert(!/\n/.test(line) && !/\.\s/.test(line) && !/!/.test(line) && !/weight|BMI|age|height|creatinine/.test(line), `one sentence naming only the out-of-range covariate: ${line}`);
+    // In range: the 45.1 patient, 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103).
+    const mid = cov(45, 1.0, 140, 175);
+    assert(mid.crclFFM > 100 && mid.crclFFM < 110, `in-range fixture CrCl on FFM ${mid.crclFFM}`);
+    assert(mm(rec(140, 175), 'hughes', mid) === null, `in range: ${mm(rec(140, 175), 'hughes', mid)}`);
+    // Each covariate, each bound, each side. The bound itself is in range. Just beyond it, the value shown is
+    // the patient's own: one more decimal when rounding would land on the bound, never a stepped number.
+    const c3 = (bmi) => ({ recommended: 'hughes', isClass3: bmi >= K.HUGHES_MIN_BMI, isObese: true, bmi });
+    const base = { bmi: 46, age: 56, scr: 0.84, tbw: 134, ht: 170, crclFFM: 84 };   // Table 1 medians
+    const at = (o) => { const p = Object.assign({}, base, o); return mm(c3(p.bmi), 'hughes', p); };
+    const one = (o, rng, said, dir) => {
+      const t = at(o), re = new RegExp(`^Hughes 2024 was built in patients with ${rng}; this patient's ${said} is ${dir} that range\\.$`);
+      assert(re.test(t || ''), `${JSON.stringify(o)}: ${t}`);
+    };
+    const edge = [
+      ['crclFFM', 'CrCl on fat-free mass 13–255 mL\\/min', [[255.2, 'CrCl on fat-free mass \\(255\\.2 mL\\/min\\)', 'above'], [256.4, 'CrCl on fat-free mass \\(256 mL\\/min\\)', 'above'],
+        [12.9, 'CrCl on fat-free mass \\(12\\.9 mL\\/min\\)', 'below'], [12.4, 'CrCl on fat-free mass \\(12 mL\\/min\\)', 'below']], K.HUGHES_MIN_CRCL_FFM, K.HUGHES_MAX_CRCL_FFM],
+      ['tbw', 'weight 91\\.6–218 kg', [[218.04, 'weight \\(218\\.04 kg\\)', 'above'], [230, 'weight \\(230 kg\\)', 'above'], [91.58, 'weight \\(91\\.58 kg\\)', 'below']], K.HUGHES_MIN_WT_KG, K.HUGHES_MAX_WT_KG],
+      ['ht', 'height 122–190 cm', [[190.4, 'height \\(190\\.4 cm\\)', 'above'], [195, 'height \\(195 cm\\)', 'above'], [121.6, 'height \\(121\\.6 cm\\)', 'below']], K.HUGHES_MIN_HT_CM, K.HUGHES_MAX_HT_CM],
+      ['bmi', 'BMI 40–70\\.3', [[70.31, 'BMI \\(70\\.31\\)', 'above'], [75, 'BMI \\(75\\)', 'above'], [39.95, 'BMI \\(39\\.95\\)', 'below']], K.HUGHES_MIN_BMI, K.HUGHES_MAX_BMI],
+      ['age', 'age 24\\.2–89\\.3 years', [[24, 'age \\(24 years\\)', 'below'], [89.33, 'age \\(89\\.33 years\\)', 'above'], [90, 'age \\(90 years\\)', 'above']], K.HUGHES_MIN_AGE_Y, K.HUGHES_MAX_AGE_Y],
+      ['scr', 'serum creatinine 0\\.4–2\\.51 mg\\/dL', [[0.3, 'serum creatinine \\(0\\.3 mg\\/dL\\)', 'below'], [0.396, 'serum creatinine \\(0\\.396 mg\\/dL\\)', 'below'], [2.6, 'serum creatinine \\(2\\.6 mg\\/dL\\)', 'above']], K.HUGHES_MIN_SCR, K.HUGHES_MAX_SCR],
+    ];
+    for (const [k, rng, cases, lo, hi] of edge) {
+      assert(at({ [k]: lo }) === null && at({ [k]: hi }) === null, `${k} at either bound (${lo}, ${hi}) is in range: ${at({ [k]: lo })} / ${at({ [k]: hi })}`);
+      for (const [v, said, dir] of cases) one({ [k]: v }, rng, said, dir);
+    }
+    // Several at once: still one sentence, naming each, in Table 1's order.
+    const many = at({ age: 92, tbw: 230, bmi: 72, scr: 2.8, crclFFM: 307 });
+    assert(/^Hughes 2024 was built in patients with weight 91\.6–218 kg, BMI 40–70\.3, age 24\.2–89\.3 years, serum creatinine 0\.4–2\.51 mg\/dL and CrCl on fat-free mass 13–255 mL\/min; this patient's weight \(230 kg\), BMI \(72\), age \(92 years\), serum creatinine \(2\.8 mg\/dL\) and CrCl on fat-free mass \(307 mL\/min\) are above those ranges\.$/.test(many || ''), String(many));
+    const mixed = mm(rec(110, 172), 'hughes', Object.assign({}, base, { tbw: 110, ht: 172, crclFFM: 300 }));   // BMI 37.18
+    assert(/^Hughes 2024 was built in patients with BMI 40–70\.3 and CrCl on fat-free mass 13–255 mL\/min; this patient's BMI \(37\.2\) is below and CrCl on fat-free mass \(300 mL\/min\) is above those ranges\.$/.test(mixed || ''), String(mixed));
+    // Without the fitted covariates only BMI (from the recommendation) is checked.
+    assert(/this patient's BMI \(75\) is above that range\.$/.test(mm(c3(75), 'hughes') || ''), String(mm(c3(75), 'hughes')));
+    // Another model: Hughes' range says nothing about it; the class-3 mismatch line stands.
+    assert(/^Hughes 2024 is fitted to class 3 obesity \(BMI 58\.4\); this result uses Goti 2018\.$/.test(mm(r200, 'goti', big) || ''), String(mm(r200, 'goti', big)));
+    // The Models gist's "Suggested:" is the choice of model only: a Hughes patient on Hughes outside the
+    // range is never told Hughes is suggested; a class-3 patient on Buelga, and BMI 32.7 on Hughes, are.
+    const sug = sandbox.modelSuggestedName;
+    assert(typeof sug === 'function', 'modelSuggestedName() is missing');
+    assert(sug(c3(75), 'hughes') === null && sug(r200, 'hughes') === null, `Hughes on Hughes: ${sug(c3(75), 'hughes')}`);
+    assert(sug(r200, 'buelga') === 'Hughes 2024', `class 3 on Buelga: ${sug(r200, 'buelga')}`);
+    assert(sug(rec(100, 175), 'hughes') === 'Goti 2018', `BMI 32.7 on Hughes: ${sug(rec(100, 175), 'hughes')}`);
+    assert(sug(rec(70, 175), 'buelga') === null && sug(rec(70, 175), 'goti') === null, 'no population mismatch, no suggestion');
+  });
+
+  // ── Task 14: direct behaviour tests, one per mutant the code review saw survive (I3, I4, I5) ──
+  // docs/audit/mutation.cjs breaks each line in memory and runs this suite; every test below
+  // names the mutant id it kills. 45.2-45.4 are reserved for Tasks 17-19. Fictional values only.
+  const K45 = __extractConsts();
+  const fn45 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const run45 = (js) => vm.runInContext(js, sandbox);
+  const P45 = run45('SCR_POLICY');
+  const row45 = (n, m) => fn45('aucUncertaintyRow')(n, m || 'buelga');
+  const hist45 = (mg, tau, n) => Array.from({ length: n || 4 }, (_, i) => ({ mg, tinfH: fn45('autoTinf')(mg), timeH: i * tau }));
+  const decide45 = (cl, v, doses, row) => fn45('regimenDecision')(cl, v, 450, null, 1, doses, row || row45(1));
+
+  // 45.4 (models review I2, Task 19): the AUC uncertainty rows were simulated for steady-state troughs. For
+  // levels drawn before steady state (after a loading dose) the Hughes 80% band covered only 64.7-68% of
+  // simulated patients, and the 20 dots and the D25 continue-or-change count still read it. Early-design
+  // rows are now simulated (docs/audit/uncertainty-by-model.cjs --early) and chosen by the one test the
+  // "Early level" note uses (earlyLevelFractions, rule 2).
+  test('45.4a an early-level fit reads the band simulated for early levels: wider than the steady-state row at 1, 2 and 3+ levels, every model; with no levels nothing is early [T19-3]', () => {
+    const R = fn45('aucUncertaintyRow');
+    for (const m of ['buelga', 'goti', 'hughes']) {
+      for (const n of [1, 2, 3]) {
+        const ss = R(n, m, false), ea = R(n, m, true);
+        assert(ss.design === 'steady' && ea.design === 'early' && ea.n === n, `${m} n=${n}: designs ${ss.design} / ${ea.design}`);
+        assert(ea.lo >= ss.lo && ea.hi >= ss.hi && ea.lo + ea.hi > ss.lo + ss.hi,
+          `${m} n=${n}: early −${ea.lo} / +${ea.hi} is not wider than steady-state −${ss.lo} / +${ss.hi}`);
+        assert(ea.id !== ss.id && R(n, m).id === ss.id, `${m} n=${n}: early omitted reads the steady-state row`);
+      }
+      assert(R(5, m, true).id === R(3, m, true).id, `${m}: more than 3 early levels read the 3-level early row`);
+      const w = n => R(n, m, true).lo + R(n, m, true).hi;
+      assert(w(1) >= w(2) && w(2) >= w(3), `${m}: more early levels must not widen the band: ${[1, 2, 3].map(w).join(' → ')}`);
+      assert(R(0, m, true).id === R(0, m, false).id, `${m}: with no levels nothing is early`);
+    }
+    // The brief's named case, against the steady-state row it replaces (−18% / +28%).
+    const h1 = R(1, 'hughes', true), h1s = R(1, 'hughes', false);
+    assert(h1.lo + h1.hi > h1s.lo + h1s.hi, `hughes 1 level: −${h1.lo}/+${h1.hi} vs −${h1s.lo}/+${h1s.hi}`);
+    assert(fn45('aucUncertaintyRow')(1, 'goti-hd', true).key === 'goti', 'Goti-HD reads the Goti rows, as before');
+    // The early-level test is per model (SS_FRACTION_EARLY, a preference); Goti-HD reads Goti's threshold.
+    const T = run45('SS_FRACTION_EARLY'), ef = fn45('earlyLevelFractions');
+    assert(['buelga', 'goti', 'hughes'].every(m => T[m] > 0 && T[m] < 1), `SS_FRACTION_EARLY ${JSON.stringify(T)}`);
+    const lv = [{ timeH: 30 }], ds = [{ timeH: 0 }], t12For = f => -30 * Math.LN2 / Math.log(1 - f);   // the half-life that puts the level at f
+    for (const m of ['buelga', 'goti', 'hughes']) {
+      assert(ef(lv, ds, t12For(T[m] - 0.01), m).length === 1 && ef(lv, ds, t12For(T[m] + 0.01), m).length === 0, `${m}: the cut is at ${T[m]}`);
+    }
+    assert(ef(lv, ds, t12For(T.goti - 0.01), 'goti-hd').length === 1 && ef(lv, ds, t12For(T.goti + 0.01), 'goti-hd').length === 0, 'Goti-HD reads the Goti threshold');
+    assert(/levels drawn before steady state/.test(fn45('aucUncertaintyText')(1, 'hughes', true)) && /steady-state troughs/.test(fn45('aucUncertaintyText')(1, 'hughes', false)),
+      'the label names the design its band was simulated for');
+  });
+  // Fictional Hughes fixtures for 45.4b-d: 45 y M, 140 kg, 175 cm, SCr 1.0 (CrCl on FFM 103, inside Hughes Table 1).
+  const P454 = { model: 'hughes', age: 45, tbw: 140, ht: 175, scr: 1.0 };
+  const fit454 = (course, levels) => __suiteShared.fit44(Object.assign({}, P454, course, { levels }));
+  const cut454 = () => run45('SS_FRACTION_EARLY').hughes;
+  const fracLast454 = (r) => { const t = Math.max(...r.levels.map(l => l.timeH)); return 1 - Math.exp(-Math.LN2 / r.t12_ind * (t - r.doses[0].timeH)); };
+  test('45.4b one row per fit: a Low-confidence early Hughes fit through runBayesian; the dots, the likely range, regimenDecision and finalizeDecision\'s re-decide read the same early row, and the Next line quotes it [T19-2]', () => {
+    const { fit44 } = __suiteShared;
+    assert(typeof fit44 === 'function', 'the SUITE 44 fit driver');
+    const R = fn45('aucUncertaintyRow');
+    // Spy on the two consumers: regimenDecision (row is its 7th argument, opts its 8th: finalizeDecision's
+    // re-decide passes protectInRange) and aucRangeSVG (the 20 dots, their in-band count and the "likely" range).
+    const real = { regimenDecision: sandbox.regimenDecision, aucRangeSVG: sandbox.aucRangeSVG };
+    const seen = { decision: [], range: [] };
+    sandbox.regimenDecision = function (...a) { seen.decision.push({ row: a[6], protect: !!(a[7] && a[7].protectInRange) }); return real.regimenDecision.apply(this, a); };
+    sandbox.aucRangeSVG = function (...a) { seen.range.push({ auc: a[0], row: a[1] }); return real.aucRangeSVG.apply(this, a); };
+    let fit;
+    // 750 mg q8h x 3; one level, 12 mg/L, 3 h after the start of dose 3 (19 h after the first). Low confidence
+    // (the models disagree); on the early row the fit's own answer is a 2-dot change from an in-range 750 mg
+    // q8h, which ruling 3 sets aside: finalizeDecision re-decides.
+    try { fit = fit454({ mg: 750, tinf: fn45('autoTinf')(750), tau: 8, n: 3, lastAgo: 3 }, [{ conc: 12, after: 3 }]); }
+    finally { Object.assign(sandbox, real); }
+    const { r, html, text, conf } = fit;
+    const early = fn45('earlyLevelFractions')(r.levels, r.doses, r.t12_ind, 'hughes');
+    assert(early.length === 1 && fn45('latestLevelEarly')(r.levels, r.doses, r.t12_ind, 'hughes'), `the fixture is an early level by the shared test: ${JSON.stringify(early)} (t½ ${r.t12_ind})`);
+    assert(/Early level/.test(text), 'the Early level note is shown');
+    const want = R(1, 'hughes', true);
+    assert(want.design === 'early', `the early row: ${JSON.stringify(want)}`);
+    assert(conf.rank >= 2 && r.recFinal === true && r.rec.continueReason === 'low-confidence', `Low confidence, finalized: ${conf.level} ${r.rec.action} ${r.rec.continueReason}`);
+    assert(seen.decision.some(x => x.protect) && seen.decision.some(x => !x.protect) && seen.range.length === 1,
+      `consumers called: decision ${JSON.stringify(seen.decision.map(x => x.protect))}, range ${seen.range.length}`);
+    const ids = { stored: r.decisionArgs.row.id, decision: seen.decision.map(x => x.row && x.row.id), range: seen.range[0].row.id };
+    assert(ids.stored === want.id && ids.decision.every(id => id === want.id) && ids.range === want.id, `rows read: ${JSON.stringify(ids)}, want ${want.id}`);
+    // What the reader sees comes from that row: the likely range, its percentages and the dot count.
+    const auc = r.rec.auc24;
+    const lk = text.match(/likely (\d+) to (\d+)/), pc = html.match(/\(−(\d+)% \/ \+(\d+)%\)/), dots = text.match(/(\d+) of 20 plausible AUCs/);
+    assert(lk && +lk[1] === +(auc * (1 - want.lo)).toFixed(0) && +lk[2] === +(auc * (1 + want.hi)).toFixed(0), `likely range ${lk && lk[0]} for AUC ${auc}`);
+    assert(pc && +pc[1] === Math.round(want.lo * 100) && +pc[2] === Math.round(want.hi * 100), `percentages ${pc && pc[0]}`);
+    assert(dots && +dots[1] === fn45('attainmentDots')(auc, want), `dots ${dots && dots[0]} vs ${fn45('attainmentDots')(auc, want)}`);
+    // The Next line (nextLevelValue, as bayesNextLevel calls it; read at High confidence so the band
+    // branch is reached): the band now is the early row's; the next is the steady-state row for one more
+    // level (R47: a further level drawn at steady state moves the fit onto it), from steadyFromH.
+    const fitHi = fn45('nextLevelFit')(r, { rank: 0, level: 'High', reasons: [] }, null);
+    const nl = fn45('nextLevelValue')(auc, 1, 'hughes', 8, r.CL_ind, fitHi);
+    const next = R(2, 'hughes', false);
+    assert(fitHi.early === true, 'nextLevelFit reads the early row');
+    assertClose(nl.loNow, auc * (1 - want.lo), 1e-6, 'the Next line\'s band now is the early row\'s (low)');
+    assertClose(nl.hiNow, auc * (1 + want.hi), 1e-6, 'the Next line\'s band now is the early row\'s (high)');
+    assertClose(nl.loNext, auc * (1 - next.lo), 1e-6, 'the next band is the steady-state row for one more level (low)');
+    assertClose(nl.hiNext, auc * (1 + next.hi), 1e-6, 'the next band is the steady-state row for one more level (high)');
+    assertClose(fitHi.steadyFromH, fn45('steadyFromH')(r.doses, r.t12_ind, 'hughes'), 1e-9, 'steadyFromH');
+    // Task 21b (Task 19 minor): unconditional. The detail quotes the next band (the steady-state row for one more
+    // level), then when a level reads it: from steadyFromH.
+    const bNext = fn45('aucBandText')(R(2, 'hughes', false)), at = nl.detail.indexOf(bNext);
+    assert(at >= 0, `the next band is quoted: ${bNext} | ${nl.detail}`);
+    assert(nl.detail.indexOf(`drawn at steady state, from ${fn45('fmtDT')(fitHi.steadyFromH)}.`) > at, nl.detail);
+  });
+  test('45.4c the early band moves the decision: a reported flip, through runBayesian, is the early-row answer and not the steady-state-row answer [T19-1, T19-2, T19-5]', () => {
+    // From the Task 19 sweep (change -> continue): 1000 mg q8h x 3; one level, 14 mg/L, 3 h after the start of
+    // dose 3 (19 h after the first). On the steady-state row the fit's answer changes an in-range 1000 mg q8h
+    // to 1.25 g q12h for 2 more dots; on the early row (the one an early level reads) no regimen gains 2, so
+    // the in-range regimen is continued, for that reason (not ruling 3).
+    const { r, text } = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 8, n: 3, lastAgo: 3 }, [{ conc: 14, after: 3 }]);
+    const R = fn45('aucUncertaintyRow'), a = r.decisionArgs;
+    assert(r.decisionArgs.row.id === R(1, 'hughes', true).id, `reads the early row: ${r.decisionArgs.row.id}`);
+    const at = (row) => fn45('regimenDecision')(a.CL, a.V, a.target, a.bag, a.mic, a.doses, row, { nowH: a.nowH });
+    const ss = at(R(1, 'hughes', false)), ea = at(R(1, 'hughes', true));
+    assert(ss.action === 'change' && ss.decisionReason === 'attainment' && ss.current && ss.current.inBand, `steady-state row: ${ss.action} ${ss.dose} q${ss.tau}h`);
+    assert(ea.action === 'continue' && ea.continueReason === 'in-range' && ea.dose === 1000 && ea.tau === 8, `early row: ${ea.action} ${ea.continueReason}`);
+    assert(r.rec.action === 'continue' && r.rec.continueReason === 'in-range' && r.rec.dose === 1000 && r.rec.tau === 8 && !r.recFinal,
+      `the shipped answer is the early-row answer: ${r.rec.action} ${r.rec.continueReason} ${r.rec.dose} q${r.rec.tau}h`);
+    assert(!(r.rec.dose === ss.dose && r.rec.tau === ss.tau) && /Continue the current regimen/.test(text) && !/low-confidence|not changed on it/.test(text),
+      'and differs from the steady-state-row answer');
+  });
+  test('45.4d R47: the most recent level decides; just past Hughes\' cut is steady, a mixed course ending at steady state reads the steady-state row [T19-1, T19-4]', () => {
+    const R = fn45('aucUncertaintyRow'), cut = cut454();
+    // Just past the cut: 1 g q8h x 3; one level, 14 mg/L, 10 h after the start of dose 3 (26 h after the first).
+    const past = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 8, n: 3, lastAgo: 10 }, [{ conc: 14, after: 10 }]).r;
+    const fp = fracLast454(past);
+    assert(fp >= cut && fp < cut + 0.03, `the level is just past the cut: ${fp.toFixed(3)} (cut ${cut})`);
+    assert(past.decisionArgs.row.id === R(1, 'hughes', false).id, `just past the cut reads the steady-state row: ${past.decisionArgs.row.id}`);
+    // Just short of it: the same course, 14 mg/L 9 h after dose 3.
+    const short = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 8, n: 3, lastAgo: 9 }, [{ conc: 14, after: 9 }]).r;
+    const fs = fracLast454(short);
+    assert(fs < cut && fs > cut - 0.03 && short.decisionArgs.row.id === R(1, 'hughes', true).id, `just short of the cut reads early: ${fs.toFixed(3)} ${short.decisionArgs.row.id}`);
+    // Mixed: 1 g q12h x 6; a level of 30 mg/L 2 h after the first dose (early), then a trough of 15 mg/L
+    // 11.5 h after dose 6 (steady). The note names the early level; the row is the steady-state one.
+    const mixed = fit454({ mg: 1000, tinf: fn45('autoTinf')(1000), tau: 12, n: 6, lastAgo: 11.5 }, [{ conc: 30, after: -58 }, { conc: 15, after: 11.5 }]);
+    const mr = mixed.r;
+    assert(fn45('earlyLevelFractions')(mr.levels, mr.doses, mr.t12_ind, 'hughes').length === 1 && !fn45('latestLevelEarly')(mr.levels, mr.doses, mr.t12_ind, 'hughes'),
+      'one early level, the most recent at steady state');
+    assert(mr.decisionArgs.row.id === R(2, 'hughes', false).id, `mixed course reads the steady-state row: ${mr.decisionArgs.row.id}`);
+    assert(/A level was drawn before steady state/.test(mixed.text) && /The most recent level was drawn at steady state, so the range uses the band simulated for steady-state troughs/.test(mixed.text),
+      'the note names the early level and says which band is used');
+  });
+  test('45.4e steadyFromH is the inverse of the shared test: a level just before it is early, just after it is not, every model', () => {
+    const ds = [{ timeH: 100 }], t12 = 20;
+    for (const m of ['buelga', 'goti', 'hughes', 'goti-hd']) {
+      const h = fn45('steadyFromH')(ds, t12, m), ef = (t) => fn45('earlyLevelFractions')([{ timeH: t }], ds, t12, m).length;
+      assert(isFinite(h) && h > 100 && ef(h - 0.01) === 1 && ef(h + 0.01) === 0, `${m}: steady from ${h}`);
+    }
+  });
+
+  // Patient size and renal function. Independent anchors: the published equations.
+  test('45.5 calcCrClRaw is Cockcroft-Gault: (140 - age) x weight / (72 x SCr), x 0.85 for a woman [I4 CG]', () => {
+    const cg = fn45('calcCrClRaw');
+    assertClose(cg(60, 'M', 1.0, 70, P45.ACTUAL), 80 * 70 / 72, 1e-9, '60 y M, 70 kg, SCr 1.0');
+    assertClose(cg(60, 'F', 1.0, 70, P45.ACTUAL), 0.85 * 80 * 70 / 72, 1e-9, '60 y F, 70 kg, SCr 1.0');
+    assertClose(cg(40, 'M', 2.0, 90), 100 * 90 / 144, 1e-9, 'with no policy, SCr is used as measured');
+    // The Goti policy reads a low SCr at the floor only for the model's own covariate (rule 4).
+    assertClose(cg(70, 'M', 0.7, 70, P45.GOTI_MODEL), 70 * 70 / (72 * K45.GOTI_SCR_FLOOR), 1e-9, 'Goti policy, 70 y, SCr 0.7');
+    assertClose(cg(70, 'M', 0.7, 70, P45.ACTUAL), 70 * 70 / (72 * 0.7), 1e-9, 'as measured, 70 y, SCr 0.7');
+  });
+  test('45.6 calcCrCl returns the manual override while it is on; calcCrClRaw never does [I4-01]', () => {
+    const cg = 80 * 70 / 72;
+    try {
+      run45('crclOverride.on = true; crclOverride.value = 35;');
+      assert(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL) === 35, `override on: ${fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL)}`);
+      assertClose(fn45('calcCrClRaw')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, 'calcCrClRaw (the Hughes FFM covariate) ignores the override');
+      run45('crclOverride.value = NaN;');
+      assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, 'an override with no valid value is not applied');
+      run45('crclOverride.on = false; crclOverride.value = 35;');
+      assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, 'override off');
+    } finally { run45('crclOverride.on = false; crclOverride.value = null;'); }
+  });
+  test('45.7 calcIBW is Devine: 50 / 45.5 kg + 2.3 kg per inch over 60 in; an unknown sex takes the female base [I4-07, I4P-2]', () => {
+    const ibw = fn45('calcIBW'), inch = K45.CM_PER_IN;
+    assertClose(ibw('M', 72 * inch), 50 + 2.3 * 12, 1e-9, 'man, 6 ft');
+    assertClose(ibw('F', 66 * inch), 45.5 + 2.3 * 6, 1e-9, 'woman, 5 ft 6 in');
+    for (const sex of [null, undefined, 'X'])
+      assertClose(ibw(sex, 66 * inch), ibw('F', 66 * inch), 1e-9, `sex ${sex}: the lower (female) base, never the male`);
+  });
+  test('45.8 calcAdjBW is IBW + 0.4 x (TBW - IBW) [I4P-1]', () => {
+    assertClose(fn45('calcAdjBW')(120, 70), 90, 1e-9, 'TBW 120, IBW 70');
+    assertClose(fn45('calcAdjBW')(100, 60), 76, 1e-9, 'TBW 100, IBW 60');
+  });
+  test('45.9 applyScrPolicy: the Goti SCr floor applies above 65 (66, not 65), and only under the Goti policy [I4-06]', () => {
+    const pol = fn45('applyScrPolicy');
+    assert(K45.GOTI_SCR_FLOOR_AGE === 65, `GOTI_SCR_FLOOR_AGE ${K45.GOTI_SCR_FLOOR_AGE}: 65 per the 2019 erratum`);
+    assert(pol(0.6, 65, P45.GOTI_MODEL) === 0.6, `65 y: ${pol(0.6, 65, P45.GOTI_MODEL)} (as measured)`);
+    assert(pol(0.6, 66, P45.GOTI_MODEL) === K45.GOTI_SCR_FLOOR, `66 y: ${pol(0.6, 66, P45.GOTI_MODEL)} (the floor)`);
+    assert(pol(1.4, 80, P45.GOTI_MODEL) === 1.4, 'above the floor: as measured');
+    assert(pol(0.6, 80, P45.ACTUAL) === 0.6, 'any other policy: as measured (rule 4)');
+  });
+
+  // Concentrations and kidney injury.
+  test('45.10 predictConc1comp during an infusion: R0 / (k V) x (1 - e^(-k t)), rising to the end of the infusion [I4-05]', () => {
+    const p = fn45('predictConc1comp'), doses = [{ mg: 1000, tinfH: 2, timeH: 0 }], k = 0.1, V = 50, R0 = 500;
+    for (const t of [0.5, 1, 1.5, 2]) assertClose(p(doses, t, k, V), R0 / (k * V) * (1 - Math.exp(-k * t)), 1e-9, `${t} h into a 2 h infusion`);
+    assertLess(p(doses, 1, k, V), p(doses, 2, k, V), 'mid-infusion below the end of the infusion');
+    assertClose(p(doses, 5, k, V), R0 / (k * V) * (1 - Math.exp(-k * 2)) * Math.exp(-k * 3), 1e-9, '3 h after the end');
+    assert(p(doses, 0, k, V) === 0, 'nothing before the dose');
+  });
+  test('45.11 kdigoStage: a 0.3 mg/dL rise counts within 48 h; the same rise over 60 h (fold 1.3) is no stage [I4-14]', () => {
+    const k = fn45('kdigoStage');
+    assert(k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 60 }]) === 0, `0.3 over 60 h: stage ${k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 60 }])}`);
+    assert(k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 48 }]) === 1, '0.3 at 48 h: stage 1');
+    assert(k([{ scr: 1.0, timeH: 0 }, { scr: 1.3, timeH: 40 }]) === 1, '0.3 over 40 h: stage 1');
+  });
+  test('45.12 checkAKI: SCr at least 1.5x baseline, or 0.3 mg/dL above it, shows the AKI banner [I4-15]', () => {
+    const aki = (scr, base, manual) => {
+      const els = { scr: { value: String(scr) }, 'scr-baseline': { value: String(base) }, 'aki-manual': { checked: !!manual },
+        'aki-banner': { style: { display: '' }, innerHTML: '' } };
+      const prev = sandbox.document.getElementById;
+      sandbox.document.getElementById = (id) => els[id] || prev(id);
+      try { fn45('checkAKI')(); } finally { sandbox.document.getElementById = prev; }
+      return els['aki-banner'];
+    };
+    const on = (b) => b.style.display === 'block';
+    assert(on(aki(1.3, 1.0)) && /0\.3 mg\/dL above baseline/.test(aki(1.3, 1.0).innerHTML), 'a 0.3 rise (fold 1.3)');
+    assert(!on(aki(1.2, 1.0)), 'a 0.2 rise (fold 1.2)');
+    assert(on(aki(0.75, 0.5)) && /1\.5× baseline/.test(aki(0.75, 0.5).innerHTML), 'fold 1.5 (a 0.25 rise)');
+    assert(!on(aki(0.7, 0.5)), 'fold 1.4 (a 0.2 rise)');
+    assert(on(aki(1.0, 1.0, true)), 'flagged manually');
+    assert(!on(aki(2.0, '')), 'no baseline, no automatic flag');
+  });
+
+  // The weight-based guideline comparison and the PD load.
+  // The 2500 mg cap and the CrCl cut-points 90/50/30/15 have no source (code report M5, rule 1; searched in
+  // Task 21): they are GUIDELINE_DOSE_CAP_MG and GUIDELINE_INTERVAL_BY_CRCL, labelled PREFERENCE (rule 8),
+  // display only. They are pinned as shipped, so a change is deliberate (ruling R34).
+  test('45.13 computeGuidelineDose: 15 mg/kg TBW to the 250 mg step, capped at 2500 mg [I4-16]', () => {
+    const g = fn45('computeGuidelineDose');
+    assert(g(70, 80).dose === 1000 && g(100, 80).dose === 1500, `${g(70, 80).dose}, ${g(100, 80).dose}`);
+    const big = g(200, 80);
+    assert(big.dose === 2500 && big.rawDose === '3000', `200 kg: ${big.dose} mg (raw ${big.rawDose})`);
+    assert(g(300, 80).dose === 2500, 'never above 2500');
+  });
+  test('45.14 computeGuidelineDose: the interval cut-points sit at CrCl 90, 50, 30 and 15 [I4P-6a-d]', () => {
+    const g = fn45('computeGuidelineDose');
+    const want = [[90.5, 8], [90, 12], [50.5, 12], [50, 24], [30.5, 24], [30, 36], [15.5, 36], [15, 48], [5, 48]];
+    const got = want.map(([c]) => g(70, c).tau);
+    assert(JSON.stringify(got) === JSON.stringify(want.map(w => w[1])), `CrCl ${want.map(w => w[0]).join('/')}: q${got.join('/q')}h`);
+  });
+  test('45.15 pdLoadingDose: a local maximum above 3,000 mg never raises the Rec 11 cap; a lower one lowers it [I4-17]', () => {
+    const pd = fn45('pdLoadingDose');
+    // HD_LOADING_MAX_MG (Rybak 2020 Rec 11) is pinned once, in SUITE 44; here it is read, never copied.
+    const hi = pd(200, 4000);                     // PD_LOAD_MG_PER_KG x 200 kg is above the cap; local maximum 4,000
+    assert(K45.PD_LOAD_MG_PER_KG * 200 > 4000 - 1e-9 && 4000 > K45.HD_LOADING_MAX_MG, 'the fixture: load and local maximum both above the cap');
+    const cap = K45.HD_LOADING_MAX_MG;
+    assert(hi.mg === cap && hi.cap === cap && hi.capped === true, `local max 4000: ${JSON.stringify(hi)}`);
+    assertClose(hi.mgPerKg, cap / 200, 1e-9, 'mg/kg given');
+    const lo = pd(200, 2500);
+    assert(lo.mg === 2500 && lo.cap === 2500 && lo.capped === true, `local max 2500: ${JSON.stringify(lo)}`);
+    const none = pd(100, 0);
+    assert(none.mg === K45.PD_LOAD_MG_PER_KG * 100 && none.cap === cap && none.capped === false, `no local max: ${JSON.stringify(none)}`);
+  });
+  test('45.16 an SCr below 0.1 mg/dL is refused at entry; 0.1 to 25 is accepted [I4-18]', () => {
+    // INPUT_LIMITS is a UI plausibility table, not a clinical constant; its SCr range is pinned once, here.
+    const L = K45.INPUT_LIMITS.scr, cv = fn45('checkValue');
+    assert(L.min === 0.1 && L.max === 25 && L.unit === 'mg/dL', `SCr entry range ${L.min}-${L.max} ${L.unit}`);
+    assert(!cv(String(L.min / 2), 'scr').ok && !cv(String(L.min - 0.01), 'scr').ok, `SCr below ${L.min} accepted`);
+    assert(cv(String(L.min), 'scr').ok && cv(String(L.max), 'scr').ok && !cv(String(L.max + 0.5), 'scr').ok, `the ${L.min}-${L.max} range`);
+  });
+
+  // evalRegimen: one case per hard reject and per flag (1-compartment, MIC 1 unless stated).
+  const ev45 = (mg, tau, cl, v, mic) => fn45('evalRegimen')(mg, tau, fn45('autoTinf')(mg), cl, v, null, mic);
+  const lv45 = (r) => r.flags.map(f => f.level);
+  // The ceilings and the trough thresholds come from harness_constants (rule 6); their values are pinned
+  // against their sources once, in 44.6 (2000 / 4500 / 700) and 44.2 (TROUGH_HIGH_MGL 20).
+  test('45.17 evalRegimen hard reject: a single dose above DOSE_MAX_PER_DOSE_MG', () => {
+    const cap = K45.DOSE_MAX_PER_DOSE_MG, mg = cap + 250;
+    const r = ev45(mg, 24, 5, 50, 1);
+    assert(JSON.stringify(r.hardFail) === JSON.stringify([`single dose ${mg} mg exceeds ${cap} mg`]), JSON.stringify(r.hardFail));
+    assert(ev45(cap, 24, 5, 50, 1).hardFail.length === 0, `${cap} mg q24h is admissible`);
+  });
+  test('45.18 evalRegimen hard reject: a total daily dose above DOSE_MAX_TDD_MG', () => {
+    const cap = K45.DOSE_MAX_TDD_MG;
+    const r = ev45(1750, 8, 12, 70, 1);           // 5,250 mg a day, AUC24 437, each dose under the per-dose cap
+    assert(1750 * 3 > cap && 1750 <= K45.DOSE_MAX_PER_DOSE_MG, 'the fixture breaches the daily ceiling only');
+    assert(JSON.stringify(r.hardFail) === JSON.stringify([`total daily dose ${1750 * 3} mg exceeds ${cap} mg`]), JSON.stringify(r.hardFail));
+    assert(cap % 3 === 0 && ev45(cap / 3, 8, 12, 70, 1).hardFail.length === 0, `${cap} mg a day (q8h) is admissible`);
+  });
+  test('45.19 evalRegimen hard reject: AUC24 above AUC24_ABSOLUTE_MAX [I4-02, I4P-3]', () => {
+    const cap = K45.AUC24_ABSOLUTE_MAX;
+    const r = ev45(1750, 12, 4.5, 50, 1);         // AUC24 778, doses within both dose ceilings
+    assert(r.auc24 > cap, `the fixture's AUC24 ${r.auc24.toFixed(0)} is above ${cap}`);
+    assert(JSON.stringify(r.hardFail) === JSON.stringify([`AUC24 ${r.auc24.toFixed(0)} exceeds the absolute ceiling ${cap}`]), JSON.stringify(r.hardFail));
+    const at = ev45(1750, 12, 3500 / cap, 50, 1);  // AUC24 exactly at the ceiling: admissible
+    assert(Math.abs(at.auc24 - cap) < 1e-9 && at.hardFail.length === 0, `AUC24 ${at.auc24} at the ceiling`);
+    assert(ev45(1750, 12, 3500 / (cap + 1), 50, 1).hardFail.length === 1, 'AUC24 one above the ceiling is rejected');
+  });
+  test('45.20 evalRegimen flag: a predicted trough of 20 mg/L or more is danger [I4-03]', () => {
+    const hi = K45.TROUGH_HIGH_MGL;
+    const r = ev45(1000, 12, 3.6, 150, 1);        // AUC24 556, trough 20.2: within 1 mg/L of the threshold
+    assert(r.Ctrough >= hi && r.Ctrough < hi + 1 && r.hardFail.length === 0, `trough ${r.Ctrough}`);
+    assert(JSON.stringify(lv45(r)) === '["danger"]' && r.flags[0].text.indexOf(`at or above ${hi} `) > 0, JSON.stringify(r.flags));
+  });
+  test('45.21 evalRegimen flag: a predicted trough of 15 to under 20 mg/L is a warning [I4P-4]', () => {
+    assert(K45.TROUGH_WARN_MGL === 15, `TROUGH_WARN_MGL ${K45.TROUGH_WARN_MGL} (Rybak 2020: AKI risk rises from 15)`);
+    const r = ev45(1000, 12, 3.4, 50, 1);         // AUC24 588, trough 16.4
+    assert(r.Ctrough >= K45.TROUGH_WARN_MGL && r.Ctrough < K45.TROUGH_HIGH_MGL, `trough ${r.Ctrough}`);
+    assert(JSON.stringify(lv45(r)) === '["warning"]' && r.flags[0].text.indexOf(`at or above ${K45.TROUGH_WARN_MGL},`) > 0, JSON.stringify(r.flags));
+  });
+  test('45.22 evalRegimen flag: a predicted trough below the MIC is information [I4-04]', () => {
+    const r2 = ev45(1000, 24, 4, 30, 2), r1 = ev45(1000, 24, 4, 30, 1);   // trough 1.5 mg/L
+    assert(r2.Ctrough > 1 && r2.Ctrough < 2, `trough ${r2.Ctrough}`);
+    assert(r2.flags.some(f => f.level === 'info' && /below the MIC \(2 mg\/L\)/.test(f.text)), JSON.stringify(r2.flags));
+    assert(!r1.flags.some(f => f.level === 'info'), 'MIC 1: no sub-MIC flag');
+  });
+  test('45.23 evalRegimen flags: AUC24 above or below 400-600 beyond the rounding grace is a warning', () => {
+    const above = ev45(1350, 12, 4, 50, 1), below = ev45(1000, 24, 4, 30, 1);   // AUC24 675 (grace 62.5) and 250
+    assert(above.hardFail.length === 0 && above.flags.some(f => f.level === 'warning' && /AUC24 675 is above/.test(f.text)), JSON.stringify(above.flags));
+    assert(below.flags.some(f => f.level === 'warning' && /AUC24 250 is below/.test(f.text)), JSON.stringify(below.flags));
+    assert(!ev45(1000, 12, 4, 50, 1).flags.some(f => /target band/.test(f.text)), 'AUC24 500: no band flag');
+  });
+
+  // D25: one case per regimenDecision / currentRegimenOf branch the review saw survive.
+  test('45.24 D25: an in-range regimen is changed when the best puts exactly CONTINUE_MARGIN_DOTS more in range [I4-08]', () => {
+    const r = decide45(1.75, 49, hist45(500, 12));      // 500 mg q12h, AUC24 571, 13 of 20
+    assert(r.action === 'change' && r.current.inBand && !r.current.unsafe, `${r.action}`);
+    assert(r.dots - r.current.dots === K45.CONTINUE_MARGIN_DOTS, `${r.current.dots} -> ${r.dots}`);
+    assert(r.dose === 1750 && r.tau === 48, `${r.dose} mg q${r.tau}h`);
+  });
+  test('45.25 D25: when an in-range candidate exists, an out-of-range one is never the change [I4-09]', () => {
+    // No level (population row): 750 mg q36h at CL 0.6 goes to 500 mg q48h (AUC24 417), not 750 mg q48h (625).
+    const r = decide45(0.6, 49, hist45(750, 36), row45(0));
+    assert(r.action === 'change' && r.inBand && !r.outsideTargetBand, `${r.action} ${r.dose} mg q${r.tau}h AUC ${r.auc24}`);
+    assert(r.auc24 >= K45.AUC24_TARGET_MIN && r.auc24 <= K45.AUC24_TARGET_MAX && r.dose === 500 && r.tau === 48, `${r.dose} mg q${r.tau}h AUC ${r.auc24}`);
+  });
+  test('45.26 D25: regimens with a predicted trough of 20 or more are set aside in the change [I4-10]', () => {
+    // CL 0.5, V 150: 250 mg q24h scores as many dots as 500 mg q48h but has a trough of 20.0.
+    const r = decide45(0.5, 150, hist45(1000, 12));
+    assert(r.action === 'change' && r.Ctrough < K45.TROUGH_HIGH_MGL && r.dose === 500 && r.tau === 48, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
+    const alt = ev45(250, 24, 0.5, 150, 1);
+    assert(alt.Ctrough >= K45.TROUGH_HIGH_MGL && fn45('attainmentDots')(alt.auc24, row45(1)) >= r.dots, 'the danger alternative it set aside');
+  });
+  test('45.27 D25: an unsafe current regimen is never kept when nothing admissible is better; the optimizer answers [I4-11]', () => {
+    const doses = hist45(250, 48), cur = fn45('currentRegimenOf')(doses, 0.2, 49, null, 1, row45(1));
+    assert(cur && cur.unsafe, 'the current 250 mg q48h at CL 0.2 is unsafe');
+    const r = decide45(0.2, 49, doses), opt = sandbox.bayesDoseOptimizer(0.2, 49, 450, null, 1);
+    assert(r.action !== 'continue' && r.dose === opt.dose && r.tau === opt.tau, `${r.action} ${r.dose} mg q${r.tau}h`);
+  });
+  test('45.28 D25: a single charted dose is not a current regimen, even under the regimen override [I4-12]', () => {
+    try {
+      run45('bState.regimenOverrideH = 12;');
+      const one = decide45(4.58, 61.8, [{ mg: 1250, tinfH: 1.5, timeH: 0 }]);
+      const two = decide45(4.58, 61.8, [{ mg: 1250, tinfH: 1.5, timeH: 0 }, { mg: 1250, tinfH: 1.5, timeH: 12 }]);
+      assert(one.action === 'start', `one dose + override: ${one.action} ${one.dose} mg q${one.tau}h`);
+      assert(two.action === 'continue' && two.dose === 1250 && two.tau === 12, `two doses + override: ${two.action}`);
+    } finally { run45('bState.regimenOverrideH = null;'); }
+  });
+  test('45.29 D25: among equally good changes, the smaller daily-dose change wins over nearness to the target box [I4-13]', () => {
+    const r = decide45(1.4, 30, hist45(1750, 48));      // 1750 mg q48h; 1500 q48h (AUC 536) before 1250 q48h (446)
+    assert(r.action === 'change' && r.dose === 1500 && r.tau === 48, `${r.action} ${r.dose} mg q${r.tau}h AUC ${r.auc24}`);
+  });
+  test('45.30 rankRegimenCandidates: an exposure tie never goes to a trough of 20 or more when a lower one exists [I4P-5]', () => {
+    const r = sandbox.bayesDoseOptimizer(0.85, 70, 520, null, 1);   // 250 q12h, 500 q24h, 1000 q48h all AUC24 588
+    assert(r.dose === 1000 && r.tau === 48 && r.Ctrough < K45.TROUGH_HIGH_MGL, `${r.dose} mg q${r.tau}h trough ${r.Ctrough}`);
+    assert((r.tiedWith || []).some(t => t.dose === 500 && t.tau === 24 && t.Ctrough >= K45.TROUGH_HIGH_MGL), JSON.stringify(r.tiedWith));
+  });
+
+  // Profile and state (I5).
+  test('45.31 a changed dose amount, infusion time or dose time marks the fit stale [I5-5]', () => {
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      run45('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55 }; bState.resultFingerprint = bayesInputFingerprint();');
+      assert(!sandbox.bayesFitIsStale(), 'the untouched form is not stale');
+      for (const [id, to] of [['b-dose-mg-2', '1250'], ['b-dose-tinf-2', '2'], ['b-dose-time-2', '21:00'], ['b-dose-date-3', '2026-11-12']]) {
+        const was = env.els[id].value;
+        env.els[id].value = to;
+        assert(sandbox.bayesFitIsStale(), `${id} ${was} -> ${to} did not mark the fit stale`);
+        env.els[id].value = was;
+        assert(!sandbox.bayesFitIsStale(), `${id} restored, still stale`);
+      }
+    });
+  });
+  test('45.32 a stale fit is saved as staleFit, never as fit; a current one as fit [I5-3]', () => {
+    withBayesForm(BAYES_FORM_45(), (env) => {
+      run45('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55, CL_pop: 5, V_pop: 60, goti: null }; bState.resultFingerprint = bayesInputFingerprint();');
+      const cur = sandbox.snapshotBayesForm();
+      assert(cur.fit && cur.fit.CL_ind === 4.2 && cur.staleFit === undefined && cur.dirty === false, JSON.stringify({ fit: cur.fit, dirty: cur.dirty }));
+      env.els['b-scr'].value = '3.0';
+      const st = sandbox.snapshotBayesForm();
+      assert(st.fit === null && st.staleFit && st.staleFit.CL_ind === 4.2 && st.dirty === true, JSON.stringify({ fit: st.fit, staleFit: st.staleFit, dirty: st.dirty }));
+      assert(st.demographics.scr === '3.0' && st.doses.length === 3 && st.doses[1].time === '20:00', 'the snapshot carries the form as it is');
+    });
+  });
+  test('45.33 deleting one of three profiles keeps the other two, in order; Undo puts it back where it was [I5-2]', () => {
+    const { profEnv44, withProf44, profFixture44, PROF_KEY44 } = __suiteShared;
+    assert(profEnv44 && profFixture44 && profFixture44.length === 3, 'the SUITE 44 profile harness');
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify(profFixture44) }, {});
+    const ids = () => JSON.parse(env.localStorage.getItem(PROF_KEY44)).map(p => p.id);
+    const [a, b, c] = profFixture44.map(p => p.id);
+    withProf44(env, [], () => {
+      sandbox.deleteProfile(b);
+      assert(JSON.stringify(ids()) === JSON.stringify([a, c]), `after deleting the middle one: ${ids()}`);
+      assert(/Deleted &quot;Fixture 71M legacy&quot;\./.test(env.status[0].innerHTML), env.status[0].innerHTML);
+      sandbox.runUndo();
+      assert(JSON.stringify(ids()) === JSON.stringify([a, b, c]), `after Undo: ${ids()}`);
+      sandbox.deleteProfile('p_notthere1');
+      assert(JSON.stringify(ids()) === JSON.stringify([a, b, c]), 'an unknown id deletes nothing');
+    });
+  });
+  test('45.34 a CrCl override outside INPUT_LIMITS.crclOverride (1-250 mL/min) is not applied; one inside it is [I5-4]', () => {
+    const els = { 'crcl-override-on': { checked: true }, 'crcl-override-val': { value: '', disabled: false },
+      'crcl-override-note': { style: { display: '' }, textContent: '', innerHTML: '' } };
+    const prevGet = sandbox.document.getElementById, prevUpd = sandbox.updateCrCl;
+    sandbox.document.getElementById = (id) => els[id] || prevGet(id);
+    sandbox.updateCrCl = () => {};
+    const cg = 80 * 70 / 72, set = (v) => { els['crcl-override-val'].value = v; fn45('setCrclOverride')(); };
+    const L = K45.INPUT_LIMITS.crclOverride;
+    assert(L.min === 1 && L.max === 250, `override range ${L.min}-${L.max} (the field's own UI limit)`);
+    try {
+      for (const v of [String(L.max * 12), String(L.min / 2), String(L.max + 1)]) {
+        set(v);
+        assert(fn45('crclSourceLabel')() === 'Cockcroft-Gault', `${v} mL/min: ${fn45('crclSourceLabel')()}`);
+        assertClose(fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL), cg, 1e-9, `${v} mL/min reached calcCrCl`);
+      }
+      set('45');
+      assert(fn45('crclSourceLabel')() === 'manual override' && fn45('calcCrCl')(60, 'M', 1.0, 70, P45.ACTUAL) === 45, '45 mL/min applied');
+    } finally {
+      sandbox.document.getElementById = prevGet; sandbox.updateCrCl = prevUpd;
+      run45('crclOverride.on = false; crclOverride.value = null;');
+    }
+  });
+
+  // Task 21 (code report M3, rule 2): ln 2 was spelled three ways (0.693, Math.LN2, Math.log(2)), 0.02%
+  // apart, and halfLife() was dead. One constant and one helper now; this fails if a spelling returns.
+  test('45.35 one ln 2 (Math.LN2) and one half-life helper; no 0.693 or Math.log(2) left in the script', () => {
+    const script = fs.readFileSync(htmlPath, 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+    const code = script.replace(/\/\/[^\n]*/g, '');   // comments may still name the old spellings
+    assert(/^const LN2\s*=\s*Math\.LN2;/m.test(code), 'LN2 is not declared as Math.LN2');
+    const stray = (code.match(/0\.693\b|Math\.log\(\s*2\s*\)|Math\.LN2/g) || []).length;
+    assert(stray === 1, `${stray} spellings of ln 2 (only the LN2 declaration may use Math.LN2)`);
+    assert((code.match(/function halfLife\s*\(/g) || []).length === 1, 'not exactly one halfLife()');
+    assertClose(fn45('halfLife')(Math.LN2 / 8), 8, 1e-12, 'halfLife(ln2 / 8)');
+    assertClose(fn45('solveTwoLevelsPK')(1000, 1, 30, 2, 15, 10, 12, 'firstdose').t12, 8, 1e-9, 'two-level t½ from kel = ln2/8');
+  });
+
+  // Task 21 (code report M5): the 250 mg step was a literal in a dozen places beside MATRIX_DOSE_STEP, the
+  // matrix carried its own copy of the per-dose ceiling, the dose fields and the two tinkerers had four
+  // different maxima (4000, 4500, 6000), and computeGuidelineDose's cap and cut-points were bare literals.
+  test('45.36 the 250 mg step and the dose limits are named; the guideline comparison\'s cap and cut-points are labelled PREFERENCE', () => {
+    const script = fs.readFileSync(htmlPath, 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+    const code = script.replace(/\/\/[^\n]*/g, '');
+    const arith = code.match(/[\/*+\-]\s*250\b|\b250\s*[\/*+]|[<>]=?\s*250\b|="250"/g) || [];
+    assert(arith.length === 0, `arithmetic or markup on a literal 250: ${arith.join(' | ')}`);
+    assert(!/MATRIX_DOSE_MAX/.test(code), 'MATRIX_DOSE_MAX is back (it duplicated DOSE_MAX_PER_DOSE_MG)');
+    const maxes = code.match(/max="\d{4,}"|[<>]=?\s*(4000|4500|6000)\b/g) || [];   // a dose-sized maximum
+    assert(maxes.length === 0, `a dose maximum not read from INPUT_LIMITS.dose: ${maxes.join(' | ')}`);
+    for (const name of ['GUIDELINE_DOSE_CAP_MG', 'GUIDELINE_INTERVAL_BY_CRCL']) {
+      const at = script.indexOf(`const ${name} =`);
+      assert(at > 0, `${name} is not declared`);
+      const lead = script.slice(script.lastIndexOf('\n\n', at), at);
+      assert(/PREFERENCE \(rule 8\)/.test(lead) && /never a dose offered/.test(lead), `${name} is not labelled as a preference that changes no dose`);
+    }
+    const f = fn45('computeGuidelineDose').toString();
+    assert(/GUIDELINE_DOSE_CAP_MG/.test(f) && /GUIDELINE_INTERVAL_BY_CRCL/.test(f) && !/\b2500\b|crcl\s*>\s*\d/.test(f),
+      'computeGuidelineDose reads its cap and cut-points from the named constants');
+    // Fix round 1 (review item 4): the four static dose fields carry no literal limit in markup; they are set at
+    // load from the constants (CSP-safe: setAttribute, no inline handler), and what is set matches them.
+    const body = fs.readFileSync(htmlPath, 'utf8').split('<script>')[0];
+    const ids = ['dose', 'tl-dose', 'rl-dose', 'pd-set-max'];
+    for (const id of ids) {
+      const tag = (body.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`)) || [''])[0];
+      assert(tag && !/\b(min|max|step)="/.test(tag), `#${id} still carries a literal limit: ${tag}`);
+    }
+    const set = {}, prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = (id) => ids.includes(id) ? { setAttribute: (k, v) => { (set[id] = set[id] || {})[k] = String(v); } } : prevGet(id);
+    try { fn45('applyDoseFieldLimits')(); } finally { sandbox.document.getElementById = prevGet; }
+    const L = K45.INPUT_LIMITS.dose, step = String(K45.MATRIX_DOSE_STEP);
+    for (const id of ['dose', 'tl-dose', 'rl-dose']) {
+      assert(set[id] && set[id].min === String(L.min) && set[id].max === String(L.max) && set[id].step === step, `#${id}: ${JSON.stringify(set[id])}`);
+    }
+    assert(set['pd-set-max'] && set['pd-set-max'].min === String(K45.MATRIX_DOSE_MIN) && set['pd-set-max'].max === String(K45.HD_LOADING_MAX_MG)
+      && set['pd-set-max'].step === step, `#pd-set-max: ${JSON.stringify(set['pd-set-max'])}`);
+  });
+
+  // Task 21 (code report M11, M12, M13): the action registry, driven through its real delegation. The
+  // listeners __bindActions registers are captured, and a fake event is dispatched to them.
+  const act45 = (el, type) => {
+    const ty = type || 'click', listeners = {}, errors = [];
+    const box = { hidden: true, innerHTML: '', textContent: '' };
+    const prevAdd = sandbox.document.addEventListener, prevGet = sandbox.document.getElementById, prevCon = sandbox.console;
+    sandbox.document.addEventListener = (t, f) => { (listeners[t] = listeners[t] || []).push(f); };
+    sandbox.document.getElementById = (id) => id === 'action-status' ? box : prevGet(id);
+    sandbox.console = Object.assign({}, console, { error: (...a) => errors.push(a.map(String).join(' ')) });
+    try {
+      fn45('__bindActions')();
+      const target = { closest: (sel) => sel === `[data-on${ty}]` ? el : null };
+      (listeners[ty] || []).forEach(f => f({ type: ty, target }));
+    } finally {
+      if (prevAdd === undefined) delete sandbox.document.addEventListener; else sandbox.document.addEventListener = prevAdd;
+      sandbox.document.getElementById = prevGet; sandbox.console = prevCon;
+    }
+    return { box, errors };
+  };
+  const actEl45 = (key, extra) => Object.defineProperties({ textContent: '', getAttribute: (n) => n === 'data-onclick' ? key : null },
+    Object.getOwnPropertyDescriptors(extra || {}));   // descriptors, so a getter stays a getter
+  test('45.37 __ACT runs its own keys only: an inherited name in markup (constructor, toString, __defineGetter__, hasOwnProperty) runs nothing [M11]', () => {
+    for (const key of ['constructor', 'toString', '__defineGetter__', 'hasOwnProperty', '__proto__']) {
+      const { box, errors } = act45(actEl45(key));
+      assert(errors.length === 0 && box.hidden === true, `data-onclick="${key}" reached Object.prototype: ${errors.join('; ')}`);
+    }
+  });
+  test('45.38 a handler that throws is said on screen, in plain words with no error text; the console still has it [M12]', () => {
+    const el = actEl45('k60', { getAttribute: (n) => n === 'data-onclick' ? 'k60' : n === 'aria-label' ? 'Dose 1 amount (mg)' : null,
+      get value() { throw new TypeError('boom at index.html:1:2'); } });
+    const { box, errors } = act45(el);
+    assert(errors.length === 1 && /k60/.test(errors[0]), `console: ${errors.join('; ')}`);
+    assert(box.hidden === false && /did not finish/.test(box.innerHTML), `status line: hidden ${box.hidden}, "${box.innerHTML}"`);
+    assert(/Dose 1 amount \(mg\)/.test(box.innerHTML), 'it names the control');
+    assert(!/boom|TypeError|Error|index\.html|:\d+:\d+|!/.test(box.innerHTML.replace(/<[^>]*>/g, '')), `no error text, stack or exclamation: ${box.innerHTML}`);
+  });
+  test('45.39 Copy summary returns to its label however fast it is pressed, and a stale result is copied with the stale marker [M13]', () => {
+    const timers = [], copied = [];
+    const prev = { st: sandbox.setTimeout, ct: sandbox.clearTimeout, nav: sandbox.navigator, stale: sandbox.resultIsStale };
+    sandbox.setTimeout = (f) => { timers.push(f); return timers.length; };
+    sandbox.clearTimeout = (id) => { if (id > 0) timers[id - 1] = null; };
+    sandbox.navigator = { clipboard: { writeText: (t) => { copied.push(t); return { then: (ok) => ok() }; } } };
+    let stale = false;
+    sandbox.resultIsStale = (scope) => stale && (scope === 'auc' || scope === 'trough');
+    try {
+      run45('bState.summaryText = "Give 1.25 g IV q12h; AUC24 about 480."; state.pdLast = { answer: {} }; state.pdSummary = "Give 750 mg today.";');
+      const btn = actEl45('k81', { textContent: 'Copy summary' });
+      act45(btn); act45(btn);
+      assert(btn.textContent === 'Copied', `after two presses: "${btn.textContent}"`);
+      timers.forEach(f => f && f());
+      assert(btn.textContent === 'Copy summary', `stuck on "${btn.textContent}"`);
+      assert(copied[0] === 'Give 1.25 g IV q12h; AUC24 about 480.', `fresh: "${copied[0]}"`);
+      stale = true;
+      act45(btn);
+      const msg = run45('STALE_MSG');
+      assert(copied[2].startsWith(msg) && copied[2].endsWith('Give 1.25 g IV q12h; AUC24 about 480.'), `stale AUC copy: "${copied[2]}"`);
+      act45(actEl45('k95', { textContent: 'Copy summary' }));
+      assert(copied[3].startsWith(msg) && copied[3].endsWith('Give 750 mg today.'), `stale PD copy: "${copied[3]}"`);
+    } finally {
+      for (const [k, v] of [['setTimeout', prev.st], ['clearTimeout', prev.ct], ['navigator', prev.nav], ['resultIsStale', prev.stale]]) {
+        if (v === undefined) delete sandbox[k]; else sandbox[k] = v;
+      }
+      run45('bState.summaryText = ""; state.pdLast = null; state.pdSummary = "";');
+    }
+  });
+  test('45.40 firstDosePlan ends when the first-dose time is not a number (its loop is bounded by the first day) [M18]', () => {
+    sandbox.__fd45 = { r: { model: 'buelga', CL_ind: 3, V_ind: 60, doses: [{ mg: 1000, tinfH: 1, timeH: 0 }], levels: [], fitNowH: 20 },
+      rec: { dose: 1750, tau: 24, tinfH: 2 } };
+    try {
+      let plan;
+      try { plan = vm.runInContext('firstDosePlan(__fd45.r, __fd45.rec, NaN)', sandbox, { timeout: 500 }); }
+      catch (e) { throw new Error(`firstDosePlan with a NaN time did not return: ${e.message}`); }
+      assert(plan && !Number.isFinite(plan.firstH), JSON.stringify(plan && plan.firstH));
+      const ok = vm.runInContext('firstDosePlan(__fd45.r, Object.assign({}, __fd45.rec, { tau: 8, dose: 750, tinfH: 1 }), 20)', sandbox, { timeout: 500 });
+      assert(ok && Number.isFinite(ok.auc24First) && ok.times.length === 3, 'q8h: three first-day doses, a first-day AUC');
+    } finally { delete sandbox.__fd45; }
+  });
+  test('45.41 resetBayesian forgets the Dose Tinkerer preview\'s redraw (a new patient repaints nothing of the old one)', () => {
+    // A DOM stub whole enough for resetBayesian's own clearing (every element has a style and a value).
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = () => Object.assign(makeEl(), { style: { display: '' }, dataset: {}, querySelector: () => null });
+    try {
+      run45('_tinkSSRedraw = () => {};');
+      fn45('resetBayesian')();
+      assert(run45('_tinkSSRedraw') === null, `after reset: ${typeof run45('_tinkSSRedraw')}`);
+    } finally { sandbox.document.getElementById = prevGet; }
+  });
+
+  // Fix round 1 (Task 21 review). Item 1: syncDtPair ran its host's handler with a second, unguarded lookup.
+  test('45.42 a date-and-time pair runs its host\'s handler through the one lookup: own keys only, a failure said on screen [review 1]', () => {
+    const box = { hidden: true, innerHTML: '' }, errors = [];
+    const host = { value: '', attrs: { 'data-oninput': 'k23' }, getAttribute(n) { return this.attrs[n] || null; } };
+    const els = { 't21-host': host, 't21-host-date': { value: '2026-11-14' }, 't21-host-time': { value: '08:00' },
+      't21-host-rb': { textContent: '' }, 'action-status': box };
+    const prev = { get: sandbox.document.getElementById, calc: sandbox.calcTimeDelta, con: sandbox.console };
+    sandbox.document.getElementById = (id) => els[id] || null;
+    sandbox.calcTimeDelta = () => { throw new TypeError('boom at index.html:9:9'); };
+    sandbox.console = Object.assign({}, console, { error: (...a) => errors.push(a.map(String).join(' ')) });
+    const pair = { getAttribute: (n) => n === 'data-dt-for' ? 't21-host' : null };
+    const ev = { type: 'input', target: { getAttribute: (n) => n === 'aria-label' ? 'Last dose given, time (24-hour)' : null, textContent: '' } };
+    const run = () => { try { fn45('syncDtPair')(pair, ev); return null; } catch (e) { return e; } };
+    try {
+      const threw = run();
+      assert(!threw, `the failure escaped syncDtPair: ${threw && threw.message}`);
+      assert(errors.length === 1 && /k23/.test(errors[0]), `console: ${errors.join('; ')}`);
+      assert(box.hidden === false && /&quot;Last dose given, time \(24-hour\)&quot; did not finish/.test(box.innerHTML) && !/boom/.test(box.innerHTML), box.innerHTML);
+      host.attrs['data-oninput'] = '__defineGetter__'; host.value = ''; box.hidden = true; box.innerHTML = ''; errors.length = 0;
+      const threw2 = run();
+      assert(!threw2 && errors.length === 0 && box.hidden === true, `an inherited key ran: ${threw2 && threw2.message} ${errors.join('; ')}`);
+    } finally {
+      sandbox.document.getElementById = prev.get; sandbox.calcTimeDelta = prev.calc; sandbox.console = prev.con;
+    }
+  });
+  // Item 3: the comparison line read the cap back off the rounding; the function says whether it capped.
+  test('45.43 computeGuidelineDose says whether its cap applied, and the comparison line reads that [review 3]', () => {
+    const g = fn45('computeGuidelineDose');
+    assert(g(200, 80).capped === true && g(70, 80).capped === false && g(174, 80).capped === false && g(175, 80).capped === true,
+      `capped: 200 kg ${g(200, 80).capped}, 70 kg ${g(70, 80).capped}, 174 kg ${g(174, 80).capped}, 175 kg ${g(175, 80).capped}`);
+    const r = fn45('renderBayesianResults').toString();
+    assert(/gd\.capped \?/.test(r) && !/gd\.rawDose \/ MATRIX_DOSE_STEP/.test(r), 'the comparison line still re-derives the cap');
+  });
+  // Item 5: the AUC tinkerer had no range check, and the Trough one refused with a red border and no words.
+  test('45.44 both tinkerers refuse a dose outside INPUT_LIMITS.dose with the same plain words [review 5]', () => {
+    const L = K45.INPUT_LIMITS.dose, words = `Enter a dose of ${L.min}–${L.max} mg to try.`;
+    const res = { style: { display: 'none' }, innerHTML: '', classList: { add() {}, remove() {} } };
+    const vals = { 'b-tink-dose': '5000', 'b-tink-int': '12', 'b-mic': '1', 'b-auc-target': '450', 'tinker-dose-t': '5000', 'tinker-tau-t': '12' };
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = (id) => id === 'b-tink-result' || id === 'tinker-result-t' ? res
+      : vals[id] != null ? { value: vals[id], style: {}, setAttribute() {}, removeAttribute() {} } : prevGet(id);
+    try {
+      run45('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55, CL_pop: 5, V_pop: 60, goti: null, doses: [], levels: [] };');
+      try { fn45('runBayesTinkerer')(); } catch (e) { throw new Error(`AUC tinkerer threw on 5000 mg: ${e.message}`); }
+      assert(res.innerHTML.includes(words) && res.style.display !== 'none', `AUC tinkerer, 5000 mg: "${res.innerHTML.slice(0, 120)}"`);
+      res.innerHTML = '';
+      fn45('tinkerDose')('t');
+      assert(res.innerHTML.includes(words), `Trough tinkerer, 5000 mg: "${res.innerHTML.slice(0, 120)}"`);
+      assert(fn45('tinkerDoseRefusal')(L.min) === '' && fn45('tinkerDoseRefusal')(L.max) === '' && fn45('tinkerDoseRefusal')(NaN) === words, 'one refusal helper, inclusive limits');
+    } finally { sandbox.document.getElementById = prevGet; run45('bState.result = null;'); }
+  });
+  // Item 7: a role="alert" region is announced reliably when it is shown first and filled after.
+  test('45.45 the failed-action line is shown before it is filled [review 7]', () => {
+    const order = [], box = {};
+    Object.defineProperty(box, 'hidden', { set(v) { order.push('hidden=' + v); }, get() { return false; } });
+    Object.defineProperty(box, 'innerHTML', { set(v) { order.push(v ? 'filled' : 'emptied'); }, get() { return ''; } });
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = (id) => id === 'action-status' ? box : prevGet(id);
+    try { fn45('showActionFailure')({ getAttribute: () => null, textContent: 'Load' }); } finally { sandbox.document.getElementById = prevGet; }
+    assert(order.indexOf('hidden=false') >= 0 && order.indexOf('hidden=false') < order.lastIndexOf('filled'), order.join(' → '));
+  });
+
+  // ── Task 21b (D27): Release 1 carry-overs a pharmacist reads as clinical fact (rulings R32, R33).
+  // A held planned dose is not drawn as given. D26's C1 fixture (fictional 60 M, SCr 3.0, Buelga; 1.5 g q8h x 6
+  // over 2 h, 48 mg/L at 45 h, now 46 h) plus a planned 1.5 g at 48 h, which the answer holds (44.5a).
+  test('45.46 a planned dose the answer holds is left off the curve\'s doses and marked "held" on the strip, never drawn as given [T21b]', () => {
+    const { c1Case } = __suiteShared;
+    const { r: r0, rec, nowH, cur } = c1Case();
+    const planned = { mg: 1500, tinfH: 2, timeH: 48 };
+    const r = Object.assign({}, r0, { doses: r0.doses.concat([planned]) });
+    const plan = fn45('firstDosePlan')(r, rec, nowH, null, cur);
+    assert(plan.hold && plan.holdPlannedH === 48, `fixture: a hold on the planned dose: ${JSON.stringify({ hold: plan.hold, at: plan.holdPlannedH })}`);
+    const c = fn45('profileCourseDoses')(r, plan, []);
+    assert(c.held.length === 1 && c.held[0] === planned && c.doses.length === 6 && c.doses.indexOf(planned) < 0, JSON.stringify(c));
+    // The curve's concentration after the held time is the fit without the dose (what the hold was judged on).
+    const given = Object.assign({}, r, { doses: c.doses });
+    const at = (rr, t) => fn45('predictFittedAt')(rr, t);
+    assert(at(given, 50) < at(given, 48) && at(r, 50) > at(given, 50) + 5, `drawn ${at(given, 50)} vs as-given ${at(r, 50)} at 50 h`);
+    // A projection is added after the rows that are drawn; the held row stays out.
+    const proj = [{ mg: 500, tinfH: 1, timeH: plan.resumeH }];
+    const cp = fn45('profileCourseDoses')(r, plan, proj);
+    assert(cp.doses.length === 7 && cp.doses[6] === proj[0] && cp.doses.indexOf(planned) < 0, 'with the projection');
+    // No hold, nothing held: the planned row is drawn (it will be given).
+    const fine = fn45('profileCourseDoses')(r, Object.assign({}, plan, { hold: false }), []);
+    assert(fine.held.length === 0 && fine.doses.length === 7, 'no hold');
+    // A refusal's hold ("recheck a level before the next dose") holds every planned row too.
+    assert(fn45('heldPlannedDoses')(r, { noSolution: true, hold: true, holdNoTime: true, holdPlannedH: null }).length === 1, 'refusal hold');
+    // The axis is the one it was: the held row is on it (the strip marks it there).
+    const dAll = fn45('profileDomain')(r.doses, r.CL_ind / r.V_ind, [], r.levels, nowH);
+    const dHeld = fn45('profileDomain')(c.doses, r.CL_ind / r.V_ind, [], r.levels, nowH, c.held);
+    assert(dAll.tStart === dHeld.tStart && dAll.tEnd === dHeld.tEnd, `axis ${JSON.stringify(dAll)} vs ${JSON.stringify(dHeld)}`);
+    // The strip: six bars (the given doses), and one "held" mark titled with the dose and its time.
+    const el = { clientWidth: 600, innerHTML: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, classList: { toggle() {} } };
+    fn45('drawCourseStrip')(el, c.doses, 0, r.levels, [], r.CL_ind / r.V_ind, [], false, nowH, c.held);
+    const bars = (el.innerHTML.match(/<rect [^>]*class="bar"/g) || []).length, held = el.innerHTML.match(/<g class="held"><title>([^<]*)<\/title>/g) || [];
+    assert(bars === 6 && held.length === 1 && /1\.5 g planned at .*: held, not given/.test(held[0]) && />held<\/text>/.test(el.innerHTML) && /<svg [^>]*class="ic"/.test(el.innerHTML),
+      `bars ${bars}, held ${held.join(' | ')}`);
+    // The screen and print draw from it, through the hold the verdict shows.
+    assert(/profileCourseDoses\(r, answerHoldPlanOf\(r\), projDoses\)/.test(fn45('refreshProfileGraph').toString())
+      && /profileCourseDoses\(r, answerHoldPlanOf\(r\), \[\]\)/.test(fn45('_buildPrintGraph').toString()), 'refreshProfileGraph and the print graph draw through profileCourseDoses');
+  });
+  // Trough hold "not before" is never in the past and never before the due time (ledger Task 2 minors). AUC
+  // Precision judges the hold at the later of the due time and now (firstDosePlan's fromH); the Trough clock time
+  // was the dose start plus the decline alone, so a level entered hours after its fall to 20 read "not before" a
+  // time already gone.
+  test('45.47 Trough hold: no Hold once the level has fallen to 20 mg/L by now; else "not before" is the later of the fall and the due time; I3, I4 and N2 still hold [T21b, R52]', () => {
+    const th = fn45('troughHold'), start = new Date('2026-11-14T01:00Z').getTime() / 3600000;
+    // 44.5c's level: 30 mg/L at 8.4 h on q8h (Vd 56 L, 1.5 g over 1.5 h); it falls to 20 at 13.38 h.
+    const kel = fn45('fitKelFromLevel')(30, 8.4, 1500, 8, 1.5, 56).kel, reach = 8.4 + Math.log(30 / 20) / kel;
+    // Now before the fall: the fall decides, as before (and a call with no "now" is unchanged).
+    const early = th(30, 8, kel, start, { c: 30, h: 8.4 }, start + 9);
+    assert(early && Math.abs(early.atH - th(30, 8, kel, start, { c: 30, h: 8.4 }).atH) < 1e-12 && early.atH - start >= reach - 1e-9,
+      `now before the fall: ${early && (early.atH - start)}`);
+    // Now after the fall (the result read 20 h after the dose started): the level is under 20, so no Hold at all
+    // (controller ruling: "Hold … not before <now>" contradicted itself; the ordinary answer stands).
+    assert(th(30, 8, kel, start, { c: 30, h: 8.4 }, start + 20.25) === null, 'fallen to 20 before now: no hold');
+    // The boundary: one minute either side of the fall.
+    assert(th(30, 8, kel, start, { c: 30, h: 8.4 }, start + reach + 1 / 60) === null, 'it crossed 20 one minute before now: no hold');
+    const just = th(30, 8, kel, start, { c: 30, h: 8.4 }, start + reach - 1 / 60);
+    assert(just && just.atH > start + reach - 1 / 60 && just.atH - start >= reach - 1e-9 && just.atH - start <= reach + 1 / 60 + 1e-6,
+      `it crosses 20 one minute after now: a Hold, not before the crossing (${just && (just.atH - start)} h, crossing ${reach} h)`);
+    // Ruling R54 (fix round; this line pinned the old behaviour, rule 9): the no-time branch reads the same origin as AUC
+    // Precision (R51), the later of the due time and now, and R52 applies to it too. 40 mg/L due at 12 h with a 73 h
+    // half-life reaches 20 at 85 h: from the due time that is past 72 h ("recheck"), but read at 30 h it is 55 h away, a time.
+    assert(th(40, 12, Math.log(2) / 73, start, null, start + 1).noTime === true, 'due ahead: 73 h after the due time is "recheck a level"');
+    const r54 = th(40, 12, Math.log(2) / 73, start, null, start + 30);
+    assert(r54 && r54.noTime === false && r54.atH >= start + 85 - 1e-9 && r54.horizonFrom === 'now', `read at 30 h: ${JSON.stringify(r54)}`);
+    const n54 = th(40, 12, Math.log(2) / 100, start, null, start + 30);
+    assert(n54 && n54.noTime === true && n54.horizonFrom === 'now' && /more than 72 h from now/.test(fn45('troughHoldHTML')(n54)), fn45('troughHoldHTML')(n54));
+    assert(/more than 72 h after the due time/.test(fn45('troughHoldHTML')(th(40, 12, Math.log(2) / 100, start, null, start + 1))), 'due ahead: "after the due time"');
+    assert(th(40, 12, Math.log(2) / 100, start, null, start + 12 + 100 + 1) === null, 'R52 on the no-time branch: fallen to 20 by now, no hold');
+    // Never before the due time, on every measured basis (I3: one below 20 by then is no hold).
+    for (const [c, h, due, k] of [[30, 8.4, 8, kel], [25, 7.9, 8, 0.08], [25, 24, 12, 0.03], [40, 3, 12, 0.05], [21, 11.9, 12, 0.15]]) {
+      const x = th(c * Math.exp(-k * (due - h)), due, k, start, { c, h }, start);
+      assert(x && x.atH >= start + due - 1e-9 && x.atH >= start + x.afterDoseH - 1e-9, `${c} mg/L at ${h} h, due ${due} h: ${x && (x.atH - start)}`);
+    }
+    // I3: 20.5 mg/L at 7.6 h, Kel 0.15, due 8 h: it is 19.3 by then, so no hold (the ledger's 7.77 h case).
+    assert(th(20.5 * Math.exp(-0.15 * 0.4), 8, 0.15, start, { c: 20.5, h: 7.6 }, start) === null, 'I3: below 20 at the due time is no hold');
+    // N2: drawn after the due time it is judged as drawn: 18 at 24 h is no hold; 25 at 24 h holds from 24 h.
+    assert(th(18 * Math.exp(0.03 * 12), 12, 0.03, start, { c: 18, h: 24 }, start) === null, 'N2: 18 mg/L drawn after the due time');
+    const n2 = th(25 * Math.exp(0.03 * 12), 12, 0.03, start, { c: 25, h: 24 }, start);
+    assert(n2 && n2.late && n2.cPre === 25 && n2.atH >= start + 24, JSON.stringify(n2));
+    // The three Trough modes hand it the time of the calculation (I4: random-level too), read in one place.
+    const calc = fn45('calculate').toString();
+    assert((calc.match(/troughHold\([^;]*, calculationNowH\(\)\)/g) || []).length === 3, 'level, two-level and random-level pass now');
+    // AUC Precision: firstDosePlan never shows a Hold whose resume time is at or before now (it judges at the later
+    // of the due time and now, and resumes at least one step after that). C1 at several "now"s, with a planned row too.
+    const { c1Case } = __suiteShared, { r, rec, cur } = c1Case();
+    for (const nowH of [46, 47.99, 60, 80, 100]) for (const rr of [r, Object.assign({}, r, { doses: r.doses.concat([{ mg: 1500, tinfH: 2, timeH: 48 }]) })]) {
+      const p = fn45('firstDosePlan')(Object.assign({}, rr, { fitNowH: nowH }), rec, nowH, null, cur);
+      assert(!p.hold || p.holdNoTime || p.resumeH > nowH, `now ${nowH}: hold ${p.hold}, resume ${p.resumeH}`);
+    }
+  });
+  // The hold horizon text matches what was counted (final review minor). U2: 72 h from the due time. A chosen
+  // first-dose time was counted from itself (chosen + 72 h) while the projection note said "72 h after the dose was
+  // due". The count is now from the time the next dose is due (firstDosePlan's own "when the next dose is due": the
+  // new regimen's interval from the last dose, or now once that has passed) or the planned dose held, and every
+  // surface names that origin.
+  test('45.48 the hold horizon is counted from the due time, chosen time or not, and every surface says "72 h after the next dose is due" [T21b]', () => {
+    // 44.37's fixture: one 2 g dose at 0 h, Buelga, V 50 L, now 4 h; the new regimen 500 mg q24h, due at 24 h.
+    const mk = (CL) => ({ model: 'buelga', CL_ind: CL, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [], fitNowH: 4 });
+    const at = (r, t) => fn45('predictFittedAt')(r, t);
+    const crossAt = (h) => { let lo = 0.01, hi = 5; for (let k = 0; k < 80; k++) { const m = (lo + hi) / 2; if (at(mk(m), h) >= K45.TROUGH_HIGH_MGL) lo = m; else hi = m; } return mk(hi); };
+    const rec = { dose: 500, tau: 24, tinfH: 1, auc24: 500 }, plan = (r, atH) => fn45('firstDosePlan')(r, rec, 4, atH, null);
+    // Crossing 80 h after the due time: past the horizon whether or not a later time is chosen (it was given a time
+    // when 40 h was chosen: 40 + 72 = 112 h reaches 104 h).
+    const r80 = crossAt(24 + 80);
+    assert(plan(r80, null).holdNoTime === true, 'unchosen: recheck');
+    const c40 = plan(r80, 40);
+    assert(c40.hold && c40.holdNoTime === true && c40.resumeH === null, `chosen 40 h, crossing at 104 h: ${JSON.stringify({ resume: c40.resumeH, noTime: c40.holdNoTime })}`);
+    // Crossing 70 h after the due time: a time whether or not an earlier time is chosen (chosen 10 h: 10 + 72 = 82 h
+    // missed it).
+    const r70 = crossAt(24 + 70);
+    const c10 = plan(r70, 10), u70 = plan(r70, null);
+    assert(c10.hold && !c10.holdNoTime && Math.abs(c10.resumeH - 94) <= 0.25 && !u70.holdNoTime && Math.abs(u70.resumeH - 94) <= 0.25,
+      `crossing at 94 h: chosen 10 h ${c10.resumeH}, unchosen ${u70.resumeH}`);
+    // A planned dose held: counted from the planned dose (it is the dose that was due).
+    const rp = Object.assign({}, r70, { doses: r70.doses.concat([{ mg: 500, tinfH: 1, timeH: 30 }]) });
+    const pp = plan(rp, null);
+    assert(pp.hold && pp.holdPlannedH === 30, `planned hold: ${JSON.stringify({ hold: pp.hold, at: pp.holdPlannedH })}`);
+    // The words: one origin, named the same on every surface; never "for the next 72 h" (counted from the time held).
+    const said = (p) => [fn45('holdSentence')(p), fn45('holdHeadHTML')(p), fn45('firstDoseReadoutHTML')(p, rec, false), fn45('firstDoseReadoutHTML')(p, rec, true)];
+    for (const h of said(c40)) assert(h.indexOf(`until ${K45.HOLD_SEARCH_MAX_H} h after the next dose is due`) >= 0 && !/for the next \d+ h/.test(h), h.slice(0, 400));
+    const rpNo = Object.assign({}, r80, { doses: r80.doses.concat([{ mg: 500, tinfH: 1, timeH: 30 }]) }), ppNo = plan(rpNo, null);
+    assert(ppNo.holdNoTime && said(ppNo).every(h => h.indexOf(`until ${K45.HOLD_SEARCH_MAX_H} h after the planned dose`) >= 0), said(ppNo)[0]);
+    assert(/fpProj\.holdPlannedH != null|holdHorizonText\(fpProj\)/.test(fn45('refreshProfileGraph').toString()) && !/after the dose was due/.test(fn45('refreshProfileGraph').toString()),
+      'the projection note names the same origin');
+  });
+  // Two-level and random-level refusals name only intervals the user can select (ledger Task 3): TROUGH_INTERVALS_H
+  // has q6h, but #tl-tau and #rl-tau offer q8h-q48h. And the all-interval alarm names the regimen whose AUC it quotes
+  // (it quoted the highest of any interval, 357, beside a reason line quoting the chosen interval's 317).
+  test('45.49 Trough refusals: two-level and random-level name only the intervals their select offers, and the alarm names the regimen it quotes [T21b]', () => {
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    const opts = (id) => { const m = src.match(new RegExp(`<select id="${id}"[^>]*>([\\s\\S]*?)</select>`)); return m ? [...m[1].matchAll(/value="(\d+)"/g)].map(x => +x[1]) : null; };
+    const all = run45('TROUGH_INTERVALS_H'), lvl = run45('typeof TROUGH_LEVEL_INTERVALS_H === "undefined" ? null : TROUGH_LEVEL_INTERVALS_H');
+    assert(JSON.stringify(opts('interval')) === JSON.stringify(all) && JSON.stringify(opts('init-interval')) === JSON.stringify(all), `steady-state and initial selects: ${opts('interval')} / ${all}`);
+    assert(lvl && JSON.stringify(opts('tl-tau')) === JSON.stringify(lvl) && JSON.stringify(opts('rl-tau')) === JSON.stringify(lvl), `two-level and random-level selects: ${opts('tl-tau')} / ${lvl}`);
+    // CL 8 L/h, V 60 L at q24h (44.8e): q6h (1 g, AUC 500), q8h and q12h reach the band within the ceilings.
+    const fod = fn45('findOptimalDose');
+    assert(fod(10, 20, 24, 1, 8 / 60, 60, 8).others.some(x => x.tau === 6), 'the steady-state and initial modes still name q6h');
+    const o = fod(10, 20, 24, 1, 8 / 60, 60, 8, false, lvl);
+    assert(o.refused && o.others.length > 0 && o.others.every(x => lvl.indexOf(x.tau) >= 0) && !/q6h/.test(o.reason), `level modes: ${o.reason}`);
+    // Rendered: two levels after a first 1 g dose (1 h), 13.7 mg/L at 2 h and 8.0 at 6 h (CL about 8 L/h), q24h chosen.
+    const { trough44 } = __suiteShared;
+    const tl = trough44('twolevels', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, 'tl-dose': 1000, 'tl-tinf': 1, 'tl-tau': 24,
+      'tl-c1': 13.7, 'tl-c2': 8.0, 'tl-dose-time': '2026-11-14T00:00', 'tl-t1-time': '2026-11-14T02:00', 'tl-t2-time': '2026-11-14T06:00',
+      'tl-t1-hours': 2, 'tl-t2-hours': 6 });
+    const verdict = (t) => t.slice(0, t.indexOf('Based on'));   // the refusal, its reason and the cap-bound note
+    assert(/No regimen recommended/.test(tl.text) && /IV q8h/.test(verdict(tl.text)) && !/q6h/.test(verdict(tl.text)), `two-level: ${tl.text.slice(0, 600)}`);
+    const rl = trough44('randomlevel', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, 'rl-dose': 1000, 'rl-tinf': 1, 'rl-tau': 24,
+      'rl-c': 8.0, 'rl-dose-time': '2026-11-14T00:00', 'rl-draw-time': '2026-11-14T06:00' });
+    assert(/No regimen recommended/.test(rl.text) && verdict(rl.text).length > 40 && !/q6h/.test(verdict(rl.text)), `random-level: ${rl.text.slice(0, 600)}`);
+    // The no-interval alarm: 44.8b's random-level patient (CL 12.6 L/h): q12h's highest 2 g reaches 317, q8h's 1.5 g 357.
+    const rl2 = trough44('randomlevel', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'rl-dose': 1000, 'rl-tinf': 1, 'rl-tau': 12,
+      'rl-c': 3, 'rl-dose-time': '2026-11-14T00:00', 'rl-draw-time': '2026-11-14T08:00' });
+    const q = rl2.text.match(/at this clearance\. The highest admissible regimen, ([\d.]+ g IV q(\d+)h), falls short at AUC₂₄ (\d+)\./);
+    assert(q && q[1] === '1.5 g IV q8h' && q[3] === '357' && /the highest admissible, 2 g IV q12h gives AUC₂₄ 317/.test(rl2.text) && /No interval from q8h to q48h reaches/.test(rl2.text),
+      `the alarm names its regimen: ${rl2.text.slice(0, 700)}`);
+    // The regimen named is the one whose AUC is quoted (unit, at the same clearance on the two-level/random-level list).
+    const f = fod(10, 20, 12, 1, 12.6 / 60, 60, 12.6, false, lvl);
+    assert(f.highestAny && f.highestAny.auc === f.highestAucAny && Math.abs(f.highestAny.auc - f.highestAny.dose * 24 / f.highestAny.tau / 12.6) < 1e-9
+      && f.highestAny.tau !== 12 && fn45('troughCapBoundHTML')(f).indexOf(`The highest admissible regimen, ${fn45('fmtRegimen')(f.highestAny.dose, f.highestAny.tau)}, falls short at AUC₂₄ ${f.highestAny.auc.toFixed(0)}`) >= 0,
+      `unit: ${JSON.stringify(f.highestAny)} ${fn45('troughCapBoundHTML')(f).replace(/<[^>]+>/g, '').slice(0, 300)}`);
+  });
+  // The trough44 helper honours the interval passed (ledger Task 3). setPatientSex refreshes the CrCl readout, whose
+  // suggestInterval overwrites #init-interval; the helper sets it again after (fixed in the Task 3 review, 0f0cdcb).
+  // 44.8 and 44.8a pass the interval the suggestion would give (q48h at CrCl 6.5, q8h at CrCl 303), so they cannot
+  // tell; this check uses intervals that differ from the suggestion, and fails if the helper's re-set is removed.
+  test('45.50 the trough44 helper calculates at the interval passed, not the one the CrCl readout suggests [T21b]', () => {
+    const { trough44 } = __suiteShared;
+    // CrCl 303 (suggests q8h) at q12h: the refusal is said of q12h.
+    const arc = trough44('initial', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'init-interval': 12, 'init-tinf': 1 });
+    assert(/At q12h no dose within the conventional ceilings/.test(arc.text) && !/At q8h no dose/.test(arc.text), arc.text.slice(0, 300));
+    // CrCl about 80 (suggests q12h) at q24h: the regimen is q24h.
+    const n = trough44('initial', 'M', { age: 60, tbw: 80, height: 175, scr: 1.0, 'init-interval': 24, 'init-tinf': 1 });
+    assert(/<span class="vx-freq">q24h<\/span>/.test(n.h), n.text.slice(0, 300));
+    // And the suggestion does differ for both (so this is not a coincidence again).
+    assert(/Q8H suggested/.test(arc.hint) && /Q12H suggested/.test(n.hint), `suggestions: ${arc.hint} | ${n.hint}`);
+  });
+  // Ruling R51: the horizon is counted from max(due, now) or the planned dose; the words name the origin actually
+  // used, on screen, in print, in Copy summary and in the announcement.
+  test('45.51 the "recheck a level" horizon names its origin: "72 h after the next dose is due", "72 h from now" once that has passed, or the planned dose [T21b, R51]', () => {
+    const r = (now) => ({ model: 'buelga', CL_ind: 0.05, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [], fitNowH: now });
+    const rec = { dose: 500, tau: 24, tinfH: 1, auc24: 500 / 0.05 }, row = fn45('aucUncertaintyRow')(0, 'buelga'), conf = { level: 'High' };
+    const surfaces = (rr, p) => ({ head: fn45('holdHeadHTML')(p), sentence: fn45('holdSentence')(p), screen: fn45('firstDoseReadoutHTML')(p, rec, false),
+      print: fn45('firstDoseReadoutHTML')(p, rec, true), summary: fn45('resultSummary')(rr, rec, null, row, conf, p), said: fn45('bayesAnnouncement')(rr, rec, conf, p) });
+    const due = fn45('firstDosePlan')(r(4), rec, 4, null, null), past = fn45('firstDosePlan')(r(30), rec, 30, null, null);
+    assert(due.holdNoTime && past.holdNoTime, 'both are "recheck a level"');
+    for (const [k, t] of Object.entries(surfaces(r(4), due))) assert(t.indexOf('until 72 h after the next dose is due') >= 0 && !/from now/.test(t), `due ahead, ${k}: ${t.slice(0, 300)}`);
+    for (const [k, t] of Object.entries(surfaces(r(30), past))) assert(t.indexOf('until 72 h from now') >= 0 && !/after the next dose is due/.test(t), `due passed, ${k}: ${t.slice(0, 300)}`);
+    const rp = Object.assign(r(4), { doses: r(4).doses.concat([{ mg: 500, tinfH: 1, timeH: 10 }]) }), pp = fn45('firstDosePlan')(rp, rec, 4, null, null);
+    assert(pp.holdPlannedH === 10 && pp.holdNoTime && Object.values(surfaces(rp, pp)).every(t => t.indexOf('until 72 h after the planned dose') >= 0), 'the planned dose');
+    // The projection note reads the same helper.
+    assert(/holdHorizonText\(fpProj\)/.test(fn45('refreshProfileGraph').toString()), 'projection note');
+  });
+  // Ruling 2: the severe-renal "No further dose until a level is drawn" withholds planned doses too.
+  test('45.52 under the severe-renal hold, once a dose is given, a planned dose is drawn as held and left off the curve; before any dose it is the loading dose [T21b]', () => {
+    const given = [{ mg: 1500, tinfH: 2, timeH: 0 }, { mg: 1000, tinfH: 2, timeH: 24 }], planned = { mg: 1000, tinfH: 2, timeH: 32 };
+    const r = { model: 'goti', lowCrClHold: true, CL_ind: 0.6, V_ind: 40, doses: given.concat([planned]), levels: [], fitNowH: 30 };
+    const c = fn45('profileCourseDoses')(r, null, []);
+    assert(c.held.length === 1 && c.held[0] === planned && c.doses.length === 2, JSON.stringify(c));
+    // Only planned rows (nothing given): the answer is "Give one loading dose", so nothing is held.
+    const r0 = Object.assign({}, r, { doses: [planned], fitNowH: 30 });
+    assert(fn45('heldPlannedDoses')(r0, null).length === 0, 'the loading dose is not held');
+    // Not severe-renal, no hold: nothing held.
+    assert(fn45('heldPlannedDoses')(Object.assign({}, r, { lowCrClHold: false }), null).length === 0, 'no hold');
+  });
+
+  // ── Task 21c: the user's ruling U5 (2026-11-15). On Goti (not on dialysis) a Hold on the FITTED pre-dose level alone is
+  // not a Hold: the regimen answer stands and one caution line names the fitted value. Measured bases, Buelga, Hughes,
+  // Goti-HD and the Trough module are unchanged. Fictional synthetic fits: Q 6.5 L/h; 1.5 g over 2 h q12h x 4 (0-36 h).
+  const u5 = (o) => {
+    const Q = K45.Q_GOTI, CL = o.CL, Vc = 30, Vp = 40;
+    const r = { model: o.model || 'goti', dial: !!o.dial, CL_ind: CL, V_ind: o.model === 'buelga' ? 50 : Vc,
+      doses: [0, 12, 24, 36].map(t => ({ mg: 1500, tinfH: 2, timeH: t })), levels: o.levels || [], fitNowH: o.now || 40 };
+    if (r.model !== 'buelga') r.goti = { CL_ind: CL, Vc_ind: Vc, Vp_ind: Vp, Q, k10_ind: CL / Vc, k12_ind: Q / Vc, k21_ind: Q / Vp };
+    return r;
+  };
+  const rec53 = { dose: 1000, tau: 12, tinfH: 1, auc24: 400, action: 'continue' }, cur53 = { dose: 1500, tau: 12, tinfH: 2 };
+  const plan53 = (r) => fn45('firstDosePlan')(r, rec53, r.fitNowH, null, cur53);
+  test('45.53 U5: a Goti Hold on the fitted level alone becomes one caution line; measured or both still hold; Buelga, Hughes and Goti-HD unchanged [T21c]', () => {
+    const fo = u5({ CL: 1.5 }), p = plan53(fo);
+    const fittedAtDue = fn45('predictFittedAt')(fo, 48);
+    assert(fittedAtDue >= K45.TROUGH_HIGH_MGL && fn45('measuredHoldLevel')(fo, 40) === null, `fixture: fitted ${fittedAtDue}, no measured basis`);
+    assert(p.hold === false && p.holdCaution && Math.abs(p.holdCaution.fitted - fittedAtDue) < 1e-9 && p.holdCaution.atH === 48 && p.firstH === 48,
+      `Goti fitted-only: ${JSON.stringify({ hold: p.hold, c: p.holdCaution, first: p.firstH })}`);
+    const head = fn45('answerHeadHTML')(p), plain = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    // R2 final review I3: "no measured level confirms it" was false when an earlier level exists, and the ask now uses the
+    // Next line's verb ("Draw a level"), so the sentence changed with the wording ruling, not to pass.
+    const want = `Caution: the fitted level when the next dose is due (${fn45('fmtClock')(48)}) is ${fittedAtDue.toFixed(1)} mg/L, at or above ${K45.TROUGH_HIGH_MGL} mg/L on the fit alone; no level drawn since the last dose confirms it. Draw a level before giving the next dose.`;
+    assert(/tone-caution/.test(head) && /<svg class="ic"/.test(head) && plain(head) === want && !/Hold|tone-alarm/.test(head), plain(head));
+    const row = fn45('aucUncertaintyRow')(0, 'goti'), conf = { level: 'Moderate' };
+    const rr = Object.assign({}, fo, { rec: rec53 });
+    const summary = fn45('resultSummary')(rr, rec53, null, row, conf, p), said = fn45('bayesAnnouncement')(rr, rec53, conf, p);
+    for (const [k, t] of [['summary', summary], ['said', said]]) assert(t.indexOf(want) >= 0 && !/Hold|Recheck a level before the next dose/.test(t), `${k}: ${t}`);
+    const screen = fn45('firstDoseReadoutHTML')(p, rec53, false), paper = fn45('firstDoseReadoutHTML')(p, rec53, true);
+    assert(!/Hold/.test(screen + paper) && /<strong class="tone-caution">/.test(screen), screen);
+    // Fix round (review item 1): the Next line and the further-level panel read the caution. At High confidence, on
+    // this fixture, they used to say "A further level would add little" under a "Precision only" panel, beside the
+    // caution's "Consider drawing a level before giving it".
+    const ctx = { r: rr, conf: { rank: 0, level: 'High', reasons: [] }, auc: 400, nLev: 0, model: 'goti', tau: 12, CL: 1.5, fixed: '' };
+    const step = fn45('bayesNextStep')(ctx, p), panel = fn45('voiHTML')(fn45('bayesNextLevel')(ctx, p));
+    assert(step === 'Draw a level before giving the next dose.', `Next: ${step}`);
+    assert(/<span class="voi-tag">Caution<\/span>/.test(panel) && /Draw a level before giving the next dose/.test(panel) && !/Precision only|would add little/.test(panel), panel);
+    // Without the caution (no plan) the same context gives its ordinary line: this one is what the caution displaced (re-review minor 4).
+    assert(fn45('bayesNextStep')(ctx, null) === 'A first level may substantially change the regimen.', `without the caution: ${fn45('bayesNextStep')(ctx, null)}`);
+    assert(/Draw a level before giving the next dose\./.test(summary) && /Draw a level before giving the next dose\./.test(said), `the summary and the announcement say it: ${summary} | ${said}`);
+    // The time chosen (k82) and "now" (the due time passed, no time chosen) name themselves.
+    const ch = fn45('firstDosePlan')(fo, rec53, 40, 44, cur53);
+    assert(!ch.hold && ch.holdCaution && ch.holdCaution.at === 'chosen' && fn45('holdCautionText')(ch).indexOf(`at the time chosen (${fn45('fmtClock')(44)}) is `) > 0, fn45('holdCautionText')(ch));
+    const late = Object.assign({}, fo, { fitNowH: 50 }), pl = fn45('firstDosePlan')(late, rec53, 50, null, cur53);
+    assert(!pl.hold && pl.holdCaution && pl.holdCaution.at === 'now' && /^Caution: the fitted level now is [\d.]+ mg\/L/.test(fn45('holdCautionText')(pl)), fn45('holdCautionText')(pl));
+    // Not the action line (review item 5).
+    assert(!/vx-action/.test(head) && /class="vx-ceiling-head vx-fitted-caution tone-caution"/.test(head), head);
+    // A planned row at a fitted-only level: given as planned (no Hold), and the caution names the planned dose.
+    const fp = Object.assign({}, fo, { doses: fo.doses.concat([{ mg: 1500, tinfH: 2, timeH: 48 }]) }), pp = plan53(fp);
+    assert(!pp.hold && pp.holdCaution && pp.holdCaution.at === 'planned' && fn45('heldPlannedDoses')(fp, pp).length === 0 && /at the planned dose/.test(fn45('holdCautionText')(pp)), JSON.stringify(pp.holdCaution));
+    // Measured basis alone (high clearance, a 30 mg/L level 10.5 h after the last dose) and both: Holds.
+    const me = plan53(u5({ CL: 10, levels: [{ conc: 30, timeH: 46.5 }], now: 47 }));
+    assert(me.hold && me.holdBasis === 'measured' && !me.holdCaution, `measured: ${me.hold} ${me.holdBasis}`);
+    const both = plan53(u5({ CL: 1.5, levels: [{ conc: 60, timeH: 46.5 }], now: 47 }));
+    assert(both.hold && both.holdBasis === 'both', `both: ${both.hold} ${both.holdBasis}`);
+    // Unchanged: Hughes, Buelga and Goti-HD fitted-only Holds.
+    for (const o of [{ CL: 1.5, model: 'hughes' }, { CL: 1.5, model: 'buelga' }, { CL: 1.5, dial: true }]) {
+      const x = plan53(u5(o));
+      assert(x.hold && x.holdBasis === 'fitted' && !x.holdCaution, `${o.model || 'goti'}${o.dial ? '-HD' : ''}: ${x.hold} ${x.holdBasis}`);
+    }
+    // The refusal (noSolutionHold): fitted-only on Goti is the caution beside "No regimen recommended"; measured holds.
+    const ns = fn45('noSolutionHold'), refused = (o) => Object.assign(u5(o), { rec: { noSolution: true } });
+    const nf = ns(refused({ CL: 1.5 }), 40, cur53);
+    assert(nf && nf.hold === false && nf.holdCaution && /before any further dose/.test(fn45('holdCautionText')(nf)) && !/Hold/.test(fn45('answerHeadHTML')(nf)),
+      JSON.stringify(nf));
+    assert(ns(refused({ CL: 1.5, model: 'hughes' }), 40, cur53).hold === true, 'Hughes refusal: Hold');
+    const nm = ns(refused({ CL: 10, levels: [{ conc: 30, timeH: 46.5 }], now: 47 }), 47, cur53);
+    assert(nm && nm.hold === true && nm.measured, 'Goti refusal on a measured level: Hold');
+    const nb = ns(refused({ CL: 1.5, levels: [{ conc: 60, timeH: 46.5 }], now: 47 }), 47, cur53);
+    assert(nb && nb.hold === true && nb.fitted >= K45.TROUGH_HIGH_MGL && nb.measured, 'Goti refusal on both: Hold');
+    // The refusal's Next line and panel read its caution too.
+    const nctx = { r: Object.assign(refused({ CL: 1.5 }), {}), conf: { rank: 0, level: 'High', reasons: [] }, auc: 400, nLev: 0, model: 'goti', tau: 12, CL: 1.5, fixed: '' };
+    const npanel = fn45('voiHTML')(fn45('bayesNextLevel')(nctx, nf));
+    assert(/Draw a level before any further dose/.test(npanel) && !/Precision only/.test(npanel), npanel);
+    const rsN = Object.assign(refused({ CL: 1.5 }), {});
+    assert(fn45('bayesAnnouncement')(rsN, rsN.rec, conf, nf).indexOf('Caution: the fitted level') > 0 && !/Hold/.test(fn45('bayesAnnouncement')(rsN, rsN.rec, conf, nf)), 'refusal heard');
+    // Print and the verdict read the same head (answerHeadHTML), the refusal's too; the Next line asks for a recheck only under a Hold.
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    assert(/h \+= answerHeadHTML\(noSolutionHold\(/.test(src), 'print reads the same head');
+  });
+  // A rendered Goti refusal whose hold reading is fitted alone (fix round, review item 8f: a rendered check, not a source
+  // regex). Fictional 70 M, 70 kg, 175 cm, SCr 8.5 (CrCl 8), Goti; 1.75 g at -100 h and again 1 h ago; 44.29's flat levels
+  // (52, 51, 50.2 mg/L at -74, -50 and -3 h), all before the last dose, so there is no measured basis after it. Every candidate breaches
+  // a hard limit at this clearance: "No regimen recommended", with the caution, never a Hold.
+  test('45.54 U5 rendered: a Goti refusal on the fitted level alone shows the caution above "No regimen recommended", no Hold; its Next line and panel ask for a level [T21c]', () => {
+    const { fit44 } = __suiteShared;
+    const o = fit44({ model: 'goti', age: 70, tbw: 70, ht: 175, scr: 8.5, mg: 1750, tinf: 2, tau: 99, n: 2, lastAgo: 1,
+      levels: [{ conc: 52, after: -73 }, { conc: 51, after: -49 }, { conc: 50.2, after: -2 }] });
+    assert(o.r.rec && o.r.rec.noSolution && !o.r.lowCrClHold, `fixture: a refusal (${o.r.rec && o.r.rec.action} ${o.r.rec && o.r.rec.dose} q${o.r.rec && o.r.rec.tau}, CL ${o.r.CL_ind})`);
+    const ns = fn45('noSolutionHold')(o.r, o.r.fitNowH, null);
+    assert(ns && ns.hold === false && ns.holdCaution, `fixture: fitted-only ${JSON.stringify(ns)}`);
+    const caution = (o.html.match(/<p class="vx-ceiling-head vx-fitted-caution tone-caution">[\s\S]*?<span>([^<]*)<\/span><\/p>/) || [])[1] || '';
+    // R2 final review I3: one verb on every surface ("Draw a level before any further dose" on a refusal).
+    assert(/^Caution: the fitted level /.test(caution) && /no level drawn since the last dose confirms it\. Draw a level before any further dose\.$/.test(caution), `caution: "${caution}" | ${o.text.slice(0, 400)}`);
+    assert(o.html.indexOf('vx-fitted-caution') < o.html.indexOf('No regimen recommended') && !/vx-hold-head|Hold: /.test(o.html), o.text.slice(0, 400));
+    const next = ((o.html.match(/<p class="vx-next">([\s\S]*?)<\/p>/) || [])[1] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    assert(/^Next Draw a level before any further dose\./.test(next) && !/Recheck a level/.test(next), next);
+    assert(o.summary.indexOf(caution) >= 0 && o.said.indexOf(caution) >= 0 && !/Hold/.test(o.summary + o.said), `${o.summary} | ${o.said}`);
+  });
+
+  // ── Task 21d: the user's ruling U6a (2026-11-15; controller ruling R55). A Hold whose only measured basis is a level
+  // drawn after the course's first dose and before the second (given, or due on the answered interval) is a caution, not
+  // a Hold, on every AUC Precision model; load or not. Goti-HD and the Trough module are unchanged. The fitted level also
+  // at 20 or more: since ruling R59 (R2 final review C1) a Hold on both bases on every model (R55 held Buelga/Hughes on the
+  // fitted basis and gave Goti a caution). The user's ruling U7 bounds U6a to levels within 12 h of the first dose (45.60).
+  const u6 = (o) => {
+    const Q = K45.Q_GOTI, CL = o.CL, Vc = 30, Vp = 40, model = o.model || 'buelga';
+    const r = { model, dial: !!o.dial, CL_ind: CL, V_ind: model === 'buelga' ? 50 : Vc, doses: o.doses, levels: o.levels, fitNowH: o.now };
+    if (model !== 'buelga') r.goti = { CL_ind: CL, Vc_ind: Vc, Vp_ind: Vp, Q, k10_ind: CL / Vc, k12_ind: Q / Vc, k21_ind: Q / Vp };
+    return r;
+  };
+  const one = [{ mg: 1500, tinfH: 2, timeH: 0 }], rec55 = { dose: 1000, tau: 12, tinfH: 1, auc24: 400, action: 'change' };
+  const plan55 = (r) => fn45('firstDosePlan')(r, rec55, r.fitNowH, null, null);
+  test('45.55 U6a: a Hold resting only on a level drawn after the first dose (before the second) is a caution on every model; a later level holds; both readings at 20 or more hold (R59, which replaced R55); Goti-HD unchanged [T21d]', () => {
+    // A first dose with no load: 1.5 g over 2 h at 0 h; 40 mg/L at 9 h; now 9.5 h; the answered regimen due at 12 h.
+    const firstLv = [{ conc: 40, timeH: 9 }];
+    for (const model of ['buelga', 'goti', 'hughes']) {
+      const r = u6({ model, CL: 8, doses: one, levels: firstLv, now: 9.5 }), p = plan55(r);
+      const mh = fn45('measuredHoldLevel')(r, 9.5), fitted = fn45('predictFittedAt')(r, 12);
+      assert(mh && mh.at(12) >= K45.TROUGH_HIGH_MGL && fitted < K45.TROUGH_HIGH_MGL, `${model} fixture: carried ${mh && mh.at(12)}, fitted ${fitted}`);
+      assert(!p.hold && p.holdCaution && p.holdCaution.kind === 'first-level' && p.firstH === 12, `${model}: ${JSON.stringify({ hold: p.hold, c: p.holdCaution })}`);
+      const t = fn45('holdCautionText')(p);
+      // R2 final review I3: "no later level confirms it. Consider drawing a level" read oddly minutes after a draw; the
+      // sentence now asks to repeat the level, and the Next line says the same (the wording ruling, not to pass).
+      assert(t === `Caution: the measured 40.0 mg/L at ${fn45('fmtClock')(9)}, drawn after the first dose and before the second, carried down the fitted slope, is ${mh.at(12).toFixed(1)} mg/L when the next dose is due (${fn45('fmtClock')(12)}), at or above ${K45.TROUGH_HIGH_MGL} mg/L. Repeat the level before giving the next dose.`, t);
+      const ctx = { r: Object.assign({}, r, { rec: rec55 }), conf: { rank: 0, level: 'High', reasons: [] }, auc: 400, nLev: 1, model, tau: 12, CL: 8, fixed: '' };
+      assert(fn45('bayesNextStep')(ctx, p) === 'Repeat the level before giving the next dose.', fn45('bayesNextStep')(ctx, p));
+    }
+    // A later level (after the second dose) still holds on every model.
+    const two = one.concat([{ mg: 1500, tinfH: 2, timeH: 12 }]);
+    for (const model of ['buelga', 'goti', 'hughes']) {
+      const p = plan55(u6({ model, CL: 8, doses: two, levels: [{ conc: 40, timeH: 21 }], now: 21.5 }));
+      assert(p.hold && p.holdBasis === 'measured' && !p.holdCaution, `${model} later level: ${p.hold} ${p.holdBasis}`);
+    }
+    // A second dose given early (6 h, before the answered interval's 12 h): a level at 10 h follows it, a Hold.
+    const early2 = plan55(u6({ model: 'buelga', CL: 3, doses: one.concat([{ mg: 1500, tinfH: 2, timeH: 6 }]), levels: [{ conc: 45, timeH: 10 }], now: 10.5 }));
+    assert(early2.hold && /^(both|measured)$/.test(early2.holdBasis) && !early2.holdCaution, `second dose given at 6 h, level at 10 h: ${early2.hold} ${early2.holdBasis}`);
+    // Under R59 that fixture's fitted level is also at 20 or more, so it holds on both bases whatever the second-dose rule says
+    // (mutant U6-c survived the R2 final-fix wave's first gate run). This one keeps the fitted level under 20 at the time judged
+    // (18 h), so only the given second dose makes the 10 h level a Hold rather than a first-interval caution.
+    const early2m = u6({ model: 'buelga', CL: 5, doses: one.concat([{ mg: 1500, tinfH: 2, timeH: 6 }]), levels: [{ conc: 50, timeH: 10 }], now: 10.5 });
+    const e2 = plan55(early2m);
+    assert(fn45('predictFittedAt')(early2m, 18) < K45.TROUGH_HIGH_MGL && e2.hold && e2.holdBasis === 'measured' && !e2.holdCaution,
+      `second dose given at 6 h, the fitted level under 20: ${fn45('predictFittedAt')(early2m, 18)} ${e2.hold} ${e2.holdBasis}`);
+    // Drawn after the second dose was due (12 h) with none given: not the first interval, a Hold.
+    // Two levels in the first interval: U1 reads the newest (9 h), and it is still a first-interval caution.
+    const twoLv = plan55(u6({ model: 'buelga', CL: 8, doses: one, levels: [{ conc: 50, timeH: 4 }, { conc: 40, timeH: 9 }], now: 9.5 }));
+    assert(!twoLv.hold && twoLv.holdCaution && twoLv.holdCaution.kind === 'first-level' && twoLv.holdCaution.conc === 40 && twoLv.holdCaution.levelH === 9,
+      `two first-interval levels: ${JSON.stringify(twoLv.holdCaution)}`);
+    // The plan path with a planned second row (12 h): the planned dose is judged, and the caution names it.
+    const withPlan = plan55(u6({ model: 'buelga', CL: 8, doses: one.concat([{ mg: 1000, tinfH: 1, timeH: 12 }]), levels: firstLv, now: 9.5 }));
+    assert(!withPlan.hold && withPlan.holdCaution && withPlan.holdCaution.kind === 'first-level' && withPlan.holdCaution.at === 'planned'
+      && /at the planned dose \(/.test(fn45('holdCautionText')(withPlan)), `planned second row: ${JSON.stringify(withPlan.holdCaution)}`);
+    const lateP = plan55(u6({ model: 'buelga', CL: 3, doses: one, levels: [{ conc: 40, timeH: 14 }], now: 14.5 }));
+    assert(lateP.hold && lateP.holdBasis !== 'fitted' && !lateP.holdCaution, `drawn after the second dose was due: ${lateP.hold} ${lateP.holdBasis}`);
+    // The fitted level also at 20 or more. Ruling R59 (R2 final review C1, replacing R55): both readings at or above the
+    // threshold are a Hold on BOTH bases on every model, Goti included, the first-interval level named. Before R59,
+    // Buelga and Hughes held on the fitted basis alone (not naming the level) and Goti read a 'fitted-first' caution;
+    // these asserts changed with the ruling, not to pass.
+    for (const model of ['buelga', 'goti', 'hughes']) {
+      const rr = u6({ model, CL: 0.5, doses: [{ mg: 3000, tinfH: 2, timeH: 0 }], levels: firstLv, now: 9.5 }), p = plan55(rr);
+      assert(fn45('predictFittedAt')(rr, 12) >= K45.TROUGH_HIGH_MGL && fn45('measuredHoldLevel')(rr, 9.5).at(12) >= K45.TROUGH_HIGH_MGL, `${model} fixture: fitted and carried both at 20 or more`);
+      assert(p.hold && p.holdBasis === 'both' && !p.holdCaution && /the fitted level .*, and the measured 40\.0 mg\/L.*, carried down the fitted slope, is /.test(fn45('holdSentence')(p)), `${model}: ${p.hold} ${p.holdBasis} ${fn45('holdSentence')(p)}`);
+    }
+    // Goti-HD is unchanged: the first-interval level holds.
+    const hd = plan55(u6({ model: 'goti', dial: true, CL: 8, doses: one, levels: firstLv, now: 9.5 }));
+    assert(hd.hold && hd.holdBasis === 'measured', `Goti-HD: ${hd.hold} ${hd.holdBasis}`);
+    // The refusal: no regimen to be due on, so the second dose's time is the first planned row. A first-interval level
+    // before it is a caution; with nothing planned there is no second-dose time and the measured Hold stands (D26's
+    // anuric refusal, one dose and three levels, stays a Hold: 44.4, 44.29); a later level is a Hold (every model).
+    const ns = fn45('noSolutionHold'), plannedRow = { mg: 1000, tinfH: 1, timeH: 12 };
+    for (const model of ['buelga', 'goti', 'hughes']) {
+      const a = ns(Object.assign(u6({ model, CL: 8, doses: one.concat([plannedRow]), levels: firstLv, now: 9.5 }), { rec: { noSolution: true } }), 9.5, null);
+      const a0 = ns(Object.assign(u6({ model, CL: 8, doses: one, levels: firstLv, now: 9.5 }), { rec: { noSolution: true } }), 9.5, null);
+      assert(a0 && a0.hold && a0.measured, `${model} refusal, nothing planned: ${JSON.stringify(a0)}`);
+      assert(a && !a.hold && a.holdCaution && a.holdCaution.kind === 'first-level' && /before any further dose/.test(fn45('holdCautionText')(a)), `${model} refusal, first interval: ${JSON.stringify(a)}`);
+      const b = ns(Object.assign(u6({ model, CL: 8, doses: two, levels: [{ conc: 40, timeH: 21 }], now: 21.5 }), { rec: { noSolution: true } }), 21.5, null);
+      assert(b && b.hold && b.measured, `${model} refusal, later level: ${JSON.stringify(b)}`);
+    }
+    // The Trough module is unchanged: a first-dose random level still holds there.
+    const th = fn45('troughHold')(40 * Math.exp(-0.16 * 3), 12, 0.16, 0, { c: 40, h: 9 }, 9.5);
+    assert(th && !th.noTime, 'Trough: a first-dose level still holds');
+  });
+  // Task 21d review fix round. Item 1: "before the second dose" is judged on the ANSWERED regimen's interval on every path.
+  // The projection plans with its own interval: Buelga 1.5 g at 0 h, 40 mg/L at 9 h, now 9.5 h; the answer q12h (caution),
+  // a projected q8h (8 h, before the level) used to make it a Hold while the verdict showed the caution.
+  test('45.56 U6a on the projection path: the second dose is due on the answered regimen\'s interval, not the projected one [T21d review 1]', () => {
+    const r = Object.assign(u6({ model: 'buelga', CL: 8, doses: one, levels: [{ conc: 40, timeH: 9 }], now: 9.5 }), { rec: rec55 });
+    const answer = fn45('firstDosePlan')(r, rec55, 9.5, null, null);
+    assert(!answer.hold && answer.holdCaution && answer.holdCaution.kind === 'first-level', `answer: ${JSON.stringify({ hold: answer.hold, c: answer.holdCaution })}`);
+    for (const tau of [6, 8]) {   // judged at now (9.5 h), where the reading is at or above 20: the answer's caution, never a Hold
+      const proj = fn45('firstDosePlan')(r, { dose: 1000, tau, tinfH: 1 }, 9.5, null, null);
+      assert(proj.hold === answer.hold && !!proj.holdCaution && proj.holdCaution.kind === answer.holdCaution.kind,
+        `projected q${tau}h: ${JSON.stringify({ hold: proj.hold, c: proj.holdCaution && proj.holdCaution.kind })}`);
+    }
+    // A longer projected interval judges at its own later time (24 h), where nothing is at 20: no Hold either.
+    assert(fn45('firstDosePlan')(r, { dose: 1000, tau: 24, tinfH: 1 }, 9.5, null, null).hold === false, 'projected q24h: no Hold');
+    // A refusal answer has no interval: R56 (no second-dose time, the measured Hold stands) whatever is projected.
+    const rr = Object.assign({}, r, { rec: { noSolution: true } });
+    assert(fn45('firstDosePlan')(rr, { dose: 1000, tau: 12, tinfH: 1 }, 9.5, null, null).hold === true, 'refusal answer: no second-dose time');
+  });
+  // Item 2 (ruling R57): the reviewer's case, Buelga CL 3 L/h, V 50 L, 3 g at 0 h, 70 mg/L at 9 h, now 9.5 h, q12h. R57 held it on
+  // the fitted basis and added a clause naming the first-interval level that set the later resume time. Ruling R59 (R2 final
+  // review C1) makes both readings at 20 or more a Hold on BOTH bases on every model, so the level is named as a basis and the
+  // fitted-basis clause can no longer arise (a fitted-basis Hold now means the carried level is under 20 when held, and it only
+  // falls). Retargeted with the ruling, not to pass: the same case keeps the later crossing and names the level on every surface.
+  test('45.57 R57 under R59: the reviewer\'s case is a Hold on both bases; the measured level that sets the resume time is named on screen, in print, Copy summary and the announcement [T21d review 2; R59]', () => {
+    const r = Object.assign(u6({ model: 'buelga', CL: 3, doses: [{ mg: 3000, tinfH: 2, timeH: 0 }], levels: [{ conc: 70, timeH: 9 }], now: 9.5 }), { rec: rec55 });
+    const p = fn45('firstDosePlan')(r, rec55, 9.5, null, null), mh = fn45('measuredHoldLevel')(r, 9.5), T = K45.TROUGH_HIGH_MGL;
+    assert(p.hold && p.holdBasis === 'both' && !p.holdNoTime, `fixture: ${JSON.stringify({ hold: p.hold, basis: p.holdBasis })}`);
+    assert(fn45('predictFittedAt')(r, p.resumeH - 0.25) < T && mh.at(p.resumeH - 0.25) >= T && mh.at(p.resumeH) < T,
+      `the measured level sets the resume time: fitted ${fn45('predictFittedAt')(r, p.resumeH - 0.25)}, carried ${mh.at(p.resumeH - 0.25)} -> ${mh.at(p.resumeH)}`);
+    const named = `the measured 70.0 mg/L at ${fn45('fmtClock')(9)}, carried down the fitted slope, is`;
+    const plain = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const row = fn45('aucUncertaintyRow')(1, 'buelga'), conf = { level: 'Moderate' }, recC = Object.assign({}, rec55, { action: 'continue' });
+    for (const [k, t] of [['sentence', fn45('holdSentence')(p)], ['head', plain(fn45('holdHeadHTML')(p))],
+                          ['summary', fn45('resultSummary')(r, recC, null, row, conf, p)], ['said', fn45('bayesAnnouncement')(r, recC, conf, p)]]) {
+      assert(t.indexOf(named) >= 0 && t.indexOf(fn45('fmtClock')(p.resumeH)) >= 0, `${k}: ${t}`);
+    }
+    assert(/both fall below/.test(plain(fn45('holdHeadHTML')(p))), plain(fn45('holdHeadHTML')(p)));
+  });
+  // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor.
+  test('45.58 the version', () => {
+    assert(/const APP_VERSION = '3\.15\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0');
+  });
+
+  // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
+  // and the carried measured level are at or above the threshold at the time judged, it is a Hold on every model (basis
+  // 'both'), Goti and a first-interval level included: neither U5 (fitted alone) nor U6a (a first-interval level alone)
+  // speaks for corroborated readings. The review's reproduction, as runBayesian fits it: CrCl 25, 70 kg, 2 g at 0 h, planned
+  // 1 g at 12 h and 24 h, 45 mg/L at 11.5 h, now 11.75 h. Goti read a caution with both planned doses given; Buelga held them.
+  const fitR59 = (model) => {
+    const crcl = 25, tbw = 70, given = [{ mg: 2000, tinfH: fn45('autoTinf')(2000), timeH: 0 }];
+    const planned = [{ mg: 1000, tinfH: 1, timeH: 12 }, { mg: 1000, tinfH: 1, timeH: 24 }], levels = [{ conc: 45, timeH: 11.5 }], nowH = 11.75;
+    let r, bag = null;
+    if (model === 'buelga') {
+      const pk = fn45('buelgaPopPK')(crcl, tbw);
+      const eta = fn45('mapFit')((x, y) => fn45('burtonObjective')(x, y, pk.CL_pop, pk.V_pop, given, levels), 2, K45.OMEGA2_CL_BUELGA, K45.OMEGA2_V_BUELGA, 300).eta;
+      r = { model, CL_ind: pk.CL_pop * Math.exp(eta[0]), V_ind: pk.V_pop * Math.exp(eta[1]) };
+      r.t12_ind = Math.LN2 * r.V_ind / r.CL_ind;
+    } else {
+      const goti = model === 'goti', pk = goti ? fn45('gotiPopPK')(crcl, tbw, false) : fn45('hughesPopPK')(crcl, fn45('computeFFM')(tbw, 170, 'M'));
+      const Q = goti ? K45.Q_GOTI : pk.TVQ, o = goti ? [K45.OMEGA2_CL_GOTI, K45.OMEGA2_VC_GOTI, K45.OMEGA2_VP_GOTI] : [K45.OMEGA2_CL_HUGHES, K45.OMEGA2_VC_HUGHES, K45.OMEGA2_VP_HUGHES];
+      const obj = goti ? (a, b, c) => fn45('burtonObj3D')(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, given, levels)
+        : (a, b, c) => fn45('burtonObj3D_hughes')(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, given, levels);
+      const eta = fn45('mapFit')(obj, 3, o[0], o[1], 400, o[2]).eta;
+      const CL = pk.TVCL * Math.exp(eta[0]), Vc = pk.TVVc * Math.exp(eta[1]), Vp = pk.TVVp * Math.exp(eta[2]);
+      r = { model, CL_ind: CL, V_ind: Vc, goti: { CL_ind: CL, Vc_ind: Vc, Vp_ind: Vp, Q, k10_ind: CL / Vc, k12_ind: Q / Vc, k21_ind: Q / Vp } };
+      bag = { Vc, Vp, Q };
+    }
+    Object.assign(r, { doses: given.concat(planned), levels, fitNowH: nowH });
+    const row = fn45('aucUncertaintyRow')(1, model, fn45('latestLevelEarly')(levels, given, r.t12_ind || 10, model));
+    r.rec = fn45('regimenDecision')(r.CL_ind, r.V_ind, 450, bag, 1, given, row, { nowH });
+    return r;
+  };
+  test('45.59 R59: the fitted and the carried measured level both at 20 or more is a Hold on every model (basis both), Goti and a first-interval level included; the review\'s reproduction holds both planned doses on Goti as on Buelga [R2 final C1]', () => {
+    const T = K45.TROUGH_HIGH_MGL, out = {};
+    for (const model of ['buelga', 'goti', 'hughes']) {
+      const r = fitR59(model), p = fn45('firstDosePlan')(r, r.rec, 11.75, null, null), mh = fn45('measuredHoldLevel')(r, 11.75);
+      assert(r.rec && !r.rec.noSolution && fn45('predictFittedAt')(r, 12) >= T && mh && mh.at(12) >= T, `${model} fixture: fitted ${fn45('predictFittedAt')(r, 12)}, carried ${mh && mh.at(12)}, ${JSON.stringify(r.rec && r.rec.tau)}`);
+      out[model] = { hold: p.hold, basis: p.holdBasis, plannedH: p.holdPlannedH, n: p.plannedN, caution: p.holdCaution, held: fn45('heldPlannedDoses')(r, p).length,
+        sentence: fn45('holdSentence')(p) };
+      assert(p.hold && p.holdBasis === 'both' && !p.holdCaution && p.holdPlannedH === 12 && p.plannedN === 2 && out[model].held === 2
+        && /^Hold the 2 planned doses from /.test(out[model].sentence) && /the measured 45\.0 mg\/L at /.test(out[model].sentence), `${model}: ${JSON.stringify(out[model])}`);
+    }
+    assert(out.goti.hold === out.buelga.hold && out.goti.plannedH === out.buelga.plannedH && out.goti.held === out.buelga.held, 'Goti as Buelga');
+    // The single mapping, directly: both at 20 or more is a Hold whatever the model flag and the first-interval flag say.
+    const hb = fn45('holdBasisOf');
+    for (const goti of [false, true]) for (const first of [false, true]) {
+      const b = hb(T, T, goti, first);
+      assert(b.basis === 'both' && b.caution === null, `both, goti ${goti}, first ${first}: ${JSON.stringify(b)}`);
+    }
+    // Single-basis readings keep U5 and U6a.
+    assert(hb(T, 0, true, false).caution === 'fitted' && hb(T, 0, false, false).basis === 'fitted' && hb(0, T, false, true).caution === 'first-level' && hb(0, T, true, false).basis === 'measured', 'single bases');
+    // The refusal reads the same mapping: a first-interval level with the fitted also at 20 or more before a planned row holds.
+    const ns = fn45('noSolutionHold')(Object.assign(u6({ model: 'goti', CL: 0.5, doses: [{ mg: 3000, tinfH: 2, timeH: 0 }, { mg: 1000, tinfH: 1, timeH: 12 }], levels: [{ conc: 40, timeH: 9 }], now: 9.5 }), { rec: { noSolution: true } }), 9.5, null);
+    assert(ns && ns.hold && ns.fitted >= T && ns.measured && !ns.holdCaution, `refusal, both: ${JSON.stringify(ns)}`);
+  });
+  // The user's ruling U7 (2026-11-15): U6a's caution applies only to a level drawn within FIRST_INTERVAL_CAUTION_H (12 h, a
+  // PREFERENCE, rule 8) of the start of the first dose; a later level before the second dose is an ordinary measured basis.
+  // Fictional synthetic fits (u6): 1.5 g over 2 h at 0 h; fitted under 20 at the dose judged, the carried level at 20 or more.
+  test('45.60 U7: a first-interval level is a caution only within FIRST_INTERVAL_CAUTION_H of the first dose; later, before the second dose, it holds; the review\'s and the Buelga q48h cases hold [R2 final, U7]', () => {
+    const T = K45.TROUGH_HIGH_MGL, B = K45.FIRST_INTERVAL_CAUTION_H;
+    assert(B === 12, `FIRST_INTERVAL_CAUTION_H is ${B}`);
+    const src = fs.readFileSync(htmlPath, 'utf8'), decl = src.slice(Math.max(0, src.indexOf('const FIRST_INTERVAL_CAUTION_H') - 1400), src.indexOf('const FIRST_INTERVAL_CAUTION_H'));
+    assert(/PREFERENCE \(rule 8\)/.test(decl) && /probe-hold-rate\.cjs/.test(decl) && /Hold/.test(decl), 'the constant says it is a preference, cites the probe and that it decides Hold vs caution');
+    const recT = (tau) => ({ dose: 1000, tau, tinfH: 1, auc24: 400, action: 'change' });
+    const planOf = (model, CL, lvH, conc, secondH, tau) => {
+      const r = Object.assign(u6({ model, CL, doses: one.concat(secondH ? [{ mg: 1000, tinfH: 1, timeH: secondH }] : []), levels: [{ conc, timeH: lvH }], now: lvH + 0.25 }), { rec: recT(tau) });
+      const judged = secondH || tau, mh = fn45('measuredHoldLevel')(r, lvH + 0.25);
+      assert(fn45('predictFittedAt')(r, judged) < T && mh && mh.at(judged) >= T, `${model} fixture ${conc}@${lvH}: fitted ${fn45('predictFittedAt')(r, judged)}, carried ${mh && mh.at(judged)}`);
+      return fn45('firstDosePlan')(r, r.rec, lvH + 0.25, null, null);
+    };
+    for (const model of ['buelga', 'goti', 'hughes']) {
+      // Before a planned 24 h dose (CL 3) and a planned 48 h dose (CL 1): just inside the bound a caution, just outside a Hold.
+      for (const [CL, second] of [[3, 24], [1, 48]]) {
+        const inside = planOf(model, CL, B - 0.5, 45, second, second), outside = planOf(model, CL, B + 0.5, 45, second, second);
+        assert(!inside.hold && inside.holdCaution && inside.holdCaution.kind === 'first-level', `${model} ${B - 0.5} h before ${second} h: ${JSON.stringify({ hold: inside.hold, c: inside.holdCaution })}`);
+        assert(outside.hold && outside.holdBasis === 'measured' && !outside.holdCaution && outside.holdPlannedH === second, `${model} ${B + 0.5} h before ${second} h: ${JSON.stringify({ hold: outside.hold, basis: outside.holdBasis })}`);
+      }
+      // The review's case: one 1.5 g dose, planned at 48 h, 30 mg/L at 47.5 h: a Hold.
+      const rv = planOf(model, 1, 47.5, 30, 48, 48);
+      assert(rv.hold && rv.holdBasis === 'measured' && rv.holdPlannedH === 48, `${model} review case: ${JSON.stringify({ hold: rv.hold, basis: rv.holdBasis, c: rv.holdCaution })}`);
+      // The Buelga case (every model): one dose, 26 mg/L at 40 h, q48h answered, nothing planned: a Hold.
+      const bq = planOf(model, 1, 40, 26, null, 48);
+      assert(bq.hold && bq.holdBasis === 'measured' && !bq.holdCaution, `${model} 26 mg/L at 40 h, q48h: ${JSON.stringify({ hold: bq.hold, basis: bq.holdBasis, c: bq.holdCaution })}`);
+    }
+    // The refusal reads the same bound: a late level before a planned row holds.
+    const ns = fn45('noSolutionHold')(Object.assign(u6({ model: 'buelga', CL: 1, doses: one.concat([{ mg: 1000, tinfH: 1, timeH: 48 }]), levels: [{ conc: 45, timeH: B + 0.5 }], now: B + 0.75 }), { rec: { noSolution: true } }), B + 0.75, null);
+    assert(ns && ns.hold && ns.measured, `refusal, late first-interval level: ${JSON.stringify(ns)}`);
+  });
+  // I1 and I3: the caution's words by kind, one helper; no ruling numbers or ledger references on screen.
+  test('45.61 the caution is worded by its kind on every surface: U5 "Draw a level", U6a "Repeat the level", refusals "before any further dose"; the panel detail is true for each kind; no ruling ids in user-facing text [R2 final I1, I3]', () => {
+    const T = K45.TROUGH_HIGH_MGL;
+    const fo = u5({ CL: 1.5 }), pf = plan53(fo);
+    const pl = plan55(u6({ model: 'buelga', CL: 8, doses: one, levels: [{ conc: 40, timeH: 9 }], now: 9.5 }));
+    assert(pf.holdCaution.kind === 'fitted' && pl.holdCaution.kind === 'first-level', 'fixtures');
+    const ctx = (r, m) => ({ r: Object.assign({}, r, { rec: rec53 }), conf: { rank: 0, level: 'High', reasons: [] }, auc: 400, nLev: 1, model: m, tau: 12, CL: 1.5, fixed: '' });
+    const nf = fn45('bayesNextLevel')(ctx(fo, 'goti'), pf), nl = fn45('bayesNextLevel')(ctx(pl, 'buelga'), pl);
+    assert(nf.kind === 'caution' && nf.headline === 'Draw a level before giving the next dose' && /no level drawn since the last dose/.test(nf.detail) && !/measured level/.test(nf.detail), JSON.stringify(nf));
+    assert(nl.kind === 'caution' && nl.headline === 'Repeat the level before giving the next dose' && /drawn after the first dose/.test(nl.detail) && !/fitted level alone|no measured level/.test(nl.detail), JSON.stringify(nl));
+    for (const x of [nf, nl]) assert(!/ruling|U5|U6|Goti|Hold\b/.test(x.headline + x.detail), `no ledger words: ${x.detail}`);
+    // Copy summary and the announcement close with the same instruction as the caution line and the Next line.
+    const row = fn45('aucUncertaintyRow')(1, 'buelga'), conf = { level: 'High' };
+    for (const [p, r, ask] of [[pf, fo, 'Draw a level before giving the next dose.'], [pl, u6({ model: 'buelga', CL: 8, doses: one, levels: [{ conc: 40, timeH: 9 }], now: 9.5 }), 'Repeat the level before giving the next dose.']]) {
+      const rr = Object.assign({}, r, { rec: rec53 });
+      const line = fn45('holdCautionText')(p), summary = fn45('resultSummary')(rr, rec53, null, row, conf, p), said = fn45('bayesAnnouncement')(rr, rec53, conf, p);
+      assert(line.endsWith(ask) && fn45('answerNextSaid')(rec53, p) === ask && summary.endsWith(ask) && said.endsWith(ask) && !/Consider drawing/.test(line + summary + said), `${ask} | ${line} | ${summary} | ${said}`);
+    }
+    // The refusal forms: the same verbs, "before any further dose", on the caution line, the Next line and the panel.
+    const ns = fn45('noSolutionHold'), refusedU6 = Object.assign(u6({ model: 'buelga', CL: 8, doses: one.concat([{ mg: 1000, tinfH: 1, timeH: 12 }]), levels: [{ conc: 40, timeH: 9 }], now: 9.5 }), { rec: { noSolution: true } });
+    const a = ns(refusedU6, 9.5, null), b = ns(Object.assign(u5({ CL: 1.5 }), { rec: { noSolution: true } }), 40, cur53);
+    assert(a.holdCaution.kind === 'first-level' && b.holdCaution.kind === 'fitted', 'refusal fixtures');
+    assert(fn45('holdCautionText')(a).endsWith('Repeat the level before any further dose.') && fn45('holdCautionText')(b).endsWith('Draw a level before any further dose.'), `${fn45('holdCautionText')(a)} | ${fn45('holdCautionText')(b)}`);
+    assert(fn45('refusalNextLine')(a).startsWith('Repeat the level before any further dose. ') && fn45('refusalNextLine')(b).startsWith('Draw a level before any further dose. ')
+      && fn45('refusalNextLine')(null).startsWith('Every candidate'), `${fn45('refusalNextLine')(a)} | ${fn45('refusalNextLine')(b)}`);
+    assert(fn45('bayesNextLevel')(ctx(refusedU6, 'buelga'), a).headline === 'Repeat the level before any further dose', 'refusal panel');
+    // No ruling ids or ledger references in a string literal of the app (code comments may keep them).
+    const src = fs.readFileSync(htmlPath, 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1].split('\n').map(l => l.replace(/^\s*\/\/.*$/, '').replace(/\s\/\/ .*$/, '')).join('\n');
+    const lits = src.match(/`[^`]*`|'[^'\n]*'|"[^"\n]*"/g) || [];
+    const bad = lits.filter(l => /the user's ruling|ruling U\d|\bR5\d\b|ledger/.test(l));
+    assert(bad.length === 0, `ruling ids in user-facing strings: ${bad.slice(0, 3).join(' | ')}`);
+    assert(T === 20, 'threshold');
+  });
+  // Minors: a refusal with a caution holds its planned rows; the early band's provenance wording; the projection note.
+  test('45.62 a refusal with a caution draws its planned rows as held; the early uncertainty text says "levels drawn before steady state" with no loading dose; the projection note repeats the caution [R2 final minors]', () => {
+    const planned = { mg: 1000, tinfH: 1, timeH: 12 };
+    const r = Object.assign(u6({ model: 'buelga', CL: 8, doses: one.concat([planned]), levels: [{ conc: 40, timeH: 9 }], now: 9.5 }), { rec: { noSolution: true } });
+    const a = fn45('noSolutionHold')(r, 9.5, null);
+    assert(a && !a.hold && a.holdCaution, 'fixture: a refusal with a caution');
+    const held = fn45('heldPlannedDoses')(r, a);
+    assert(held.length === 1 && held[0] === planned, `held under the refusal's caution: ${JSON.stringify(held)}`);
+    // A regular answer's caution still gives its planned rows (the regimen stands).
+    const rp = Object.assign(u6({ model: 'buelga', CL: 8, doses: one.concat([planned]), levels: [{ conc: 40, timeH: 9 }], now: 9.5 }), { rec: rec55 });
+    const pp = fn45('firstDosePlan')(rp, rec55, 9.5, null, null);
+    assert(!pp.hold && pp.holdCaution && fn45('heldPlannedDoses')(rp, pp).length === 0, 'a regular caution holds nothing');
+    for (const m of ['buelga', 'goti', 'hughes']) {
+      const t = fn45('aucUncertaintyText')(1, m, true);
+      assert(/simulated for levels drawn before steady state/.test(t) && !/loading dose/.test(t), t);
+    }
+    // The projection note: under a caution its one line follows the projected AUC; without one, the AUC alone; refreshProfileGraph
+    // writes it through this helper when the projection is drawn.
+    const note = fn45('projectionNoteText');
+    assert(note(pp, 512) === `Projected AUC₂₄ 512 mg·h/L. ${fn45('holdCautionText')(pp)}`, note(pp, 512));
+    assert(note(null, 512) === 'Projected AUC₂₄ 512 mg·h/L', note(null, 512));
+    assert(/projectionNoteText\(fpProj, /.test(fn45('refreshProfileGraph').toString()), 'refreshProfileGraph writes the note through it');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
+const EXPECTED_TOTAL = 621;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
 console.log(`  Failed : ${fail}`);
 console.log(`  Total  : ${pass+fail}`);
+// The count is pinned (Release 2, Task 13): a test that silently stops running, or a suite that is
+// skipped by an early exit, changes the total. Every change that adds or removes a unit test bumps this.
+if (pass + fail !== EXPECTED_TOTAL) {
+  console.log(`\n  ✗ Expected ${EXPECTED_TOTAL} tests but ran ${pass+fail}. A test was lost or added without updating EXPECTED_TOTAL.\n`);
+  process.exit(1);
+}
 if (fail === 0) {
   console.log('\n  ✓ All tests passed — Phase 2D validation complete.\n');
 } else {

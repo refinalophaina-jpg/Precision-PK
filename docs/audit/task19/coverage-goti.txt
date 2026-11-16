@@ -1,0 +1,114 @@
+uncertainty-by-model --early: n = 1500 per design per seed; seeds 7, 11, 23; held-out seed 31; fitter mapFit (shipped)
+
+ROWS (true/est AUC24 10th/90th percentiles as -lo / +hi; |error| p50 and p80), per seed and the mean of the seeds:
+goti    troughs/0     | seed 7: -38.1% / +63.7% p50 25.7% p80 47.4% (n=1500) | seed 11: -39.6% / +57.3% p50 24.4% p80 48.2% (n=1500) | seed 23: -41.0% / +68.5% p50 26.7% p80 50.5% (n=1500)
+        mean -> { n:0, frac:0.49, median:0.26, lo:0.40, hi:0.63 }
+goti    troughs/1     | seed 7: -23.9% / +48.6% p50 16.6% p80 32.4% (n=1500) | seed 11: -23.2% / +48.6% p50 17.1% p80 31.4% (n=1500) | seed 23: -23.3% / +51.4% p50 16.7% p80 32.3% (n=1500)
+        mean -> { n:1, frac:0.32, median:0.17, lo:0.23, hi:0.50 }
+goti    troughs/2     | seed 7: -20.9% / +39.1% p50 14.0% p80 27.2% (n=1500) | seed 11: -21.3% / +40.7% p50 14.6% p80 28.0% (n=1500) | seed 23: -20.5% / +38.8% p50 14.2% p80 27.1% (n=1500)
+        mean -> { n:2, frac:0.27, median:0.14, lo:0.21, hi:0.40 }
+goti    troughs/3     | seed 7: -18.3% / +39.3% p50 13.5% p80 25.6% (n=1500) | seed 11: -19.8% / +39.8% p50 13.6% p80 26.9% (n=1500) | seed 23: -19.7% / +41.6% p50 14.0% p80 27.0% (n=1500)
+        mean -> { n:3, frac:0.26, median:0.14, lo:0.19, hi:0.40 }
+goti    load-one/1    | seed 7: -37.6% / +57.7% p50 23.3% p80 46.2% (n=1500) | seed 11: -38.4% / +59.8% p50 24.9% p80 47.5% (n=1500) | seed 23: -38.6% / +58.6% p50 25.1% p80 45.4% (n=1500)
+        mean -> { n:1, frac:0.46, median:0.24, lo:0.38, hi:0.59 }
+goti    load-two/2    | seed 7: -37.5% / +57.9% p50 23.8% p80 45.7% (n=1500) | seed 11: -38.4% / +58.4% p50 24.8% p80 45.9% (n=1500) | seed 23: -37.8% / +58.5% p50 24.0% p80 45.5% (n=1500)
+        mean -> { n:2, frac:0.46, median:0.24, lo:0.38, hi:0.58 }
+goti    load-three/3  | seed 7: -32.5% / +56.0% p50 22.2% p80 40.6% (n=1500) | seed 11: -35.1% / +56.4% p50 21.9% p80 43.2% (n=1500) | seed 23: -33.9% / +53.7% p50 22.1% p80 41.8% (n=1500)
+        mean -> { n:3, frac:0.42, median:0.22, lo:0.34, hi:0.55 }
+goti    load-two-ss/3 | seed 7: -23.6% / +45.1% p50 15.7% p80 31.0% (n=1500) | seed 11: -24.7% / +43.1% p50 15.6% p80 31.4% (n=1500) | seed 23: -25.0% / +40.1% p50 16.4% p80 31.1% (n=1500)
+        mean -> { n:3, frac:0.31, median:0.16, lo:0.24, hi:0.43 }
+goti    d4-trough/1   | seed 7: -32.0% / +58.0% p50 21.5% p80 41.8% (n=1500) | seed 11: -31.8% / +61.5% p50 21.3% p80 41.3% (n=1500) | seed 23: -30.5% / +60.5% p50 21.3% p80 40.7% (n=1500)
+        mean -> { n:1, frac:0.41, median:0.21, lo:0.31, hi:0.60 }
+goti    d3d4-troughs/2 | seed 7: -31.6% / +54.4% p50 20.5% p80 39.7% (n=1500) | seed 11: -31.6% / +56.8% p50 21.9% p80 39.8% (n=1500) | seed 23: -31.7% / +53.9% p50 21.2% p80 39.9% (n=1500)
+        mean -> { n:2, frac:0.40, median:0.21, lo:0.32, hi:0.55 }
+goti    dose-one/1    | seed 7: -38.3% / +57.5% p50 23.8% p80 47.8% (n=1500) | seed 11: -38.9% / +60.9% p50 25.4% p80 48.5% (n=1500) | seed 23: -39.6% / +59.4% p50 25.5% p80 46.5% (n=1500)
+        mean -> { n:1, frac:0.48, median:0.25, lo:0.39, hi:0.59 }
+goti    dose-two/1    | seed 7: -35.4% / +56.9% p50 23.2% p80 44.0% (n=1500) | seed 11: -35.0% / +60.1% p50 23.6% p80 44.6% (n=1500) | seed 23: -34.4% / +61.1% p50 23.0% p80 43.2% (n=1500)
+        mean -> { n:1, frac:0.44, median:0.23, lo:0.35, hi:0.59 }
+
+COVERAGE of the shipped rows: the share of simulated patients whose true AUC24 lies in [est x (1 - lo), est x (1 + hi)].
+own = the row meant for the design (troughs: steady-state; load-*: early); app = aucUncertaintyRow(n, model, early), early from
+latestLevelEarly on each fit. pooled = seeds 7/11/23 together; held-out = seed 31. ABOVE = true AUC above the band.
+goti    troughs/0      goti/steady/0 -40% / +63%: pooled 80.5% (ABOVE 9.9%), held-out 81.9% | app: pooled 80.5%, held-out 81.9% | early by the app's test 0.0%
+goti    troughs/1      goti/steady/1 -24% / +50%: pooled 80.8% (ABOVE 10.0%), held-out 80.5% | app: pooled 81.0%, held-out 80.6% | early by the app's test 3.1%
+goti    troughs/2      goti/steady/2 -21% / +40%: pooled 80.6% (ABOVE 9.7%), held-out 79.1% | app: pooled 81.1%, held-out 79.7% | early by the app's test 3.5%
+goti    troughs/3      goti/steady/3 -19% / +40%: pooled 79.4% (ABOVE 10.0%), held-out 79.7% | app: pooled 80.0%, held-out 80.4% | early by the app's test 4.1%
+goti    load-one/1     goti/early/1 -38% / +59%: pooled 80.1% (ABOVE 9.9%), held-out 77.9% | app: pooled 80.1%, held-out 77.9% | early by the app's test 100.0%
+goti    load-two/2     goti/early/2 -38% / +58%: pooled 80.0% (ABOVE 10.0%), held-out 79.0% | app: pooled 80.0%, held-out 79.0% | early by the app's test 100.0%
+goti    load-three/3   goti/early/3 -34% / +55%: pooled 79.9% (ABOVE 10.2%), held-out 81.9% | app: pooled 79.8%, held-out 81.9% | early by the app's test 99.6%
+goti    load-two-ss/3  goti/early/3 -34% / +55%: pooled 90.9% (ABOVE 6.1%), held-out 90.9% | app: pooled 76.0%, held-out 76.3% | early by the app's test 16.9%
+goti    d4-trough/1    goti/steady/1 -24% / +50%: pooled 69.7% (ABOVE 13.1%), held-out 68.4% | goti/early/1 -38% / +59%: pooled 84.4% (ABOVE 10.3%), held-out 83.7% | app: pooled 83.3%, held-out 82.6% | early by the app's test 92.4%
+goti    d3d4-troughs/2 goti/steady/2 -21% / +40%: pooled 63.1% (ABOVE 16.2%), held-out 62.6% | goti/early/2 -38% / +58%: pooled 85.3% (ABOVE 9.0%), held-out 84.9% | app: pooled 83.9%, held-out 83.2% | early by the app's test 91.9%
+goti    dose-one/1     goti/steady/1 -24% / +50%: pooled 62.7% (ABOVE 13.3%), held-out 60.9% | goti/early/1 -38% / +59%: pooled 79.3% (ABOVE 10.0%), held-out 76.6% | app: pooled 79.3%, held-out 76.6% | early by the app's test 100.0%
+goti    dose-two/1     goti/steady/1 -24% / +50%: pooled 67.0% (ABOVE 12.7%), held-out 64.7% | goti/early/1 -38% / +59%: pooled 82.5% (ABOVE 10.0%), held-out 81.7% | app: pooled 82.5%, held-out 81.7% | early by the app's test 100.0%
+
+SENSITIVITY goti (pooled seeds; criterion designs: troughs/1, troughs/2, troughs/3, load-one/1, load-two/2, load-three/3, load-two-ss/3, d4-trough/1, d3d4-troughs/2); shipped threshold 0.775 reproduces latestLevelEarly
+  0.3    fails       worst |cov-80| 19.3% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 79.7%, load-two/2 74.4%, load-three/3 60.7%, load-two-ss/3 72.4%, d4-trough/1 69.9%, d3d4-troughs/2 63.5%
+  0.325  fails       worst |cov-80| 18.2% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.0%, load-two/2 76.4%, load-three/3 61.8%, load-two-ss/3 72.4%, d4-trough/1 70.0%, d3d4-troughs/2 63.8%
+  0.35   fails       worst |cov-80| 16.9% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 77.9%, load-three/3 63.1%, load-two-ss/3 72.4%, d4-trough/1 70.2%, d3d4-troughs/2 64.1%
+  0.375  fails       worst |cov-80| 15.6% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 78.8%, load-three/3 64.6%, load-two-ss/3 72.4%, d4-trough/1 70.4%, d3d4-troughs/2 64.4%
+  0.4    fails       worst |cov-80| 15.0% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 79.4%, load-three/3 66.3%, load-two-ss/3 72.4%, d4-trough/1 70.7%, d3d4-troughs/2 65.0%
+  0.425  fails       worst |cov-80| 14.4% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 79.7%, load-three/3 67.8%, load-two-ss/3 72.4%, d4-trough/1 71.1%, d3d4-troughs/2 65.6%
+  0.45   fails       worst |cov-80| 13.7% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 79.8%, load-three/3 69.4%, load-two-ss/3 72.5%, d4-trough/1 71.6%, d3d4-troughs/2 66.3%
+  0.475  fails       worst |cov-80| 12.4% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 79.8%, load-three/3 71.5%, load-two-ss/3 72.5%, d4-trough/1 72.5%, d3d4-troughs/2 67.6%
+  0.5    fails       worst |cov-80| 11.0% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 73.0%, load-two-ss/3 72.6%, d4-trough/1 73.6%, d3d4-troughs/2 69.0%
+  0.525  fails       worst |cov-80| 9.7% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 74.2%, load-two-ss/3 72.6%, d4-trough/1 74.5%, d3d4-troughs/2 70.3%
+  0.55   fails       worst |cov-80| 7.8% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 75.5%, load-two-ss/3 72.7%, d4-trough/1 75.5%, d3d4-troughs/2 72.2%
+  0.575  fails       worst |cov-80| 7.3% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 76.8%, load-two-ss/3 72.7%, d4-trough/1 76.7%, d3d4-troughs/2 73.4%
+  0.6    fails       worst |cov-80| 7.0% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 77.6%, load-two-ss/3 73.0%, d4-trough/1 78.3%, d3d4-troughs/2 75.4%
+  0.625  fails       worst |cov-80| 6.7% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 78.1%, load-two-ss/3 73.3%, d4-trough/1 79.4%, d3d4-troughs/2 77.2%
+  0.65   fails       worst |cov-80| 6.6% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.4%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 78.6%, load-two-ss/3 73.4%, d4-trough/1 80.2%, d3d4-troughs/2 78.6%
+  0.675  fails       worst |cov-80| 6.4% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.5%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.2%, load-two-ss/3 73.6%, d4-trough/1 81.1%, d3d4-troughs/2 79.9%
+  0.7    fails       worst |cov-80| 6.0% | troughs/1 80.8%, troughs/2 80.6%, troughs/3 79.5%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.3%, load-two-ss/3 74.0%, d4-trough/1 81.8%, d3d4-troughs/2 81.2%
+  0.725  fails       worst |cov-80| 5.5% | troughs/1 80.8%, troughs/2 80.7%, troughs/3 79.6%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.6%, load-two-ss/3 74.5%, d4-trough/1 82.4%, d3d4-troughs/2 82.2%
+  0.75   fails       worst |cov-80| 5.0% | troughs/1 80.9%, troughs/2 80.9%, troughs/3 79.7%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.7%, load-two-ss/3 75.0%, d4-trough/1 82.9%, d3d4-troughs/2 83.0%
+  0.775  meets 75-85 worst |cov-80| 4.0% | troughs/1 81.0%, troughs/2 81.1%, troughs/3 80.0%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.8%, load-two-ss/3 76.0%, d4-trough/1 83.3%, d3d4-troughs/2 83.9%
+  0.8    meets 75-85 worst |cov-80| 4.4% | troughs/1 81.2%, troughs/2 81.6%, troughs/3 80.5%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 76.7%, d4-trough/1 83.7%, d3d4-troughs/2 84.4%
+  0.825  meets 75-85 worst |cov-80| 4.8% | troughs/1 81.9%, troughs/2 82.6%, troughs/3 81.3%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 77.8%, d4-trough/1 84.0%, d3d4-troughs/2 84.8%
+  0.85   meets 75-85 worst |cov-80| 5.0% | troughs/1 82.5%, troughs/2 83.5%, troughs/3 82.3%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 78.9%, d4-trough/1 84.1%, d3d4-troughs/2 85.0%
+  0.875  fails       worst |cov-80| 5.2% | troughs/1 83.2%, troughs/2 84.7%, troughs/3 83.6%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 80.4%, d4-trough/1 84.3%, d3d4-troughs/2 85.2%
+  0.9    fails       worst |cov-80| 5.8% | troughs/1 84.2%, troughs/2 85.8%, troughs/3 84.6%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 81.8%, d4-trough/1 84.4%, d3d4-troughs/2 85.2%
+  0.925  fails       worst |cov-80| 7.6% | troughs/1 85.2%, troughs/2 87.6%, troughs/3 86.2%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 83.1%, d4-trough/1 84.4%, d3d4-troughs/2 85.3%
+  0.95   fails       worst |cov-80| 9.4% | troughs/1 86.7%, troughs/2 89.4%, troughs/3 88.0%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 85.2%, d4-trough/1 84.4%, d3d4-troughs/2 85.3%
+  0.975  fails       worst |cov-80| 12.0% | troughs/1 88.5%, troughs/2 92.0%, troughs/3 90.3%, load-one/1 80.1%, load-two/2 80.0%, load-three/3 79.9%, load-two-ss/3 87.7%, d4-trough/1 84.4%, d3d4-troughs/2 85.3%
+  CHOSEN goti: 0.775
+  Coverage at 0.775, app's row choice:
+    troughs/1       pooled 81.0%, held-out 80.6% | read as early 3.1%
+    troughs/2       pooled 81.1%, held-out 79.7% | read as early 3.5%
+    troughs/3       pooled 80.0%, held-out 80.4% | read as early 4.1%
+    load-one/1      pooled 80.1%, held-out 77.9% | read as early 100.0%
+    load-two/2      pooled 80.0%, held-out 79.0% | read as early 100.0%
+    load-three/3    pooled 79.8%, held-out 81.9% | read as early 99.6%
+    load-two-ss/3   pooled 76.0%, held-out 76.3% | read as early 16.9%
+    d4-trough/1     pooled 83.3%, held-out 82.6% | read as early 92.4%
+    d3d4-troughs/2  pooled 83.9%, held-out 83.2% | read as early 91.9%
+    dose-one/1      pooled 79.3%, held-out 76.6% | read as early 100.0% (not a criterion)
+    dose-two/1      pooled 82.5%, held-out 81.7% | read as early 100.0% (not a criterion)
+
+DECISIONS (pooled seeds): steady-state row (before D27) against the app row (D27), per design
+goti    troughs/1       48 of 4500 answers differ {"change -> change":48}; never worse broken: 0
+    change -> change: e.g. CL 1.26 L/h, Vc 48 L, Vp 32 L, on 1000 mg q12h (AUC24 1588): goti/steady/1 change 1250 mg q48h [answer 11/20, current 0/20] -> goti/early/1 change 1500 mg q48h [answer 7/20, current 0/20]
+goti    troughs/2       57 of 4500 answers differ {"change -> change":57}; never worse broken: 0
+    change -> change: e.g. CL 1.69 L/h, Vc 56 L, Vp 46 L, on 1000 mg q12h (AUC24 1185): goti/steady/2 change 750 mg q24h [answer 12/20, current 0/20] -> goti/early/2 change 1000 mg q24h [answer 8/20, current 1/20]
+goti    troughs/3       60 of 4500 answers differ {"change -> change":60}; never worse broken: 0
+    change -> change: e.g. CL 1.79 L/h, Vc 72 L, Vp 39 L, on 1000 mg q12h (AUC24 1118): goti/steady/3 change 750 mg q24h [answer 12/20, current 0/20] -> goti/early/3 change 1000 mg q24h [answer 8/20, current 1/20]
+goti    load-one/1      0 of 4500 answers differ {}; never worse broken: 0
+goti    load-two/2      0 of 4500 answers differ {}; never worse broken: 0
+goti    load-three/3    169 of 4500 answers differ {"change -> change":147,"change -> continue":22}; never worse broken: 0
+    change -> change: e.g. CL 1.73 L/h, Vc 38 L, Vp 29 L, on 1000 mg q12h (AUC24 1158): goti/steady/3 change 750 mg q24h [answer 13/20, current 0/20] -> goti/early/3 change 500 mg q12h [answer 8/20, current 0/20]
+    change -> continue: e.g. CL 3.50 L/h, Vc 39 L, Vp 43 L, on 1000 mg q12h (AUC24 571): goti/steady/3 change 750 mg q12h [answer 13/20, current 10/20] -> goti/early/3 continue 1000 mg q12h [answer 8/20, current 8/20]
+goti    load-two-ss/3   195 of 4500 answers differ {"change -> change":195}; never worse broken: 0
+    change -> change: e.g. CL 1.41 L/h, Vc 89 L, Vp 34 L, on 1000 mg q12h (AUC24 1415): goti/steady/3 change 1250 mg q48h [answer 13/20, current 0/20] -> goti/early/3 change 750 mg q24h [answer 9/20, current 0/20]
+goti    d4-trough/1     1445 of 4500 answers differ {"change -> change":1039,"change -> continue":382,"continue -> change":24}; never worse broken: 0
+    change -> change: e.g. CL 1.79 L/h, Vc 52 L, Vp 31 L, on 1000 mg q12h (AUC24 1120): goti/steady/1 change 750 mg q24h [answer 10/20, current 0/20] -> goti/early/1 change 500 mg q12h [answer 8/20, current 1/20]
+    change -> continue: e.g. CL 3.34 L/h, Vc 53 L, Vp 41 L, on 1000 mg q12h (AUC24 599): goti/steady/1 change 750 mg q12h [answer 11/20, current 7/20] -> goti/early/1 continue 1000 mg q12h [answer 7/20, current 7/20]
+    continue -> change: e.g. CL 4.94 L/h, Vc 73 L, Vp 40 L, on 1000 mg q12h (AUC24 405): goti/steady/1 continue 1000 mg q12h [answer 10/20, current 10/20] -> goti/early/1 change 1250 mg q12h [answer 9/20, current 7/20]
+goti    d3d4-troughs/2  1422 of 4500 answers differ {"change -> change":1016,"change -> continue":401,"continue -> change":5}; never worse broken: 0
+    change -> change: e.g. CL 1.70 L/h, Vc 37 L, Vp 30 L, on 1000 mg q12h (AUC24 1174): goti/steady/2 change 750 mg q24h [answer 13/20, current 0/20] -> goti/early/2 change 1000 mg q24h [answer 8/20, current 1/20]
+    change -> continue: e.g. CL 3.59 L/h, Vc 93 L, Vp 43 L, on 1000 mg q12h (AUC24 557): goti/steady/2 change 1750 mg q24h [answer 12/20, current 10/20] -> goti/early/2 continue 1000 mg q12h [answer 8/20, current 8/20]
+    continue -> change: e.g. CL 4.89 L/h, Vc 87 L, Vp 44 L, on 1000 mg q12h (AUC24 409): goti/steady/2 continue 1000 mg q12h [answer 12/20, current 12/20] -> goti/early/2 change 1250 mg q12h [answer 9/20, current 7/20]
+goti    dose-one/1      0 of 4500 answers differ {}; never worse broken: 0
+goti    dose-two/1      1474 of 4500 answers differ {"change -> change":1073,"change -> continue":363,"continue -> change":38}; never worse broken: 0
+    change -> change: e.g. CL 2.70 L/h, Vc 57 L, Vp 35 L, on 1000 mg q12h (AUC24 740): goti/steady/1 change 1250 mg q24h [answer 11/20, current 3/20] -> goti/early/1 change 750 mg q12h [answer 8/20, current 5/20]
+    change -> continue: e.g. CL 3.55 L/h, Vc 51 L, Vp 53 L, on 1000 mg q12h (AUC24 563): goti/steady/1 change 750 mg q12h [answer 11/20, current 9/20] -> goti/early/1 continue 1000 mg q12h [answer 8/20, current 8/20]
+    continue -> change: e.g. CL 4.92 L/h, Vc 53 L, Vp 40 L, on 1000 mg q12h (AUC24 406): goti/steady/1 continue 1000 mg q12h [answer 10/20, current 10/20] -> goti/early/1 change 1250 mg q12h [answer 9/20, current 7/20]

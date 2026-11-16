@@ -53,7 +53,7 @@ for (const age of ages) for (const wt of weights) for (const lv of levels) for (
   const ld = Math.min(3000, Math.round(25 * wt / STEP) * STEP);
   const doses = [{ mg: ld, tinfH: sb.autoTinf(ld), timeH: 0 }];
   const lev = [{ conc: lv, timeH: 47.5 }];
-  const mf = sb.mapFit((a, b, c) => sb.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, lev), 3, K.OMEGA2_CL_GOTI, K.OMEGA2_VC_GOTI, 400);
+  const mf = sb.mapFit((a, b, c) => sb.burtonObj3D(a, b, c, pk.TVCL, pk.TVVc, pk.TVVp, doses, lev), 3, K.OMEGA2_CL_GOTI, K.OMEGA2_VC_GOTI, 400, K.OMEGA2_VP_GOTI);
   const [eCL, eVc, eVp] = mf.eta;
   const r = { model: 'goti', dial: true, CL_ind: pk.TVCL * Math.exp(eCL), V_ind: pk.TVVc * Math.exp(eVc), tbw: wt,
     goti: { Vc_ind: pk.TVVc * Math.exp(eVc), Vp_ind: pk.TVVp * Math.exp(eVp), Q: pk.Q }, levels: lev, doses,

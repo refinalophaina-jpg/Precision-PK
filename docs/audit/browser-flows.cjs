@@ -64,6 +64,10 @@ function watch(page, tag) {
 }
 const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n);
   const p = (v) => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+// A date and a 24-hour time h hours from today 10:00, the fixed clock of the page the D27 Hold checks run on (b.clock), so
+// "now" sits where a check needs it (R2 final review).
+const fromTen = (h) => { const d = new Date(new Date(`${day(0)}T10:00`).getTime() + h * 3600000), p = (v) => String(v).padStart(2, '0');
+  return [`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, `${p(d.getHours())}:${p(d.getMinutes())}`]; };
 const D1 = day(-2), D2 = day(-1);   // doses at D1 08:00, D1 20:00, D2 08:00, D2 20:00; the level at D2 19:30
 // On the production domain Cloudflare injects an inline bot-check script
 // (window.__CF$cv$params) that the hash-pinned CSP refuses — the policy working,
@@ -352,6 +356,47 @@ async function enterCourse(page) {
   await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(300);
   await page.locator('.theme-toggle').click(); await page.waitForTimeout(300);
 
+  // D27: a resize or a theme change redraws the canvases and the strip; it does not rebuild the
+  // result. Every evidence section open, a typed value, the first-dose editor open with its date
+  // focused: all of it, and the announcer, survive. A soft keyboard (a height-only change at 375 px)
+  // is the same case on a phone.
+  {
+    const snap = () => page.evaluate(() => ({
+      open: [...document.querySelectorAll('#b-results details')].filter(d => d.open).length,
+      all: document.querySelectorAll('#b-results details').length,
+      tink: (document.getElementById('b-tink-dose') || {}).value, focus: document.activeElement && document.activeElement.id,
+      editOpen: !document.getElementById('b-first-edit').hidden, said: (document.getElementById('sr-announce') || {}).textContent || '',
+      same: !!document.querySelector('#b-results .vx-top') && document.querySelector('#b-results .vx-top').__d27 === true }));
+    await page.evaluate(() => { document.querySelectorAll('#b-results details').forEach(d => { d.open = true; });
+      document.querySelector('#b-results .vx-top').__d27 = true; });
+    await typeInto(page, '#b-tink-dose', '1750');
+    if (await page.locator('#b-results [data-onclick="k83"]').getAttribute('aria-expanded') !== 'true') await page.locator('#b-results [data-onclick="k83"]').click();
+    await page.locator('#b-first-date').focus(); await page.waitForTimeout(200);
+    const before = await snap();
+    // The theme is switched by its function, not a click: a click would move focus to the button, which is its own effect.
+    await page.setViewportSize({ width: 1300, height: 900 }); await page.waitForTimeout(500);
+    await page.evaluate(() => toggleTheme()); await page.waitForTimeout(500);
+    const after = await snap();
+    await page.evaluate(() => toggleTheme()); await page.waitForTimeout(300);
+    ok('D27: resize and a theme change keep the result\'s state (sections, typed value, focus, one announcement)',
+       before.all > 3 && before.open === before.all && before.tink === '1750' && before.focus === 'b-first-date' && before.editOpen
+       && after.open === before.open && after.tink === '1750' && after.focus === 'b-first-date' && after.editOpen
+       && after.said === before.said && after.same, JSON.stringify({ before, after }));
+    const inkD = await canvasInk(page, '#b-profile-canvas');
+    ok('D27: the canvas is still drawn after the redraw', inkD.painted > 500, JSON.stringify(inkD));
+    // A soft keyboard: width unchanged, height shrinks.
+    await page.setViewportSize({ width: 375, height: 812 }); await page.waitForTimeout(500);
+    await page.locator('#b-first-time').focus(); await page.keyboard.type('123'); await page.waitForTimeout(200);
+    const k1 = await snap(), t1 = await page.locator('#b-first-time').inputValue();
+    await page.setViewportSize({ width: 375, height: 500 }); await page.waitForTimeout(500);
+    const k2 = await snap(), t2 = await page.locator('#b-first-time').inputValue();
+    ok('D27: a soft keyboard (375 px, height only) leaves the first-dose editor open, the focus and the typed value',
+       k1.editOpen && k2.editOpen && k1.focus === 'b-first-time' && k2.focus === 'b-first-time' && !!t1 && t2 === t1
+       && k2.tink === '1750' && k2.open === k2.all && k2.said === k1.said && k2.same, JSON.stringify({ t1, t2, f: [k1.focus, k2.focus], e: [k1.editOpen, k2.editOpen], s: k2.said === k1.said, o: k2.open, same: k2.same }));
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(400);
+    await page.evaluate(() => { document.getElementById('b-first-time').blur(); });
+  }
+
   // The shared time cursor: the strip drives the curve, the curve drives the strip.
   const sig = () => page.evaluate(() => { const c = document.getElementById('b-profile-canvas');
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let h = 0;
@@ -431,6 +476,41 @@ async function enterCourse(page) {
   const ssKey = await page.evaluate(() => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()));
   ok('Trough steady-state key: fit, recommendation, population estimate, level',
      ssKey.some(t => /^Current /.test(t)) && ssKey.some(t => /^Recommended /.test(t)) && ssKey.includes('Population estimate') && ssKey.includes('Measured level'), JSON.stringify(ssKey));
+  // D27 (UI review I6, Task 20a): the measured-level label ("24.0") is placed where no curve segment and no
+  // peak/trough marker passes through it. The chart is redrawn through a recording of what it draws.
+  {
+    const lab = await page.evaluate(() => {
+      const P = CanvasRenderingContext2D.prototype, keep = {}, log = { seg: [], arcs: [], texts: [] };
+      let last = null;
+      const on = (ctx) => ctx.canvas && ctx.canvas.id === 'pk-graph-ss';
+      for (const n of ['moveTo', 'lineTo', 'arc', 'fillText']) keep[n] = P[n];
+      P.moveTo = function (x, y) { if (on(this)) last = [x, y]; return keep.moveTo.call(this, x, y); };
+      P.lineTo = function (x, y) { if (on(this) && last) { log.seg.push([last[0], last[1], x, y]); last = [x, y]; } return keep.lineTo.call(this, x, y); };
+      P.arc = function (x, y, r, a, b, c) { if (on(this)) log.arcs.push([x, y, r]); return keep.arc.call(this, x, y, r, a, b, c); };
+      P.fillText = function (t, x, y) { if (on(this)) log.texts.push({ t, x, y, al: this.textAlign, bl: this.textBaseline, w: this.measureText(t).width }); return keep.fillText.call(this, t, x, y); };
+      try { redrawAllCanvases(); } finally { Object.assign(P, keep); }
+      const t = log.texts.find(q => q.t === '24.0');
+      if (!t) return { found: false };
+      const x0 = t.al === 'right' ? t.x - t.w : t.al === 'center' ? t.x - t.w / 2 : t.x;
+      const y0 = t.bl === 'top' ? t.y : t.y - 10, r = { x0: x0 - 1, x1: x0 + t.w + 1, y0: y0 - 1, y1: y0 + 13 + 1 };
+      const inR = (x, y) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+      let segHits = 0, arcHits = 0;
+      for (const [ax, ay, bx, by] of log.seg) {
+        if (ax === bx || ay === by) continue;                       // gridlines, not curves
+        const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
+        for (let i = 0; i <= n; i++) if (inR(ax + (bx - ax) * i / n, ay + (by - ay) * i / n)) { segHits++; break; }
+      }
+      for (const [x, y, rad] of log.arcs) if (rad !== 5.5 && x >= r.x0 - rad && x <= r.x1 + rad && y >= r.y0 - rad && y <= r.y1 + rad) arcHits++;
+      const bt = log.texts.find(q => /^Trough target/.test(q.t));
+      let overlap = null;
+      if (bt) {
+        const bx0 = bt.al === 'right' ? bt.x - bt.w : bt.al === 'center' ? bt.x - bt.w / 2 : bt.x, by0 = bt.bl === 'top' ? bt.y : bt.y - 10;
+        overlap = bx0 < r.x1 && bx0 + bt.w > r.x0 && by0 < r.y1 && by0 + 13 > r.y0;
+      }
+      return { found: true, segHits, arcHits, overlap, rect: r };
+    });
+    ok('D27: the measured-level label sits clear of the curves, the markers and the band label', lab.found && lab.segHits === 0 && lab.arcHits === 0 && lab.overlap === false, JSON.stringify(lab));
+  }
   // "Try another regimen" on the same result: its own comparison in the Tinkerer's code —
   // the tried regimen beside the fitted current regimen and the population estimate —
   // while the result's chart and its key stay as they were (D14).
@@ -1354,6 +1434,18 @@ async function enterCourse(page) {
     ok('D26: final review: the copy summary and the announcement carry the hold, with no clock time',
        /^Hold: recheck a level before the next dose/.test(c1.summary) && /^Result: Hold: recheck a level before the next dose/.test(c1.said)
        && !/\d\d:\d\d/.test(c1.summary.split('. ')[0]), JSON.stringify({ summary: c1.summary, said: c1.said }));
+    // Task 21b: the horizon is said from the origin it is counted from (U2: the due time), on the hold line, the
+    // readout and the projection's note alike; never "for the next 72 h".
+    await a.locator('#b-proj-fwd').check(); await a.waitForTimeout(400);
+    const hz = await a.evaluate(() => ({ summary: String(bState.summaryText || ''), said: ((document.getElementById('sr-announce') || {}).textContent || ''),
+      why: ((document.querySelector('#b-results .vx-hold-why') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      readout: ((document.getElementById('b-first-readout') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      note: ((document.getElementById('b-proj-auc-note') || {}).textContent || '').trim() }));
+    ok('D27: the "recheck a level" horizon is named from the origin counted (now, the due time having passed) on the hold line, the readout, the projection note, Copy summary and the announcement',
+       // R51: this patient's dose was due days ago, so the horizon is counted, and named, from now.
+       [hz.why, hz.readout, hz.note, hz.summary, hz.said].every(t => /until 72 h from now/.test(t) && !/for the next 72 h|after the dose was due|after the next dose is due/.test(t))
+       && /^No projection: /.test(hz.note), JSON.stringify(hz));
+    await a.locator('#b-proj-fwd').uncheck(); await a.waitForTimeout(200);
     ok('D26: final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
        /No further dose until a level is drawn/.test(c1.all) && !/Give a single weight-based loading dose/.test(c1.all) && !/not the actual 8\b/.test(c1.all),
        c1.all.slice(c1.all.indexOf('Severe renal'), c1.all.indexOf('Severe renal') + 300));
@@ -1650,6 +1742,46 @@ async function enterCourse(page) {
     }
     ok('PD: the second interval is flagged early; the options mark the recommendation; the chart shows the levels and cycler nights',
        /within 24 h of a dose ending/.test(p1.decline) && (mgOf(p1.verdict) ? p1.rec.startsWith(p1.verdict.match(/Give ([\d.]+ (?:g|mg))/)[1]) : p1.rec === 'No dose') && p1.lv === 2 && p1.cyc >= 1, JSON.stringify(p1).slice(0, 400));
+    {
+      // D27 (UI review I5, Task 20a): the PD answer is announced once per run, never again on a resize.
+      const said = await pd.evaluate(() => (document.getElementById('sr-announce') || {}).textContent || '');
+      await pd.evaluate(() => { document.getElementById('sr-announce').textContent = ''; });
+      await pd.setViewportSize({ width: 1100, height: 900 }); await pd.waitForTimeout(500);
+      const again = await pd.evaluate(() => (document.getElementById('sr-announce') || {}).textContent || '');
+      await pd.setViewportSize({ width: 1280, height: 900 }); await pd.waitForTimeout(500);
+      ok('D27: PD announces its answer once per run (and not again on resize)',
+         /^Result: /.test(said) && /(Give [\d.]+ (g|mg) IV|No dose today)/.test(said) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(said) && again === '', JSON.stringify({ said: said.slice(0, 200), again }));
+    }
+    {
+      // D27 (UI review I7, Task 20a): the PD chart names its unit, labels a value at or above the drawn
+      // maximum, shows every legend swatch (a hairline border and a box), and names the pre-dose decline.
+      const ch = await pd.evaluate(() => {
+        const svg = document.querySelector('#results-content svg.pd-chart'), v = state.pdView;
+        const labels = [...svg.querySelectorAll('text.pd-axl')].map(t => t.textContent.trim());
+        const nums = labels.filter(t => /^\d+(\.\d+)?$/.test(t)).map(Number);
+        const peak = Math.max(...v.a.curve.map(p => p.hi), ...v.input.course.levels.map(l => l.conc), v.a.goal.max);
+        const sw = ['pd-lg-goal', 'pd-lg-cyc', 'pd-lg-band', 'pd-lg-lv'].map(c => { const el = document.querySelector('#results-content .lg.' + c);
+          if (!el) return { c, missing: true };
+          const cs = getComputedStyle(el); return { c, h: el.getBoundingClientRect().height, w: el.getBoundingClientRect().width, bw: parseFloat(cs.borderTopWidth), bc: cs.borderTopColor, bs: cs.borderTopStyle }; });
+        return { unit: labels.includes('mg/L'), maxTick: Math.max(...nums), peak, sw,
+          legend: [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()) };
+      });
+      // The goal 15-20 with the projection peaking at 20.6: the axis still labels a value at or above 20.6.
+      const hi = await pd.evaluate(() => {
+        const v = state.pdView, m = Math.max(...v.a.curve.map(p => p.hi)), k = 20.6 / m;
+        const a2 = Object.assign({}, v.a, { goal: { min: 15, max: 20 }, curve: v.a.curve.map(p => ({ t: p.t, lo: p.lo * k, hi: p.hi * k })) });
+        const inp2 = Object.assign({}, v.input, { course: Object.assign({}, v.input.course, { levels: v.input.course.levels.map(l => Object.assign({}, l, { conc: Math.min(l.conc, 14) })) }) });
+        const box = document.createElement('div'); box.innerHTML = pdChartSVG(a2, inp2, v.nowH, 600);
+        const labels = [...box.querySelectorAll('text.pd-axl')].map(t => t.textContent.trim()), nums = labels.filter(t => /^\d+$/.test(t)).map(Number);
+        const ys = [...box.querySelectorAll('text.pd-axl')].filter(t => /^\d+$/.test(t.textContent.trim())).map(t => +t.getAttribute('y'));
+        const cap = [...box.querySelectorAll('text.pd-axl')].find(t => t.textContent.trim() === 'mg/L'), capY = +cap.getAttribute('y');
+        return { labels, maxTick: Math.max(...nums), capClear: ys.every(y => y - 9 > capY + 1), peak: 20.6 };
+      });
+      ok('D27: PD chart: goal 15-20 with a 20.6 peak still labels a value at or above the peak, clear of the mg/L caption', hi.maxTick >= hi.peak && hi.capClear, JSON.stringify(hi));
+      ok('D27: PD chart: a mg/L caption, a tick at or above the drawn maximum, visible swatches, the decline named',
+         ch.unit && ch.maxTick >= ch.peak && ch.sw.every(x => !x.missing && x.h >= 8 && x.w >= 8 && (x.c === 'pd-lg-lv' || (x.bw >= 1 && x.bs === 'solid' && x.bc !== 'rgba(0, 0, 0, 0)')))
+         && ch.legend.some(t => /decline/i.test(t)), JSON.stringify(ch));
+    }
     const pdD24 = await pd.evaluate(() => { const svg = document.querySelector('#results-content svg.pd-chart'), txt = svg && svg.querySelector('text');
       return { px: svg && txt ? +(parseFloat(getComputedStyle(txt).fontSize) * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width).toFixed(1) : 0,
         hidden: ['amp-section', 'section-renal', 'section-ld'].map(id => !document.getElementById(id).offsetParent),
@@ -1801,6 +1933,905 @@ async function enterCourse(page) {
     results.problems.push(...wAttr.kept);
     await wctx.close();
   }
+
+  // D27 (models review I3, Task 18): Hughes 2024 was built in the ranges of its Table 1 (p. 578). A fictional
+  // 25 M, 200 kg, 185 cm, SCr 0.5 on Hughes has CrCl on fat-free mass 307 (built in 13-255): one caution line in
+  // the confidence slot says so. A 92 M, 230 kg, 175 cm (BMI 75.1), SCr 2.8 is outside on four covariates: still
+  // one line, and the Models gist does not suggest the model in use. The 45 M, 140 kg, 175 cm, SCr 1.0 patient
+  // (103) gets none. The D1/D2 course.
+  {
+    const octx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const o = await octx.newPage();
+    const oProblems = watch(o, 'hughes-range');
+    await o.goto(BASE + '?v=pwhr-' + Date.now(), { waitUntil: 'networkidle' });
+    await o.locator('[data-onclick="k2"]').click();
+    await typeInto(o, '#b-age', '25'); await typeInto(o, '#b-tbw', '200'); await typeInto(o, '#b-height', '185'); await typeInto(o, '#b-scr', '0.5');
+    await o.locator('[data-onclick="k39"]').click();
+    await o.locator('#b-model-btn-hughes').click();
+    await enterCourse(o);
+    const slot = () => o.evaluate(() => {
+      const mm = [...document.querySelectorAll('#b-results .vx-mismatch')];
+      return { n: mm.length, text: mm.map(e => e.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
+        inConf: mm.every(e => !!e.closest('.vx-conf')), caution: mm.every(e => e.classList.contains('tone-caution') && !!e.querySelector('svg.ic')),
+        alarm: mm.some(e => e.classList.contains('tone-alarm')), gist: ((document.querySelector('#ev-models .ev-gist') || {}).textContent || '').trim() };
+    });
+    // Each run starts from an empty answer, so the wait is for this run's result, not the last one.
+    const run = async () => {
+      await o.evaluate(() => { document.getElementById('b-results').innerHTML = ''; });
+      await o.locator('[data-onclick="k47"]').click();
+      await o.waitForSelector('#b-results .vx-conf', { timeout: 20000 }); await o.waitForTimeout(300);
+      return slot();
+    };
+    const out = await run();
+    ok('D27: Hughes out-of-population line: CrCl on fat-free mass above the built range is one caution line in the confidence slot',
+       out.n === 1 && out.inConf && out.caution && !out.alarm
+       && /^Hughes 2024 was built in patients with CrCl on fat-free mass 13–255 mL\/min; this patient's CrCl on fat-free mass \(307 mL\/min\) is above that range\.$/.test(out.text)
+       && !/^Suggested:/.test(out.gist), JSON.stringify(out));
+    await typeInto(o, '#b-age', '92'); await typeInto(o, '#b-tbw', '230'); await typeInto(o, '#b-height', '175'); await typeInto(o, '#b-scr', '2.8');
+    const four = await run();
+    ok('D27: Hughes out-of-population line: four covariates outside the range are one sentence; the gist does not suggest Hughes on Hughes',
+       four.n === 1 && four.inConf && four.caution && !four.alarm
+       && /^Hughes 2024 was built in patients with weight 91\.6–218 kg, BMI 40–70\.3, age 24\.2–89\.3 years and serum creatinine 0\.4–2\.51 mg\/dL; this patient's weight \(230 kg\), BMI \(75\.1\), age \(92 years\) and serum creatinine \(2\.8 mg\/dL\) are above those ranges\.$/.test(four.text)
+       && !!four.gist && !/Suggested/.test(four.gist), JSON.stringify(four));
+    await typeInto(o, '#b-age', '45'); await typeInto(o, '#b-tbw', '140'); await typeInto(o, '#b-height', '175'); await typeInto(o, '#b-scr', '1.0');
+    const inRange = await run();
+    ok('D27: Hughes out-of-population line: an in-range Hughes patient gets none', inRange.n === 0, JSON.stringify(inRange));
+    const oAttr = await attributeInjected(o, oProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + oAttr.injected;
+    results.problems.push(...oAttr.kept);
+    await octx.close();
+  }
+
+  // D27 (models review I2, Task 19): a level drawn before steady state reads the band simulated for early
+  // levels. Fictional 45 M, 140 kg, 175 cm, SCr 1.0 on Hughes; 1.5 g at D1 08:00 and 20:00; one level,
+  // 26 mg/L, at D1 23:00 (15 h after the first dose). The Early level note quotes the early band, and the
+  // percentages beside "likely", the likely range and the dot count are all that row's (SUITE 45.4b in Node).
+  {
+    const ectx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const e = await ectx.newPage();
+    const eProblems = watch(e, 'early-band');
+    await e.goto(BASE + '?v=pweb-' + Date.now(), { waitUntil: 'networkidle' });
+    await e.locator('[data-onclick="k2"]').click();
+    await typeInto(e, '#b-age', '45'); await typeInto(e, '#b-tbw', '140'); await typeInto(e, '#b-height', '175'); await typeInto(e, '#b-scr', '1.0');
+    await e.locator('[data-onclick="k39"]').click();
+    await e.locator('#b-model-btn-hughes').click();
+    await e.locator('[data-onclick="k43"]').click();
+    await typeInto(e, '#b-dose-mg-1', '1500');
+    await e.locator('#b-dose-date-1').fill(D1);
+    await typeInto(e, '#b-dose-time-1', '08:00');
+    await e.locator('[data-onclick="k43"]').click();
+    await e.locator('[data-onclick="k46"]').click();
+    await typeInto(e, '#b-lvl-conc-1', '26');
+    await e.locator('#b-lvl-date-1').fill(D1);
+    await typeInto(e, '#b-lvl-time-1', '23:00');
+    await e.waitForTimeout(300);
+    await e.locator('[data-onclick="k47"]').click();
+    await e.waitForSelector('#b-results .vx-likely', { timeout: 20000 }); await e.waitForTimeout(300);
+    const eb = await e.evaluate(() => {
+      const row = aucUncertaintyRow(1, 'hughes', true), ss = aucUncertaintyRow(1, 'hughes', false), r = bState.result;
+      const t = (sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const all = document.getElementById('b-results').textContent.replace(/\s+/g, ' ');
+      return { row, ss, stored: r.decisionArgs.row.id, auc: r.rec.auc24, likely: t('#b-results .vx-likely'), pct: t('#b-results .vx-pct'),
+        dots: t('#b-results .vx-dots'), want: attainmentDots(r.rec.auc24, row), early: /Early level/.test(all),
+        note: /band simulated for levels drawn before steady state, −\d+% \/ \+\d+%, wider than the −\d+% \/ \+\d+% simulated for steady-state troughs/.test(all) };
+    });
+    ok('D27: an early level reads the early band: the note, the percentages, the likely range and the dots are that row\'s',
+       eb.row.design === 'early' && eb.stored === eb.row.id && eb.early && eb.note
+       && eb.pct === `(−${Math.round(eb.row.lo * 100)}% / +${Math.round(eb.row.hi * 100)}%)`
+       && eb.likely === `likely ${(eb.auc * (1 - eb.row.lo)).toFixed(0)} to ${(eb.auc * (1 + eb.row.hi)).toFixed(0)}`
+       && new RegExp(`· ${eb.want} of 20 plausible AUCs`).test(eb.dots)
+       && eb.row.lo + eb.row.hi > eb.ss.lo + eb.ss.hi, JSON.stringify(eb));
+    const eAttr = await attributeInjected(e, eProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + eAttr.injected;
+    results.problems.push(...eAttr.kept);
+    await ectx.close();
+  }
+  // D27 (UI review I1, Task 20a): tabbing to Serum creatinine at 1280 x 800 must leave the field above the
+  // pinned Calculate footer, not behind it.
+  {
+    const kctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const k = await kctx.newPage();
+    const kProblems = watch(k, 'focus-footer');
+    await k.goto(BASE + '?v=pwfoot-' + Date.now(), { waitUntil: 'networkidle' });
+    await k.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await k.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+    let hit = false;
+    for (let i = 0; i < 80 && !hit; i++) { await k.keyboard.press('Tab'); hit = await k.evaluate(() => document.activeElement && document.activeElement.id === 'scr'); }
+    await k.waitForTimeout(400);
+    const fm = await k.evaluate(() => {
+      const f = document.activeElement.getBoundingClientRect();
+      const foot = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left .panel-actions').getBoundingClientRect();
+      return { id: document.activeElement.id, bottom: f.bottom, top: f.top, footTop: foot.top, footH: foot.height,
+        pad: getComputedStyle(document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left')).scrollPaddingBottom };
+    });
+    ok('D27: tabbing to #scr at 1280x800 leaves the field above the pinned footer', hit && fm.bottom <= fm.footTop + 0.5 && fm.top >= 0, JSON.stringify(fm));
+    // Every tab stop inside either input column stays above that column's pinned footer (Trough and AUC Precision).
+    for (const tab of ['Trough', 'AUC']) {
+      await k.locator('.module-tab', { hasText: tab }).first().click();
+      await k.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+      const hidden = [];
+      let n = 0;
+      for (let i = 0; i < 90; i++) {
+        await k.keyboard.press('Tab'); await k.waitForTimeout(40);
+        const r = await k.evaluate(() => { const el = document.activeElement, pl = el && el.closest('.panel-left');
+          const foot = pl && pl.querySelector(':scope > .panel-actions');
+          if (!pl || !foot || !el.offsetParent || foot.contains(el)) return null;
+          const b = el.getBoundingClientRect(), ft = foot.getBoundingClientRect();
+          return { id: el.id || el.className.toString().slice(0, 30), bottom: b.bottom, footTop: ft.top }; });
+        if (r) { n++; if (r.bottom > r.footTop + 0.5) hidden.push(r); }
+      }
+      ok(`D27: every tab stop in the ${tab} column is above its pinned footer`, n > 20 && hidden.length === 0, JSON.stringify({ n, hidden: hidden.slice(0, 3) }));
+    }
+    const kAttr = await attributeInjected(k, kProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + kAttr.injected;
+    results.problems.push(...kAttr.kept);
+    await kctx.close();
+  }
+  // D27 (UI review M1, Task 20a): the focus ring is --terracotta-ink everywhere, light and dark. No rule that
+  // matches :focus / :focus-visible / :focus-within carries raw --terracotta, and tabbing through the Trough
+  // and AUC columns shows a ring of the resolved ink colour on every stop, in both schemes.
+  for (const scheme of ['light', 'dark']) {
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme });
+    const f = await fctx.newPage();
+    const fProblems = watch(f, 'focus-ring-' + scheme);
+    await f.goto(BASE + '?v=pwring-' + scheme + Date.now(), { waitUntil: 'networkidle' });
+    const rules = await f.evaluate(() => {
+      const bad = [];
+      const walk = (list) => { for (const r of list) {
+        if (r.cssRules && !r.selectorText) walk(r.cssRules);
+        else if (r.selectorText && /:focus/.test(r.selectorText) && /var\(--terracotta\)/.test(r.cssText)) bad.push(r.selectorText.slice(0, 80)); } };
+      for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch (e) { /* cross-origin */ } }
+      return bad;
+    });
+    const stops = [];
+    for (const tab of ['Trough', 'AUC']) {
+      await f.locator('.module-tab', { hasText: tab }).first().click();
+      await f.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+      for (let i = 0; i < 40; i++) {
+        await f.keyboard.press('Tab');
+        stops.push(await f.evaluate(() => { const el = document.activeElement, cs = getComputedStyle(el), probe = document.createElement('i');
+          probe.style.color = 'var(--terracotta-ink)'; document.body.appendChild(probe); const ink = getComputedStyle(probe).color; probe.remove();
+          return { id: el.id || el.className.toString().slice(0, 30), style: cs.outlineStyle, color: cs.outlineColor, ink, w: cs.outlineWidth }; }));
+      }
+    }
+    const bad = stops.filter(x => x.style !== 'none' && x.color !== x.ink);
+    ok(`D27: the focus ring is --terracotta-ink everywhere (${scheme}): no raw --terracotta in a focus rule, every tab stop`,
+       rules.length === 0 && bad.length === 0 && stops.length > 40, JSON.stringify({ rules: rules.slice(0, 8), bad: bad.slice(0, 4), stops: stops.length }));
+    const fAttr = await attributeInjected(f, fProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + fAttr.injected;
+    results.problems.push(...fAttr.kept);
+    await fctx.close();
+  }
+  // D27 (UI review M3, M8 print SCr, Task 20b): one notation. "h" not "hr"; "Kel … h⁻¹"; a space before every
+  // unit; "q12h" in prose; "AUC₂₄" in every sentence the user reads; the print shows the SCr as typed.
+  {
+    const BAD = { hr: /\bhr\b|hr⁻¹|\/hr/, glued: /(?<![A-Za-z\d.])\d+(\.\d+)?h\b/, caps: /\bQ\d+(\.\d)?H\b/, auc24: /AUC24\b/, ke: /\bKe \d/ };
+    const scan = (t) => { const o = {}; for (const [k, re] of Object.entries(BAD)) { const m = t.match(new RegExp(re.source, 'g')); if (m) o[k] = [...new Set(m)].slice(0, 4); } return o; };
+    const pageText = (pg) => pg.evaluate(() => { [...document.querySelectorAll('details')].forEach(d => { d.open = true; });
+      const out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let t = w.nextNode(); t; t = w.nextNode()) { const e = t.parentElement;
+        if (e && !e.closest('.sr-only, #sr-announce, script, style') && e.checkVisibility()) out.push(t.textContent); }
+      return out.join(' ').replace(/\s+/g, ' '); });
+    const nctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const n = await nctx.newPage();
+    const nProblems = watch(n, 'notation');
+    await n.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await n.goto(BASE + '?v=nota-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await typeInto(n, '#age', '60'); await typeInto(n, '#tbw', '80'); await typeInto(n, '#height', '175'); await typeInto(n, '#scr', '1.0');
+    await n.locator('[data-onclick="k9"]').first().click();
+    await n.locator('#mode-btn-level').click();
+    await typeInto(n, '#dose', '1000'); await n.locator('#interval').selectOption('12');
+    await n.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+    await typeInto(n, '#level-val', '24');
+    await n.locator('#time-dose-given-date').fill(D2); await typeInto(n, '#time-dose-given-time', '0800');
+    await n.locator('#time-level-drawn-date').fill(D2); await typeInto(n, '#time-level-drawn-time', '1930');
+    const tIn = scan(await pageText(n));
+    await n.locator('[data-onclick="k31"]').click(); await n.waitForSelector('#results-content .tx-legend', { timeout: 20000 }); await n.waitForTimeout(500);
+    const tOut = scan(await pageText(n));
+    const tKel = await n.evaluate(() => /Kel \d\.\d{4} h⁻¹ fitted from [\d.]+ mg\/L at [\d.]+ h/.test(document.getElementById('results-content').innerText.replace(/\s+/g, ' ')));
+    ok('D27: Trough inputs and level-time hints: "h" not "hr", a space before every unit', Object.keys(tIn).length === 0, JSON.stringify(tIn));
+    ok('D27: Trough result: "Kel … h⁻¹", "11.5 h", "q12h", AUC₂₄ with its subscript in every sentence', Object.keys(tOut).length === 0 && tKel, JSON.stringify({ tOut, tKel }));
+    // AUC Precision, a continued regimen: the detection note says q12h; the print shows SCr 1.0 as typed.
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '55'); await typeInto(n, '#b-tbw', '72'); await typeInto(n, '#b-height', '176'); await typeInto(n, '#b-scr', '1.0');
+    await n.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1250'); await typeInto(n, `#b-dose-tinf-${i}`, '1.5');
+      await n.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await n.locator('[data-onclick="k46"]').click();
+    await typeInto(n, '#b-lvl-conc-1', '16'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '07:30');
+    const aIn = scan(await pageText(n));
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(400);
+    const aOut = scan(await pageText(n));
+    const scrCell = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const td = [...document.querySelectorAll('#print-report td')].find(c => /^SCr\b/.test(c.textContent.trim()));
+      return td ? td.nextElementSibling.textContent.trim() : null; });
+    ok('D27: AUC Precision: the detection note and the result read q12h, "h", AUC₂₄, with spaces', Object.keys(aIn).length === 0 && Object.keys(aOut).length === 0, JSON.stringify({ aIn, aOut }));
+    ok('D27: print shows SCr as typed ("1.0 mg/dL")', scrCell === '1.0 mg/dL', String(scrCell));
+    const nAttr = await attributeInjected(n, nProblems);
+    results.problems.push(...nAttr.kept);
+    await nctx.close();
+  }
+  // D27 (UI review M4-M8, Task 20b): the Trough verdict shows AUC/MIC only when MIC is not 1 (AUC Precision
+  // already does); the HD dose table's row heads stay on one line; the delta line reads "141 mg·h/L higher",
+  // never "+141"; the first-day caution and "steady state unchanged" are separate clauses; the print's text
+  // layer has a space before "provisional".
+  {
+    const xctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const x = await xctx.newPage();
+    const xProblems = watch(x, 'verdict-fixes');
+    await x.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await x.goto(BASE + '?v=pwv-' + Date.now(), { waitUntil: 'networkidle' });
+    // Trough: MIC 1, then MIC 2.
+    await x.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await typeInto(x, '#age', '60'); await typeInto(x, '#tbw', '80'); await typeInto(x, '#height', '175'); await typeInto(x, '#scr', '1.0');
+    await x.locator('[data-onclick="k9"]').first().click();
+    const troughVerdict = async () => { await x.locator('[data-onclick="k31"]').click(); await x.waitForSelector('#results-content .vx-auc-line', { timeout: 20000 }); await x.waitForTimeout(300);
+      return x.evaluate(() => document.querySelector('#results-content .tx-verdict').textContent.replace(/\s+/g, ' ')); };
+    const mic1 = await troughVerdict();
+    await typeInto(x, '#mic', '2');
+    const mic2 = await troughVerdict();
+    ok('D27: the Trough verdict shows AUC/MIC only when MIC is not 1', !/AUC\/MIC/.test(mic1) && /AUC\/MIC \d+/.test(mic2), JSON.stringify({ mic1: mic1.slice(0, 160), mic2: (mic2.match(/.{20}AUC\/MIC.{10}/) || [''])[0] }));
+    // AUC Precision: a change from 1.75 g q24h (below range) to 1.25 g q12h.
+    await x.locator('[data-onclick="k2"]').click();
+    await typeInto(x, '#b-age', '55'); await typeInto(x, '#b-tbw', '72'); await typeInto(x, '#b-height', '176'); await typeInto(x, '#b-scr', '1.0');
+    await x.locator('[data-onclick="k39"]').click();
+    const qtimes = [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']];
+    for (let n = 1; n <= qtimes.length; n++) {
+      await x.locator('[data-onclick="k43"]').click();
+      await typeInto(x, `#b-dose-mg-${n}`, '1750'); await typeInto(x, `#b-dose-tinf-${n}`, '2');
+      await x.locator(`#b-dose-date-${n}`).fill(qtimes[n - 1][0]); await typeInto(x, `#b-dose-time-${n}`, qtimes[n - 1][1]);
+    }
+    await x.locator('[data-onclick="k46"]').click();
+    await typeInto(x, '#b-lvl-conc-1', '6'); await x.locator('#b-lvl-date-1').fill(day(0)); await typeInto(x, '#b-lvl-time-1', '07:30');
+    await typeInto(x, '#b-auc-target', '400');
+    await x.locator('[data-onclick="k47"]').click(); await x.waitForSelector('#b-results .vx-delta', { timeout: 20000 }); await x.waitForTimeout(300);
+    const dl = await x.evaluate(() => ({ delta: document.querySelector('#b-results .vx-delta').textContent.replace(/\s+/g, ' ').trim(),
+      first: [...document.querySelectorAll('#b-results .vx-first, #b-results .vx-sub')].map(e => e.textContent.replace(/\s+/g, ' ').trim()).filter(t => /First 24 h/.test(t)) }));
+    ok('D27: the delta line reads "141 mg·h/L higher", not "+141"',
+       /^Against the current regimen: AUC₂₄ \d+ mg·h\/L (higher|lower), trough [\d.]+ mg\/L (higher|lower)\.$/.test(dl.delta) && !/[+−]/.test(dl.delta), dl.delta);
+    ok('D27: the first-day caution and "steady state unchanged" are separate clauses',
+       dl.first.length > 0 && dl.first.every(t => /below|above/.test(t) && /\d–\d+ · steady state unchanged/.test(t)), JSON.stringify(dl.first));
+    // Goti on haemodialysis: the one-time table's row heads ("250 mg") on one line at 1280.
+    await x.locator('#b-model-btn-gotihd').click();
+    await x.locator('[data-onclick="k74"]').click();
+    await x.locator('#b-hd-date-1').fill(D2); await typeInto(x, '#b-hd-time-1', '13:00'); await typeInto(x, '#b-hd-hours-1', '4');
+    await x.locator('[data-onclick="k47"]').click();
+    await x.waitForFunction(() => /One-time|No dose now|Pre-HD/.test((document.querySelector('#b-results .vx-verdict') || {}).textContent || ''), null, { timeout: 20000 });
+    await x.waitForTimeout(400);
+    const hd = await x.evaluate(() => { const ths = [...document.querySelectorAll('#b-results .vx-hd-onetime tbody th[scope="row"]')];
+      return { n: ths.length, lines: ths.map(t => { const r = document.createRange(); r.selectNodeContents(t); return new Set([...r.getClientRects()].map(q => Math.round(q.top))).size; }),
+        ws: ths.length ? getComputedStyle(ths[0]).whiteSpace : null }; });
+    ok('D27: the HD dose table\'s row heads stay on one line at 1280', hd.n >= 3 && hd.lines.every(l => l === 1) && hd.ws === 'nowrap', JSON.stringify(hd));
+    // A de-rated result: the print's text layer has a space before "provisional".
+    await x.goto(BASE + '?v=pwv2-' + Date.now(), { waitUntil: 'networkidle' });
+    await x.locator('[data-onclick="k2"]').click();
+    await typeInto(x, '#b-age', '76'); await typeInto(x, '#b-tbw', '70'); await typeInto(x, '#b-height', '175'); await typeInto(x, '#b-scr', '0.5');
+    await x.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await x.locator('[data-onclick="k43"]').click();
+      await typeInto(x, `#b-dose-mg-${i}`, '1000'); await typeInto(x, `#b-dose-tinf-${i}`, '1');
+      await x.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(x, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await x.locator('[data-onclick="k46"]').click();
+    await typeInto(x, '#b-lvl-conc-1', '19.9'); await x.locator('#b-lvl-date-1').fill(day(0)); await typeInto(x, '#b-lvl-time-1', '07:30');
+    await x.locator('[data-onclick="k47"]').click(); await x.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await x.waitForTimeout(300);
+    const pv = await x.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const p = document.querySelector('#print-report .pr-regimen'); return { text: p ? p.textContent : null, prov: !!document.querySelector('#b-results .vx-prov') }; });
+    ok('D27: the print\'s text layer reads "1 g IV q12h provisional" (a space each side of "provisional")',
+       pv.prov && /^\S.* q\d+h provisional\s*$/.test(pv.text || ''), JSON.stringify(pv));
+    const xAttr = await attributeInjected(x, xProblems);
+    results.problems.push(...xAttr.kept);
+    await xctx.close();
+  }
+  // D27 (UI review M10, M11, Task 20b): reduced motion also resets CSS smooth scrolling; at 375 px every
+  // interactive element in both modules' input columns and results reaches 44 px (the offenders are listed).
+  {
+    const rctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+    const r = await rctx.newPage();
+    await r.goto(BASE + '?v=pwrm-' + Date.now(), { waitUntil: 'networkidle' });
+    const rm = await r.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+    await rctx.close();
+    const nctx2 = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'no-preference' });
+    const r2 = await nctx2.newPage();
+    await r2.goto(BASE + '?v=pwrm2-' + Date.now(), { waitUntil: 'networkidle' });
+    const nm = await r2.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+    await nctx2.close();
+    ok('D27: reduced motion resets scroll-behavior (smooth otherwise)', rm === 'auto' && nm === 'smooth', JSON.stringify({ reduce: rm, none: nm }));
+  }
+  {
+    const mctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const m = await mctx.newPage();
+    const mProblems = watch(m, 'touch-targets');
+    await m.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await m.goto(BASE + '?v=pwt-' + Date.now(), { waitUntil: 'networkidle' });
+    const small = (where) => m.evaluate((where) => {
+      [...document.querySelectorAll('details')].forEach(d => { d.open = true; });
+      const sel = 'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=radio], [role=checkbox], [tabindex]:not([tabindex="-1"]), [data-onclick]';
+      const out = [];
+      for (const el of document.querySelectorAll(sel)) {
+        if (!el.checkVisibility() || el.closest('.sr-only')) continue;
+        const rc = el.getBoundingClientRect(); if (!rc.width || !rc.height) continue;
+        let w = rc.width, h = rc.height;
+        // a checkbox or radio is hit through its label: the larger of the two is the target
+        if (/^(checkbox|radio)$/.test(el.type)) { const l = el.closest('label') || (el.id && document.querySelector(`label[for="${el.id}"]`));
+          if (l) { const lr = l.getBoundingClientRect(); w = Math.max(w, lr.width); h = Math.max(h, lr.height); } }
+        if (w < 43.5 || h < 43.5) out.push(`${where}: ${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${String(el.className).split(' ')[0]} ${Math.round(w)}x${Math.round(h)}`);
+      }
+      return out;
+    }, where);
+    const offenders = [];
+    await m.locator('.module-tab', { hasText: 'Trough' }).first().tap();
+    for (const mode of ['initial', 'level', 'twolevels', 'randomlevel', 'pd']) {
+      await m.locator(`#mode-btn-${mode}`).tap(); await m.waitForTimeout(150);
+      if (mode === 'level') await m.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+      offenders.push(...await small('Trough ' + mode));
+    }
+    await m.locator('#mode-btn-initial').tap();
+    await typeInto(m, '#age', '60'); await typeInto(m, '#tbw', '80'); await typeInto(m, '#height', '175'); await typeInto(m, '#scr', '1.0');
+    await m.locator('[data-onclick="k9"]').first().tap();
+    await m.locator('[data-onclick="k31"]').tap(); await m.waitForSelector('#results-content .tx-legend', { timeout: 20000 }); await m.waitForTimeout(500);
+    offenders.push(...await small('Trough result'));
+    await m.locator('.module-tab', { hasText: 'AUC' }).first().tap();
+    await typeInto(m, '#b-age', '76'); await typeInto(m, '#b-tbw', '70'); await typeInto(m, '#b-height', '175'); await typeInto(m, '#b-scr', '0.5');
+    await m.locator('[data-onclick="k39"]').tap();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await m.locator('[data-onclick="k43"]').tap();
+      await typeInto(m, `#b-dose-mg-${i}`, '1500'); await typeInto(m, `#b-dose-tinf-${i}`, '1.5');
+      await m.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(m, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await m.locator('[data-onclick="k46"]').tap();
+    await typeInto(m, '#b-lvl-conc-1', '19.9'); await m.locator('#b-lvl-date-1').fill(day(0)); await typeInto(m, '#b-lvl-time-1', '07:30');
+    offenders.push(...await small('AUC input'));
+    await m.locator('[data-onclick="k47"]').tap(); await m.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await m.waitForTimeout(500);
+    const hasMore = await m.locator('#b-results .vx-more').count();
+    offenders.push(...await small('AUC result'));
+    await m.locator('#b-model-btn-gotihd').tap(); await m.locator('[data-onclick="k74"]').tap(); await m.waitForTimeout(200);
+    offenders.push(...await small('AUC Goti-HD input'));
+    const uniq = [...new Set(offenders.map(o => o.replace(/^[^:]+: /, '')))];
+    ok('D27: at 375 px every interactive element in both modules reaches 44 px (a "N more notes" link and the projection fields included)',
+       hasMore > 0 && offenders.length === 0, JSON.stringify({ hasMore, offenders: uniq.slice(0, 12), n: offenders.length }));
+    const mAttr = await attributeInjected(m, mProblems);
+    results.problems.push(...mAttr.kept);
+    await mctx.close();
+  }
+  // D27 (UI review M2, M12, M13, M14, Task 20b): the keys match what is drawn (Regimens: a visible, unfilled
+  // "below band" swatch beside fills that share the cells' hues; Trough chart: Peak and Trough swatches in the
+  // colours of the markers the canvas draws), the PD "Options" gist reads as a choice, and the schedule says
+  // "consistent schedule", never "high confidence".
+  {
+    const lctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const l = await lctx.newPage();
+    const lProblems = watch(l, 'legends');
+    await l.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await l.goto(BASE + '?v=pwl-' + Date.now(), { waitUntil: 'networkidle' });
+    // The colour a CSS colour resolves to, as r,g,b (alpha apart), through a canvas pixel.
+    const rgbOf = `(c) => { const k = document.createElement('canvas'); k.width = k.height = 1; const x = k.getContext('2d'); x.fillStyle = '#000'; x.fillStyle = c; x.fillRect(0, 0, 1, 1);
+      const d = x.getImageData(0, 0, 1, 1).data; return d[0] + ',' + d[1] + ',' + d[2]; }`;
+    // Trough, steady state with a level (current + recommendation) and an initial dose (the recommendation alone).
+    await l.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await typeInto(l, '#age', '60'); await typeInto(l, '#tbw', '80'); await typeInto(l, '#height', '175'); await typeInto(l, '#scr', '1.0');
+    await l.locator('[data-onclick="k9"]').first().click();
+    const drawnAndKey = () => l.evaluate(`(async () => {
+      const rgb = ${rgbOf};
+      const P = CanvasRenderingContext2D.prototype, keep = P.arc, log = { peak: [], trough: [] };
+      const paper = rgb(getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#faf5ed');
+      P.arc = function (x, y, r, a, b, c) { if (this.canvas && this.canvas.id === 'pk-graph-ss' && r === 3.5) {
+        const f = rgb(this.fillStyle), s = rgb(this.strokeStyle); if (f !== s) { if (s === paper) log.peak.push(f); else if (f === paper) log.trough.push(s); } }
+        return keep.call(this, x, y, r, a, b, c); };
+      try { redrawAllCanvases(); } finally { P.arc = keep; }
+      const swatches = (word) => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].filter(e => e.textContent.trim() === word)
+        .flatMap(e => [...e.querySelectorAll('i.lg')]).map(i => { const cs = getComputedStyle(i); return word === 'Peak' ? rgb(cs.backgroundColor) : rgb(cs.borderTopColor); });
+      const uniq = (a) => [...new Set(a)].sort().join(' | ');
+      return { drawnPeak: uniq(log.peak), drawnTrough: uniq(log.trough), keyPeak: uniq(swatches('Peak')), keyTrough: uniq(swatches('Trough')), n: log.peak.length };
+    })()`);
+    await l.locator('[data-onclick="k31"]').click(); await l.waitForSelector('#results-content .tx-legend', { timeout: 20000 }); await l.waitForTimeout(600);
+    const kInit = await drawnAndKey();
+    await l.locator('#mode-btn-level').click();
+    await typeInto(l, '#dose', '1000'); await l.locator('#interval').selectOption('12');
+    await l.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+    await typeInto(l, '#level-val', '24');
+    await l.locator('#time-dose-given-date').fill(D2); await typeInto(l, '#time-dose-given-time', '0800');
+    await l.locator('#time-level-drawn-date').fill(D2); await typeInto(l, '#time-level-drawn-time', '1930');
+    await l.locator('[data-onclick="k31"]').click(); await l.waitForTimeout(700);
+    const kSS = await drawnAndKey();
+    const okKey = (k, want) => k.n > 0 && k.drawnPeak === k.keyPeak && k.drawnTrough === k.keyTrough && k.keyPeak.split(' | ').length === want;
+    ok('D27: Trough key: Peak and Trough swatches are in the colour of the markers drawn (one series, then two)', okKey(kInit, 1) && okKey(kSS, 2), JSON.stringify({ kInit, kSS }));
+    // AUC Precision, the Regimens key and the schedule words.
+    await l.locator('[data-onclick="k2"]').click();
+    await typeInto(l, '#b-age', '55'); await typeInto(l, '#b-tbw', '72'); await typeInto(l, '#b-height', '176'); await typeInto(l, '#b-scr', '1.0');
+    await l.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await l.locator('[data-onclick="k43"]').click();
+      await typeInto(l, `#b-dose-mg-${i}`, '1250'); await typeInto(l, `#b-dose-tinf-${i}`, '1.5');
+      await l.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(l, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await l.locator('[data-onclick="k46"]').click();
+    await typeInto(l, '#b-lvl-conc-1', '16'); await l.locator('#b-lvl-date-1').fill(day(0)); await typeInto(l, '#b-lvl-time-1', '07:30');
+    await l.locator('[data-onclick="k47"]').click(); await l.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await l.waitForTimeout(400);
+    const rg = await l.evaluate(`(() => {
+      const px = (c) => { const k = document.createElement('canvas'); k.width = k.height = 1; const x = k.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, 1, 1); return [...x.getImageData(0, 0, 1, 1).data]; };
+      [...document.querySelectorAll('#b-results details')].forEach(d => { d.open = true; });
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const over = (c, bg) => [0, 1, 2].map(i => c[i] * c[3] / 255 + bg[i] * (1 - c[3] / 255));
+      const contrast = (c1, c2) => { const l1 = lum(over(c1, c2)), l2 = lum(c2); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); };
+      const page = px(getComputedStyle(document.body).backgroundColor);
+      const out = {};
+      for (const [cls, name] of [['mx-in', 'in'], ['mx-sub-b', 'below'], ['mx-supra', 'above']]) {
+        const cell = document.querySelector('#b-results .mx-grid .' + cls), sw = document.querySelector('#b-results .mx-key i.' + cls);
+        if (!cell || !sw) { out[name] = { missing: true }; continue; }
+        const cs = getComputedStyle(sw), c = px(getComputedStyle(cell).backgroundColor), s = px(cs.backgroundColor);
+        out[name] = { cellA: c[3], swA: s[3], sameHue: c[3] === 0 || [0, 1, 2].every(i => Math.abs(c[i] - s[i]) <= 8),
+          border: +contrast(px(cs.borderTopColor), page).toFixed(2), bw: cs.borderTopWidth };
+      }
+      return out; })()`);
+    ok('D27: Regimens key: each swatch is the cells\' own hue; "below band" (an unfilled cell) is a visible hairline box',
+       !rg.in.missing && !rg.below.missing && !rg.above.missing
+       && rg.in.sameHue && rg.above.sameHue && rg.in.swA > rg.in.cellA - 0.001 && rg.above.swA > rg.above.cellA - 0.001
+       && rg.below.cellA === 0 && rg.below.swA === 0 && rg.below.border >= 3 && parseFloat(rg.below.bw) >= 1, JSON.stringify(rg));
+    const sched = await l.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const note = (document.getElementById('b-regimen-detected') || {}).textContent || '';
+      const rows = [...document.querySelectorAll('#print-report .pr-table tr')].map(tr => [...tr.children].map(c => c.textContent.trim()).slice(0, 2)).filter(r => /^(Schedule|Confidence)$/.test(r[0]));
+      return { note: note.replace(/\s+/g, ' ').trim(), rows }; });
+    ok('D27: the schedule reads "consistent schedule", on screen and in print, never "high confidence"',
+       /^Detected q12h — consistent schedule\.$/.test(sched.note) && !/confidence/.test(sched.note)
+       && sched.rows.length === 1 && sched.rows[0][0] === 'Schedule' && sched.rows[0][1] === 'consistent', JSON.stringify(sched));
+    const lAttr = await attributeInjected(l, lProblems);
+    results.problems.push(...lAttr.kept);
+    await lctx.close();
+  }
+  {
+    // The PD "Options" gist: "9 doses, given now" read as nine doses given; it is nine choices, each if given now.
+    const pctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const pd = await pctx.newPage();
+    const pdProblems = watch(pd, 'pd-gist');
+    await pd.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await pd.goto(BASE + '?v=pwpdg-' + Date.now(), { waitUntil: 'networkidle' });
+    await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await pd.locator('#mode-btn-pd').click();
+    await typeInto(pd, '#tbw', '63');
+    await pd.selectOption('#pd-modality', 'ccpd');
+    await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
+    await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
+    await typeInto(pd, '#pd-load-kg', '61');
+    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
+    const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
+    await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
+    await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
+    await pd.locator('[data-onclick="k31"]').click(); await pd.waitForSelector('#results-content .pd-verdict', { timeout: 20000 }); await pd.waitForTimeout(300);
+    const gist = await pd.evaluate(() => { const s = document.querySelector('#pd-options > summary'); return s ? s.textContent.replace(/\s+/g, ' ').trim() : null; });
+    ok('D27: PD "Options" gist reads as a choice: "N choices, each if given …"', /^Options\W*\d+ choices, each if given (now|\d)/.test(gist || '') && !/doses, given/.test(gist || ''), String(gist));
+    const pAttr = await attributeInjected(pd, pdProblems);
+    results.problems.push(...pAttr.kept);
+    await pctx.close();
+  }
+  // D27 (Task 20b, saved profiles): a "Delete all profiles" text action with Undo that also clears what the
+  // per-row Delete cannot (entries that could not be read, an unparseable store) and never touches the
+  // ".bak" recovery copy, and each row's age in days (nothing for a profile with no timestamp).
+  {
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const d = await dctx.newPage();
+    const dProblems = watch(d, 'profiles-delete-all');
+    await d.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await d.goto(BASE + '?v=pwda-' + Date.now(), { waitUntil: 'networkidle' });
+    const KEY = 'ainadara.profiles.v1';
+    const mk = (id, label, savedAt) => ({ id, schema: 1, label, savedAt, snapshot: { demographics: { age: '60' }, doses: [], levels: [], core: { age: '60' } } });
+    const at = (n, hh) => new Date(`${day(n)}T${hh}`).getTime();
+    const seed = async (raw, bak) => { await d.evaluate(([k, raw, bak]) => { localStorage.removeItem(k); localStorage.removeItem(k + '.bak');
+      if (raw != null) localStorage.setItem(k, raw); if (bak != null) localStorage.setItem(k + '.bak', bak); }, [KEY, raw, bak]);
+      await d.reload({ waitUntil: 'networkidle' }); };
+    const view = () => d.evaluate((k) => ({ main: localStorage.getItem(k), bak: localStorage.getItem(k + '.bak'),
+      metas: [...document.querySelectorAll('.profile-list:first-of-type .profile-item-meta, #profile-list .profile-item-meta')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+      empty: [...document.querySelectorAll('.profile-empty-msg')].some(e => e.offsetParent),
+      btn: [...document.querySelectorAll('[data-onclick="k100"]')].filter(b => b.offsetParent).map(b => b.textContent.trim()),
+      status: [...document.querySelectorAll('.profile-status')].filter(e => e.offsetParent).map(e => e.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
+      undo: [...document.querySelectorAll('.profile-status [data-onclick="k97"]')].filter(b => b.offsetParent).length }), KEY);
+    const clickIf = async (sel) => { const l = d.locator(sel).first(); if (await l.count()) await l.click({ timeout: 3000 }); };
+    // A: three readable profiles (today, 3 days ago, no timestamp), two unreadable entries, and a recovery copy.
+    const readable = [mk('p_a1', 'Today', at(0, '08:00')), mk('p_a2', 'Three days', at(-3, '09:00')), mk('p_a3', 'No stamp', 0)];
+    const rawA = JSON.stringify([...readable, { id: 'bad' }, 42]);
+    await seed(rawA, 'RECOVERY-TEXT');
+    const a0 = await view();
+    const ages = a0.metas.map(t => (t.match(/saved [^·]*$/) || [''])[0].trim());
+    ok('D27: each profile row shows its age in days (today, 3 days ago); a profile with no timestamp shows none',
+       a0.metas.length === 3 && ages[0] === 'saved today' && ages[1] === 'saved 3 days ago' && ages[2] === '' && !/1970/.test(a0.metas[2]), JSON.stringify(a0.metas));
+    ok('D27: a "Delete all profiles" text action is offered beside the list', a0.btn.length >= 1 && a0.btn.every(t => t === 'Delete all profiles'), JSON.stringify(a0.btn));
+    await clickIf('[data-onclick="k100"]:visible'); await d.waitForTimeout(250);
+    const a1 = await view();
+    ok('D27: Delete all removes every profile and the unreadable entries, keeps the .bak copy, says so, and offers Undo',
+       a1.main === null && a1.bak === 'RECOVERY-TEXT' && a1.metas.length === 0 && a1.empty && a1.btn.length === 0
+       && /^Deleted all 5 saved profiles \(2 could not be read\)\./.test(a1.status) && /ainadara\.profiles\.v1\.bak/.test(a1.status) && /kept|not deleted/.test(a1.status) && a1.undo >= 1, JSON.stringify(a1));
+    await clickIf('.profile-status [data-onclick="k97"]:visible'); await d.waitForTimeout(250);
+    const a2 = await view();
+    ok('D27: Undo puts back the store exactly as it was, the unreadable entries included', a1.main === null && a2.main === rawA && a2.metas.length === 3 && a2.bak === 'RECOVERY-TEXT' && /2 saved profiles could not be read/.test(a2.status), JSON.stringify({ same: a2.main === rawA, n: a2.metas.length, status: a2.status }));
+    // B: only an unreadable entry (the per-row Delete has nothing to click): Delete all clears it; Undo restores it.
+    const rawB = JSON.stringify([{ id: 'bad' }]);
+    await seed(rawB, null);
+    const b0 = await view();
+    await clickIf('[data-onclick="k100"]:visible'); await d.waitForTimeout(250);
+    const b1 = await view();
+    await clickIf('.profile-status [data-onclick="k97"]:visible'); await d.waitForTimeout(250);
+    const b2 = await view();
+    ok('D27: an unreadable-only store can be cleared (and undone) with Delete all', b0.btn.length >= 1 && b0.metas.length === 0 && b1.main === null && /Deleted all 1 saved profile \(1 could not be read\)\./.test(b1.status) && b2.main === rawB, JSON.stringify({ b0: b0.btn, b1: b1.status, same: b2.main === rawB }));
+    // C: text that is not JSON (copied to .bak on read): cleared, the copy kept, Undo restores the text.
+    const rawC = '[{"id":"p_cut","label":"Cut off","savedAt":17624';
+    await seed(rawC, null);
+    const c0 = await view();
+    await clickIf('[data-onclick="k100"]:visible'); await d.waitForTimeout(250);
+    const c1 = await view();
+    await clickIf('.profile-status [data-onclick="k97"]:visible'); await d.waitForTimeout(250);
+    const c2 = await view();
+    ok('D27: an unparseable store is cleared with its recovery copy kept; Undo restores the text',
+       c0.bak === rawC && c0.btn.length >= 1 && c1.main === null && c1.bak === rawC && /could not be read/.test(c1.status) && /ainadara\.profiles\.v1\.bak/.test(c1.status) && c2.main === rawC, JSON.stringify({ c0: c0.btn, c1: c1.status, bak: c1.bak === rawC, same: c2.main === rawC }));
+    // D: nothing stored: no action.
+    await seed(null, null);
+    const e0 = await view();
+    ok('D27: with nothing stored there is no "Delete all profiles"', e0.btn.length === 0 && e0.empty, JSON.stringify(e0.btn));
+    await d.evaluate((k) => { localStorage.removeItem(k); localStorage.removeItem(k + '.bak'); }, KEY);
+    const dAttr = await attributeInjected(d, dProblems);
+    results.problems.push(...dAttr.kept);
+    await dctx.close();
+  }
+
+  // D27 (Task 21, code report M11-M13): Copy summary returns to its label however fast it is pressed and
+  // carries the stale marker on a stale result; a handler that throws is said on screen in plain words,
+  // and an inherited name in data-onclick runs nothing. Real clicks under the production CSP.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const h = await hctx.newPage();
+    const hProblems = watch(h, 'task21');
+    await h.goto(BASE + '?v=pwt21-' + Date.now(), { waitUntil: 'networkidle' });
+    // The clipboard is stubbed in the page so the copied text can be read back (headless has no clipboard).
+    await h.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await h.locator('[data-onclick="k2"]').click();
+    await h.locator('[data-onclick="k39"]').first().click();
+    await typeInto(h, '#b-age', '60'); await typeInto(h, '#b-tbw', '80');
+    await typeInto(h, '#b-height', '175'); await typeInto(h, '#b-scr', '1.0');
+    await enterCourse(h);
+    await h.locator('[data-onclick="k47"]').click();
+    await h.waitForSelector('#b-results .rec-dose', { timeout: 20000 });
+    await h.waitForTimeout(400);
+    const copyBtn = h.locator('#b-results [data-onclick="k81"]').first();
+    await copyBtn.click(); await copyBtn.click();
+    const during = (await copyBtn.textContent()).trim();
+    await h.waitForTimeout(1900);
+    const after = (await copyBtn.textContent()).trim();
+    const fresh = await h.evaluate(() => ({ copied: window.__copied.slice(), summary: String(bState.summaryText || '') }));
+    ok('D27: Copy summary pressed twice in quick succession says "Copied", then returns to "Copy summary"',
+       during === 'Copied' && after === 'Copy summary', JSON.stringify({ during, after }));
+    ok('D27: a current result is copied as its summary, with no stale marker',
+       fresh.copied.length === 2 && fresh.copied[1] === fresh.summary && fresh.summary.length > 20 && !/Inputs changed/.test(fresh.copied[1]), JSON.stringify(fresh.copied[1]).slice(0, 160));
+    await typeInto(h, '#b-age', '61'); await h.waitForTimeout(250);
+    await copyBtn.click(); await h.waitForTimeout(150);
+    const staleCopy = await h.evaluate(() => window.__copied[window.__copied.length - 1]);
+    ok('D27: a stale result is copied with the stale marker first, then its summary',
+       /^Inputs changed since this result — recalculate before relying on this summary\.\n/.test(staleCopy) && staleCopy.endsWith(fresh.summary), JSON.stringify(staleCopy).slice(0, 160));
+    await typeInto(h, '#b-age', '60'); await h.waitForTimeout(250);
+    // Fix round 1 (review 4, 5): the static dose fields carry the constants' limits once loaded, and the AUC
+    // tinkerer refuses an out-of-range dose in words, then previews an in-range one.
+    const lim = await h.evaluate(() => {
+      const a = (id) => { const e = document.getElementById(id); return e ? ['min', 'max', 'step'].map(k => e.getAttribute(k)).join('/') : 'missing'; };
+      const want = `${INPUT_LIMITS.dose.min}/${INPUT_LIMITS.dose.max}/${MATRIX_DOSE_STEP}`;
+      return { want, dose: a('dose'), tl: a('tl-dose'), rl: a('rl-dose'), pd: a('pd-set-max'), wantPd: `${MATRIX_DOSE_MIN}/${HD_LOADING_MAX_MG}/${MATRIX_DOSE_STEP}` }; });
+    ok('D27: the static dose fields read their min, max and step from the constants (Trough three; PD local maximum the Rec 11 cap)',
+       lim.dose === lim.want && lim.tl === lim.want && lim.rl === lim.want && lim.pd === lim.wantPd, JSON.stringify(lim));
+    await h.evaluate(() => { const d = document.getElementById('ev-explore'); if (d) d.open = true; });
+    await typeInto(h, '#b-tink-dose', '5000');
+    await h.locator('[data-onclick="k66"]').click(); await h.waitForTimeout(200);
+    const refusedTxt = (await h.locator('#b-tink-result').innerText()).replace(/\s+/g, ' ').trim();
+    await typeInto(h, '#b-tink-dose', '1000');
+    await h.locator('[data-onclick="k66"]').click(); await h.waitForTimeout(300);
+    const okTxt = (await h.locator('#b-tink-result').innerText()).replace(/\s+/g, ' ').trim();
+    ok('D27: the AUC tinkerer refuses 5000 mg in words ("Enter a dose of 100–4000 mg to try."), then previews 1000 mg',
+       refusedTxt === 'Enter a dose of 100–4000 mg to try.' && /AUC/.test(okTxt) && !/Enter a dose/.test(okTxt), JSON.stringify({ refusedTxt, okTxt: okTxt.slice(0, 80) }));
+    // A handler that throws: Undo's runUndo is made to throw for this check only, and an Undo button is clicked.
+    await h.evaluate(() => { window.runUndo = () => { throw new Error('flow-induced failure'); };
+      const b = document.createElement('button'); b.type = 'button'; b.id = 't21-undo'; b.textContent = 'Undo'; b.setAttribute('data-onclick', 'k97');
+      document.querySelector('#b-results').prepend(b);
+      const g = document.createElement('button'); g.type = 'button'; g.id = 't21-inherited'; g.textContent = 'Inherited'; g.setAttribute('data-onclick', '__defineGetter__');
+      document.querySelector('#b-results').prepend(g); });
+    await h.locator('#t21-inherited').click(); await h.waitForTimeout(150);
+    const inh = await h.evaluate(() => !document.getElementById('action-status').hidden);
+    await h.locator('#t21-undo').click(); await h.waitForTimeout(150);
+    const line = await h.evaluate(() => { const b = document.getElementById('action-status'), r = b.getBoundingClientRect();
+      const head = document.querySelector('.header').getBoundingClientRect(), reg = document.querySelector('#b-results .vx-regimen, #b-results .rec-dose').getBoundingClientRect();
+      return { shown: !b.hidden && getComputedStyle(b).display !== 'none' && r.height > 0, text: b.textContent.replace(/\s+/g, ' ').trim(), top: r.top, bottom: r.bottom, headBottom: head.bottom, clearOfRegimen: [reg, (document.querySelector('#app-shell-bayesian .panel-actions') || document.body).getBoundingClientRect()].every(q => q === null || r.bottom <= q.top || r.top >= q.bottom || r.right <= q.left || r.left >= q.right || q.height >= 790),
+        icon: !!b.querySelector('svg.ic'), dismiss: !!b.querySelector('[data-onclick="k101"]') }; });
+    ok('D27: an inherited name in data-onclick (__defineGetter__) runs nothing and shows nothing', inh === false, String(inh));
+    ok('D27: a handler that throws shows one plain line in the window, below the header and clear of the regimen, naming the control, with no error text, and a Dismiss',
+       line.shown && /^"Undo" did not finish\. What is on screen may be incomplete: check it before relying on it\. ?Dismiss$/.test(line.text)
+       && !/flow-induced|Error|!/.test(line.text) && line.top >= line.headBottom - 0.5 && line.bottom <= 800 && line.clearOfRegimen && line.icon && line.dismiss, JSON.stringify(line));
+    await h.screenshot({ path: path.join(OUT, 'task21-action-status.png') });
+    await h.locator('#action-status [data-onclick="k101"]').click(); await h.waitForTimeout(100);
+    ok('D27: Dismiss hides the failed-action line', await h.evaluate(() => document.getElementById('action-status').hidden), '');
+    // The induced failure is logged to the console by design; anything else is a problem.
+    const hAttr = await attributeInjected(h, hProblems.filter(p => !/handler k97 failed/.test(p)));
+    results.problems.push(...hAttr.kept);
+    await hctx.close();
+  }
+  // ── Task 21b (D27): Release 1 carry-overs a pharmacist reads as clinical fact. Real input under the CSP.
+  {
+    const bctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const b = await bctx.newPage();
+    const bProblems = watch(b, 'task21b');
+    await b.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await b.goto(BASE + '?v=pwt21b-' + Date.now(), { waitUntil: 'networkidle' });
+    // A held planned dose is not drawn as given. D26's C1 patient (fictional 60 M, 80 kg, 178 cm, SCr 3.0, Buelga;
+    // 1.5 g q8h x 6 over 2 h, a 48 mg/L level at 09:00) with a seventh 1.5 g row planned for 12:00, two hours ahead.
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '60'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '178'); await typeInto(b, '#b-scr', '3.0');
+    await b.locator('[data-onclick="k39"]').click();
+    const times = [[day(-2), '12:00'], [day(-2), '20:00'], [day(-1), '04:00'], [day(-1), '12:00'], [day(-1), '20:00'], [day(0), '04:00'], [day(0), '12:00']];
+    for (let n = 1; n <= times.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, '1500'); await typeInto(b, `#b-dose-tinf-${n}`, '2');
+      await b.locator(`#b-dose-date-${n}`).fill(times[n - 1][0]); await typeInto(b, `#b-dose-time-${n}`, times[n - 1][1]);
+    }
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '48'); await b.locator('#b-lvl-date-1').fill(day(0)); await typeInto(b, '#b-lvl-time-1', '09:00');
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await b.waitForTimeout(500);
+    const plannedH = await b.evaluate((d) => new Date(`${d}T12:00`).getTime() / 3600000, day(0));
+    const drawn = () => b.evaluate((pH) => {
+      const c = document.getElementById('b-profile-canvas'), P = c && c._pkPlot, s = document.getElementById('b-course-strip');
+      const v = document.querySelector('#b-results .vx-verdict');
+      return { first: v ? v.innerText.trim().split('\n')[0].trim() : '',
+        curve: P ? P.doses.map(d => d.timeH) : null, plannedOnCurve: P ? P.doses.some(d => Math.abs(d.timeH - pH) < 1e-6) : null,
+        before: P ? P.predInd(pH - 0.01) : NaN, after: P ? P.predInd(pH + 2.5) : NaN,
+        bars: s ? s.querySelectorAll('rect.bar:not(.proj)').length : -1, proj: s ? s.querySelectorAll('rect.bar.proj').length : -1,
+        held: s ? [...s.querySelectorAll('.held')].map(g => (g.querySelector('title') || {}).textContent || '') : [],
+        heldWord: s ? [...s.querySelectorAll('.held text')].map(t => t.textContent) : [] }; }, plannedH);
+    const p0 = await drawn();
+    ok('D27: a planned dose the answer holds is not drawn as given: off the curve\'s simulated concentration, no dose bar, a "held" mark on the strip',
+       /^Hold the planned dose at /.test(p0.first) && p0.plannedOnCurve === false && p0.curve.length === 6 && p0.after < p0.before
+       && p0.bars === 6 && p0.held.length === 1 && /held/.test(p0.held[0]) && p0.heldWord.indexOf('held') >= 0, JSON.stringify(p0));
+    await b.locator('#b-course-strip').screenshot({ path: path.join(OUT, 'task21b-held-strip.png') });
+    await b.locator('#b-proj-fwd').check(); await b.waitForTimeout(400);
+    const p1 = await drawn();
+    ok('D27: with the projection ticked the held planned dose stays off the curve, its "held" mark stays, and the projection is drawn',
+       p1.plannedOnCurve === false && p1.bars === 6 && p1.proj > 0 && p1.held.length === 1, JSON.stringify(p1));
+    await b.locator('#b-proj-fwd').uncheck(); await b.waitForTimeout(200);
+    // Copy summary is pasted into notes, so it says "AUC₂₄" (Task 20b minor); the announcement may keep "AUC24" for speech.
+    await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    const pasted = await b.evaluate(() => (window.__copied || [])[0] || '');
+    ok('D27: Copy summary carries "AUC₂₄", never "AUC24"', /AUC₂₄ is \d+ mg·h\/L/.test(pasted) && !/AUC24/.test(pasted), pasted.slice(0, 300));
+    // The severe-renal hold ("No further dose until a level is drawn") withholds a planned dose too (controller ruling):
+    // drawn as held, off the curve. Fictional 70 M (70 kg, 175 cm, SCr 8.5, CrCl 8), Goti, no level; 1.5 g yesterday
+    // 04:00 and 1 g today 04:00 given, 1 g planned today 12:00.
+    await b.goto(BASE + '?v=pwt21bsr-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '70'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '8.5');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    const sr = [['1500', day(-1), '04:00'], ['1000', day(0), '04:00'], ['1000', day(0), '12:00']];
+    for (let n = 1; n <= sr.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, sr[n - 1][0]); await typeInto(b, `#b-dose-tinf-${n}`, '2');
+      await b.locator(`#b-dose-date-${n}`).fill(sr[n - 1][1]); await typeInto(b, `#b-dose-time-${n}`, sr[n - 1][2]);
+    }
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    const srPlanned = await b.evaluate((d) => new Date(`${d}T12:00`).getTime() / 3600000, day(0));
+    const sv = await b.evaluate((pH) => { const c = document.getElementById('b-profile-canvas'), P = c && c._pkPlot, st = document.getElementById('b-course-strip');
+      return { text: ((document.querySelector('#b-results') || {}).textContent || '').replace(/\s+/g, ' '),
+        curve: P ? P.doses.length : null, plannedOnCurve: P ? P.doses.some(d => Math.abs(d.timeH - pH) < 1e-6) : null,
+        bars: st ? st.querySelectorAll('rect.bar:not(.proj)').length : -1, held: st ? st.querySelectorAll('.held').length : -1 }; }, srPlanned);
+    ok('D27: under the severe-renal "No further dose until a level is drawn", a planned dose is drawn as held and kept off the curve',
+       /No further dose until a level is drawn/.test(sv.text) && sv.plannedOnCurve === false && sv.curve === 2 && sv.bars === 2 && sv.held === 1,
+       JSON.stringify(Object.assign({}, sv, { text: sv.text.slice(0, 160) })));
+    // Task 21c (the user's ruling U5): on Goti a Hold on the fitted level alone is one caution line, never a Hold;
+    // the regimen and first dose stand, and Copy summary, the announcement, print and Next follow. Fictional 70 M
+    // (80 kg, 175 cm, SCr 3.0), Goti; 1.5 g q12h x 4 over 2 h, the last today 07:30; a trough of 25 mg/L at 07:00,
+    // before the last dose, so there is no measured basis after it.
+    await b.goto(BASE + '?v=pwt21c-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '3.0');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    const u5d = [[day(-2), '19:30'], [day(-1), '07:30'], [day(-1), '19:30'], [day(0), '07:30']];
+    for (let n = 1; n <= u5d.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, '1500'); await typeInto(b, `#b-dose-tinf-${n}`, '2');
+      await b.locator(`#b-dose-date-${n}`).fill(u5d[n - 1][0]); await typeInto(b, `#b-dose-time-${n}`, u5d[n - 1][1]);
+    }
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '25'); await b.locator('#b-lvl-date-1').fill(day(0)); await typeInto(b, '#b-lvl-time-1', '07:00');
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    const u5v = await b.evaluate(() => {
+      const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const c = document.querySelector('#b-results .vx-fitted-caution');
+      window.dispatchEvent(new Event('beforeprint'));
+      return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', tone: !!(c && c.classList.contains('tone-caution')), icon: !!(c && c.querySelector('svg.ic')),
+        hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'), readout: t('#b-first-readout'), voi: t('#b-voi'),
+        action: !!(c && c.classList.contains('vx-action')),
+        said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
+    ok('D27 (U5): a Goti Hold on the fitted level alone is one caution line — the regimen and first dose stand; no Hold or recheck anywhere; the caution is copied, heard and printed',
+       // R2 final review I3: "no level drawn since the last dose" (an earlier level exists here), and one verb, "Draw a level".
+       /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no level drawn since the last dose confirms it\. Draw a level before giving the next dose\.$/.test(u5v.caution)
+       && u5v.tone && u5v.icon && u5v.hold === '' && /IV q\d+h/.test(u5v.reg) && !/Hold/.test(u5v.readout + u5v.next + u5v.said + u5v.copied + u5v.print)
+       && !/Recheck a level before the next dose/.test(u5v.next + u5v.said + u5v.copied) && u5v.copied.indexOf(u5v.caution) >= 0 && u5v.said.indexOf(u5v.caution) >= 0
+       && u5v.print.indexOf(u5v.caution) >= 0 && !u5v.action
+       // Fix round (review item 1): the Next line and the further-level panel ask for the level too, never "would add little".
+       && u5v.next === 'Next Draw a level before giving the next dose.' && /Caution/.test(u5v.voi) && /Draw a level before giving the next dose/.test(u5v.voi)
+       && !/would add little|Precision only/.test(u5v.next + u5v.voi) && /Draw a level before giving the next dose\./.test(u5v.copied + u5v.said),
+       JSON.stringify(Object.assign({}, u5v, { print: u5v.print.slice(0, 120) })));
+    // Task 21d (the user's ruling U6a): a Hold resting only on a level drawn after the course's first dose (before the
+    // second) is one caution line (every model: the units are in 45.55). Since ruling R59 (R2 final review C1) the fitted
+    // level must be under 20 for it (both at 20 or more holds), so the fixture moved: fictional 70 M (80 kg, 175 cm,
+    // SCr 1.0), Goti; one 1.5 g dose over 2 h 9.5 h before now (the page's 10:00), no load; 28 mg/L 0.5 h before now; 1 g planned in 1 h. The words are
+    // the R2 final review's (I1, I3): "Repeat the level", on the line, the Next line, the panel, copied, heard, printed and
+    // beside the projected doses.
+    const u6Course = async (doseAgo) => {
+      await b.goto(BASE + '?v=pwt21d-' + Date.now(), { waitUntil: 'networkidle' });
+      await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+        value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+      await b.locator('[data-onclick="k2"]').click();
+      await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '1.0');
+      await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+      const rows = [['1500', '2', fromTen(-doseAgo)], ['1000', '1', fromTen(1)]];
+      for (let n = 1; n <= rows.length; n++) {
+        await b.locator('[data-onclick="k43"]').click();
+        await typeInto(b, `#b-dose-mg-${n}`, rows[n - 1][0]); await typeInto(b, `#b-dose-tinf-${n}`, rows[n - 1][1]);
+        await b.locator(`#b-dose-date-${n}`).fill(rows[n - 1][2][0]); await typeInto(b, `#b-dose-time-${n}`, rows[n - 1][2][1]);
+      }
+      const lv = fromTen(-0.5);
+      await b.locator('[data-onclick="k46"]').click();
+      await typeInto(b, '#b-lvl-conc-1', '28'); await b.locator('#b-lvl-date-1').fill(lv[0]); await typeInto(b, '#b-lvl-time-1', lv[1]);
+      await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    };
+    await u6Course(9.5);
+    await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    await b.locator('#b-proj-fwd').check(); await b.waitForTimeout(400);
+    const u6v = await b.evaluate(() => {
+      const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const c = document.querySelector('#b-results .vx-fitted-caution');
+      window.dispatchEvent(new Event('beforeprint'));
+      return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'),
+        voi: t('#b-voi'), proj: t('#b-proj-auc-note'), held: document.querySelectorAll('#b-course-strip .held').length,
+        said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
+    ok('D27 (U6a): a Hold resting only on a level drawn after the first dose (no load) is one caution line; the regimen stands; Next, the panel and the projection repeat it; copied, heard and printed',
+       /^Caution: the measured 28\.0 mg\/L at \d{1,2} [A-Z][a-z]{2} \d\d:\d\d, drawn after the first dose and before the second, carried down the fitted slope, is [\d.]+ mg\/L at the planned dose \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\), at or above 20 mg\/L\. Repeat the level before giving the next dose\.$/.test(u6v.caution)
+       && u6v.hold === '' && /IV q\d+h/.test(u6v.reg) && u6v.next === 'Next Repeat the level before giving the next dose.' && u6v.held === 0
+       && /^Caution Repeat the level before giving the next dose/.test(u6v.voi) && !/ruling|U5|U6|Goti|fitted level alone/.test(u6v.voi)
+       && u6v.proj === `Projected AUC₂₄ ${(u6v.proj.match(/AUC₂₄ (\d+)/) || [])[1]} mg·h/L. ${u6v.caution}`
+       && !/Hold|Consider drawing/.test(u6v.said + u6v.copied + u6v.print) && [u6v.said, u6v.copied, u6v.print].every(x => x.indexOf(u6v.caution) >= 0),
+       JSON.stringify(Object.assign({}, u6v, { print: u6v.print.slice(0, 100), voi: u6v.voi.slice(0, 160) })));
+    // The user's ruling U7: the same course with the level 13 h after the first dose (past FIRST_INTERVAL_CAUTION_H, 12 h) is an
+    // ordinary measured basis: the planned dose is held, the strip marks it, and no caution is shown.
+    await u6Course(13.5);
+    const u7v = await b.evaluate(() => { const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      return { hold: t('#b-hold .vx-hold-head'), why: t('#b-hold .vx-hold-why'), caution: t('#b-results .vx-fitted-caution'), next: t('#b-results .vx-next'),
+        held: document.querySelectorAll('#b-course-strip .held').length }; });
+    ok('D27 (U7): a level before the second dose but more than 12 h after the first is a Hold on the measured level, not a caution',
+       /^Hold the planned dose at \d{1,2} [A-Z][a-z]{2} \d\d:\d\d: next dose not before /.test(u7v.hold) && /the measured 28\.0 mg\/L at .*, carried down the fitted slope, is [\d.]+ mg\/L/.test(u7v.why)
+       && u7v.caution === '' && u7v.next === 'Next Recheck a level before the next dose.' && u7v.held === 1, JSON.stringify(u7v));
+    // Ruling R59 (R2 final review C1): the fitted and the carried measured level both at 20 or more is a Hold on every model,
+    // Goti and a first-interval level included. The review's reproduction, timed against now: fictional 70 M (70 kg, 175 cm,
+    // SCr 2.7), Goti; 2 g over 2 h 11.75 h before now (the page's 10:00); 1 g planned in 0.25 h and in 12.25 h; 45 mg/L 0.25 h before now. It read a caution
+    // and gave both planned doses; now both are held, as on Buelga.
+    await b.goto(BASE + '?v=pwtR59-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '70'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '2.7');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    const r59 = [['2000', '2', fromTen(-11.75)], ['1000', '1', fromTen(0.25)], ['1000', '1', fromTen(12.25)]];
+    for (let n = 1; n <= r59.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, r59[n - 1][0]); await typeInto(b, `#b-dose-tinf-${n}`, r59[n - 1][1]);
+      await b.locator(`#b-dose-date-${n}`).fill(r59[n - 1][2][0]); await typeInto(b, `#b-dose-time-${n}`, r59[n - 1][2][1]);
+    }
+    const r59l = fromTen(-0.25);
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '45'); await b.locator('#b-lvl-date-1').fill(r59l[0]); await typeInto(b, '#b-lvl-time-1', r59l[1]);
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    const r59v = await b.evaluate(() => { const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const c = document.getElementById('b-profile-canvas'), P = c && c._pkPlot;
+      return { hold: t('#b-hold .vx-hold-head'), why: t('#b-hold .vx-hold-why'), caution: t('#b-results .vx-fitted-caution'), next: t('#b-results .vx-next'),
+        held: document.querySelectorAll('#b-course-strip .held').length, curve: P ? P.doses.length : null }; });
+    ok('D27 (R59): Goti with the fitted and the first-interval measured level both at 20 or more holds both planned doses, naming both readings; no caution',
+       /^Hold the 2 planned doses from \d{1,2} [A-Z][a-z]{2} \d\d:\d\d: next dose not before /.test(r59v.hold)
+       && /the fitted level at .* is [\d.]+ mg\/L, and the measured 45\.0 mg\/L at .*, carried down the fitted slope, is [\d.]+ mg\/L/.test(r59v.why) && /both fall below 20/.test(r59v.why)
+       && r59v.caution === '' && r59v.next === 'Next Recheck a level before the next dose.' && r59v.held === 2 && r59v.curve === 1, JSON.stringify(r59v));
+    // Trough hold "not before" is never in the past (controller ruling): a level that has fallen to 20 mg/L by now is
+    // no Hold. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h over 1.5 h started yesterday 01:00,
+    // 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon, so at today 10:00 the ordinary answer stands.
+    await b.locator('[data-onclick="k1"]').click();
+    await typeInto(b, '#age', '60'); await typeInto(b, '#tbw', '80'); await typeInto(b, '#height', '178'); await typeInto(b, '#scr', '1.0');
+    await b.locator('[data-onclick="k9"]').first().click();
+    await b.locator('#mode-btn-level').click();
+    await typeInto(b, '#dose', '1500'); await b.locator('#interval').selectOption('8'); await typeInto(b, '#tinf', '1.5');
+    await b.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(b, '#level-val', '30');
+    await b.locator('#time-dose-given-date').fill(day(-1)); await typeInto(b, '#time-dose-given-time', '0100');
+    await b.locator('#time-level-drawn-date').fill(day(-1)); await typeInto(b, '#time-level-drawn-time', '0924');
+    await b.locator('[data-onclick="k31"]').click(); await b.waitForTimeout(600);
+    const tNow = await b.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), a = v && v.querySelector('.vx-action'), w = v && v.querySelector('.vx-hold-why');
+      return { act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', why: w ? w.textContent.replace(/\s+/g, ' ').trim() : '',
+        now: fmtClock(Date.now() / 3600000), said: (document.getElementById('sr-announce') || {}).textContent || '' }; });
+    const tReg = await b.evaluate(() => ((document.getElementById('tx-regimen') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D27: a Trough level that fell to 20 mg/L before the calculation gives no Hold (never "not before" a time gone or now); the regimen is shown',
+       !/Hold/.test(tNow.act + tNow.why) && !/Hold/.test(tNow.said) && /IV q\d+h/.test(tReg) && /^Result: /.test(tNow.said), JSON.stringify(Object.assign({ reg: tReg }, tNow)));
+    // Two-level and random-level refusals name only intervals their select offers (q8h-q48h, never q6h), and the
+    // no-interval alarm names the regimen whose AUC it quotes.
+    const verdictText = () => b.evaluate(() => { const t = ((document.querySelector('#results-content') || {}).innerText || '').replace(/\s+/g, ' ');
+      return t.slice(0, t.indexOf('Based on') > 0 ? t.indexOf('Based on') : 900); });
+    await b.locator('#mode-btn-twolevels').click();
+    await typeInto(b, '#tl-dose', '1000'); await typeInto(b, '#tl-tinf', '1'); await b.locator('#tl-tau').selectOption('24');
+    await typeInto(b, '#tl-c1', '13.7'); await typeInto(b, '#tl-c2', '8.0');
+    await b.locator('#tl-dose-time-date').fill(day(0)); await typeInto(b, '#tl-dose-time-time', '0000');
+    await b.locator('#tl-t1-time-date').fill(day(0)); await typeInto(b, '#tl-t1-time-time', '0200');
+    await b.locator('#tl-t2-time-date').fill(day(0)); await typeInto(b, '#tl-t2-time-time', '0600');
+    await b.locator('[data-onclick="k31"]').click(); await b.waitForTimeout(500);
+    const tlv = await verdictText();
+    ok('D27: a two-level refusal at q24h names the intervals that work and never q6h, which two-level mode cannot select',
+       /No regimen recommended/.test(tlv) && /IV q8h \(AUC₂₄ \d+\)/.test(tlv) && !/q6h/.test(tlv), tlv.slice(0, 500));
+    await typeInto(b, '#age', '25'); await typeInto(b, '#tbw', '95'); await typeInto(b, '#height', '185'); await typeInto(b, '#scr', '0.5');
+    await b.locator('#mode-btn-randomlevel').click();
+    await typeInto(b, '#rl-dose', '1000'); await typeInto(b, '#rl-tinf', '1'); await typeInto(b, '#rl-c', '3');
+    await b.locator('#rl-dose-time-date').fill(day(0)); await typeInto(b, '#rl-dose-time-time', '0000');
+    await b.locator('#rl-draw-time-date').fill(day(0)); await typeInto(b, '#rl-draw-time-time', '0800');
+    await b.locator('#rl-tau').selectOption('12');
+    await b.locator('[data-onclick="k31"]').click(); await b.waitForTimeout(500);
+    const rlv = await verdictText();
+    ok('D27: a random-level refusal says "No interval from q8h to q48h", and its alarm names the regimen it quotes (1.5 g IV q8h, 357) beside the chosen interval\'s 317',
+       /No interval from q8h to q48h reaches/.test(rlv) && /The highest admissible regimen, 1\.5 g IV q8h, falls short at AUC₂₄ 357\./.test(rlv)
+       && /2 g IV q12h gives AUC₂₄ 317/.test(rlv) && !/q6h/.test(rlv), rlv.slice(0, 700));
+    const bAttr = await attributeInjected(b, bProblems);
+    results.problems.push(...bAttr.kept);
+    await bctx.close();
+    // Focus is not lost after a destructive text action (Task 20b minor): pressed from the keyboard, Delete all
+    // profiles, a row's Delete and Clear all fields move focus to the Undo they offer; Undo moves it to the status
+    // line that says what came back. Never <body>.
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const f = await fctx.newPage();
+    const fProblems = watch(f, 'task21b-focus');
+    await f.goto(BASE + '?v=pwt21bf-' + Date.now(), { waitUntil: 'networkidle' });
+    const PKEY = 'ainadara.profiles.v1';
+    const mkP = (id, label) => ({ id, schema: 1, label, savedAt: Date.now(), snapshot: { demographics: { age: '60' }, doses: [], levels: [], core: { age: '60' } } });
+    const seedP = async () => { await f.evaluate(([k, v]) => { localStorage.setItem(k, v); }, [PKEY, JSON.stringify([mkP('p_f1', 'First'), mkP('p_f2', 'Second')])]);
+      await f.reload({ waitUntil: 'networkidle' }); };
+    await seedP();
+    const focused = () => f.evaluate(() => { const e = document.activeElement;
+      return { tag: e ? e.tagName : null, k: e && e.getAttribute ? e.getAttribute('data-onclick') : null, cls: e && e.className ? String(e.className) : '', id: e ? e.id : '',
+        text: e ? (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) : '', visible: !!(e && e.getClientRects().length) }; });
+    const press = async (sel) => { const l = f.locator(sel).first(); if (!(await l.count())) return { missing: sel };
+      await l.focus(); await f.keyboard.press('Enter'); await f.waitForTimeout(250); return focused(); };
+    const d1 = await press('[data-onclick="k100"]:visible');
+    await f.keyboard.press('Enter'); await f.waitForTimeout(250);
+    const d2 = await focused();
+    ok('D27: Delete all profiles (keyboard) moves focus to its Undo; Undo moves it to the status line saying the profiles are back',
+       d1.k === 'k97' && d1.visible && d2.tag !== 'BODY' && /profile-status/.test(d2.cls) && d2.visible && /^Restored/.test(d2.text), JSON.stringify({ d1, d2 }));
+    await seedP();
+    const r1 = await press('.profile-item-btn.delete:visible');
+    await f.keyboard.press('Enter'); await f.waitForTimeout(250);
+    const r2 = await focused();
+    ok('D27: a row\'s Delete (keyboard) moves focus to its Undo; Undo moves it to the status line naming the profile restored',
+       r1.k === 'k97' && r1.visible && r2.tag !== 'BODY' && /profile-status/.test(r2.cls) && r2.visible && /^Restored "First"\./.test(r2.text), JSON.stringify({ r1, r2 }));
+    for (const [mod, tab, clear, line, field] of [['AUC Precision', 'k2', 'k48', 'undo-auc', '#b-age'], ['Trough', 'k1', 'k32', 'undo-trough', '#age']]) {
+      await f.locator(`[data-onclick="${tab}"]`).first().click();
+      await typeInto(f, field, '61');
+      const c1 = await press(`[data-onclick="${clear}"]`);
+      await f.keyboard.press('Enter'); await f.waitForTimeout(300);
+      const c2 = await focused();
+      const back = await f.locator(field).inputValue();
+      ok(`D27: ${mod} Clear all fields (keyboard) moves focus to its Undo; Undo restores the form and moves focus to the status line saying so`,
+         c1.k === 'k97' && c1.visible && c2.id === line && c2.visible && /^Form restored\./.test(c2.text) && back === '61', JSON.stringify({ c1, c2, back }));
+    }
+    const fAttr = await attributeInjected(f, fProblems);
+    results.problems.push(...fAttr.kept);
+    await fctx.close();
+  }
+  // ── end Task 21b
   await browser.close();
 
   results.checks = checks;
