@@ -2623,6 +2623,38 @@ async function enterCourse(page) {
     ok('D27: under the severe-renal "No further dose until a level is drawn", a planned dose is drawn as held and kept off the curve',
        /No further dose until a level is drawn/.test(sv.text) && sv.plannedOnCurve === false && sv.curve === 2 && sv.bars === 2 && sv.held === 1,
        JSON.stringify(Object.assign({}, sv, { text: sv.text.slice(0, 160) })));
+    // Task 21c (the user's ruling U5): on Goti a Hold on the fitted level alone is one caution line, never a Hold;
+    // the regimen and first dose stand, and Copy summary, the announcement, print and Next follow. Fictional 70 M
+    // (80 kg, 175 cm, SCr 3.0), Goti; 1.5 g q12h x 4 over 2 h, the last today 07:30; a trough of 25 mg/L at 07:00,
+    // before the last dose, so there is no measured basis after it.
+    await b.goto(BASE + '?v=pwt21c-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '3.0');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    const u5d = [[day(-2), '19:30'], [day(-1), '07:30'], [day(-1), '19:30'], [day(0), '07:30']];
+    for (let n = 1; n <= u5d.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, '1500'); await typeInto(b, `#b-dose-tinf-${n}`, '2');
+      await b.locator(`#b-dose-date-${n}`).fill(u5d[n - 1][0]); await typeInto(b, `#b-dose-time-${n}`, u5d[n - 1][1]);
+    }
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '25'); await b.locator('#b-lvl-date-1').fill(day(0)); await typeInto(b, '#b-lvl-time-1', '07:00');
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    const u5v = await b.evaluate(() => {
+      const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const c = document.querySelector('#b-results .vx-fitted-caution');
+      window.dispatchEvent(new Event('beforeprint'));
+      return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', tone: !!(c && c.classList.contains('tone-caution')), icon: !!(c && c.querySelector('svg.ic')),
+        hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'), readout: t('#b-first-readout'),
+        said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
+    ok('D27 (U5): a Goti Hold on the fitted level alone is one caution line — the regimen and first dose stand; no Hold or recheck anywhere; the caution is copied, heard and printed',
+       /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no measured level confirms it\. Consider drawing a level before giving it\.$/.test(u5v.caution)
+       && u5v.tone && u5v.icon && u5v.hold === '' && /IV q\d+h/.test(u5v.reg) && !/Hold/.test(u5v.readout + u5v.next + u5v.said + u5v.copied + u5v.print)
+       && !/Recheck a level before the next dose/.test(u5v.next + u5v.said + u5v.copied) && u5v.copied.indexOf(u5v.caution) >= 0 && u5v.said.indexOf(u5v.caution) >= 0
+       && u5v.print.indexOf(u5v.caution) >= 0, JSON.stringify(Object.assign({}, u5v, { print: u5v.print.slice(0, 120) })));
     // Trough hold "not before" is never in the past (controller ruling): a level that has fallen to 20 mg/L by now is
     // no Hold. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h over 1.5 h started yesterday 01:00,
     // 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon, so at today 10:00 the ordinary answer stands.
