@@ -5817,7 +5817,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[34]\.0';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[345]\.0';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6031,7 +6031,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.14\.0';/.test(src43), 'v3.14.0');
+    assert(/const APP_VERSION = '3\.1[45]\.0';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -9368,13 +9368,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const p2 = fn45('firstDosePlan')(r2, rec55, 9.5, null, null);
     assert(p2.hold && p2.holdBasis === 'fitted' && !/drawn after the first dose/.test(fn45('holdSentence')(p2)), fn45('holdSentence')(p2));
   });
+  // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor.
+  test('45.58 the version', () => {
+    assert(/const APP_VERSION = '3\.15\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 616;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.57 + D27 redraw)
+const EXPECTED_TOTAL = 617;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.58 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
