@@ -10362,23 +10362,30 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   // fitted terminal slope (measuredHoldLevel). A measured 26.2 mg/L the fit read as 19.5 got
   // "first dose now" (final review I1). Its basis is kept for the hold line.
   const mh = measuredHoldLevel(r, nowH);
+  // U6a: is the measured basis a level drawn after the course's first dose and before the second (given, else
+  // the first planned row, else due on the answered regimen's interval from the first dose)?
+  const p1H = plannedN ? plannedDoses.reduce((a, b) => (b.timeH < a.timeH ? b : a)).timeH : NaN;
+  const first = firstIntervalLevel(r, mh, nowH, rec.tau);
+  const u5 = fittedOnlyCaution(r);
   const judge = (rr, t) => {
     const f = predictFittedAt(rr, t), m = mh && t >= mh.timeH ? mh.at(t) : -Infinity;
-    return { f, m, c: Math.max(f, m), basis: holdBasisOf(f, m) };
+    const b = holdBasisOf(f, m, u5, first);
+    return { f, m, c: Math.max(f, m), basis: b.basis, caution: b.caution };
   };
   let hold = false, holdAtH = null, holdPre = null, holdPlannedH = null, holdBasis = null, holdFitted = null, holdCarried = null, rFit = r;
-  const holdAt = (j, t) => { hold = true; holdAtH = t; holdPre = j.c; holdBasis = j.basis; holdFitted = j.f; holdCarried = Number.isFinite(j.m) ? j.m : null; };
-  // The user's ruling U5 (2026-11-15): on Goti (not on dialysis) the fitted level alone is a caution,
-  // not a Hold (fittedOnlyCaution). The first such reading is kept for the caution line.
-  const u5 = fittedOnlyCaution(r);
+  // The value held is the basis's own: a measured level that is not a Hold basis (U6a) is never named as one.
+  const holdAt = (j, t) => { hold = true; holdAtH = t; holdBasis = j.basis; holdFitted = j.f;
+    holdCarried = j.basis !== 'fitted' && Number.isFinite(j.m) ? j.m : null; holdPre = j.basis === 'fitted' ? j.f : j.basis === 'measured' ? j.m : j.c; };
+  // The user's rulings U5 and U6a: a reading that is a caution, not a Hold (holdBasisOf). The first is kept for the line.
   let caution = null;
   const decide = (j, t, at) => {
-    if (!(j.c >= TROUGH_HIGH_MGL)) return false;
-    if (u5 && j.basis === 'fitted') { if (!caution) caution = { fitted: j.f, atH: t, at }; return false; }
-    holdAt(j, t); return true;
+    if (j.basis) { holdAt(j, t); return true; }
+    if (j.caution && !caution) caution = { kind: j.caution, fitted: j.f, carried: Number.isFinite(j.m) ? j.m : null,
+      conc: mh ? mh.conc : null, levelH: mh ? mh.timeH : null, atH: t, at };
+    return false;
   };
   if (plannedN) {
-    const p1 = plannedDoses.reduce((a, b) => (b.timeH < a.timeH ? b : a)).timeH;
+    const p1 = p1H;
     if (decide(judge(r, p1), p1, 'planned')) {
       holdPlannedH = p1;
       rFit = Object.assign({}, r, { doses: r.doses.filter(d => !(d.timeH > nowH + 1e-9)) });
@@ -10426,24 +10433,50 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     hold, resumeH, holdNoTime, holdAtH, holdPre, holdPlannedH, holdBasis, holdFitted, holdCarried,
     // Where the horizon was counted from (R51), so the words name it: the planned dose, the due time, or now.
     horizonFromH, horizonFrom: holdPlannedH != null ? 'planned' : last.timeH + rec.tau >= nowH - 1e-9 ? 'due' : 'now',
-    // U5: Goti's fitted level alone at or above the threshold, with no measured basis: a caution, no Hold.
-    fittedCaution: hold ? null : caution,
+    // U5 / U6a: a reading at or above the threshold that is a caution, not a Hold (holdBasisOf).
+    holdCaution: hold ? null : caution,
     holdMeasured: hold && mh && holdCarried >= TROUGH_HIGH_MGL ? { conc: mh.conc, timeH: mh.timeH } : null,
     // The measured level carried down the fitted slope to the first dose (U1), beside the fitted `pre`:
     // when it is the higher, it is what set the resume time, and the readout shows it (wave 2 label fix).
     preCarried: mh && firstH >= mh.timeH ? mh.at(firstH) : null };
 }
-// Which reading sets a hold (U1): 'both', 'fitted' (the fitted level alone), 'measured' (the carried measured
-// level alone), or null when neither is at or above TROUGH_HIGH_MGL. One mapping for firstDosePlan and
-// noSolutionHold (rule 2), so U5 reads the same basis in both.
-function holdBasisOf(fitted, carried) {
+// Which reading sets a hold (U1), and which is only a caution (U5, U6a; ruling R55). One mapping for
+// firstDosePlan and noSolutionHold (rule 2). basis: 'both', 'fitted' or 'measured' is a Hold; caution:
+// 'fitted' (Goti's fitted level alone, U5), 'first-level' (the carried measured level alone, from a single
+// level drawn after the course's first dose, U6a), 'fitted-first' (both, on Goti: U5 and U6a). gotiFitted:
+// fittedOnlyCaution(r); firstLevel: firstIntervalLevel(…). On Buelga and Hughes a fitted level at or above
+// the threshold holds on the fitted basis whatever the first-interval level reads (R55).
+function holdBasisOf(fitted, carried, gotiFitted, firstLevel) {
   const f = fitted >= TROUGH_HIGH_MGL, m = carried >= TROUGH_HIGH_MGL;
-  return f && m ? 'both' : f ? 'fitted' : m ? 'measured' : null;
+  const mHolds = m && !firstLevel;
+  if (mHolds) return { basis: f ? 'both' : 'measured', caution: null };
+  if (f && !gotiFitted) return { basis: 'fitted', caution: null };
+  if (f || m) return { basis: null, caution: m ? (f ? 'fitted-first' : 'first-level') : 'fitted' };
+  return { basis: null, caution: null };
+}
+// The user's ruling U6a (2026-11-15, option C of Task 21d; controller ruling R55): the measured basis (U1's
+// newest post-distribution level after the last given dose) is a caution, not a Hold, when it is a single level
+// drawn after the course's FIRST given dose and before the second dose's time: the second dose given, else the
+// first planned row, else the first dose plus the answered interval. With no second-dose time at all (a refusal with nothing planned: no regimen to be due on) it
+// cannot be said to precede the second dose, so the measured Hold stands; that keeps D26's anuric refusal
+// (one dose, three levels over four days, 44.4 and 44.29) a Hold. Load or not: the app
+// has no load definition that sees a lone load (detectRegimen needs three doses), and none is invented.
+// Evidence (docs/audit/probe-hold-rate.cjs, Task 21b fix round, seed 2111): Holds on one level drawn after a load
+// were false in load-one 7/12 Buelga, 7/7 Goti, 6/7 Hughes and load-two 5/6, 6/6, 19/23. Every AUC Precision
+// model; Goti-HD excluded as in U5 (R53: its D16/D17 pre-HD answer, not this Hold); the Trough module unchanged.
+// dueTauH: the answered regimen's interval (firstDosePlan), or NaN (a refusal: nothing to be due on).
+function firstIntervalLevel(r, mh, nowH, dueTauH) {
+  if (!mh || !r || r.dial) return false;
+  const doses = (r.doses || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const given = doses.filter(d => d.timeH <= nowH + 1e-9), planned = doses.filter(d => d.timeH > nowH + 1e-9);
+  if (!given.length) return false;
+  const secondH = given.length >= 2 ? given[1].timeH : planned.length ? planned[0].timeH : dueTauH > 0 ? given[0].timeH + dueTauH : NaN;
+  return Number.isFinite(secondH) && mh.timeH < secondH - 1e-9;
 }
 // The user's ruling U5 (2026-11-15): on Goti (not on dialysis), a Hold that would fire on the FITTED pre-dose
 // level alone (fitted at or above TROUGH_HIGH_MGL, the carried measured level below it or absent) is not a Hold.
 // The answer keeps its regimen and first dose, and one caution line names the fitted value and asks for a level
-// (fittedCautionText). Evidence (docs/audit/probe-hold-rate.cjs, Task 21b, seed 2111, n = 1,000 per design): on
+// (holdCautionText). Evidence (docs/audit/probe-hold-rate.cjs, Task 21b, seed 2111, n = 1,000 per design): on
 // Goti's own prior, fitted-only Holds were false (true level under 20 at the time held) in 29 of 50 after one
 // steady-state trough and 23 of 55 after a trough and peak; held-out seed 31, 24 of 38 and 14 of 50.
 // Unchanged: a measured basis (U1) on every model, alone or with the fitted ('both' is a Hold); Buelga and Hughes;
@@ -10453,14 +10486,18 @@ function holdBasisOf(fitted, carried) {
 function fittedOnlyCaution(r) {
   return !!(r && r.model === 'goti' && !r.dial);
 }
-// The caution line's sentence (U5), the same on screen, in print, Copy summary and the announcement; '' when none.
-function fittedCautionText(plan) {
-  const c = plan && !plan.hold ? plan.fittedCaution : null;
+// The caution line's sentence (U5, U6a), the same on screen, in print, Copy summary and the announcement; ''
+// when none. It names what was read and that nothing later confirms it.
+function holdCautionText(plan) {
+  const c = plan && !plan.hold ? plan.holdCaution : null;
   if (!c) return '';
   const when = c.at === 'planned' ? `at the planned dose (${fmtClock(c.atH)})` : c.at === 'chosen' ? `at the time chosen (${fmtClock(c.atH)})`
     : c.at === 'now' ? 'now' : `when the next dose is due (${fmtClock(c.atH)})`;
-  return `Caution: the fitted level ${when} is ${c.fitted.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L on the fit alone; no measured level confirms it. `
-    + `Consider drawing a level before ${plan.noSolution ? 'any further dose' : 'giving it'}.`;
+  const ask = `Consider drawing a level before ${plan.noSolution ? 'any further dose' : 'giving it'}.`;
+  const single = c.conc != null ? `the measured ${c.conc.toFixed(1)} mg/L at ${fmtClock(c.levelH)}, drawn after the first dose and before the second, carried down the fitted slope, is ${c.carried != null ? c.carried.toFixed(1) : '—'} mg/L` : '';
+  if (c.kind === 'first-level') return `Caution: ${single} ${when}, at or above ${TROUGH_HIGH_MGL} mg/L; no later level confirms it. ${ask}`;
+  if (c.kind === 'fitted-first') return `Caution: the fitted level ${when} is ${c.fitted.toFixed(1)} mg/L, and ${single}, both at or above ${TROUGH_HIGH_MGL} mg/L; no later level confirms them. ${ask}`;
+  return `Caution: the fitted level ${when} is ${c.fitted.toFixed(1)} mg/L, at or above ${TROUGH_HIGH_MGL} mg/L on the fit alone; no measured level confirms it. ${ask}`;
 }
 // The measured basis of the hold (the user's ruling U1, 2026-11-15). The newest level drawn
 // after the start of the last given dose, when it was drawn after the distribution phase, is
@@ -10523,13 +10560,16 @@ function noSolutionHold(r, nowH, cur) {
   // The same measured basis as the regular hold (U1): post-distribution, carried down the
   // fitted terminal slope to the due time.
   const mh = measuredHoldLevel(r, nowH), carried = mh ? mh.at(dueH) : NaN;
-  const measured = carried >= TROUGH_HIGH_MGL ? { conc: mh.conc, timeH: mh.timeH, carried } : null;
-  const basis = holdBasisOf(fitted, carried);
-  if (!basis) return null;
-  // U5: on Goti (not on dialysis) the fitted level alone is a caution beside the refusal, not a Hold. The
-  // refusal ("No regimen recommended") still answers, so an answer remains.
-  if (basis === 'fitted' && fittedOnlyCaution(r)) return { noSolution: true, hold: false, holdNoTime: false, resumeH: null, holdPlannedH: null, plannedN: 0,
-    dueH, dueKnown, fitted, measured: null, fittedCaution: { fitted, atH: dueH, at: dueKnown ? 'due' : 'now' } };
+  // U6a: a refusal has no regimen interval to be due on, so the second dose's time is a planned row or none.
+  const b = holdBasisOf(fitted, carried, fittedOnlyCaution(r), firstIntervalLevel(r, mh, nowH, NaN));
+  if (!b.basis && !b.caution) return null;
+  // U5 / U6a: a caution beside the refusal, not a Hold. The refusal ("No regimen recommended") still
+  // answers, so an answer remains.
+  if (!b.basis) return { noSolution: true, hold: false, holdNoTime: false, resumeH: null, holdPlannedH: null, plannedN: 0,
+    dueH, dueKnown, fitted, measured: null, holdCaution: { kind: b.caution, fitted, carried: Number.isFinite(carried) ? carried : null,
+      conc: mh ? mh.conc : null, levelH: mh ? mh.timeH : null, atH: dueH, at: dueKnown ? 'due' : 'now' } };
+  // The Hold names only its own basis: a fitted-basis Hold (R55) does not name a first-interval level.
+  const measured = b.basis !== 'fitted' && carried >= TROUGH_HIGH_MGL ? { conc: mh.conc, timeH: mh.timeH, carried } : null;
   return { noSolution: true, hold: true, holdNoTime: true, resumeH: null, holdPlannedH: null, plannedN: 0,
            dueH, dueKnown, fitted, measured };
 }
@@ -10642,7 +10682,7 @@ function noSolutionHoldWhy(h, full) {
 // U5: no Hold but a fitted-only reading on Goti: the caution line, in the ceiling caution's grammar.
 function answerHeadHTML(plan) {
   if (plan && plan.hold) return holdHeadHTML(plan);
-  const c = fittedCautionText(plan);
+  const c = holdCautionText(plan);
   return c ? `<p class="vx-ceiling-head vx-fitted-caution tone-caution">${ICON.caution}<span>${escHtml(c)}</span></p>` : '';
 }
 // The readout part, which k82 replaces on its own (no full re-render). On screen
@@ -10676,7 +10716,7 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const by = byCarried ? plan.preCarried : plan.pre;
   const shown = by < TROUGH_HIGH_MGL && +by.toFixed(1) >= TROUGH_HIGH_MGL
     ? (Math.floor(by * 100) / 100).toFixed(2) : by.toFixed(1);
-  const lvl = `<strong${plan.hold ? ' class="tone-alarm"' : plan.fittedCaution ? ' class="tone-caution"' : ''}>${shown} mg/L</strong>`;
+  const lvl = `<strong${plan.hold ? ' class="tone-alarm"' : plan.holdCaution ? ' class="tone-caution"' : ''}>${shown} mg/L</strong>`;
   const byWhat = byCarried ? ` (measured, carried down the fitted slope; fitted ${plan.pre.toFixed(1)})` : '';
   if (plan.holdNoTime) {
     const stays = `at or above ${TROUGH_HIGH_MGL} mg/L until ${holdHorizonText(plan)} on this fit`;
@@ -12437,7 +12477,7 @@ function nextLevelFit(r, conf, plan) {
     hold: !!(plan && plan.hold),
     // U5 (review fix round): a Goti fitted-only caution asks for a level before the dose, ahead of every
     // precision branch ('' when none): "before giving the next dose", or "before any further dose" on a refusal.
-    caution: plan && !plan.hold && plan.fittedCaution ? (plan.noSolution ? 'any further dose' : 'giving the next dose') : '',
+    caution: plan && !plan.hold && plan.holdCaution ? (plan.noSolution ? 'any further dose' : 'giving the next dose') : '',
     confRank: conf ? conf.rank : -1,
     worstSigma: conf ? conf.worstSigma : NaN,
     hasAlt: !!(r && r.mapAlt && r.mapAlt.CL > 0),
@@ -12473,7 +12513,7 @@ function bayesNextLevel(ctx, plan) {
 function bayesNextStep(ctx, plan) {
   if (!ctx) return '';
   if (ctx.fixed) return ctx.fixed;
-  const held = !!(plan && (plan.hold || plan.fittedCaution));   // U5: the caution's instruction leads too
+  const held = !!(plan && (plan.hold || plan.holdCaution));   // U5: the caution's instruction leads too
   if (!held && ctx.r && ctx.r.mapAlt && ctx.r.mapAlt.CL > 0) return 'Two parameter sets fit these levels. Check the draw times; a level at a different point in the interval separates them.';
   return nextLevelLine(bayesNextLevel(ctx, plan));
 }
@@ -14671,8 +14711,8 @@ function resultSummary(r, rec, cur, row, conf, plan) {
   const regular = rec && !rec.noSolution && !r.lowCrClHold;
   const held = regular || (rec && rec.noSolution && plan && plan.noSolution) ? holdSentence(plan) : '';
   if (held) parts.push(held);
-  const fittedCaution = regular || (rec && rec.noSolution && plan && plan.noSolution) ? fittedCautionText(plan) : '';   // U5
-  if (fittedCaution) parts.push(fittedCaution);
+  const holdCaution = regular || (rec && rec.noSolution && plan && plan.noSolution) ? holdCautionText(plan) : '';   // U5, U6a
+  if (holdCaution) parts.push(holdCaution);
   if (cur && cur.dose && cur.tau && cur.auc24 != null) {
     parts.push(`On ${fmtRegimen(cur.dose, cur.tau)} the fitted AUC₂₄ is ${cur.auc24.toFixed(0)} mg·h/L`
       + (cur.Ctrough != null ? ` with a steady-state trough of ${cur.Ctrough.toFixed(1)} mg/L` : '') + '.');
@@ -14697,7 +14737,7 @@ function resultSummary(r, rec, cur, row, conf, plan) {
 // says "Draw a level." (ruling 3, R26). '' otherwise.
 function answerNextSaid(rec, plan) {
   if (plan && plan.hold && !plan.holdNoTime) return 'Recheck a level before the next dose.';
-  if (plan && !plan.hold && plan.fittedCaution && !plan.noSolution) return 'Draw a level before giving the next dose.';   // U5
+  if (plan && !plan.hold && plan.holdCaution && !plan.noSolution) return 'Draw a level before giving the next dose.';   // U5
   if (rec && !rec.noSolution && rec.action === 'continue' && rec.continueReason === 'low-confidence') return 'Draw a level.';
   return '';
 }
@@ -14707,12 +14747,12 @@ function answerNextSaid(rec, plan) {
 function bayesAnnouncement(r, rec, conf, plan) {
   if (rec && !rec.noSolution && !r.lowCrClHold) {
     const first = holdSentence(plan);
-    const ceil = [ceilingCautionText(rec), fittedCautionText(plan)].filter(Boolean).join(' '), next = answerNextSaid(rec, plan);   // U5: the caution is heard too
+    const ceil = [ceilingCautionText(rec), holdCautionText(plan)].filter(Boolean).join(' '), next = answerNextSaid(rec, plan);   // U5: the caution is heard too
     return `Result: ${first ? `${first} Then ` : ''}${rec.action === 'continue' ? 'continue ' : rec.action === 'change' ? `change from ${fmtRegimen(rec.current.dose, rec.current.tau)} to ` : ''}${fmtRegimen(rec.dose, rec.tau)}, AUC24 ${rec.auc24.toFixed(0)}, ${conf.level} confidence.`
       + (ceil ? ` ${ceil}` : '') + (next ? ` ${next}` : '');
   }
   const held = rec && rec.noSolution && plan && plan.noSolution ? holdSentence(plan) : '';
-  const caution = rec && rec.noSolution && plan && plan.noSolution ? fittedCautionText(plan) : '';   // U5
+  const caution = rec && rec.noSolution && plan && plan.noSolution ? holdCautionText(plan) : '';   // U5
   return held ? `Result: ${held} No maintenance regimen offered. See the notes.`
     : `Result: no maintenance regimen offered.${caution ? ` ${caution}` : ''} See the notes.`;
 }
@@ -14823,7 +14863,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       if (isHD && hdView && hdView.rec && hdView.rec.oneTime) return 'Draw a pre-HD level before the next session. Once the schedule is known, log it and each post-HD dose is sized for you.';
       if (isHD) return (r.levels || []).length || doses.length ? 'Draw a pre-HD level before the next session; it drives the next dose.'
         : 'Give the loading dose, then draw a pre-HD level before the next session.';
-      if (rec && rec.noSolution) return (nsHold && nsHold.hold ? 'Recheck a level before the next dose. ' : nsHold && nsHold.fittedCaution ? 'Draw a level before any further dose. ' : '') + 'Every candidate breached a hard safety limit. Confirm the inputs; if they are right, seek specialist guidance.';
+      if (rec && rec.noSolution) return (nsHold && nsHold.hold ? 'Recheck a level before the next dose. ' : nsHold && nsHold.holdCaution ? 'Draw a level before any further dose. ' : '') + 'Every candidate breached a hard safety limit. Confirm the inputs; if they are right, seek specialist guidance.';
       if (r.lowCrClHold) return severeRenalNext((r.doses || []).some(d => d.timeH <= r.fitNowH + 1e-9));
       return '';
     })() };

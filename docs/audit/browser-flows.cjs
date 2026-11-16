@@ -2660,6 +2660,33 @@ async function enterCourse(page) {
        && u5v.next === 'Next Draw a level before giving the next dose.' && /Caution/.test(u5v.voi) && /Draw a level before giving the next dose/.test(u5v.voi)
        && !/would add little|Precision only/.test(u5v.next + u5v.voi) && /Draw a level before giving the next dose\./.test(u5v.copied + u5v.said),
        JSON.stringify(Object.assign({}, u5v, { print: u5v.print.slice(0, 120) })));
+    // Task 21d (the user's ruling U6a): a Hold resting only on a level drawn after the course's first dose (before the
+    // second) is one caution line (every model: the units are in 45.55). Fictional 70 M (80 kg, 175 cm, SCr 3.0), Goti;
+    // one 1.5 g dose over 2 h today 00:00, no load; 40 mg/L at 09:00.
+    await b.goto(BASE + '?v=pwt21d-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '3.0');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    await b.locator('[data-onclick="k43"]').click();
+    await typeInto(b, '#b-dose-mg-1', '1500'); await typeInto(b, '#b-dose-tinf-1', '2');
+    await b.locator('#b-dose-date-1').fill(day(0)); await typeInto(b, '#b-dose-time-1', '00:00');
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '40'); await b.locator('#b-lvl-date-1').fill(day(0)); await typeInto(b, '#b-lvl-time-1', '09:00');
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    const u6v = await b.evaluate(() => {
+      const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const c = document.querySelector('#b-results .vx-fitted-caution');
+      window.dispatchEvent(new Event('beforeprint'));
+      return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'),
+        said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
+    ok('D27 (U6a): a Hold resting only on a level drawn after the first dose (no load) is one caution line; the regimen stands; Next asks for a level; copied, heard and printed',
+       /^Caution: .*the measured 40\.0 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00, drawn after the first dose and before the second, carried down the fitted slope, is [\d.]+ mg\/L.*no later level confirms (it|them)\. Consider drawing a level before giving it\.$/.test(u6v.caution)
+       && u6v.hold === '' && /IV q\d+h/.test(u6v.reg) && u6v.next === 'Next Draw a level before giving the next dose.'
+       && !/Hold/.test(u6v.said + u6v.copied + u6v.print) && [u6v.said, u6v.copied, u6v.print].every(x => x.indexOf(u6v.caution) >= 0),
+       JSON.stringify(Object.assign({}, u6v, { print: u6v.print.slice(0, 100) })));
     // Trough hold "not before" is never in the past (controller ruling): a level that has fallen to 20 mg/L by now is
     // no Hold. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h over 1.5 h started yesterday 01:00,
     // 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon, so at today 10:00 the ordinary answer stands.
