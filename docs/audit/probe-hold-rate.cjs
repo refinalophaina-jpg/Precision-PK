@@ -10,14 +10,21 @@
 // is run through the shipped engine as runBayesian runs it:
 //   mapFit (multi-start MAP) -> the result object -> regimenDecision (on the row the app chooses) ->
 //   firstDosePlan(r, rec, now, no chosen time, the inferred current regimen), or noSolutionHold on a refusal.
-// "now" is 0.5 h after the last level; every dose before it is given; no planned rows, no chosen time.
+// "now" is set per design (below); every dose at or before it is given, none after; no planned rows, no chosen time.
+// The time judged is firstDosePlan's own: when the next dose of the ANSWERED regimen is due (the last dose given plus
+// its interval), or now when that has passed; a refusal is judged by noSolutionHold at its due time.
 //
 // Designs (1000 mg q12h, 1 h infusions; the load designs open with 25 mg/kg total body weight, 250 mg steps, at
 // most 3000 mg, infused over autoTinf):
-//   ss-trough       steady state: one trough 0.5 h before dose 9 (95.5 h); doses 1-8 given (0-84 h), dose 9 due at 96 h
-//   ss-trough-peak  the same trough + a peak 1 h after the end of dose 8's infusion (86 h)
-//   load-one        one level 6-10 h after the start of the load (uniform)
-//   load-two        2 h after the end of the load's infusion, and 0.5 h before the first maintenance dose (11.5 h)
+//   ss-trough       steady state: one trough 0.5 h before dose 9 (95.5 h). Now 96 h; doses 1-8 given (0-84 h). Judged at
+//                   84 h + the answered interval, never before 96 h (96 h on q12h, dose 9; 108 h on a change to q24h)
+//   ss-trough-peak  the same trough + a peak 1 h after the end of dose 8's infusion (86 h); now and judged as above
+//   load-one        one level 6-10 h after the start of the load (uniform). Now 0.5 h after it (6.5-10.5 h); only the
+//                   load given. Judged at the load + the answered interval (the first maintenance dose: 12 h on q12h)
+//   load-two        2 h after the end of the load's infusion, and 0.5 h before the first maintenance dose (11.5 h).
+//                   Now 11.75 h, BEFORE the 12 h maintenance dose (fix round, review item 2: at 12.0 h that dose counted
+//                   as given, the 11.5 h level predated it, no measured basis could fire, and 36 h was judged); only
+//                   the load given. Judged at the load + the answered interval (the first maintenance dose)
 //
 // Reported per cell (n patients): the Hold fires on the fitted basis (the fitted level at the time held >= 20),
 // on the carried measured basis (U1: the newest post-distribution level carried down the fitted terminal slope
@@ -53,11 +60,12 @@ function course(design, tbw) {
     const mg = Math.min(3000, Math.round(25 * tbw / 250) * 250), tinf = autoTinf(mg);
     const doses = [{ mg, tinfH: tinf, timeH: 0 }];
     for (let d = 1; d <= 8; d++) doses.push({ mg: MAINT, tinfH: 1, timeH: d * TAU });
-    return { doses, times: design === 'load-one' ? [6 + rnd() * 4] : [tinf + 2, TAU - 0.5] };
+    const times = design === 'load-one' ? [6 + rnd() * 4] : [tinf + 2, TAU - 0.5];
+    return { doses, times, nowH: design === 'load-one' ? times[0] + 0.5 : TAU - 0.25 };
   }
   const doses = [];
   for (let d = 0; d < 8; d++) doses.push({ mg: MAINT, tinfH: 1, timeH: d * TAU });   // dose 9 is the one due at 96 h
-  return { doses, times: design === 'ss-trough' ? [8 * TAU - 0.5] : [7 * TAU + 2, 8 * TAU - 0.5] };
+  return { doses, times: design === 'ss-trough' ? [8 * TAU - 0.5] : [7 * TAU + 2, 8 * TAU - 0.5], nowH: 8 * TAU };
 }
 
 function cell(model, design, seed) {
@@ -68,7 +76,7 @@ function cell(model, design, seed) {
     const age = 30 + Math.floor(rnd() * 50); let tbw = 50 + rnd() * 50; const scr = 0.7 + rnd() * 1.5;
     if (model === 'hughes') tbw = 110 + rnd() * 70;
     const crcl = Math.max(10, Math.min(140, (140 - age) * tbw / (72 * scr)));
-    const { doses, times } = course(design, tbw);
+    const { doses, times, nowH: nowAt } = course(design, tbw);
     const levels = [];
     let trueAt, r, bag, row, nLev = times.length;
     if (model === 'buelga') {
@@ -76,7 +84,7 @@ function cell(model, design, seed) {
       const CLt = CL_pop * Math.exp(randn() * Math.sqrt(C.OMEGA2_CL_BUELGA)), Vt = V_pop * Math.exp(randn() * Math.sqrt(C.OMEGA2_V_BUELGA));
       for (const t of times) levels.push({ timeH: t, conc: Math.max(0.5, predictConc1comp(doses, t, CLt / Vt, Vt) + randn() * C.SIGMA_ADD_BUELGA) });
       trueAt = (ds, t) => predictConc1comp(ds, t, CLt / Vt, Vt);
-      const nowH = Math.max(...times) + 0.5, given = doses.filter(d => d.timeH <= nowH + 1e-9);
+      const nowH = nowAt, given = doses.filter(d => d.timeH <= nowH + 1e-9);
       const fb = (x, y) => burtonObjective(x, y, CL_pop, V_pop, given, levels);
       const eta = mapFit(fb, 2, C.OMEGA2_CL_BUELGA, C.OMEGA2_V_BUELGA, 300).eta;
       const CL = CL_pop * Math.exp(eta[0]), V = V_pop * Math.exp(eta[1]);
@@ -93,7 +101,7 @@ function cell(model, design, seed) {
       const CLt = pk.TVCL * Math.exp(randn() * Math.sqrt(o[0])), Vct = pk.TVVc * Math.exp(randn() * Math.sqrt(o[1])), Vpt = pk.TVVp * Math.exp(randn() * Math.sqrt(o[2]));
       for (const t of times) { const cc = predictConc2comp(doses, t, CLt / Vct, Q / Vct, Q / Vpt, Vct); levels.push({ timeH: t, conc: Math.max(0.5, cc + randn() * Math.sqrt((sp * cc) ** 2 + sa * sa)) }); }
       trueAt = (ds, t) => predictConc2comp(ds, t, CLt / Vct, Q / Vct, Q / Vpt, Vct);
-      const nowH = Math.max(...times) + 0.5, given = doses.filter(d => d.timeH <= nowH + 1e-9);
+      const nowH = nowAt, given = doses.filter(d => d.timeH <= nowH + 1e-9);
       obj = model === 'goti' ? (a, b, cc) => burtonObj3D(a, b, cc, pk.TVCL, pk.TVVc, pk.TVVp, given, levels)
         : (a, b, cc) => burtonObj3D_hughes(a, b, cc, pk.TVCL, pk.TVVc, pk.TVVp, pk.TVQ, given, levels);
       const eta = mapFit(obj, 3, o[0], o[1], 400, o[2]).eta;
