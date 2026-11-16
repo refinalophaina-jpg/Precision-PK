@@ -1832,6 +1832,7 @@
   }
   .profile-item-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
   .profile-item-label { color:var(--text-primary); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .profile-all { display: flex; justify-content: flex-end; }
   .profile-item-meta  { font-size:var(--fs-xs); color:var(--text-muted); font-family:var(--font-num); }
   .profile-item-actions { display:flex; gap:4px; flex-shrink:0; }
   .profile-item-btn {
@@ -4232,6 +4233,7 @@ const __ACT = {
   k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
   k97: (el, ev, arg) => { runUndo(); },   /* Undo (D24) */
   k98: (el, ev, arg) => { markSuggestedModel(); },   /* ICU changes the suggested model (D24) */
+  k100: (el, ev, arg) => { deleteAllProfiles(); },   /* Delete all profiles, with Undo (Task 20b) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -16546,6 +16548,42 @@ function deleteProfile(id) {
   });
 }
 
+// Every saved profile at once, and the entries the per-row Delete cannot reach (the ones that could not be read,
+// an unparseable store), with Undo (the D24 pattern). The store's text is kept in memory and put back as it was.
+// The ".bak" recovery copy is never touched: it is what is left if the user changes their mind later.
+function deleteAllProfiles() {
+  const profiles = loadProfiles();
+  let raw = null;
+  try { raw = localStorage.getItem(PROFILE_STORAGE_KEY); } catch (e) { /* storage unavailable */ }
+  if (raw == null) return;
+  if (profileStoreLocked) { profileStatus('Nothing was deleted: the saved profiles could not be read or copied, so they are left as they are.'); return; }
+  const bad = profileUnreadable.length, wholeStore = profileReadProblems > 0 && !bad;
+  try { localStorage.removeItem(PROFILE_STORAGE_KEY); }
+  catch (e) { profileStatus('Nothing was deleted: browser storage could not be changed.'); return; }
+  let backup = false;
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(PROFILE_BACKUP_KEY) === 0) backup = true; } } catch (e) { /* none */ }
+  const n = profiles.length + bad;
+  renderProfileList();
+  profileStatus('');
+  const said = wholeStore ? 'Deleted the saved profiles, which could not be read.'
+    : `Deleted all ${n} saved profile${n === 1 ? '' : 's'}${bad ? ` (${bad} could not be read)` : ''}.`;
+  offerUndo([...document.querySelectorAll('.profile-status')],
+    said + (backup ? ` The recovery copy under "${PROFILE_BACKUP_KEY}" is kept, not deleted.` : ''), () => {
+      try { localStorage.setItem(PROFILE_STORAGE_KEY, raw); } catch (e) { /* storage full or off */ }
+      renderProfileList();
+    });
+}
+
+// How long ago a profile was saved, in whole calendar days. A profile with no timestamp (or one dated ahead of
+// this clock) says nothing: a guess would be read as a fact.
+function profileAgeText(savedAt) {
+  if (typeof savedAt !== 'number' || !(savedAt > 0)) return '';
+  const now = new Date(), s = new Date(savedAt);
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(s.getFullYear(), s.getMonth(), s.getDate())) / 86400000);
+  if (!(days >= 0)) return '';
+  return days === 0 ? 'saved today' : `saved ${days} day${days === 1 ? '' : 's'} ago`;
+}
+
 function loadProfileIntoForm(id) {
   clearUndo();   // a cleared form is never restored over a loaded profile (D24 review)
   // Validate before anything is cleared (code report I2): a damaged profile used to clear the
@@ -16657,14 +16695,18 @@ function renderProfileList() {
   // A store that could not be read is said in the status line, not left to look empty (D26).
   const note = profileReadNote();
   if (note) document.querySelectorAll('.profile-status').forEach(p => { p.textContent = note; });
+  // Delete all is offered whenever the store holds anything, readable or not (the unreadable are not listed).
+  const delAll = (profiles.length || profileReadProblems) && !profileStoreLocked
+    ? '<div class="profile-all"><button type="button" class="text-action" data-onclick="k100">Delete all profiles</button></div>' : '';
   if (!profiles.length) {
-    wraps.forEach(w => { w.innerHTML = '<div class="profile-empty-msg">No saved profiles yet.</div>'; });
+    wraps.forEach(w => { w.innerHTML = '<div class="profile-empty-msg">No saved profiles yet.</div>' + delAll; });
     return;
   }
   // escHtml is the one escaper (rule 2), on the label and on the id in data-arg (code report M1).
   const html = profiles.map(p => {
     const dt = new Date(p.savedAt);
-    const dtStr = dt.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const dtStr = p.savedAt > 0 ? dt.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+    const age = profileAgeText(p.savedAt);
     const nDoses  = p.snapshot?.doses?.length  || 0;
     const nLevels = p.snapshot?.levels?.length || 0;
     const model =
@@ -16676,14 +16718,14 @@ function renderProfileList() {
       <div class="profile-item">
         <div class="profile-item-body">
           <div class="profile-item-label">${escHtml(p.label)}${fitTag}</div>
-          <div class="profile-item-meta">${escHtml(dtStr)} · ${model} · ${nDoses}d/${nLevels}l</div>
+          <div class="profile-item-meta">${dtStr ? escHtml(dtStr) + ' · ' : ''}${model} · ${nDoses}d/${nLevels}l${age ? ' · ' + age : ''}</div>
         </div>
         <div class="profile-item-actions">
           <button class="profile-item-btn load"   data-onclick="k69" data-arg="${escHtml(p.id)}">Load</button>
           <button class="profile-item-btn delete" data-onclick="k70" data-arg="${escHtml(p.id)}">Delete</button>
         </div>
       </div>`;
-  }).join('');
+  }).join('') + delAll;
   wraps.forEach(w => { w.innerHTML = html; });
 }
 

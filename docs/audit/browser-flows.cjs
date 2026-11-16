@@ -2398,6 +2398,73 @@ async function enterCourse(page) {
     results.problems.push(...pAttr.kept);
     await pctx.close();
   }
+  // D27 (Task 20b, saved profiles): a "Delete all profiles" text action with Undo that also clears what the
+  // per-row Delete cannot (entries that could not be read, an unparseable store) and never touches the
+  // ".bak" recovery copy, and each row's age in days (nothing for a profile with no timestamp).
+  {
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const d = await dctx.newPage();
+    const dProblems = watch(d, 'profiles-delete-all');
+    await d.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await d.goto(BASE + '?v=pwda-' + Date.now(), { waitUntil: 'networkidle' });
+    const KEY = 'ainadara.profiles.v1';
+    const mk = (id, label, savedAt) => ({ id, schema: 1, label, savedAt, snapshot: { demographics: { age: '60' }, doses: [], levels: [], core: { age: '60' } } });
+    const at = (n, hh) => new Date(`${day(n)}T${hh}`).getTime();
+    const seed = async (raw, bak) => { await d.evaluate(([k, raw, bak]) => { localStorage.removeItem(k); localStorage.removeItem(k + '.bak');
+      if (raw != null) localStorage.setItem(k, raw); if (bak != null) localStorage.setItem(k + '.bak', bak); }, [KEY, raw, bak]);
+      await d.reload({ waitUntil: 'networkidle' }); };
+    const view = () => d.evaluate((k) => ({ main: localStorage.getItem(k), bak: localStorage.getItem(k + '.bak'),
+      metas: [...document.querySelectorAll('.profile-list:first-of-type .profile-item-meta, #profile-list .profile-item-meta')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+      empty: [...document.querySelectorAll('.profile-empty-msg')].some(e => e.offsetParent),
+      btn: [...document.querySelectorAll('[data-onclick="k100"]')].filter(b => b.offsetParent).map(b => b.textContent.trim()),
+      status: [...document.querySelectorAll('.profile-status')].filter(e => e.offsetParent).map(e => e.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
+      undo: [...document.querySelectorAll('.profile-status [data-onclick="k97"]')].filter(b => b.offsetParent).length }), KEY);
+    const clickIf = async (sel) => { const l = d.locator(sel).first(); if (await l.count()) await l.click({ timeout: 3000 }); };
+    // A: three readable profiles (today, 3 days ago, no timestamp), two unreadable entries, and a recovery copy.
+    const readable = [mk('p_a1', 'Today', at(0, '08:00')), mk('p_a2', 'Three days', at(-3, '09:00')), mk('p_a3', 'No stamp', 0)];
+    const rawA = JSON.stringify([...readable, { id: 'bad' }, 42]);
+    await seed(rawA, 'RECOVERY-TEXT');
+    const a0 = await view();
+    const ages = a0.metas.map(t => (t.match(/saved [^·]*$/) || [''])[0].trim());
+    ok('D27: each profile row shows its age in days (today, 3 days ago); a profile with no timestamp shows none',
+       a0.metas.length === 3 && ages[0] === 'saved today' && ages[1] === 'saved 3 days ago' && ages[2] === '' && !/1970/.test(a0.metas[2]), JSON.stringify(a0.metas));
+    ok('D27: a "Delete all profiles" text action is offered beside the list', a0.btn.length >= 1 && a0.btn.every(t => t === 'Delete all profiles'), JSON.stringify(a0.btn));
+    await clickIf('[data-onclick="k100"]:visible'); await d.waitForTimeout(250);
+    const a1 = await view();
+    ok('D27: Delete all removes every profile and the unreadable entries, keeps the .bak copy, says so, and offers Undo',
+       a1.main === null && a1.bak === 'RECOVERY-TEXT' && a1.metas.length === 0 && a1.empty && a1.btn.length === 0
+       && /^Deleted all 5 saved profiles \(2 could not be read\)\./.test(a1.status) && /ainadara\.profiles\.v1\.bak/.test(a1.status) && /kept|not deleted/.test(a1.status) && a1.undo >= 1, JSON.stringify(a1));
+    await clickIf('.profile-status [data-onclick="k97"]:visible'); await d.waitForTimeout(250);
+    const a2 = await view();
+    ok('D27: Undo puts back the store exactly as it was, the unreadable entries included', a1.main === null && a2.main === rawA && a2.metas.length === 3 && a2.bak === 'RECOVERY-TEXT' && /2 saved profiles could not be read/.test(a2.status), JSON.stringify({ same: a2.main === rawA, n: a2.metas.length, status: a2.status }));
+    // B: only an unreadable entry (the per-row Delete has nothing to click): Delete all clears it; Undo restores it.
+    const rawB = JSON.stringify([{ id: 'bad' }]);
+    await seed(rawB, null);
+    const b0 = await view();
+    await clickIf('[data-onclick="k100"]:visible'); await d.waitForTimeout(250);
+    const b1 = await view();
+    await clickIf('.profile-status [data-onclick="k97"]:visible'); await d.waitForTimeout(250);
+    const b2 = await view();
+    ok('D27: an unreadable-only store can be cleared (and undone) with Delete all', b0.btn.length >= 1 && b0.metas.length === 0 && b1.main === null && /Deleted all 1 saved profile \(1 could not be read\)\./.test(b1.status) && b2.main === rawB, JSON.stringify({ b0: b0.btn, b1: b1.status, same: b2.main === rawB }));
+    // C: text that is not JSON (copied to .bak on read): cleared, the copy kept, Undo restores the text.
+    const rawC = '[{"id":"p_cut","label":"Cut off","savedAt":17624';
+    await seed(rawC, null);
+    const c0 = await view();
+    await clickIf('[data-onclick="k100"]:visible'); await d.waitForTimeout(250);
+    const c1 = await view();
+    await clickIf('.profile-status [data-onclick="k97"]:visible'); await d.waitForTimeout(250);
+    const c2 = await view();
+    ok('D27: an unparseable store is cleared with its recovery copy kept; Undo restores the text',
+       c0.bak === rawC && c0.btn.length >= 1 && c1.main === null && c1.bak === rawC && /could not be read/.test(c1.status) && /ainadara\.profiles\.v1\.bak/.test(c1.status) && c2.main === rawC, JSON.stringify({ c0: c0.btn, c1: c1.status, bak: c1.bak === rawC, same: c2.main === rawC }));
+    // D: nothing stored: no action.
+    await seed(null, null);
+    const e0 = await view();
+    ok('D27: with nothing stored there is no "Delete all profiles"', e0.btn.length === 0 && e0.empty, JSON.stringify(e0.btn));
+    await d.evaluate((k) => { localStorage.removeItem(k); localStorage.removeItem(k + '.bak'); }, KEY);
+    const dAttr = await attributeInjected(d, dProblems);
+    results.problems.push(...dAttr.kept);
+    await dctx.close();
+  }
   await browser.close();
 
   results.checks = checks;
