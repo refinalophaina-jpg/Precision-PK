@@ -9195,7 +9195,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const step = fn45('bayesNextStep')(ctx, p), panel = fn45('voiHTML')(fn45('bayesNextLevel')(ctx, p));
     assert(step === 'Draw a level before giving the next dose.', `Next: ${step}`);
     assert(/<span class="voi-tag">Caution<\/span>/.test(panel) && /Draw a level before giving the next dose/.test(panel) && !/Precision only|would add little/.test(panel), panel);
-    assert(/would add little|Precision/.test(fn45('voiHTML')(fn45('bayesNextLevel')(ctx, null))) || fn45('bayesNextStep')(ctx, null) !== step, 'without the caution the line is the ordinary one');
+    // Without the caution (no plan) the same context gives its ordinary line: this one is what the caution displaced (re-review minor 4).
+    assert(fn45('bayesNextStep')(ctx, null) === 'A first level may substantially change the regimen.', `without the caution: ${fn45('bayesNextStep')(ctx, null)}`);
     assert(/Draw a level before giving the next dose\./.test(summary) && /Draw a level before giving the next dose\./.test(said), `the summary and the announcement say it: ${summary} | ${said}`);
     // The time chosen (k82) and "now" (the due time passed, no time chosen) name themselves.
     const ch = fn45('firstDosePlan')(fo, rec53, 40, 44, cur53);

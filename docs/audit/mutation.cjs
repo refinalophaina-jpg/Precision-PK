@@ -189,7 +189,7 @@ const MUTANTS = [
     find: 'if (fittedCaution) parts.push(fittedCaution);', replace: '' },
   { id: 'U5-f', what: 'the refusal verdict reads holdHeadHTML again (the caution vanishes from the rendered refusal) [45.54]',
     find: '${answerHeadHTML(nsHold)}', replace: '${holdHeadHTML(nsHold)}' },
-  { id: 'U5-g', what: 'the Next line and panel ignore the caution [45.53, 45.54]',
+  { id: 'U5-g', what: 'the Next line and panel ignore the caution [45.53]',
     find: "  } else if (f.caution) {\n    kind = 'caution';", replace: "  } else if (false) {\n    kind = 'caution';" },
 
   // "Tests that cannot fail on what they name" (code report): the mutations that showed it.

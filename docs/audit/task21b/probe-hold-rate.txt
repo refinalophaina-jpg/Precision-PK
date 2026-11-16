@@ -4,6 +4,13 @@ False, true < 15: a false Hold whose true level at the time held is under 15 mg/
 false|fitted, false|measured: false Holds among those that fired on that basis. Fitted-only: fired on the fitted basis with the
 carried measured level below the threshold (or none), false among them.
 Prevalence: true level >= threshold at the time judged. Missed: no Hold, true level >= threshold.
+Designs (1000 mg q12h over 1 h; load = 25 mg/kg TBW, 250 mg steps, at most 3000 mg). Judged = when the next dose of the
+ANSWERED regimen is due (last dose given + its interval), never before now:
+  ss-trough       trough at 95.5 h; now 96 h; doses 0-84 h given; judged at 84 h + interval, at least 96 h (96 h on q12h, 108 h on q24h)
+  ss-trough-peak  peak at 86 h + trough at 95.5 h; now and judged as ss-trough
+  load-one        one level 6-10 h after the load; now 0.5 h after it; only the load given; judged at load + interval (12 h on q12h, 24 h on q24h)
+  load-two        levels 2 h after the load infusion ends and at 11.5 h; now 11.75 h (before the 12 h dose); only the load given;
+                  judged at load + interval, at least 11.75 h (11.75-12 h on q8h/q12h, 24 h on q24h)
 Pre-U5 columns: the rule shipped in v3.14.0 / Task 21b (a Goti fitted-only reading held). U5 columns (Task 21c, the user's
 ruling U5, shipped): U5 Hold = Holds that still fire; U5 false Hold = % of them false; U5 caution = Goti fitted-only readings
 now shown as a caution instead (false: the true level at that time was under the threshold).
