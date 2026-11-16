@@ -10,7 +10,8 @@
 // is run through the shipped engine as runBayesian runs it:
 //   mapFit (multi-start MAP) -> the result object -> regimenDecision (on the row the app chooses) ->
 //   firstDosePlan(r, rec, now, no chosen time, the inferred current regimen), or noSolutionHold on a refusal.
-// "now" is set per design (below); every dose at or before it is given, none after; no planned rows, no chosen time.
+// "now" is set per design (below); every dose at or before it is given, none after; no planned rows (except the late
+// designs' one planned second dose), no chosen time.
 // The time judged is firstDosePlan's own: when the next dose of the ANSWERED regimen is due (the last dose given plus
 // its interval), or now when that has passed; a refusal is judged by noSolutionHold at its due time.
 //
@@ -28,6 +29,12 @@
 //                   as given, the 11.5 h level predated it, no measured basis could fire, and 36 h was judged); only
 //                   the load given. Judged at the load + the answered interval (the first maintenance dose)
 //
+//   late-q24        R2 final review (the user's ruling U7): a late first-interval level. The load (as above) at 0 h, 1000 mg
+//                   PLANNED at 24 h, one trough-timed level at 23.5 h; now 23.75 h (only the load given). Renal function for
+//                   a q24h start: SCr 1.5-3.0 mg/dL (CrCl about 15-60). Judged at the planned dose (firstDosePlan judges the
+//                   first planned row first)
+//   late-q48        the same with 1000 mg planned at 48 h, the level at 47.5 h, now 47.75 h; SCr 2.5-5.0 (CrCl about 10-35)
+//
 // Reported per cell (n patients): the Hold fires on the fitted basis (the fitted level at the time held >= 20),
 // on the carried measured basis (U1: the newest post-distribution level carried down the fitted terminal slope
 // >= 20), either (= the Hold); then, against the TRUE concentration at the time held (the simulated patient's own
@@ -37,13 +44,20 @@
 // (no Hold, true >= 20). A refusal (rec.noSolution) holds through noSolutionHold at its due time.
 //
 // Not modelled: finalizeDecision (ruling 3 keeps an in-range current regimen under Low confidence; it moves the
-// time judged only when it changes the interval), HD, planned rows, a chosen first-dose time.
+// time judged only when it changes the interval), HD, planned rows (but for the late designs), a chosen first-dose time.
 //
 // Task 21c (the user's ruling U5): on Goti (not on dialysis) a fitted-only reading is a caution, not a Hold. The table keeps
 // the pre-U5 columns (they reproduce the Task 21b output) and adds U5 Hold, U5 false Hold and U5 caution.
 // Task 21d (the user's ruling U6a; R55): a measured basis from a level drawn after the course's first dose and before the
 // second is a caution on every model (with the fitted also >= 20: Buelga/Hughes hold, Goti caution). Adds U5+U6 Hold,
 // U5+U6 false Hold, U6 caution, and the dose-one design (an unloaded first dose, one level before dose 2).
+//
+// R2 final-fix wave (ruling R59; the user's ruling U7): both readings at or above the threshold are a Hold on every model
+// (so Goti's 'fitted-first' caution is gone: those readings are Holds), and U6a's caution covers only a level drawn within
+// FIRST_INTERVAL_CAUTION_H (12 h) of the first dose. The last columns are therefore the SHIPPED rule (U5, U6a bounded by U7,
+// R59), and 'U7 Hold' counts the Holds on a measured level alone drawn in the first interval but more than 12 h after the
+// first dose: the readings U6a made cautions before U7 (with the false ones). Two designs are appended (late-q24,
+// late-q48: a trough-timed level before dose 2), so the earlier cells keep their seeds.
 //
 // Usage: node docs/audit/probe-hold-rate.cjs [n=1000] [seed=2111] [models=buelga,goti,hughes]
 // Seeded and reproducible (uncertainty-load.cjs's LCG; one seed per cell, derived from the base seed).
@@ -54,13 +68,18 @@ const { buelgaPopPK, burtonObjective, predictConc1comp, gotiPopPK, burtonObj3D, 
   inferCurrentRegimen, computeFFM, mapFit, predictFittedAt, measuredHoldLevel } = sb;
 const vm = require('vm');
 const TROUGH_HIGH_MGL = vm.runInContext('TROUGH_HIGH_MGL', sb);
+const FIRST_INTERVAL_CAUTION_H = vm.runInContext('FIRST_INTERVAL_CAUTION_H', sb);
 const args = process.argv.slice(2);
 const N = +args[0] || 1000, SEED = +args[1] || 2111;
 const MODELS = (args[2] || 'buelga,goti,hughes').split(',');
-const DESIGNS = ['ss-trough', 'ss-trough-peak', 'load-one', 'load-two', 'dose-one'];   // dose-one appended (Task 21d): earlier cells keep their seeds
+const DESIGNS = ['ss-trough', 'ss-trough-peak', 'load-one', 'load-two', 'dose-one', 'late-q24', 'late-q48'];   // appended (Task 21d; R2 final): earlier cells keep their seeds
 const TAU = 12, MAINT = 1000;
 
 function course(design, tbw) {
+  if (design.startsWith('late')) {   // R2 final (U7): the load, a planned second dose at 24 h / 48 h, a trough-timed level before it
+    const T2 = design === 'late-q24' ? 24 : 48, mg = Math.min(3000, Math.round(25 * tbw / 250) * 250);
+    return { doses: [{ mg, tinfH: autoTinf(mg), timeH: 0 }], planned: [{ mg: MAINT, tinfH: 1, timeH: T2 }], times: [T2 - 0.5], nowH: T2 - 0.25 };
+  }
   if (design.startsWith('load')) {
     const mg = Math.min(3000, Math.round(25 * tbw / 250) * 250), tinf = autoTinf(mg);
     const doses = [{ mg, tinfH: tinf, timeH: 0 }];
@@ -81,12 +100,14 @@ function course(design, tbw) {
 function cell(model, design, seed) {
   setSeed(seed);
   const c = { n: 0, fitted: 0, measured: 0, either: 0, trueHold: 0, falseHold: 0, falseFitted: 0, falseMeasured: 0,
-    fittedOnlyFalse: 0, fittedOnly: 0, falseUnder15: 0, caution: 0, cautionFalse: 0, caution6: 0, caution6False: 0, prevalent: 0, missed: 0, refusals: 0, refusalHolds: 0, skipped: 0, falseExamples: [] };
+    fittedOnlyFalse: 0, fittedOnly: 0, falseUnder15: 0, caution: 0, cautionFalse: 0, caution6: 0, caution6False: 0, u7: 0, u7False: 0, prevalent: 0, missed: 0, refusals: 0, refusalHolds: 0, skipped: 0, falseExamples: [] };
   for (let i = 0; i < N; i++) {
-    const age = 30 + Math.floor(rnd() * 50); let tbw = 50 + rnd() * 50; const scr = 0.7 + rnd() * 1.5;
+    const age = 30 + Math.floor(rnd() * 50); let tbw = 50 + rnd() * 50, scr = 0.7 + rnd() * 1.5;
+    // late designs: renal function for the interval they test (the same draw, rescaled; the earlier designs are untouched)
+    if (design === 'late-q24') scr = 1.5 + (scr - 0.7) / 1.5 * 1.5; else if (design === 'late-q48') scr = 2.5 + (scr - 0.7) / 1.5 * 2.5;
     if (model === 'hughes') tbw = 110 + rnd() * 70;
     const crcl = Math.max(10, Math.min(140, (140 - age) * tbw / (72 * scr)));
-    const { doses, times, nowH: nowAt } = course(design, tbw);
+    const { doses, times, nowH: nowAt, planned = [] } = course(design, tbw);
     const levels = [];
     let trueAt, r, bag, row, nLev = times.length;
     if (model === 'buelga') {
@@ -124,6 +145,7 @@ function cell(model, design, seed) {
     if (!(r.CL_ind > 0) || !isFinite(r.CL_ind)) { c.skipped++; continue; }
     c.n++;
     const nowH = r.fitNowH, given = r.doses;
+    if (planned.length) r.doses = given.concat(planned);   // the planned rows the plan reads (late designs); the fit used the given ones
     row = aucUncertaintyRow(nLev, model, latestLevelEarly(levels, given, r.t12_ind, model));
     const rec = regimenDecision(r.CL_ind, r.V_ind, 450, bag, 1, given, row, { nowH });
     r.rec = rec;
@@ -150,7 +172,7 @@ function cell(model, design, seed) {
     }
     const mhP = measuredHoldLevel(r, nowH);
     const fitted = hold && predictFittedAt(r, atH) >= TROUGH_HIGH_MGL, measured = hold && !!mhP && atH >= mhP.timeH && mhP.at(atH) >= TROUGH_HIGH_MGL;
-    const truth = trueAt(given, atH);
+    const truth = trueAt(r.doses, atH);   // r.doses is the given doses, plus the planned ones on the late designs (a held one adds nothing at its own time)
     if (truth >= TROUGH_HIGH_MGL) c.prevalent++;
     if (fitted) c.fitted++;
     if (measured) c.measured++;
@@ -159,6 +181,12 @@ function cell(model, design, seed) {
     c.either++;
     if (caution === 'fitted') { c.caution++; if (truth < TROUGH_HIGH_MGL) c.cautionFalse++; }
     if (caution && caution !== 'fitted') { c.caution6++; if (truth < TROUGH_HIGH_MGL) c.caution6False++; }
+    // U7: a Hold on the measured level alone, drawn after the first dose and before the second, more than FIRST_INTERVAL_CAUTION_H
+    // after the first dose (before U7, U6a made it a caution). The second dose's time as firstIntervalLevel reads it.
+    if (!caution && measured && !fitted && mhP && !(rec && rec.noSolution)) {
+      const secondH = given.length >= 2 ? given[1].timeH : planned.length ? planned[0].timeH : given[0].timeH + rec.tau;
+      if (mhP.timeH < secondH - 1e-9 && mhP.timeH - given[0].timeH > FIRST_INTERVAL_CAUTION_H + 1e-9) { c.u7++; if (truth < TROUGH_HIGH_MGL) c.u7False++; }
+    }
     if (truth >= TROUGH_HIGH_MGL) c.trueHold++;
     else {
       c.falseHold++; if (truth < 15) c.falseUnder15++; if (fitted) c.falseFitted++; if (measured) c.falseMeasured++; if (fitted && !measured) c.fittedOnlyFalse++;
@@ -187,14 +215,20 @@ console.log('  load-two        levels 2 h after the load infusion ends and at 11
 console.log('                  judged at load + interval, at least 11.75 h (11.75-12 h on q8h/q12h, 24 h on q24h)');
 console.log('  dose-one        no load: one level 2-11 h after the first 1000 mg dose; now 0.5 h after it; only that dose given;');
 console.log('                  judged at the first dose + interval, at least now (12 h on q12h, 24 h on q24h)');
+console.log('  late-q24        the load at 0 h, 1000 mg PLANNED at 24 h, one level at 23.5 h; now 23.75 h; SCr 1.5-3.0; judged at the planned dose (24 h)');
+console.log('  late-q48        the load at 0 h, 1000 mg PLANNED at 48 h, one level at 47.5 h; now 47.75 h; SCr 2.5-5.0; judged at the planned dose (48 h)');
 console.log('Pre-U5 columns: the rule shipped in v3.14.0 / Task 21b (a Goti fitted-only reading held). U5 columns (Task 21c, the user\'s');
 console.log('ruling U5, shipped): U5 Hold = Holds that still fire; U5 false Hold = % of them false; U5 caution = Goti fitted-only readings');
 console.log('now shown as a caution instead (false: the true level at that time was under the threshold).');
 console.log('U6a columns (Task 21d, the user\'s ruling U6a, shipped with U5): U5+U6 Hold = Holds that still fire; U5+U6 false Hold = % of them');
 console.log('false; U6 caution = readings now a caution because their measured basis is a level drawn after the first dose and before the');
-console.log('second (alone, or with the fitted on Goti), with the false ones. Buelga/Hughes with the fitted level also >= 20 still hold (R55).\n');
+console.log('second, with the false ones.');
+console.log('R2 final review (ruling R59, the user\'s ruling U7): the U5+U6 columns are the SHIPPED rule. R59: the fitted level and the');
+console.log('measured level both >= 20 is a Hold on every model (Goti\'s fitted-first caution is gone). U7: U6a covers only a level drawn');
+console.log(`within ${FIRST_INTERVAL_CAUTION_H} h of the first dose. U7 Hold = Holds on a measured level alone drawn in the first interval more than`);
+console.log(`${FIRST_INTERVAL_CAUTION_H} h after the first dose (U6a cautions before U7), with the false ones.\n`);
 const head = ['model', 'design', 'n', 'fitted', 'measured', 'either (Hold, pre-U5)', 'true hold', 'false hold', 'false, true < 15', 'false|fitted', 'false|measured', 'fitted-only (false)', 'prevalence', 'missed', 'refusals (held)',
-  'U5 Hold', 'U5 false Hold', 'U5 caution (false)', 'U5+U6 Hold', 'U5+U6 false Hold', 'U6 caution (false)'];
+  'U5 Hold', 'U5 false Hold', 'U5 caution (false)', 'U5+U6 Hold', 'U5+U6 false Hold', 'U6 caution (false)', 'U7 Hold (false)'];
 const rows = [];
 MODELS.forEach((m, mi) => DESIGNS.forEach((d, di) => {
   const c = cell(m, d, seedOf(['buelga', 'goti', 'hughes'].indexOf(m), di));
@@ -206,7 +240,7 @@ MODELS.forEach((m, mi) => DESIGNS.forEach((d, di) => {
     `${c.caution} (${c.cautionFalse}, ${pc(c.cautionFalse, c.caution)})`,
     `${c.either - c.caution - c.caution6} (${pc(c.either - c.caution - c.caution6, c.n)})`,
     `${c.falseHold - c.cautionFalse - c.caution6False} (${pc(c.falseHold - c.cautionFalse - c.caution6False, c.either - c.caution - c.caution6)})`,
-    `${c.caution6} (${c.caution6False}, ${pc(c.caution6False, c.caution6)})`]);
+    `${c.caution6} (${c.caution6False}, ${pc(c.caution6False, c.caution6)})`, `${c.u7} (${c.u7False}, ${pc(c.u7False, c.u7)})`]);
   rows[rows.length - 1].examples = c.falseExamples;
   rows[rows.length - 1].skipped = c.skipped;
 }));
