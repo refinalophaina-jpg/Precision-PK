@@ -3130,9 +3130,9 @@
               <label class="field-label" for="init-tinf">Infusion duration</label>
               <div class="input-row">
                 <input type="number" id="init-tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
-                <span class="unit-badge">hr</span>
+                <span class="unit-badge">h</span>
               </div>
-              <p class="field-hint">Standard: 1g/hr</p>
+              <p class="field-hint">Standard: 1 g/h</p>
             </div>
           </div>
           <p class="field-hint">Dose is auto-calculated from population PK. Interval suggestion based on CrCl shown above.</p>
@@ -3171,9 +3171,9 @@
             <label class="field-label" for="tinf">Infusion duration</label>
             <div class="input-row">
               <input type="number" id="tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
-              <span class="unit-badge">hr</span>
+              <span class="unit-badge">h</span>
             </div>
-            <p class="field-hint">Standard: 1g/hr (≤1g over 1h, 1.5g over 1.5h, 2g over 2h)</p>
+            <p class="field-hint">Standard: 1 g/h (≤1 g over 1 h, 1.5 g over 1.5 h, 2 g over 2 h)</p>
           </div>
         </div>
       </div>
@@ -3204,7 +3204,7 @@
             <label class="field-label" for="ld-delta">Time to first maintenance dose</label>
             <div class="input-row">
               <input type="number" id="ld-delta" placeholder="= interval" min="4" max="48" step="0.5">
-              <span class="unit-badge">hr</span>
+              <span class="unit-badge">h</span>
             </div>
             <p class="field-hint">From start of LD infusion · leave blank to match dosing interval</p>
           </div>
@@ -3331,7 +3331,7 @@
               <label class="field-label" for="tl-tinf">Infusion duration</label>
               <div class="input-row">
                 <input type="number" id="tl-tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
-                <span class="unit-badge">hr</span>
+                <span class="unit-badge">h</span>
               </div>
             </div>
           </div>
@@ -3466,7 +3466,7 @@
               <label class="field-label" for="rl-tinf">Infusion duration</label>
               <div class="input-row">
                 <input type="number" id="rl-tinf" placeholder="—" value="1" min="0.5" max="4" step="0.25">
-                <span class="unit-badge">hr</span>
+                <span class="unit-badge">h</span>
               </div>
             </div>
           </div>
@@ -3774,7 +3774,7 @@
          <b>Calculate regimen</b>.</p>
       <ul class="rp-list">
         <li><b>Population PK</b> — CrCl, clearance, volume, half-life</li>
-        <li><b>A maintenance regimen</b> against an AUC<sub>24</sub> of 400–600 mg·h/L</li>
+        <li><b>A maintenance regimen</b> against an AUC₂₄ of 400–600 mg·h/L</li>
         <li><b>The predicted steady-state curve</b>, with peak, trough and target band</li>
       </ul>
     </div>
@@ -4076,7 +4076,7 @@
          <b>Run Bayesian analysis</b>.</p>
       <ul class="rp-list">
         <li><b>An individualised fit</b> — MAP Bayesian, against the chosen population prior</li>
-        <li><b>AUC<sub>24</sub> with its uncertainty</b>, and how far the fit moved from the prior</li>
+        <li><b>AUC₂₄ with its uncertainty</b>, and how far the fit moved from the prior</li>
         <li><b>The concentration-time profile</b> with your measured levels on it</li>
       </ul>
       <p>Levels are optional — without them this is the population estimate.</p>
@@ -4479,19 +4479,19 @@ function updateLevelInterpretation() {
     hintEl.style.color = 'var(--warning)';
     noteEl.style.display = 'none';
   } else if(isTrueTrough) {
-    hintEl.textContent = `True trough — drawn ${t.toFixed(1)} hr after dose start (${Math.abs(timeRemaining).toFixed(1)} hr before next dose)`;
+    hintEl.textContent = `True trough — drawn ${t.toFixed(1)} h after dose start (${Math.abs(timeRemaining).toFixed(1)} h before next dose)`;
     hintEl.style.color = 'var(--success)';
     noteEl.style.display = 'none';
   } else if(isEarly) {
-    hintEl.textContent = `Level drawn ${timeRemaining.toFixed(1)} hr early — will extrapolate forward to true trough`;
+    hintEl.textContent = `Level drawn ${timeRemaining.toFixed(1)} h early — will extrapolate forward to true trough`;
     hintEl.style.color = 'var(--warning)';
     noteEl.style.display = 'block';
-    noteEl.innerHTML = `<strong>Early level detected.</strong> Concentration will be extrapolated forward ${timeRemaining.toFixed(1)} hr using fitted Ke to estimate the true trough at end of dosing interval.`;
+    noteEl.innerHTML = `<strong>Early level detected.</strong> Concentration will be extrapolated forward ${timeRemaining.toFixed(1)} h using fitted Kel to estimate the true trough at end of dosing interval.`;
   } else {
-    hintEl.textContent = `Level drawn ${Math.abs(timeRemaining).toFixed(1)} hr after next dose was due — will extrapolate back`;
+    hintEl.textContent = `Level drawn ${Math.abs(timeRemaining).toFixed(1)} h after next dose was due — will extrapolate back`;
     hintEl.style.color = 'var(--warning)';
     noteEl.style.display = 'block';
-    noteEl.innerHTML = `<strong>Late level detected.</strong> Concentration will be extrapolated back ${Math.abs(timeRemaining).toFixed(1)} hr to estimate the true trough at end of prior interval.`;
+    noteEl.innerHTML = `<strong>Late level detected.</strong> Concentration will be extrapolated back ${Math.abs(timeRemaining).toFixed(1)} h to estimate the true trough at end of prior interval.`;
   }
 }
 
@@ -5089,16 +5089,16 @@ function calcTLDeltas() {
   if (r2.ok && r2.reversed) issues.push(`Level 2 is dated ${formatElapsed(r2.hours)} relative to the dose — before the dose was given. Check the date on each field.`);
 
   if (t1h && t1h <= tinf) {
-    issues.push(`Level 1 drawn at ${t1h.toFixed(1)}h — during or before end of infusion (${tinf}h). Both levels must be post-infusion for accurate Kel estimation.`);
+    issues.push(`Level 1 drawn at ${t1h.toFixed(1)} h — during or before end of infusion (${tinf} h). Both levels must be post-infusion for accurate Kel estimation.`);
   }
   if (t2h && t2h <= tinf) {
-    issues.push(`Level 2 drawn at ${t2h.toFixed(1)}h — during or before end of infusion (${tinf}h). Must be drawn after infusion completes.`);
+    issues.push(`Level 2 drawn at ${t2h.toFixed(1)} h — during or before end of infusion (${tinf} h). Must be drawn after infusion completes.`);
   }
   if (t1h && t2h && t2h <= t1h) {
-    issues.push(`Level 2 (${t2h.toFixed(1)}h) must be drawn after Level 1 (${t1h.toFixed(1)}h).`);
+    issues.push(`Level 2 (${t2h.toFixed(1)} h) must be drawn after Level 1 (${t1h.toFixed(1)} h).`);
   }
   if (t1h && t2h && t2h > t1h && (t2h - t1h) < 2) {
-    issues.push(`Levels only ${(t2h-t1h).toFixed(1)}h apart — at least 2h separation is recommended for a reliable Kel estimate (currently ${(t2h-t1h).toFixed(1)}h).`);
+    issues.push(`Levels only ${(t2h-t1h).toFixed(1)} h apart — at least 2 h separation is recommended for a reliable Kel estimate (currently ${(t2h-t1h).toFixed(1)} h).`);
   }
 
   if (issues.length) {
@@ -5180,8 +5180,8 @@ function formatElapsed(hr) {
   const days = Math.floor(a / 24), rem = a - days * 24;
   const sign = neg ? '−' : '';
   return days > 0
-    ? `${sign}${days}d ${rem.toFixed(1)}h (total ${sign}${a.toFixed(1)}h)`
-    : `${sign}${a.toFixed(1)}h`;
+    ? `${sign}${days} d ${rem.toFixed(1)} h (total ${sign}${a.toFixed(1)} h)`
+    : `${sign}${a.toFixed(1)} h`;
 }
 
 // Bind a dose-start/draw pair to a readout and a hidden hours field. Returns
@@ -5229,7 +5229,7 @@ function calcRLDelta() {
     warn.innerHTML = cautionHTML('Level appears during or at end of infusion — draw at least 30 min post-infusion for reliable Kel estimation.');
     warn.style.display = 'block';
   } else if (hr > 96) {
-    warn.innerHTML = cautionHTML(`Level drawn ${hr.toFixed(0)}h after dose — this is a long interval. Confirm dates are correct. Kel estimate may be less reliable at very low concentrations.`);
+    warn.innerHTML = cautionHTML(`Level drawn ${hr.toFixed(0)} h after dose — this is a long interval. Confirm dates are correct. Kel estimate may be less reliable at very low concentrations.`);
     warn.style.display = 'block';
   } else { warn.style.display = 'none'; }
 }
@@ -6011,7 +6011,7 @@ const INPUT_LIMITS = {
   level:  { min: 0.1,  max: 200,  label: 'Concentration',        unit: 'mg/L' },
   // UI plausibility limit for a haemodialysis session's length, not a clinical constant.
   hdHours: { min: 0.5, max: 12,   label: 'Session length',       unit: 'h' },
-  auc:    { min: 200,  max: 1200, label: 'Target AUC24',         unit: 'mg·h/L' },
+  auc:    { min: 200,  max: 1200, label: 'Target AUC₂₄',         unit: 'mg·h/L' },
   // UI plausibility limit (the field's own min/max), not a clinical constant.
   crclOverride: { min: 1, max: 250, label: 'CrCl override',      unit: 'mL/min' },
 };
@@ -7060,11 +7060,11 @@ function updateCrCl() {
       msgs.push(`Bauer volume in obesity: the Bauer summary in this project says to use ideal body weight for Vd `
         + `in obese patients; this calculator uses total body weight (0.70 L/kg TBW) because the textbook chapter `
         + `has not been verified. For this patient the peak, trough and loading dose on the Bauer volume may be `
-        + `materially different from an IBW-based volume. AUC24 depends on clearance only and is not affected.`);
+        + `materially different from an IBW-based volume. AUC₂₄ depends on clearance only and is not affected.`);
     }
     if (nearMatzkeBreak(crcl) && s('vd-model') === 'matzke') {
       msgs.push(`CrCl is near 60 mL/min, where the Matzke Vd steps between 0.89 and `
-        + `0.72 L/kg. Peak and trough shift ~5% across that boundary; AUC24 does not.`);
+        + `0.72 L/kg. Peak and trough shift ~5% across that boundary; AUC₂₄ does not.`);
     }
     adv.innerHTML = msgs.length ? msgs.map(m => `<div class="advisory-line">${cautionHTML(m)}</div>`).join('') : '';
     adv.style.display = msgs.length ? 'block' : 'none';
@@ -7445,8 +7445,8 @@ function calculate() {
     trough = trueTrough;
     auc24  = fitted.auc24;
     aucMethod = earlyLevel
-      ? `Ke ${adjKel.toFixed(4)} hr⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)}h after dose ${fitted.doseNumber} (not at steady state) · peak, trough and AUC₂₄ projected to steady state`
-      : `Ke ${adjKel.toFixed(4)} hr⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)}h${extrapolated ? ` · trough extrapolated ${extrapDelta>0?'forward':'back'} ${Math.abs(extrapDelta).toFixed(1)}h` : ' (true trough)'}`;
+      ? `Kel ${adjKel.toFixed(4)} h⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)} h after dose ${fitted.doseNumber} (not at steady state) · peak, trough and AUC₂₄ projected to steady state`
+      : `Kel ${adjKel.toFixed(4)} h⁻¹ fitted from ${levelVal} mg/L at ${tDoseToLvl.toFixed(1)} h${extrapolated ? ` · trough extrapolated ${extrapDelta>0?'forward':'back'} ${Math.abs(extrapDelta).toFixed(1)} h` : ' (true trough)'}`;
     // "Yes, >= 3 doses" is not steady state once t1/2 approaches tau.
     if (!earlyLevel) {
       const f3 = fractionOfSteadyState(adjKel, tau, 3);
@@ -7638,7 +7638,7 @@ function renderResults(d) {
     const delta = showOptDose || headRefused
       ? `<p class="tx-action-body">Current ${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, trough ${d.trough.toFixed(1)} mg/L (${troughBasisWord}).</p>`
       : '';
-    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(curBreach ? d.curHardFail.join('; ') : ceilingContinue ? `${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}; trough ${d.trough.toFixed(1)} mg/L. It is not a regimen this tool would recommend, but the ceiling does not by itself make it unsafe (AUC₂₄ at most ${AUC24_ABSOLUTE_MAX}, trough under ${TROUGH_HIGH_MGL} mg/L), so it is not changed on that account.` : a.primary),
+    actionBlock = txActionHTML(recAction.tier, recAction.title, escHtml(curBreach ? userNotation(d.curHardFail.join('; ')) : ceilingContinue ? `${fmtRegimen(d.dose, d.tau)}: AUC₂₄ ${d.auc24.toFixed(0)} mg·h/L, within ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}; trough ${d.trough.toFixed(1)} mg/L. It is not a regimen this tool would recommend, but the ceiling does not by itself make it unsafe (AUC₂₄ at most ${AUC24_ABSOLUTE_MAX}, trough under ${TROUGH_HIGH_MGL} mg/L), so it is not changed on that account.` : a.primary),
       (recRat ? `<p class="tx-action-body">${recRat}</p>` : '') + delta);
   }
 
@@ -7745,7 +7745,7 @@ function renderResults(d) {
     cur: showOptDose || headRefused ? { dose: d.dose, tau: d.tau } : null,
     opt: verdictIsOpt || refusal ? null : { dose: d.optDose, tau: d.tau } });
   const explorerBody = refusal ? `
-    <p class="ev-lead">${escHtml(refusal.reason)}</p>
+    <p class="ev-lead">${escHtml(userNotation(refusal.reason))}</p>
     ${headRefused ? '' : troughCapBoundHTML(refusal)}
     ${txExplorerHTML(explorerHTML, 'Projected steady-state outcomes by dose and interval')}` : `
     <p class="ev-lead">At ${fmtFreq(d.tau)} the optimiser's dose is <strong>${fmtRegimen(d.optDose, d.tau)}</strong>.</p>
@@ -7838,7 +7838,7 @@ function renderTroughRefusal(d) {
   const sections = [
     txEvHTML('tx-ev-pk', 'PK parameters', `CL ${d.popClv.toFixed(2)} L/h · Vd ${d.vd.toFixed(1)} L · t½ ${d.popT12.toFixed(1)} h`, pkBody, false),
     txEvHTML('tx-ev-explorer', 'Dose explorer', 'For reference only: no regimen is recommended',
-      `<p class="ev-lead">For reference only. ${escHtml(d.reason)}</p>
+      `<p class="ev-lead">For reference only. ${escHtml(userNotation(d.reason))}</p>
       ${txExplorerHTML(explorerHTML, 'Projected steady-state outcomes by dose and interval')}`, false),
     txEvHTML('tx-ev-method', 'Method and limits', 'Decision support, not a prescription',
       txDisclaimerHTML('This tool is intended to support, not replace, clinical pharmacokinetic judgment. Dose recommendations should be verified against institutional protocols, patient-specific clinical context, and current guidelines (Rybak et al., ASHP/IDSA 2020). AinaDara v1.0 · Phase 1 (Trough-Based)'), false),
@@ -8232,8 +8232,8 @@ function calcPRNDose() {
   const urgency = hoursToRedose <= 0
     ? 'Level is already at or below the redosing threshold — dose now.'
     : hoursToRedose < 4
-    ? `Level will reach ${redoseThresh} mg/L in ~${hoursToRedose.toFixed(1)}h — dose soon.`
-    : `Level will reach ${redoseThresh} mg/L in ~${hoursToRedose.toFixed(1)}h.`;
+    ? `Level will reach ${redoseThresh} mg/L in ~${hoursToRedose.toFixed(1)} h — dose soon.`
+    : `Level will reach ${redoseThresh} mg/L in ~${hoursToRedose.toFixed(1)} h.`;
 
   document.getElementById('prn-result').innerHTML = txPrnResultHTML({ urgency, roundedDose, prnTinf, actualPeak,
     totalTimeToTrough, wbDose, mgKgRef, tbw, cAtRedose, redoseThresh, t12, troughMin });
@@ -13365,7 +13365,7 @@ function runBayesian() {
   const bOpt = validateOptionalFields([
     ['b-height',     'height', 'Height'],
     ['b-scr',        'scr',    'Serum creatinine'],
-    ['b-auc-target', 'auc',    'Target AUC24'],
+    ['b-auc-target', 'auc',    'Target AUC₂₄'],
   ]);
   if (!reportValidation(withPatientSex({ ok: bReq.ok && bOpt.ok,
                           errors: bReq.errors.concat(bOpt.errors),
@@ -13967,7 +13967,7 @@ function regimenNarrative(reg, timing) {
   // Doses in ISMP form (grams from 1,000 mg, decision 2026-09-28) and the
   // engine's own interval label in the verdict's lower case — "Q8H" → "q8h",
   // the same number: a detected 11.9 h is not rounded to 12 here.
-  const q = (lbl) => lbl == null ? lbl : String(lbl).replace(/^Q(.+)H$/, 'q$1h');
+  const q = proseFreq;
   const dose = reg.maintenanceDoseMg != null ? `${fmtDose(reg.maintenanceDoseMg)} ` : '';
   let s;
   if (reg.status === 'established' && reg.transitionDetected) {
@@ -14011,7 +14011,7 @@ function regimenNarrative(reg, timing) {
     s += ` The level was collected ${f(timing.hoursFromDoseStart)} h after the most recent dose`;
     if (timing.hoursUntilNominalNextDose != null && timing.hoursUntilNominalNextDose >= 0) {
       s += `, about ${f(timing.hoursUntilNominalNextDose)} h before the next nominal `
-        + `${reg.frequencyLabel || ''} dose`;
+        + `${q(reg.frequencyLabel) || ''} dose`;
     }
     s += ` — ${lbl}. Bayesian fitting uses the actual administration and level times.`;
   }
@@ -14074,13 +14074,13 @@ function inferCurrentRegimen(doses, CL_ind, V_ind, goti) {
   const detNote = document.getElementById('b-regimen-detected');
   if (detNote) {
     detNote.textContent = regimen.overrideActive
-      ? `Override active — projecting on ${regimen.frequencyLabel}. Detected: `
-        + `${detected.frequencyLabel || 'no consistent schedule'}`
+      ? `Override active — projecting on ${proseFreq(regimen.frequencyLabel)}. Detected: `
+        + `${proseFreq(detected.frequencyLabel) || 'no consistent schedule'}`
         + `${detected.frequencyLabel ? ' (' + detected.confidence + ' confidence)' : ''}. `
         + `Bayesian fitting still uses the actual dose and level times.`
-      : `Detected ${detected.frequencyLabel || 'no consistent schedule'}`
+      : `Detected ${proseFreq(detected.frequencyLabel) || 'no consistent schedule'}`
         + `${detected.frequencyLabel ? ' — ' + detected.confidence + ' confidence' : ''}`
-        + `${detected.transitionDetected ? ', transition from ' + frequencyLabel(detected.priorIntervalHours) : ''}.`;
+        + `${detected.transitionDetected ? ', transition from ' + proseFreq(frequencyLabel(detected.priorIntervalHours)) : ''}.`;
   }
   let tau = regimen.intervalHours;
   const modalTau = regimen.priorIntervalHours;
@@ -14155,6 +14155,11 @@ function fmtDose(mg) {
   return `${Math.round(n)} mg`;
 }
 function fmtFreq(tau) { return `q${fmtTau(tau)}h`; }
+// The engine's interval label ("Q12H") in the notation of every sentence a user reads ("q12h"); the engine's
+// own string is untouched, so its parity is.
+function proseFreq(lbl) { return lbl == null ? lbl : String(lbl).replace(/^Q(.+)H$/, 'q$1h'); }
+// A sentence the engine returned (a hard-limit reason, a refusal), set in the notation of the page: AUC₂₄, q12h.
+function userNotation(s) { return String(s == null ? '' : s).replace(/AUC24\b/g, 'AUC₂₄').replace(/\bQ(\d+(?:\.\d)?)H\b/g, 'q$1h'); }
 function fmtRegimen(mg, tau) { return `${fmtDose(mg)} IV ${fmtFreq(tau)}`; }
 function fmtHrs(h) { return `${+Number(h).toFixed(2)} h`; }
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -14820,7 +14825,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   if (r.rec && !r.rec.noSolution && r.rec.flags && r.rec.flags.length && !(r.model === 'goti' && r.dial)) {
     for (const fl of r.rec.flags) {
       notes.push({ tier: fl.level === 'danger' ? 'alarm' : fl.level === 'warning' ? 'caution' : 'info',
-                   word: fl.level === 'danger' ? 'Recommendation limit' : 'Recommendation note', html: escHtml(fl.text) });
+                   word: fl.level === 'danger' ? 'Recommendation limit' : 'Recommendation note', html: escHtml(userNotation(fl.text)) });
     }
   }
 
@@ -14926,7 +14931,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     verdict = `
       ${holdHeadHTML(nsHold)}
       <h3 class="vx-regimen vx-regimen-hold" id="vx-regimen">No regimen recommended</h3>
-      <p class="vx-hold">${escHtml(rec.reason || '')}</p>`;
+      <p class="vx-hold">${escHtml(userNotation(rec.reason))}</p>`;
   }
 
   // ── Haemodialysis (D16): the answer is a dose after the next session, or the
@@ -14950,7 +14955,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       : hdRec.need ? 'A post-HD dose needs the next two upcoming sessions.'
       : hdRec.kind === 'planned' ? `Planned dose after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}.`
       : hdRec.kind === 'hold' ? `No dose after session ${hdRec.session}: the fitted pre-HD level at session ${hdRec.sizing} is ${hdRec.pre.toFixed(1)} mg/L.`
-      : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC24 ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
+      : `${fmtDose(hdRec.mg)} IV after session ${hdRec.session}: fitted pre-HD ${hdRec.pre.toFixed(1)} mg/L at session ${hdRec.sizing}, AUC₂₄ ${hdRec.auc24.toFixed(0)} over the 24 h before it.`;
   }
   const confReason = confidenceLead(conf);
   // On Hughes the covariates the fit used are checked against the built range too (D27); the Models
@@ -16875,7 +16880,7 @@ function _buildPrintReport() {
   // from it — an ARC warning beside a dose computed for CrCl 61.
   const fitScrN = r && r.agCtx && r.agCtx.scr > 0 ? r.agCtx.scr : null;
   const scrSerial = !!(r && r.agCtx && r.agCtx.scrSource === 'serial');
-  const scr = fitScrN != null ? String(fitScrN)
+  const scr = fitScrN != null ? (Number.isInteger(fitScrN) ? fitScrN.toFixed(1) : String(fitScrN))
     : (document.getElementById('b-scr')?.value || document.getElementById('scr')?.value || '—');
   const htM = ht && ht !== '—' ? parseFloat(ht)/100 : null;
   const bmi = htM && tbw !== '—' ? (parseFloat(tbw)/(htM*htM)).toFixed(1) : '—';
@@ -17901,7 +17906,7 @@ function txRefusalVerdictHTML(o) {
     <section class="tx-verdict" aria-labelledby="tx-regimen">
       ${o.hold || ''}
       <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(o.word)}</h3>
-      <p class="vx-hold">${escHtml(o.reason)}</p>
+      <p class="vx-hold">${escHtml(userNotation(o.reason))}</p>
       ${o.action || ''}
       ${o.flags ? `<div class="tx-flags">${o.flags}</div>` : ''}
       <p class="tx-basis">${o.basis}</p>
@@ -18135,7 +18140,7 @@ function _prRecommendation(r, screen) {
     // The refusal's hold (final review I2), as on screen.
     h += holdHeadHTML(noSolutionHold(r, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.curRegimen));
     h += `<p class="pr-regimen pr-hold">No regimen offered.</p>`;
-    h += `<p class="pr-metric">${escHtml(r.rec.reason || 'Every candidate breached a hard safety limit.')}</p>`;
+    h += `<p class="pr-metric">${escHtml(userNotation(r.rec.reason) || 'Every candidate breached a hard safety limit.')}</p>`;
     h += `<p class="pr-metric">Target AUC₂₄: ${r.targetAUC} mg·h/L</p>`;
   } else if (r.rec && r.lowCrClHold) {
     h += `<p class="pr-regimen pr-hold">${SEVERE_RENAL.word}.</p>`;

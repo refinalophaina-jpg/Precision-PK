@@ -2147,8 +2147,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('formatElapsed names the days for a multi-day span', ()=>{
-    assert(/2d/.test(formatElapsed(49.63)), `expected days in "${formatElapsed(49.63)}"`);
-    assert(!/\dd /.test(formatElapsed(16.9)), `no day part for a short span: "${formatElapsed(16.9)}"`);
+    assert(/2 d/.test(formatElapsed(49.63)), `expected days in "${formatElapsed(49.63)}"`);
+    assert(!/\d d /.test(formatElapsed(16.9)), `no day part for a short span: "${formatElapsed(16.9)}"`);
   });
 
   test('the silent-corruption case now computes the right volume', ()=>{
@@ -3229,8 +3229,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/ctx\.activeModel === 'goti' && ctx\.dial\) \? 'goti-hd'/.test(code), 'active key must map to goti-hd');
   });
   test('formatElapsed never prints "24.0h" of remainder', ()=>{
-    assert(formatElapsed(47.96) === '2d 0.0h (total 48.0h)', formatElapsed(47.96));
-    assert(formatElapsed(23.96) === '1d 0.0h (total 24.0h)', formatElapsed(23.96));
+    assert(formatElapsed(47.96) === '2 d 0.0 h (total 48.0 h)', formatElapsed(47.96));
+    assert(formatElapsed(23.96) === '1 d 0.0 h (total 24.0 h)', formatElapsed(23.96));
   });
   test('CrCl override is range-checked, not clamped or passed through', ()=>{
     assert(checkValue('3000', 'crclOverride').ok === false && checkValue('45', 'crclOverride').ok === true, '');

@@ -2087,6 +2087,60 @@ async function enterCourse(page) {
     results.problems.push(...fAttr.kept);
     await fctx.close();
   }
+  // D27 (UI review M3, M8 print SCr, Task 20b): one notation. "h" not "hr"; "Kel … h⁻¹"; a space before every
+  // unit; "q12h" in prose; "AUC₂₄" in every sentence the user reads; the print shows the SCr as typed.
+  {
+    const BAD = { hr: /\bhr\b|hr⁻¹|\/hr/, glued: /(?<![A-Za-z\d.])\d+(\.\d+)?h\b/, caps: /\bQ\d+(\.\d)?H\b/, auc24: /AUC24\b/, ke: /\bKe \d/ };
+    const scan = (t) => { const o = {}; for (const [k, re] of Object.entries(BAD)) { const m = t.match(new RegExp(re.source, 'g')); if (m) o[k] = [...new Set(m)].slice(0, 4); } return o; };
+    const pageText = (pg) => pg.evaluate(() => { [...document.querySelectorAll('details')].forEach(d => { d.open = true; });
+      const out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let t = w.nextNode(); t; t = w.nextNode()) { const e = t.parentElement;
+        if (e && !e.closest('.sr-only, #sr-announce, script, style') && e.checkVisibility()) out.push(t.textContent); }
+      return out.join(' ').replace(/\s+/g, ' '); });
+    const nctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const n = await nctx.newPage();
+    const nProblems = watch(n, 'notation');
+    await n.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await n.goto(BASE + '?v=nota-' + Date.now(), { waitUntil: 'networkidle' });
+    await n.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await typeInto(n, '#age', '60'); await typeInto(n, '#tbw', '80'); await typeInto(n, '#height', '175'); await typeInto(n, '#scr', '1.0');
+    await n.locator('[data-onclick="k9"]').first().click();
+    await n.locator('#mode-btn-level').click();
+    await typeInto(n, '#dose', '1000'); await n.locator('#interval').selectOption('12');
+    await n.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+    await typeInto(n, '#level-val', '24');
+    await n.locator('#time-dose-given-date').fill(D2); await typeInto(n, '#time-dose-given-time', '0800');
+    await n.locator('#time-level-drawn-date').fill(D2); await typeInto(n, '#time-level-drawn-time', '1930');
+    const tIn = scan(await pageText(n));
+    await n.locator('[data-onclick="k31"]').click(); await n.waitForSelector('#results-content .tx-legend', { timeout: 20000 }); await n.waitForTimeout(500);
+    const tOut = scan(await pageText(n));
+    const tKel = await n.evaluate(() => /Kel \d\.\d{4} h⁻¹ fitted from [\d.]+ mg\/L at [\d.]+ h/.test(document.getElementById('results-content').innerText.replace(/\s+/g, ' ')));
+    ok('D27: Trough inputs and level-time hints: "h" not "hr", a space before every unit', Object.keys(tIn).length === 0, JSON.stringify(tIn));
+    ok('D27: Trough result: "Kel … h⁻¹", "11.5 h", "q12h", AUC₂₄ with its subscript in every sentence', Object.keys(tOut).length === 0 && tKel, JSON.stringify({ tOut, tKel }));
+    // AUC Precision, a continued regimen: the detection note says q12h; the print shows SCr 1.0 as typed.
+    await n.locator('[data-onclick="k2"]').click();
+    await typeInto(n, '#b-age', '55'); await typeInto(n, '#b-tbw', '72'); await typeInto(n, '#b-height', '176'); await typeInto(n, '#b-scr', '1.0');
+    await n.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await n.locator('[data-onclick="k43"]').click();
+      await typeInto(n, `#b-dose-mg-${i}`, '1250'); await typeInto(n, `#b-dose-tinf-${i}`, '1.5');
+      await n.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(n, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await n.locator('[data-onclick="k46"]').click();
+    await typeInto(n, '#b-lvl-conc-1', '16'); await n.locator('#b-lvl-date-1').fill(day(0)); await typeInto(n, '#b-lvl-time-1', '07:30');
+    const aIn = scan(await pageText(n));
+    await n.locator('[data-onclick="k47"]').click(); await n.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await n.waitForTimeout(400);
+    const aOut = scan(await pageText(n));
+    const scrCell = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const td = [...document.querySelectorAll('#print-report td')].find(c => /^SCr\b/.test(c.textContent.trim()));
+      return td ? td.nextElementSibling.textContent.trim() : null; });
+    ok('D27: AUC Precision: the detection note and the result read q12h, "h", AUC₂₄, with spaces', Object.keys(aIn).length === 0 && Object.keys(aOut).length === 0, JSON.stringify({ aIn, aOut }));
+    ok('D27: print shows SCr as typed ("1.0 mg/dL")', scrCell === '1.0 mg/dL', String(scrCell));
+    const nAttr = await attributeInjected(n, nProblems);
+    results.problems.push(...nAttr.kept);
+    await nctx.close();
+  }
   await browser.close();
 
   results.checks = checks;
