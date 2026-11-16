@@ -9273,7 +9273,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   };
   const one = [{ mg: 1500, tinfH: 2, timeH: 0 }], rec55 = { dose: 1000, tau: 12, tinfH: 1, auc24: 400, action: 'change' };
   const plan55 = (r) => fn45('firstDosePlan')(r, rec55, r.fitNowH, null, null);
-  test('45.55 U6a: a Hold resting only on a level drawn after the first dose (before the second) is a caution on every model; a later level holds; R55 for the fitted basis; Goti-HD unchanged [T21d]', () => {
+  test('45.55 U6a: a Hold resting only on a level drawn after the first dose (before the second) is a caution on every model; a later level holds; both readings at 20 or more hold (R59, which replaced R55); Goti-HD unchanged [T21d]', () => {
     // A first dose with no load: 1.5 g over 2 h at 0 h; 40 mg/L at 9 h; now 9.5 h; the answered regimen due at 12 h.
     const firstLv = [{ conc: 40, timeH: 9 }];
     for (const model of ['buelga', 'goti', 'hughes']) {

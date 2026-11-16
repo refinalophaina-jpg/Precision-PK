@@ -1649,8 +1649,7 @@ together. The engine moves.
 
 New unit tests are SUITE 44 in `phase2d_validation.cjs` (59 tests; 70 after the final review's fixes; 76 after wave 2). New browser checks are the `D26:`
 checks in `docs/audit/browser-flows.cjs` (44 checks; 53 after the final review's fixes; 54 after wave 2, under the production CSP). Every fix began with a
-test seen failing. The task reports in `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/` hold the
-RED and GREEN output.
+test seen failing; the RED and GREEN output was kept in the release's working notes (not in this repository).
 
 - **Code C1: saving a profile un-marked a stale result** (Task 1). `saveCurrentProfile` no longer assigns
   `bState.result` or `resultFingerprint`. "Saved without the fit" comes from `snapshot.dirty`. The
@@ -1976,7 +1975,7 @@ first 40; the full list was taken with the print limit lifted. Every difference 
 A whole-branch review of `edc5b53..73a1936` on the most capable model found one Critical and six
 Important issues, mostly about the new Hold, and named the deferred minors. All were fixed in one wave,
 each test-first. The new unit tests are SUITE 44.27–44.36 (11 tests). The new browser checks are the nine
-`D26: … final review` checks. The RED and GREEN runs are under `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/t8/final-*`.
+`D26: … final review` checks. The RED and GREEN runs were kept in the release's working notes (not in this repository).
 
 **The rulings.**
 - **R25:** fix now with the safe minimum for the three questions the user owns (I1, I2, I6). Those
@@ -2599,7 +2598,7 @@ patient's own level at the time held. Fired is a share of patients; true and fal
 **R59 and U7 in the probe (the final review's fix wave; both seeds regenerated).** The last columns of the outputs are
 now the shipped rule (U5, U6a bounded by U7, R59), and a new column counts the U7 Holds: a measured level alone, drawn
 in the first interval more than 12 h after the first dose (a U6a caution before U7).
-- **Designs whose levels fall within 12 h of the first dose** (load-one 6–10 h, load-two about 4–5 h and 11.5 h,
+- **Designs whose levels fall within 12 h of the first dose** (load-one 6–10 h, load-two about 3.5–4.5 h and 11.5 h,
   dose-one 2–11 h) and the steady-state designs: every table cell is identical to the earlier output on both seeds,
   and the U7 column is 0 everywhere, except the cells R59 moves. There a Goti `fitted-first` caution is now a Hold:
   seed 2111 Goti load-two (U6 cautions 6 → 5, Holds 0 → 1, a false one); seed 31 Goti load-one (10 → 9, 0 → 1, true)
