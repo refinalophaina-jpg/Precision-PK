@@ -2614,6 +2614,31 @@ async function enterCourse(page) {
     ok('D27: a Trough hold whose level fell to 20 mg/L before the calculation reads "not before" now, never a time gone, and says when it fell',
        tNow.act === `Hold: next dose not before ${tNow.now}` && /fell to 20 mg\/L [\d.]+ h after the last dose started \(by \d{1,2} [A-Z][a-z]{2} \d\d:\d\d\), before this calculation/.test(tNow.why)
        && tNow.said.indexOf(`Hold: next dose not before ${tNow.now}`) >= 0, JSON.stringify(tNow));
+    // Two-level and random-level refusals name only intervals their select offers (q8h-q48h, never q6h), and the
+    // no-interval alarm names the regimen whose AUC it quotes.
+    const verdictText = () => b.evaluate(() => { const t = ((document.querySelector('#results-content') || {}).innerText || '').replace(/\s+/g, ' ');
+      return t.slice(0, t.indexOf('Based on') > 0 ? t.indexOf('Based on') : 900); });
+    await b.locator('#mode-btn-twolevels').click();
+    await typeInto(b, '#tl-dose', '1000'); await typeInto(b, '#tl-tinf', '1'); await b.locator('#tl-tau').selectOption('24');
+    await typeInto(b, '#tl-c1', '13.7'); await typeInto(b, '#tl-c2', '8.0');
+    await b.locator('#tl-dose-time-date').fill(day(0)); await typeInto(b, '#tl-dose-time-time', '0000');
+    await b.locator('#tl-t1-time-date').fill(day(0)); await typeInto(b, '#tl-t1-time-time', '0200');
+    await b.locator('#tl-t2-time-date').fill(day(0)); await typeInto(b, '#tl-t2-time-time', '0600');
+    await b.locator('[data-onclick="k31"]').click(); await b.waitForTimeout(500);
+    const tlv = await verdictText();
+    ok('D27: a two-level refusal at q24h names the intervals that work and never q6h, which two-level mode cannot select',
+       /No regimen recommended/.test(tlv) && /IV q8h \(AUC₂₄ \d+\)/.test(tlv) && !/q6h/.test(tlv), tlv.slice(0, 500));
+    await typeInto(b, '#age', '25'); await typeInto(b, '#tbw', '95'); await typeInto(b, '#height', '185'); await typeInto(b, '#scr', '0.5');
+    await b.locator('#mode-btn-randomlevel').click();
+    await typeInto(b, '#rl-dose', '1000'); await typeInto(b, '#rl-tinf', '1'); await typeInto(b, '#rl-c', '3');
+    await b.locator('#rl-dose-time-date').fill(day(0)); await typeInto(b, '#rl-dose-time-time', '0000');
+    await b.locator('#rl-draw-time-date').fill(day(0)); await typeInto(b, '#rl-draw-time-time', '0800');
+    await b.locator('#rl-tau').selectOption('12');
+    await b.locator('[data-onclick="k31"]').click(); await b.waitForTimeout(500);
+    const rlv = await verdictText();
+    ok('D27: a random-level refusal says "No interval from q8h to q48h", and its alarm names the regimen it quotes (1.5 g IV q8h, 357) beside the chosen interval\'s 317',
+       /No interval from q8h to q48h reaches/.test(rlv) && /The highest admissible regimen, 1\.5 g IV q8h, falls short at AUC₂₄ 357\./.test(rlv)
+       && /2 g IV q12h gives AUC₂₄ 317/.test(rlv) && !/q6h/.test(rlv), rlv.slice(0, 700));
     const bAttr = await attributeInjected(b, bProblems);
     results.problems.push(...bAttr.kept);
     await bctx.close();

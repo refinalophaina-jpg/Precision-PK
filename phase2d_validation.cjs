@@ -6420,7 +6420,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/At q12h the target cannot be reached within the conventional ceilings/.test(tl.text) && /1\.5 g IV q8h/.test(tl.text)
       && !/alternative agent|specialist guidance/.test(tl.text), `two-level: ${tl.text.slice(0, 700)}`);
     assert(rl.text.indexOf('The target cannot be reached within the conventional ceilings') > 0 && /alternative agent/.test(rl.text)
-      && /No interval from q6h to q48h reaches/.test(rl.text), `random-level: ${rl.text.slice(0, 700)}`);
+      && /No interval from q8h to q48h reaches/.test(rl.text), `random-level: ${rl.text.slice(0, 700)}`);   // Task 21b: random-level offers q8h-q48h
     assert(/id="prn-redose-thresh"/.test(rl.h), 'random-level keeps the level-based PRN calculator');
   });
 
@@ -9058,13 +9058,49 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/fpProj\.holdPlannedH != null|holdHorizonText\(fpProj\)/.test(fn45('refreshProfileGraph').toString()) && !/after the dose was due/.test(fn45('refreshProfileGraph').toString()),
       'the projection note names the same origin');
   });
+  // Two-level and random-level refusals name only intervals the user can select (ledger Task 3): TROUGH_INTERVALS_H
+  // has q6h, but #tl-tau and #rl-tau offer q8h-q48h. And the all-interval alarm names the regimen whose AUC it quotes
+  // (it quoted the highest of any interval, 357, beside a reason line quoting the chosen interval's 317).
+  test('45.49 Trough refusals: two-level and random-level name only the intervals their select offers, and the alarm names the regimen it quotes [T21b]', () => {
+    const src = fs.readFileSync(htmlPath, 'utf8');
+    const opts = (id) => { const m = src.match(new RegExp(`<select id="${id}"[^>]*>([\\s\\S]*?)</select>`)); return m ? [...m[1].matchAll(/value="(\d+)"/g)].map(x => +x[1]) : null; };
+    const all = run45('TROUGH_INTERVALS_H'), lvl = run45('typeof TROUGH_LEVEL_INTERVALS_H === "undefined" ? null : TROUGH_LEVEL_INTERVALS_H');
+    assert(JSON.stringify(opts('interval')) === JSON.stringify(all) && JSON.stringify(opts('init-interval')) === JSON.stringify(all), `steady-state and initial selects: ${opts('interval')} / ${all}`);
+    assert(lvl && JSON.stringify(opts('tl-tau')) === JSON.stringify(lvl) && JSON.stringify(opts('rl-tau')) === JSON.stringify(lvl), `two-level and random-level selects: ${opts('tl-tau')} / ${lvl}`);
+    // CL 8 L/h, V 60 L at q24h (44.8e): q6h (1 g, AUC 500), q8h and q12h reach the band within the ceilings.
+    const fod = fn45('findOptimalDose');
+    assert(fod(10, 20, 24, 1, 8 / 60, 60, 8).others.some(x => x.tau === 6), 'the steady-state and initial modes still name q6h');
+    const o = fod(10, 20, 24, 1, 8 / 60, 60, 8, false, lvl);
+    assert(o.refused && o.others.length > 0 && o.others.every(x => lvl.indexOf(x.tau) >= 0) && !/q6h/.test(o.reason), `level modes: ${o.reason}`);
+    // Rendered: two levels after a first 1 g dose (1 h), 13.7 mg/L at 2 h and 8.0 at 6 h (CL about 8 L/h), q24h chosen.
+    const { trough44 } = __suiteShared;
+    const tl = trough44('twolevels', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, 'tl-dose': 1000, 'tl-tinf': 1, 'tl-tau': 24,
+      'tl-c1': 13.7, 'tl-c2': 8.0, 'tl-dose-time': '2026-11-14T00:00', 'tl-t1-time': '2026-11-14T02:00', 'tl-t2-time': '2026-11-14T06:00',
+      'tl-t1-hours': 2, 'tl-t2-hours': 6 });
+    const verdict = (t) => t.slice(0, t.indexOf('Based on'));   // the refusal, its reason and the cap-bound note
+    assert(/No regimen recommended/.test(tl.text) && /IV q8h/.test(verdict(tl.text)) && !/q6h/.test(verdict(tl.text)), `two-level: ${tl.text.slice(0, 600)}`);
+    const rl = trough44('randomlevel', 'M', { age: 60, tbw: 80, height: 178, scr: 1.0, 'rl-dose': 1000, 'rl-tinf': 1, 'rl-tau': 24,
+      'rl-c': 8.0, 'rl-dose-time': '2026-11-14T00:00', 'rl-draw-time': '2026-11-14T06:00' });
+    assert(/No regimen recommended/.test(rl.text) && verdict(rl.text).length > 40 && !/q6h/.test(verdict(rl.text)), `random-level: ${rl.text.slice(0, 600)}`);
+    // The no-interval alarm: 44.8b's random-level patient (CL 12.6 L/h): q12h's highest 2 g reaches 317, q8h's 1.5 g 357.
+    const rl2 = trough44('randomlevel', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'rl-dose': 1000, 'rl-tinf': 1, 'rl-tau': 12,
+      'rl-c': 3, 'rl-dose-time': '2026-11-14T00:00', 'rl-draw-time': '2026-11-14T08:00' });
+    const q = rl2.text.match(/at this clearance\. The highest admissible regimen, ([\d.]+ g IV q(\d+)h), falls short at AUC₂₄ (\d+)\./);
+    assert(q && q[1] === '1.5 g IV q8h' && q[3] === '357' && /the highest admissible, 2 g IV q12h gives AUC₂₄ 317/.test(rl2.text) && /No interval from q8h to q48h reaches/.test(rl2.text),
+      `the alarm names its regimen: ${rl2.text.slice(0, 700)}`);
+    // The regimen named is the one whose AUC is quoted (unit, at the same clearance on the two-level/random-level list).
+    const f = fod(10, 20, 12, 1, 12.6 / 60, 60, 12.6, false, lvl);
+    assert(f.highestAny && f.highestAny.auc === f.highestAucAny && Math.abs(f.highestAny.auc - f.highestAny.dose * 24 / f.highestAny.tau / 12.6) < 1e-9
+      && f.highestAny.tau !== 12 && fn45('troughCapBoundHTML')(f).indexOf(`The highest admissible regimen, ${fn45('fmtRegimen')(f.highestAny.dose, f.highestAny.tau)}, falls short at AUC₂₄ ${f.highestAny.auc.toFixed(0)}`) >= 0,
+      `unit: ${JSON.stringify(f.highestAny)} ${fn45('troughCapBoundHTML')(f).replace(/<[^>]+>/g, '').slice(0, 300)}`);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 607;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.48 + D27 redraw)
+const EXPECTED_TOTAL = 608;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.49 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

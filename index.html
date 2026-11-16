@@ -6642,8 +6642,12 @@ function calcAUC(dose, tau, clv) {
 // The intervals the Trough module offers (the interval selects' options). A list of choices,
 // not a clinical constant: a refusal names which of them reach 400–600 within the ceilings.
 const TROUGH_INTERVALS_H = [6, 8, 12, 18, 24, 36, 48];
+// The two-level and random-level selects (#tl-tau, #rl-tau) offer q8h-q48h only, so their refusals name
+// only these (Task 21b; ledger Task 3: a refusal named q6h, which those modes cannot select).
+const TROUGH_LEVEL_INTERVALS_H = [8, 12, 18, 24, 36, 48];
 // alone: judge this interval only (the per-interval call a refusal makes for the others).
-function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv, alone) {
+// intervals: the intervals the mode on screen can select (TROUGH_INTERVALS_H when omitted).
+function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv, alone, intervals) {
   const all = [];
   for(let d = MATRIX_DOSE_STEP; d <= DOSE_MAX_PER_DOSE_MG; d += MATRIX_DOSE_STEP) {
     const pt  = calcPeakTrough(d, tau, tinf, kel, vd);
@@ -6660,17 +6664,21 @@ function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv, alone) {
     if (alone) return r;
     // Task 3 review (ruling R7): the refusal stays at the chosen interval, and names the
     // intervals that do reach 400–600 within the ceilings, each from this same function.
-    const each = TROUGH_INTERVALS_H.filter(t => t !== tau && t > tinf)
+    const list = Array.isArray(intervals) && intervals.length ? intervals : TROUGH_INTERVALS_H;
+    const each = list.filter(t => t !== tau && t > tinf)
       .map(t => ({ tau: t, r: findOptimalDose(troughMin, troughMax, t, tinf, kel, vd, clv, true) }));
     r.others = each.filter(x => !x.r.refused).map(x => ({ tau: x.tau, dose: x.r.dose, auc: x.r.auc }));
     // With no interval in reach, the highest exposure any interval allows within the ceilings
-    // is what AUC Precision's all-interval cap-bound alarm quotes.
-    r.highestAucAny = Math.max(r.highest && r.capBound ? r.highest.auc : -Infinity,
-      ...each.filter(x => x.r.capBound).map(x => x.r.highest.auc));
+    // is what AUC Precision's all-interval cap-bound alarm quotes; highestAny is its regimen,
+    // which the alarm names (Task 21b; it quoted 357 at q8h beside the reason line's 317 at q12h).
+    const bound = (r.highest && r.capBound ? [{ tau, h: r.highest }] : []).concat(each.filter(x => x.r.capBound).map(x => ({ tau: x.tau, h: x.r.highest })));
+    r.highestAucAny = Math.max(-Infinity, ...bound.map(x => x.h.auc));
+    const top = bound.find(x => x.h.auc === r.highestAucAny);
+    r.highestAny = top ? { dose: top.h.dose, tau: top.tau, auc: top.h.auc } : null;
     r.reason = `${r.why} ` + (r.others.length
       ? `${r.others.length === 1 ? 'This interval reaches' : 'These intervals reach'} AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} within the ceilings: `
         + r.others.map(x => `${fmtRegimen(x.dose, x.tau)} (AUC₂₄ ${x.auc.toFixed(0)})`).join('; ') + '.'
-      : `No interval from q${TROUGH_INTERVALS_H[0]}h to q${TROUGH_INTERVALS_H[TROUGH_INTERVALS_H.length - 1]}h reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} within the ceilings.`);
+      : `No interval from q${list[0]}h to q${list[list.length - 1]}h reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} within the ceilings.`);
     return r;
   }
 
@@ -7170,7 +7178,7 @@ function calculate() {
 
     const indClv = indKel * popVd;
     const indT12 = halfLife(indKel);
-    const rlOpt  = findOptimalDose(troughMin, troughMax, rlTau, rlTinf, indKel, popVd, indClv);
+    const rlOpt  = findOptimalDose(troughMin, troughMax, rlTau, rlTinf, indKel, popVd, indClv, false, TROUGH_LEVEL_INTERVALS_H);
     // The final review (I4): the hold, as in level and two-level modes. The next dose is due at
     // the interval the patient is on (steady state) or, after a first dose, at the interval
     // chosen (as the two-level first-dose basis). A level after the infusion is carried down
@@ -7253,7 +7261,7 @@ function calculate() {
     if (!tlPK) { showFormErrors('trough', 'Could not solve PK — check that Level 2 is lower than Level 1 and both are post-infusion.', [['tl-c1', 'tl-c2', 'tl-t1-time', 'tl-t2-time']]); return; }
 
     // Find optimal maintenance dose using individual PK
-    const tlOpt = findOptimalDose(troughMin, troughMax, tlTau, tlTinf, tlPK.kel, tlPK.vd, tlPK.clv);
+    const tlOpt = findOptimalDose(troughMin, troughMax, tlTau, tlTinf, tlPK.kel, tlPK.vd, tlPK.clv, false, TROUGH_LEVEL_INTERVALS_H);
     // D26: the fitted level when the next dose is due — on the interval the patient was on
     // (steady state), else the recommended one — from level 2 down the fitted decline.
     const tlDueH = state.tlBasis === 'steadystate' ? accumTau : tlTau;
@@ -11606,9 +11614,10 @@ function rankRegimenCandidates(results, targetAUC) {
 // regimen that IS the highest admissible one (the optimizer's answer), or of the
 // highest admissible one when the answer is another regimen (D25: a current regimen
 // continued or changed at high clearance kept only a caution until the review).
-function capBoundFlag(highestAuc24, isThis) {
+// regimen (optional, Task 21b): the regimen whose AUC is quoted, named when it is not the one shown.
+function capBoundFlag(highestAuc24, isThis, regimen) {
   return { level:'danger',
-    text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. ${isThis ? 'This is the highest admissible regimen and it falls' : 'The highest admissible regimen falls'} short at AUC₂₄ ${highestAuc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` };
+    text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. ${isThis ? 'This is the highest admissible regimen and it falls' : `The highest admissible regimen${regimen ? `, ${regimen},` : ''} falls`} short at AUC₂₄ ${highestAuc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` };
 }
 // Whether a flag is that alarm. One test, read by regimenDecision (which keeps one copy of it)
 // and by nextLevelFit (which reads it off the answer rather than judging the ceiling again).
@@ -18072,8 +18081,8 @@ function troughCapBoundHTML(refusal) {
     `At ${fmtFreq(refusal.tau)} the target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, `
     + `${DOSE_MAX_TDD_MG} mg per day): the highest admissible regimen, ${fmtRegimen(refusal.highest.dose, refusal.tau)}, falls short at `
     + `AUC₂₄ ${refusal.highest.auc.toFixed(0)}. ${others.length === 1 ? 'Another interval reaches' : 'Other intervals reach'} it within them, as named above.`) });
-  const auc = Number.isFinite(refusal.highestAucAny) ? refusal.highestAucAny : refusal.highest.auc;
-  return noteHTML({ tier: 'alarm', word: 'Recommendation limit', html: escHtml(capBoundFlag(auc, false).text) });
+  const top = refusal.highestAny && Number.isFinite(refusal.highestAucAny) ? refusal.highestAny : { dose: refusal.highest.dose, tau: refusal.tau, auc: refusal.highest.auc };
+  return noteHTML({ tier: 'alarm', word: 'Recommendation limit', html: escHtml(capBoundFlag(top.auc, false, fmtRegimen(top.dose, top.tau)).text) });
 }
 // The screen reader's line for a refusal: the hold first when there is one.
 function troughRefusalSaid(word, reason, hold) {
