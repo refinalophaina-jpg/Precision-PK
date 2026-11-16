@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~18,000 lines / ~1.06 MB (2026-11-15).
+~18,600 lines / ~1.12 MB (2026-11-15, v3.15.0).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -28,9 +28,9 @@ git hash-object index.html
 
 | Range (approx) | Contents |
 |---|---|
-| 1–2,810 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
-| 2,811–4,067 | Markup — print report, header, module tabs, the two module panels |
-| 4,068–end | One inline `<script>` — the whole engine and UI |
+| 1–2,815 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
+| 2,816–4,073 | Markup — print report, header, module tabs, the two module panels |
+| 4,074–end | One inline `<script>` — the whole engine and UI |
 
 **Two modules** (tabs, switched by `switchModule()`):
 
@@ -259,6 +259,41 @@ logic, the engine moves.
   review` browser checks pin them. The user ruled the three open questions on 2026-11-15 (U1–U3), and U4
   removed the superseded March build from `archive/`.
 
+**Release 2 (D27, v3.15.0):** the review's test, model and UI findings; two Hold cautions; the engine moves.
+- **Tests that can fail:** Hughes constants parsed (rule 6); `EXPECTED_TOTAL` pins the count in all three
+  suites; `docs/audit/mutation.cjs` (60 mutants, in memory, never writes `index.html`) and CI
+  (`.github/workflows/test.yml`) on every push.
+- **Resize and theme repaint canvases only** (`redrawAllCanvases`); the result is never rebuilt.
+- **MAP starts:** three-parameter fits also start at ±1 and ±2 SD on Vp (`mapFit(…, omega2Vp)`). Hughes missed
+  the lower minimum 7 and 6 times in 10,500 fits per seed before, 0 after; Goti 0 throughout. The corpus Hughes
+  case moves (parity below).
+- **Hughes out of population:** one caution line in the confidence slot names every Table 1 covariate outside
+  its range (`HUGHES_MIN/MAX_*`, the values the fit used); the patient's own numbers, never rounded onto a bound.
+- **Early levels:** a fit whose MOST RECENT level is before steady state (`latestLevelEarly` over
+  `earlyLevelFractions`, below `SS_FRACTION_EARLY`, R47) reads the early `AUC_UNCERTAINTY` row; one row per fit
+  (`fitUncertaintyRow`) feeds the dots, the likely range, `regimenDecision`, the Next line and print.
+- **Holds:**
+  - A planned dose the answer holds is never drawn as given: it is off the curve, marked "held" on the strip
+    (`heldPlannedDoses`).
+  - The 72 h horizon counts from the later of the due time and now, or the planned dose, and every surface names
+    the origin (R51, R54). A Trough level fallen to 20 by now is no Hold (`calculationNowH`).
+  - **U5:** on non-HD Goti a fitted-only reading at 20 or more is one caution line, not a Hold.
+  - **U6a:** in AUC Precision, a Hold whose only measured basis is a level drawn after the course's first dose and
+    before the second is the same caution (`firstIntervalLevel`, `holdBasisOf`).
+  - Under either caution the regimen and first dose stand and the Next line is "Draw a level before giving the
+    next dose". Buelga and Hughes with the fitted level also at 20 hold on the fitted basis (R55, R57). A refusal
+    with nothing planned, Goti-HD and the Trough module are unchanged (R53, R55, R56).
+- **UI:** focus clear of the pinned footer and `--terracotta-ink` everywhere; PD announced and its chart readable;
+  one notation (`userNotation`, display only); 44 px targets at 375 px; Delete all profiles with Undo, and profile
+  ages; worded tinkerer refusals; a handler failure shows `#action-status`.
+- **Code health:** one `LN2`/`halfLife`; `MATRIX_DOSE_STEP` and `INPUT_LIMITS.dose` everywhere; dead code gone;
+  own-key `__runAction`.
+- **Parity against v3.14.0 (`b410477`):** 23 differences, all listed in D27: 12 `mapFit` (Task 17), 2
+  `solveTwoLevelsPK.t12` (7.9983 → 8), 5 additive `computeGuidelineDose().capped`, 4 additive
+  `findOptimalDose().highestAny`.
+- **Open for the user:** whether the Hughes line should lower confidence; whether an in-range regimen judged on the
+  early row gets ruling 3's protection.
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, CRRT, SLED, intraperitoneal vancomycin dosing, AUC or Bayesian
 dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
@@ -297,9 +332,10 @@ dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
 8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
    shipping a clinical number without provenance. A number no paper sets is a preference: its
    source comment says "PREFERENCE (rule 8)", what it orders, and whether it can change a dose.
-   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-15 (v3.14.0) they are:
+   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-15 (v3.15.0) they are:
    - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
-     splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9);
+     splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9, the Trough
+     module's "three doses is not steady state" wording only; AUC Precision reads `SS_FRACTION_EARLY`);
      `AUC24_MODEST_BELOW_MIN` (325); the Trough AUC band (±22% / ±30%); `MAP_TIE_OBJ` /
      `MAP_SPLIT_CL` (two MAP minima); `NOTE_CLAMP_CHARS` (300); `PROFILE_ARRIVE_MS`; and the
      weight-based guideline comparison line's `GUIDELINE_DOSE_CAP_MG` (2,500) and
@@ -315,8 +351,11 @@ dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
      regimen is changed); `CONFIDENCE_SIGMA` (2/3/4, which since D26's ruling 3 gates one decision,
      `finalizeDecision`); `INTERVAL_PREFERENCE` (24, 12, 48, 8, ties only); the CrCl → interval
      cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the
-     weight-based level-dosing cuts; and `HOLD_SEARCH_MAX_H` (72 h from the due time, the user's
-     ruling U2, 2026-11-15): when a hold gives "recheck a level" instead of a resume time.
+     weight-based level-dosing cuts; `HOLD_SEARCH_MAX_H` (72 h, the user's ruling U2, counted from the
+     later of the due time and now, or the planned dose, R51): when a hold gives "recheck a level" instead
+     of a resume time; and `SS_FRACTION_EARLY` (Buelga 0.925, Goti 0.775, Hughes 0.575, D27): below this
+     fraction of steady state the most recent level is "early", so the fit reads the early uncertainty row
+     that the dots and `regimenDecision` count (calibrated by simulation, R45, R47).
 
    Everything they sit beside is sourced: sigma is each model's published residual error, the AUC
    band is Rybak 2020 Rec 1, the 250 mg step is the dispensing increment, the hold threshold is the
@@ -335,21 +374,28 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **554/554 pass** |
-| `phase3_simulation.cjs` | **21/21 pass** |
-| `phase4_regimen_validation.cjs` | **49/49 pass** — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
+| `phase2d_validation.cjs` | **617/617 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` |
+| `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
+| `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
+| `docs/audit/mutation.cjs` | **60 of 60 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
-| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26). The script prints the first 40 |
-| `docs/audit/browser-flows.cjs` | **161/161** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27). The script prints the first 40 |
+| `docs/audit/browser-flows.cjs` | **221/221** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
-for an engine or model overhaul. The history table is in the README.
+for an engine or model overhaul. The history table is in the README. The release that adds a suite pins
+its version there (43.12 for v3.14.0, 45.58 for v3.15.0); the earlier pins accept a successor.
 
-Syntax check after any edit:
+**CI.** `.github/workflows/test.yml` runs on every push and pull request (`permissions: contents: read`,
+actions pinned by commit SHA, Node 22, no install): the syntax check, phase2d, phase2d under
+`TZ=Pacific/Auckland`, phase3, phase4 and the mutation gate. The browser flows and engine parity are run by
+hand at release.
+
+Syntax check after any edit (exits 1 when broken):
 
 ```bash
-node -e "const fs=require('fs');const m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/);try{new Function(m[1]);console.log('JS syntax: OK')}catch(e){console.log('JS BROKEN:',e.message)}"
+node -e "const fs=require('fs');const m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/);try{new Function(m[1]);console.log('JS syntax: OK')}catch(e){console.log('JS BROKEN:',e.message);process.exit(1)}"
 ```
 
 The suites extract the engine from `index.html` into a Node `vm` and test the shipped file.
@@ -475,8 +521,8 @@ errors — it previously called a `drawGraph()` that does not exist, inside an e
 the trough-based graphs kept their light-theme colours on the dark page for months.
 
 Results are built as HTML strings via `innerHTML`. **Any user-entered value interpolated into
-one must go through `escHtml()`.** About 110 sites do; the 2026-11-13 review's hostile-profile probe
-found one gap (the profile id in `data-arg`), closed in v3.14.0.
+one must go through `escHtml()`.** About 150 call sites do (149 on 131 lines, 2026-11-15); the
+2026-11-13 review's hostile-profile probe found one gap (the profile id in `data-arg`), closed in v3.14.0.
 
 ## Where things are
 
@@ -485,8 +531,11 @@ found one gap (the profile id in `data-arg`), closed in v3.14.0.
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP, and the 161 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 221 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
+| `docs/audit/mutation.cjs` | The mutation gate: 60 mutants, each must be killed by the Node suites |
+| `.github/workflows/test.yml` | CI: the Node suites and the mutation gate on every push and pull request |
+| `docs/audit/probe-map-starts.cjs`, `docs/audit/uncertainty-by-model.cjs --early`, `docs/audit/probe-hold-rate.cjs` | D27's evidence: the MAP starts, the early band and its decision flips (`docs/audit/task19/`), and how often the Hold fires and is false (`docs/audit/task21b/`) |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |
 | `docs/ui-and-graphics-audit-2026-09.md` | UI + rendering audit — 66 findings, what was fixed, what is deliberately open |
 | `docs/validation-threshold-decisions.md` | The accept/reject record for failing thresholds |
