@@ -181,9 +181,10 @@ const MUTANTS = [
     find: "return !!(r && r.model === 'goti' && !r.dial);", replace: 'return false;' },
   { id: 'U5-b', what: 'Goti-HD swept into U5 (the !r.dial guard dropped) [45.53]',
     find: "return !!(r && r.model === 'goti' && !r.dial);", replace: "return !!(r && r.model === 'goti');" },
-  // U5-c and U5-d retargeted in Task 21d (one mapping, holdBasisOf, since the fix round): same intent, new text.
-  { id: 'U5-c', what: "holdBasisOf: 'both' (a later measured level with the fitted) no longer a Hold basis [45.53]",
-    find: "if (mHolds) return { basis: f ? 'both' : 'measured', caution: null };", replace: "if (mHolds && !f) return { basis: 'measured', caution: null };" },
+  // U5-c and U5-d retargeted in Task 21d (one mapping, holdBasisOf, since the fix round): same intent, new text. U5-c retargeted
+  // again in the R2 final-fix wave (holdBasisOf rewritten for R59): 'both' is no longer its own basis.
+  { id: 'U5-c', what: "holdBasisOf: 'both' (a measured level with the fitted) no longer its own Hold basis [45.53, 45.59]",
+    find: "  if (f && m) return { basis: 'both', caution: null };   // R59\n", replace: '' },
   { id: 'U5-d', what: 'noSolutionHold: the refusal ignores the carried measured level [45.53]',
     find: 'const b = holdBasisOf(fitted, carried, fittedOnlyCaution(r), firstIntervalLevel(', replace: 'const b = holdBasisOf(fitted, -Infinity, fittedOnlyCaution(r), firstIntervalLevel(' },
   { id: 'U5-e', what: 'Copy summary drops the caution [45.53, 45.54]',
@@ -202,16 +203,28 @@ const MUTANTS = [
     find: 'const secondH = given.length >= 2 ? given[1].timeH : planned.length', replace: 'const secondH = planned.length' },
   { id: 'U6-d', what: "the second dose's time ignored (a level after it, or with none known, still a caution) [45.55]",
     find: 'return Number.isFinite(secondH) && mh.timeH < secondH - 1e-9;', replace: 'return true;' },
+  // U6-e and U6-f retargeted in the R2 final-fix wave (holdBasisOf rewritten for ruling R59; same intent for U6-e). U6-f now
+  // undoes R59's Goti half (R59 replaced R55's): Goti with the fitted and a first-interval level both at 20 reads a caution again.
   { id: 'U6-e', what: 'holdBasisOf: a first-interval level is a Hold basis again [45.55]',
-    find: 'const mHolds = m && !firstLevel;', replace: 'const mHolds = m;' },
-  { id: 'U6-f', what: 'R55 undone: Buelga/Hughes fitted plus a first-interval level read as a caution [45.55]',
-    find: "if (f && !gotiFitted) return { basis: 'fitted', caution: null };", replace: "if (f && !gotiFitted && !m) return { basis: 'fitted', caution: null };" },
+    find: "if (m) return firstLevel ? { basis: null, caution: 'first-level' } : { basis: 'measured', caution: null };", replace: "if (m) return { basis: 'measured', caution: null };" },
+  { id: 'U6-f', what: "R59's Goti half undone: Goti with the fitted plus a first-interval level both at 20 reads a caution again [45.55, 45.59]",
+    find: "  if (f && m) return { basis: 'both', caution: null };   // R59", replace: "  if (f && m && !(gotiFitted && firstLevel)) return { basis: 'both', caution: null };" },
   { id: 'U6-g', what: "firstDosePlan: no second-dose time from the answered interval (U6a never applies without a planned row) [45.55]",
     find: 'plannedDoses, answeredTau, r.dial);', replace: 'plannedDoses, NaN, r.dial);' },
   { id: 'U6-h', what: 'the second dose judged on the plan\'s own (projected) interval, not the answered one [45.56]',
     find: 'const answeredTau = r.rec ? (r.rec.noSolution ? NaN : r.rec.tau) : rec.tau;', replace: 'const answeredTau = rec.tau;' },
-  { id: 'U6-i', what: 'R57 undone: a fitted-basis Hold no longer names the first-interval level that sets its resume time [45.57]',
-    find: "const resumeSetBy = hold && holdBasis === 'fitted'", replace: "const resumeSetBy = false && holdBasis === 'fitted'" },
+  // U6-i (R57's fitted-basis clause) is gone with its code: under R59 a fitted-basis Hold never has a carried level at 20 when
+  // held, so the clause could not arise; 45.57 now pins the same case as a Hold on both bases that names the level.
+
+  // The R2 final-fix wave: ruling R59, the user's ruling U7, the caution's words by kind (I1), a refusal's caution holds its rows.
+  { id: 'R59-a', what: 'R59 undone on every model: the fitted plus a first-interval level both at 20 read as a caution [45.55, 45.59]',
+    find: "  if (f && m) return { basis: 'both', caution: null };   // R59", replace: "  if (f && m && !firstLevel) return { basis: 'both', caution: null };" },
+  { id: 'U7-a', what: 'U7 undone: the FIRST_INTERVAL_CAUTION_H bound dropped (a late first-interval level is a caution again) [45.60]',
+    find: '  if (mh.timeH - given[0].timeH > FIRST_INTERVAL_CAUTION_H + 1e-9) return false;   // U7\n', replace: '' },
+  { id: 'I1-a', what: "the Next line and panel word every caution as U5's (the caution's kind ignored) [45.55, 45.61]",
+    find: 'const w = holdCautionWords(f.caution, f.cautionRefusal);', replace: "const w = holdCautionWords('fitted', f.cautionRefusal);" },
+  { id: 'M-a', what: "a refusal's caution draws its planned rows as given again [45.62]",
+    find: 'plan.noSolution ? plan.hold || plan.holdCaution :', replace: 'plan.noSolution ? plan.hold :' },
 
   // "Tests that cannot fail on what they name" (code report): the mutations that showed it.
   { id: 'CF-1', what: 'fingerprint target and MIC made inert, names left in a comment',

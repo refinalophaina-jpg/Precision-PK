@@ -64,6 +64,10 @@ function watch(page, tag) {
 }
 const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n);
   const p = (v) => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+// A date and a 24-hour time h hours from today 10:00, the fixed clock of the page the D27 Hold checks run on (b.clock), so
+// "now" sits where a check needs it (R2 final review).
+const fromTen = (h) => { const d = new Date(new Date(`${day(0)}T10:00`).getTime() + h * 3600000), p = (v) => String(v).padStart(2, '0');
+  return [`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, `${p(d.getHours())}:${p(d.getMinutes())}`]; };
 const D1 = day(-2), D2 = day(-1);   // doses at D1 08:00, D1 20:00, D2 08:00, D2 20:00; the level at D2 19:30
 // On the production domain Cloudflare injects an inline bot-check script
 // (window.__CF$cv$params) that the hash-pinned CSP refuses — the policy working,
@@ -2652,7 +2656,8 @@ async function enterCourse(page) {
         action: !!(c && c.classList.contains('vx-action')),
         said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
     ok('D27 (U5): a Goti Hold on the fitted level alone is one caution line — the regimen and first dose stand; no Hold or recheck anywhere; the caution is copied, heard and printed',
-       /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no measured level confirms it\. Consider drawing a level before giving the next dose\.$/.test(u5v.caution)
+       // R2 final review I3: "no level drawn since the last dose" (an earlier level exists here), and one verb, "Draw a level".
+       /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no level drawn since the last dose confirms it\. Draw a level before giving the next dose\.$/.test(u5v.caution)
        && u5v.tone && u5v.icon && u5v.hold === '' && /IV q\d+h/.test(u5v.reg) && !/Hold/.test(u5v.readout + u5v.next + u5v.said + u5v.copied + u5v.print)
        && !/Recheck a level before the next dose/.test(u5v.next + u5v.said + u5v.copied) && u5v.copied.indexOf(u5v.caution) >= 0 && u5v.said.indexOf(u5v.caution) >= 0
        && u5v.print.indexOf(u5v.caution) >= 0 && !u5v.action
@@ -2661,32 +2666,81 @@ async function enterCourse(page) {
        && !/would add little|Precision only/.test(u5v.next + u5v.voi) && /Draw a level before giving the next dose\./.test(u5v.copied + u5v.said),
        JSON.stringify(Object.assign({}, u5v, { print: u5v.print.slice(0, 120) })));
     // Task 21d (the user's ruling U6a): a Hold resting only on a level drawn after the course's first dose (before the
-    // second) is one caution line (every model: the units are in 45.55). Fictional 70 M (80 kg, 175 cm, SCr 3.0), Goti;
-    // one 1.5 g dose over 2 h today 00:00, no load; 40 mg/L at 09:00.
-    await b.goto(BASE + '?v=pwt21d-' + Date.now(), { waitUntil: 'networkidle' });
-    await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
-      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
-    await b.locator('[data-onclick="k2"]').click();
-    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '3.0');
-    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
-    await b.locator('[data-onclick="k43"]').click();
-    await typeInto(b, '#b-dose-mg-1', '1500'); await typeInto(b, '#b-dose-tinf-1', '2');
-    await b.locator('#b-dose-date-1').fill(day(0)); await typeInto(b, '#b-dose-time-1', '00:00');
-    await b.locator('[data-onclick="k46"]').click();
-    await typeInto(b, '#b-lvl-conc-1', '40'); await b.locator('#b-lvl-date-1').fill(day(0)); await typeInto(b, '#b-lvl-time-1', '09:00');
-    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    // second) is one caution line (every model: the units are in 45.55). Since ruling R59 (R2 final review C1) the fitted
+    // level must be under 20 for it (both at 20 or more holds), so the fixture moved: fictional 70 M (80 kg, 175 cm,
+    // SCr 1.0), Goti; one 1.5 g dose over 2 h 9.5 h before now (the page's 10:00), no load; 28 mg/L 0.5 h before now; 1 g planned in 1 h. The words are
+    // the R2 final review's (I1, I3): "Repeat the level", on the line, the Next line, the panel, copied, heard, printed and
+    // beside the projected doses.
+    const u6Course = async (doseAgo) => {
+      await b.goto(BASE + '?v=pwt21d-' + Date.now(), { waitUntil: 'networkidle' });
+      await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+        value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+      await b.locator('[data-onclick="k2"]').click();
+      await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '1.0');
+      await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+      const rows = [['1500', '2', fromTen(-doseAgo)], ['1000', '1', fromTen(1)]];
+      for (let n = 1; n <= rows.length; n++) {
+        await b.locator('[data-onclick="k43"]').click();
+        await typeInto(b, `#b-dose-mg-${n}`, rows[n - 1][0]); await typeInto(b, `#b-dose-tinf-${n}`, rows[n - 1][1]);
+        await b.locator(`#b-dose-date-${n}`).fill(rows[n - 1][2][0]); await typeInto(b, `#b-dose-time-${n}`, rows[n - 1][2][1]);
+      }
+      const lv = fromTen(-0.5);
+      await b.locator('[data-onclick="k46"]').click();
+      await typeInto(b, '#b-lvl-conc-1', '28'); await b.locator('#b-lvl-date-1').fill(lv[0]); await typeInto(b, '#b-lvl-time-1', lv[1]);
+      await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    };
+    await u6Course(9.5);
     await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    await b.locator('#b-proj-fwd').check(); await b.waitForTimeout(400);
     const u6v = await b.evaluate(() => {
       const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
       const c = document.querySelector('#b-results .vx-fitted-caution');
       window.dispatchEvent(new Event('beforeprint'));
       return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'),
+        voi: t('#b-voi'), proj: t('#b-proj-auc-note'), held: document.querySelectorAll('#b-course-strip .held').length,
         said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
-    ok('D27 (U6a): a Hold resting only on a level drawn after the first dose (no load) is one caution line; the regimen stands; Next asks for a level; copied, heard and printed',
-       /^Caution: .*the measured 40\.0 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00, drawn after the first dose and before the second, carried down the fitted slope, is [\d.]+ mg\/L.*no later level confirms (it|them)\. Consider drawing a level before giving the next dose\.$/.test(u6v.caution)
-       && u6v.hold === '' && /IV q\d+h/.test(u6v.reg) && u6v.next === 'Next Draw a level before giving the next dose.'
-       && !/Hold/.test(u6v.said + u6v.copied + u6v.print) && [u6v.said, u6v.copied, u6v.print].every(x => x.indexOf(u6v.caution) >= 0),
-       JSON.stringify(Object.assign({}, u6v, { print: u6v.print.slice(0, 100) })));
+    ok('D27 (U6a): a Hold resting only on a level drawn after the first dose (no load) is one caution line; the regimen stands; Next, the panel and the projection repeat it; copied, heard and printed',
+       /^Caution: the measured 28\.0 mg\/L at \d{1,2} [A-Z][a-z]{2} \d\d:\d\d, drawn after the first dose and before the second, carried down the fitted slope, is [\d.]+ mg\/L at the planned dose \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\), at or above 20 mg\/L\. Repeat the level before giving the next dose\.$/.test(u6v.caution)
+       && u6v.hold === '' && /IV q\d+h/.test(u6v.reg) && u6v.next === 'Next Repeat the level before giving the next dose.' && u6v.held === 0
+       && /^Caution Repeat the level before giving the next dose/.test(u6v.voi) && !/ruling|U5|U6|Goti|fitted level alone/.test(u6v.voi)
+       && u6v.proj === `Projected AUC₂₄ ${(u6v.proj.match(/AUC₂₄ (\d+)/) || [])[1]} mg·h/L. ${u6v.caution}`
+       && !/Hold|Consider drawing/.test(u6v.said + u6v.copied + u6v.print) && [u6v.said, u6v.copied, u6v.print].every(x => x.indexOf(u6v.caution) >= 0),
+       JSON.stringify(Object.assign({}, u6v, { print: u6v.print.slice(0, 100), voi: u6v.voi.slice(0, 160) })));
+    // The user's ruling U7: the same course with the level 13 h after the first dose (past FIRST_INTERVAL_CAUTION_H, 12 h) is an
+    // ordinary measured basis: the planned dose is held, the strip marks it, and no caution is shown.
+    await u6Course(13.5);
+    const u7v = await b.evaluate(() => { const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      return { hold: t('#b-hold .vx-hold-head'), why: t('#b-hold .vx-hold-why'), caution: t('#b-results .vx-fitted-caution'), next: t('#b-results .vx-next'),
+        held: document.querySelectorAll('#b-course-strip .held').length }; });
+    ok('D27 (U7): a level before the second dose but more than 12 h after the first is a Hold on the measured level, not a caution',
+       /^Hold the planned dose at \d{1,2} [A-Z][a-z]{2} \d\d:\d\d: next dose not before /.test(u7v.hold) && /the measured 28\.0 mg\/L at .*, carried down the fitted slope, is [\d.]+ mg\/L/.test(u7v.why)
+       && u7v.caution === '' && u7v.next === 'Next Recheck a level before the next dose.' && u7v.held === 1, JSON.stringify(u7v));
+    // Ruling R59 (R2 final review C1): the fitted and the carried measured level both at 20 or more is a Hold on every model,
+    // Goti and a first-interval level included. The review's reproduction, timed against now: fictional 70 M (70 kg, 175 cm,
+    // SCr 2.7), Goti; 2 g over 2 h 11.75 h before now (the page's 10:00); 1 g planned in 0.25 h and in 12.25 h; 45 mg/L 0.25 h before now. It read a caution
+    // and gave both planned doses; now both are held, as on Buelga.
+    await b.goto(BASE + '?v=pwtR59-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '70'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '2.7');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    const r59 = [['2000', '2', fromTen(-11.75)], ['1000', '1', fromTen(0.25)], ['1000', '1', fromTen(12.25)]];
+    for (let n = 1; n <= r59.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, r59[n - 1][0]); await typeInto(b, `#b-dose-tinf-${n}`, r59[n - 1][1]);
+      await b.locator(`#b-dose-date-${n}`).fill(r59[n - 1][2][0]); await typeInto(b, `#b-dose-time-${n}`, r59[n - 1][2][1]);
+    }
+    const r59l = fromTen(-0.25);
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '45'); await b.locator('#b-lvl-date-1').fill(r59l[0]); await typeInto(b, '#b-lvl-time-1', r59l[1]);
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    const r59v = await b.evaluate(() => { const t = (q) => ((document.querySelector(q) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const c = document.getElementById('b-profile-canvas'), P = c && c._pkPlot;
+      return { hold: t('#b-hold .vx-hold-head'), why: t('#b-hold .vx-hold-why'), caution: t('#b-results .vx-fitted-caution'), next: t('#b-results .vx-next'),
+        held: document.querySelectorAll('#b-course-strip .held').length, curve: P ? P.doses.length : null }; });
+    ok('D27 (R59): Goti with the fitted and the first-interval measured level both at 20 or more holds both planned doses, naming both readings; no caution',
+       /^Hold the 2 planned doses from \d{1,2} [A-Z][a-z]{2} \d\d:\d\d: next dose not before /.test(r59v.hold)
+       && /the fitted level at .* is [\d.]+ mg\/L, and the measured 45\.0 mg\/L at .*, carried down the fitted slope, is [\d.]+ mg\/L/.test(r59v.why) && /both fall below 20/.test(r59v.why)
+       && r59v.caution === '' && r59v.next === 'Next Recheck a level before the next dose.' && r59v.held === 2 && r59v.curve === 1, JSON.stringify(r59v));
     // Trough hold "not before" is never in the past (controller ruling): a level that has fallen to 20 mg/L by now is
     // no Hold. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h over 1.5 h started yesterday 01:00,
     // 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon, so at today 10:00 the ordinary answer stands.

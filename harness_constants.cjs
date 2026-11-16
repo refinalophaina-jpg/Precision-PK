@@ -172,6 +172,8 @@ function extract() {
     VERY_LOW_CRCL_THRESHOLD: num(src, 'VERY_LOW_CRCL_THRESHOLD'),
     // v3.14.0 (D26, final review I2) — the hold search horizon, a PREFERENCE (rule 8)
     HOLD_SEARCH_MAX_H:      num(src, 'HOLD_SEARCH_MAX_H'),
+    // v3.15.0 (D27, the user's ruling U7) — the first-interval caution window, a PREFERENCE (rule 8)
+    FIRST_INTERVAL_CAUTION_H: num(src, 'FIRST_INTERVAL_CAUTION_H'),
     // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state
     CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
   };
