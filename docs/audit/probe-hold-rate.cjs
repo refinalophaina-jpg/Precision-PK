@@ -30,6 +30,9 @@
 // Not modelled: finalizeDecision (ruling 3 keeps an in-range current regimen under Low confidence; it moves the
 // time judged only when it changes the interval), HD, planned rows, a chosen first-dose time.
 //
+// Task 21c (the user's ruling U5): on Goti (not on dialysis) a fitted-only reading is a caution, not a Hold. The table keeps
+// the pre-U5 columns (they reproduce the Task 21b output) and adds U5 Hold, U5 false Hold and U5 caution.
+//
 // Usage: node docs/audit/probe-hold-rate.cjs [n=1000] [seed=2111] [models=buelga,goti,hughes]
 // Seeded and reproducible (uncertainty-load.cjs's LCG; one seed per cell, derived from the base seed).
 // Fictional patients only. Reads index.html; changes nothing.
@@ -60,7 +63,7 @@ function course(design, tbw) {
 function cell(model, design, seed) {
   setSeed(seed);
   const c = { n: 0, fitted: 0, measured: 0, either: 0, trueHold: 0, falseHold: 0, falseFitted: 0, falseMeasured: 0,
-    fittedOnlyFalse: 0, fittedOnly: 0, falseUnder15: 0, prevalent: 0, missed: 0, refusals: 0, refusalHolds: 0, skipped: 0, falseExamples: [] };
+    fittedOnlyFalse: 0, fittedOnly: 0, falseUnder15: 0, caution: 0, cautionFalse: 0, prevalent: 0, missed: 0, refusals: 0, refusalHolds: 0, skipped: 0, falseExamples: [] };
   for (let i = 0; i < N; i++) {
     const age = 30 + Math.floor(rnd() * 50); let tbw = 50 + rnd() * 50; const scr = 0.7 + rnd() * 1.5;
     if (model === 'hughes') tbw = 110 + rnd() * 70;
@@ -108,15 +111,20 @@ function cell(model, design, seed) {
     r.rec = rec;
     const cur0 = inferCurrentRegimen(given, r.CL_ind, r.V_ind, model === 'buelga' ? null : r.goti);
     const cur = cur0 && cur0.dose > 0 && cur0.tau > 0 && cur0.tinfH > 0 ? { dose: cur0.dose, tau: cur0.tau, tinfH: cur0.tinfH } : null;
-    let hold = false, fitted = false, measured = false, atH = null;
+    // U5 (Task 21c): a Goti fitted-only reading is a caution, not a Hold. It is counted here as the Hold it was before
+    // U5 (the same time judged: no planned rows, no chosen time), so the pre-U5 columns reproduce the Task 21b table,
+    // and separately as a caution, so the U5 columns are the pre-U5 ones less the cautions.
+    let hold = false, fitted = false, measured = false, atH = null, caution = false;
     if (rec && rec.noSolution) {
       c.refusals++;
       const h = noSolutionHold(r, nowH, cur);
-      if (h) { hold = true; c.refusalHolds++; fitted = h.fitted >= TROUGH_HIGH_MGL; measured = !!h.measured; atH = h.dueH; }
+      if (h && h.fittedCaution) { hold = true; caution = true; fitted = true; atH = h.dueH; }
+      else if (h) { hold = true; c.refusalHolds++; fitted = h.fitted >= TROUGH_HIGH_MGL; measured = !!h.measured; atH = h.dueH; }
       else atH = cur && cur.tau > 0 && Math.max(...given.map(d => d.timeH)) + cur.tau > nowH ? Math.max(...given.map(d => d.timeH)) + cur.tau : nowH;
     } else {
       const p = firstDosePlan(r, rec, nowH, null, cur);
       if (p && p.hold) { hold = true; fitted = p.holdFitted >= TROUGH_HIGH_MGL; measured = p.holdCarried != null && p.holdCarried >= TROUGH_HIGH_MGL; atH = p.holdAtH; }
+      else if (p && p.fittedCaution) { hold = true; caution = true; fitted = true; atH = p.fittedCaution.atH; }
       else atH = p ? p.firstH : nowH;
     }
     const truth = trueAt(given, atH);
@@ -126,6 +134,7 @@ function cell(model, design, seed) {
     if (fitted && !measured) c.fittedOnly++;
     if (!hold) { if (truth >= TROUGH_HIGH_MGL) c.missed++; continue; }
     c.either++;
+    if (caution) { c.caution++; if (truth < TROUGH_HIGH_MGL) c.cautionFalse++; }
     if (truth >= TROUGH_HIGH_MGL) c.trueHold++;
     else {
       c.falseHold++; if (truth < 15) c.falseUnder15++; if (fitted) c.falseFitted++; if (measured) c.falseMeasured++; if (fitted && !measured) c.fittedOnlyFalse++;
@@ -144,15 +153,21 @@ console.log('Fired: % of patients. True / false: % of the Holds that fired (true
 console.log('False, true < 15: a false Hold whose true level at the time held is under 15 mg/L (well below the threshold, not a near miss).');
 console.log('false|fitted, false|measured: false Holds among those that fired on that basis. Fitted-only: fired on the fitted basis with the');
 console.log('carried measured level below the threshold (or none), false among them.');
-console.log('Prevalence: true level >= threshold at the time judged. Missed: no Hold, true level >= threshold.\n');
-const head = ['model', 'design', 'n', 'fitted', 'measured', 'either (Hold)', 'true hold', 'false hold', 'false, true < 15', 'false|fitted', 'false|measured', 'fitted-only (false)', 'prevalence', 'missed', 'refusals (held)'];
+console.log('Prevalence: true level >= threshold at the time judged. Missed: no Hold, true level >= threshold.');
+console.log('Pre-U5 columns: the rule shipped in v3.14.0 / Task 21b (a Goti fitted-only reading held). U5 columns (Task 21c, the user\'s');
+console.log('ruling U5, shipped): U5 Hold = Holds that still fire; U5 false Hold = % of them false; U5 caution = Goti fitted-only readings');
+console.log('now shown as a caution instead (false: the true level at that time was under the threshold).\n');
+const head = ['model', 'design', 'n', 'fitted', 'measured', 'either (Hold, pre-U5)', 'true hold', 'false hold', 'false, true < 15', 'false|fitted', 'false|measured', 'fitted-only (false)', 'prevalence', 'missed', 'refusals (held)',
+  'U5 Hold', 'U5 false Hold', 'U5 caution (false)'];
 const rows = [];
 MODELS.forEach((m, mi) => DESIGNS.forEach((d, di) => {
   const c = cell(m, d, seedOf(['buelga', 'goti', 'hughes'].indexOf(m), di));
   rows.push([m, d, String(c.n), `${c.fitted} (${pc(c.fitted, c.n)})`, `${c.measured} (${pc(c.measured, c.n)})`, `${c.either} (${pc(c.either, c.n)})`,
     `${c.trueHold} (${pc(c.trueHold, c.either)})`, `${c.falseHold} (${pc(c.falseHold, c.either)})`, `${c.falseUnder15} (${pc(c.falseUnder15, c.either)})`, `${c.falseFitted}/${c.fitted} (${pc(c.falseFitted, c.fitted)})`,
     `${c.falseMeasured}/${c.measured} (${pc(c.falseMeasured, c.measured)})`, `${c.fittedOnlyFalse}/${c.fittedOnly} (${pc(c.fittedOnlyFalse, c.fittedOnly)})`,
-    `${c.prevalent} (${pc(c.prevalent, c.n)})`, `${c.missed} (${pc(c.missed, c.n)})`, `${c.refusals} (${c.refusalHolds})`]);
+    `${c.prevalent} (${pc(c.prevalent, c.n)})`, `${c.missed} (${pc(c.missed, c.n)})`, `${c.refusals} (${c.refusalHolds})`,
+    `${c.either - c.caution} (${pc(c.either - c.caution, c.n)})`, `${c.falseHold - c.cautionFalse} (${pc(c.falseHold - c.cautionFalse, c.either - c.caution)})`,
+    `${c.caution} (${c.cautionFalse}, ${pc(c.cautionFalse, c.caution)})`]);
   rows[rows.length - 1].examples = c.falseExamples;
   rows[rows.length - 1].skipped = c.skipped;
 }));
