@@ -2593,6 +2593,12 @@ async function enterCourse(page) {
     ok('D27: with the projection ticked the held planned dose stays off the curve, its "held" mark stays, and the projection is drawn',
        p1.plannedOnCurve === false && p1.bars === 6 && p1.proj > 0 && p1.held.length === 1, JSON.stringify(p1));
     await b.locator('#b-proj-fwd').uncheck(); await b.waitForTimeout(200);
+    // Copy summary is pasted into notes, so it says "AUC₂₄" (Task 20b minor); the announcement may keep "AUC24" for speech.
+    await b.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
+    const pasted = await b.evaluate(() => (window.__copied || [])[0] || '');
+    ok('D27: Copy summary carries "AUC₂₄", never "AUC24"', /AUC₂₄ is \d+ mg·h\/L/.test(pasted) && !/AUC24/.test(pasted), pasted.slice(0, 300));
     // Trough hold "not before" is never in the past. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h
     // over 1.5 h started yesterday 01:00, 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon,
     // so at today 10:00 the answer is "not before" now, and says when it fell.
@@ -2641,6 +2647,47 @@ async function enterCourse(page) {
     const bAttr = await attributeInjected(b, bProblems);
     results.problems.push(...bAttr.kept);
     await bctx.close();
+    // Focus is not lost after a destructive text action (Task 20b minor): pressed from the keyboard, Delete all
+    // profiles, a row's Delete and Clear all fields move focus to the Undo they offer; Undo moves it to the status
+    // line that says what came back. Never <body>.
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const f = await fctx.newPage();
+    const fProblems = watch(f, 'task21b-focus');
+    await f.goto(BASE + '?v=pwt21bf-' + Date.now(), { waitUntil: 'networkidle' });
+    const PKEY = 'ainadara.profiles.v1';
+    const mkP = (id, label) => ({ id, schema: 1, label, savedAt: Date.now(), snapshot: { demographics: { age: '60' }, doses: [], levels: [], core: { age: '60' } } });
+    const seedP = async () => { await f.evaluate(([k, v]) => { localStorage.setItem(k, v); }, [PKEY, JSON.stringify([mkP('p_f1', 'First'), mkP('p_f2', 'Second')])]);
+      await f.reload({ waitUntil: 'networkidle' }); };
+    await seedP();
+    const focused = () => f.evaluate(() => { const e = document.activeElement;
+      return { tag: e ? e.tagName : null, k: e && e.getAttribute ? e.getAttribute('data-onclick') : null, cls: e && e.className ? String(e.className) : '', id: e ? e.id : '',
+        text: e ? (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) : '', visible: !!(e && e.getClientRects().length) }; });
+    const press = async (sel) => { const l = f.locator(sel).first(); if (!(await l.count())) return { missing: sel };
+      await l.focus(); await f.keyboard.press('Enter'); await f.waitForTimeout(250); return focused(); };
+    const d1 = await press('[data-onclick="k100"]:visible');
+    await f.keyboard.press('Enter'); await f.waitForTimeout(250);
+    const d2 = await focused();
+    ok('D27: Delete all profiles (keyboard) moves focus to its Undo; Undo moves it to the status line saying the profiles are back',
+       d1.k === 'k97' && d1.visible && d2.tag !== 'BODY' && /profile-status/.test(d2.cls) && d2.visible && /^Restored/.test(d2.text), JSON.stringify({ d1, d2 }));
+    await seedP();
+    const r1 = await press('.profile-item-btn.delete:visible');
+    await f.keyboard.press('Enter'); await f.waitForTimeout(250);
+    const r2 = await focused();
+    ok('D27: a row\'s Delete (keyboard) moves focus to its Undo; Undo moves it to the status line naming the profile restored',
+       r1.k === 'k97' && r1.visible && r2.tag !== 'BODY' && /profile-status/.test(r2.cls) && r2.visible && /^Restored "First"\./.test(r2.text), JSON.stringify({ r1, r2 }));
+    for (const [mod, tab, clear, line, field] of [['AUC Precision', 'k2', 'k48', 'undo-auc', '#b-age'], ['Trough', 'k1', 'k32', 'undo-trough', '#age']]) {
+      await f.locator(`[data-onclick="${tab}"]`).first().click();
+      await typeInto(f, field, '61');
+      const c1 = await press(`[data-onclick="${clear}"]`);
+      await f.keyboard.press('Enter'); await f.waitForTimeout(300);
+      const c2 = await focused();
+      const back = await f.locator(field).inputValue();
+      ok(`D27: ${mod} Clear all fields (keyboard) moves focus to its Undo; Undo restores the form and moves focus to the status line saying so`,
+         c1.k === 'k97' && c1.visible && c2.id === line && c2.visible && /^Form restored\./.test(c2.text) && back === '61', JSON.stringify({ c1, c2, back }));
+    }
+    const fAttr = await attributeInjected(f, fProblems);
+    results.problems.push(...fAttr.kept);
+    await fctx.close();
   }
   // ── end Task 21b
   await browser.close();

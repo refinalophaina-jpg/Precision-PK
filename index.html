@@ -8700,6 +8700,25 @@ function offerUndo(hosts, message, restore) {
   const els = (hosts || []).filter(Boolean);
   _undo = { els, restore };
   els.forEach(h => { h.innerHTML = `<span>${escHtml(message)}</span><button type="button" class="text-action" data-onclick="k97">Undo</button>`; });
+  // Focus is never left on <body> or on the control just pressed (Task 21b; UI review, Task 20b): the
+  // action that deleted or cleared often re-renders itself away, and a second Enter on Clear cleared
+  // again. It moves to the Undo on screen.
+  const shown = shownHost(els), undo = shown && shown.querySelector ? shown.querySelector('[data-onclick="k97"]') : null;
+  if (undo && typeof undo.focus === 'function') undo.focus();
+}
+// The first of these hosts that is rendered (the other module's copy is hidden), or null.
+function shownHost(hosts) {
+  return (hosts || []).find(h => h && typeof h.getClientRects === 'function' && h.getClientRects().length) || null;
+}
+// After an Undo (Task 21b): the status line says what came back, and takes focus (it is not a control,
+// so tabindex -1), because the Undo that had focus is gone.
+function focusStatusLine(hosts, text) {
+  const els = (hosts || []).filter(Boolean);
+  if (text != null) els.forEach(h => { h.textContent = text; });
+  const shown = shownHost(els);
+  if (!shown || typeof shown.focus !== 'function') return;
+  shown.setAttribute('tabindex', '-1');
+  shown.focus();
 }
 function clearUndo() {
   if (_undo) _undo.els.forEach(h => { h.innerHTML = ''; });
@@ -8750,7 +8769,7 @@ function clearWithUndo(mod) {
       if (ro && rw) rw.style.display = ro.value === 'custom' ? 'block' : 'none';
       try { syncHdSection(); refreshCourseReadback(); updateScrTrendDisplay(); } catch (e) { /* display only */ }
       updateBayesCrCl();
-      const f = document.getElementById('b-age'); if (f) f.focus();
+      focusStatusLine([document.getElementById('undo-auc')], 'Form restored.');
     });
   } else {
     const st = { calcMode: state.calcMode, rlMode: state.rlMode, amp: Object.assign({}, ampState) };
@@ -8772,7 +8791,7 @@ function clearWithUndo(mod) {
       refreshDtPairs();
       try { pdSetGoal(`${(document.getElementById('pd-goal-min') || {}).value || ''}|${(document.getElementById('pd-goal-max') || {}).value || ''}`); pdToggleFields(); } catch (e) { /* display only */ }
       try { autoWeights(); updateCrCl(); checkAKI(); updateBayesCrCl(); } catch (e) { /* display only */ }
-      const f = document.getElementById('age'); if (f) f.focus();
+      focusStatusLine([document.getElementById('undo-trough')], 'Form restored.');
     });
   }
 }
@@ -16649,6 +16668,8 @@ function deleteProfile(id) {
   profileStatus('');
   offerUndo([...document.querySelectorAll('.profile-status')], `Deleted "${entry.label}".`, () => {
     const ps = loadProfiles(); ps.splice(Math.min(at, ps.length), 0, entry); persistProfiles(ps); renderProfileList();
+    profileStatus(`Restored "${entry.label}".`);
+    focusStatusLine([...document.querySelectorAll('.profile-status')]);
   });
 }
 
@@ -16675,6 +16696,8 @@ function deleteAllProfiles() {
     said + (backup ? ` The recovery copy under "${PROFILE_BACKUP_KEY}" is kept, not deleted.` : ''), () => {
       try { localStorage.setItem(PROFILE_STORAGE_KEY, raw); } catch (e) { /* storage full or off */ }
       renderProfileList();
+      profileStatus(said.replace(/^Deleted/, 'Restored'));
+      focusStatusLine([...document.querySelectorAll('.profile-status')]);
     });
 }
 
