@@ -497,9 +497,15 @@ async function enterCourse(page) {
         for (let i = 0; i <= n; i++) if (inR(ax + (bx - ax) * i / n, ay + (by - ay) * i / n)) { segHits++; break; }
       }
       for (const [x, y, rad] of log.arcs) if (rad !== 5.5 && x >= r.x0 - rad && x <= r.x1 + rad && y >= r.y0 - rad && y <= r.y1 + rad) arcHits++;
-      return { found: true, segHits, arcHits, rect: r };
+      const bt = log.texts.find(q => /^Trough target/.test(q.t));
+      let overlap = null;
+      if (bt) {
+        const bx0 = bt.al === 'right' ? bt.x - bt.w : bt.al === 'center' ? bt.x - bt.w / 2 : bt.x, by0 = bt.bl === 'top' ? bt.y : bt.y - 10;
+        overlap = bx0 < r.x1 && bx0 + bt.w > r.x0 && by0 < r.y1 && by0 + 13 > r.y0;
+      }
+      return { found: true, segHits, arcHits, overlap, rect: r };
     });
-    ok('D27: the measured-level label sits clear of the curves and the peak/trough markers', lab.found && lab.segHits === 0 && lab.arcHits === 0, JSON.stringify(lab));
+    ok('D27: the measured-level label sits clear of the curves, the markers and the band label', lab.found && lab.segHits === 0 && lab.arcHits === 0 && lab.overlap === false, JSON.stringify(lab));
   }
   // "Try another regimen" on the same result: its own comparison in the Tinkerer's code —
   // the tried regimen beside the fitted current regimen and the population estimate —
@@ -1744,6 +1750,18 @@ async function enterCourse(page) {
         return { unit: labels.includes('mg/L'), maxTick: Math.max(...nums), peak, sw,
           legend: [...document.querySelectorAll('#results-content .tx-legend .legend-item')].map(e => e.textContent.trim()) };
       });
+      // The goal 15-20 with the projection peaking at 20.6: the axis still labels a value at or above 20.6.
+      const hi = await pd.evaluate(() => {
+        const v = state.pdView, m = Math.max(...v.a.curve.map(p => p.hi)), k = 20.6 / m;
+        const a2 = Object.assign({}, v.a, { goal: { min: 15, max: 20 }, curve: v.a.curve.map(p => ({ t: p.t, lo: p.lo * k, hi: p.hi * k })) });
+        const inp2 = Object.assign({}, v.input, { course: Object.assign({}, v.input.course, { levels: v.input.course.levels.map(l => Object.assign({}, l, { conc: Math.min(l.conc, 14) })) }) });
+        const box = document.createElement('div'); box.innerHTML = pdChartSVG(a2, inp2, v.nowH, 600);
+        const labels = [...box.querySelectorAll('text.pd-axl')].map(t => t.textContent.trim()), nums = labels.filter(t => /^\d+$/.test(t)).map(Number);
+        const ys = [...box.querySelectorAll('text.pd-axl')].filter(t => /^\d+$/.test(t.textContent.trim())).map(t => +t.getAttribute('y'));
+        const cap = [...box.querySelectorAll('text.pd-axl')].find(t => t.textContent.trim() === 'mg/L'), capY = +cap.getAttribute('y');
+        return { labels, maxTick: Math.max(...nums), capClear: ys.every(y => y - 9 > capY + 1), peak: 20.6 };
+      });
+      ok('D27: PD chart: goal 15-20 with a 20.6 peak still labels a value at or above the peak, clear of the mg/L caption', hi.maxTick >= hi.peak && hi.capClear, JSON.stringify(hi));
       ok('D27: PD chart: a mg/L caption, a tick at or above the drawn maximum, visible swatches, the decline named',
          ch.unit && ch.maxTick >= ch.peak && ch.sw.every(x => !x.missing && x.h >= 8 && x.w >= 8 && (x.c === 'pd-lg-lv' || (x.bw >= 1 && x.bs === 'solid' && x.bc !== 'rgba(0, 0, 0, 0)')))
          && ch.legend.some(t => /decline/i.test(t)), JSON.stringify(ch));
@@ -2011,6 +2029,23 @@ async function enterCourse(page) {
         pad: getComputedStyle(document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left')).scrollPaddingBottom };
     });
     ok('D27: tabbing to #scr at 1280x800 leaves the field above the pinned footer', hit && fm.bottom <= fm.footTop + 0.5 && fm.top >= 0, JSON.stringify(fm));
+    // Every tab stop inside either input column stays above that column's pinned footer (Trough and AUC Precision).
+    for (const tab of ['Trough', 'AUC']) {
+      await k.locator('.module-tab', { hasText: tab }).first().click();
+      await k.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+      const hidden = [];
+      let n = 0;
+      for (let i = 0; i < 90; i++) {
+        await k.keyboard.press('Tab'); await k.waitForTimeout(40);
+        const r = await k.evaluate(() => { const el = document.activeElement, pl = el && el.closest('.panel-left');
+          const foot = pl && pl.querySelector(':scope > .panel-actions');
+          if (!pl || !foot || !el.offsetParent || foot.contains(el)) return null;
+          const b = el.getBoundingClientRect(), ft = foot.getBoundingClientRect();
+          return { id: el.id || el.className.toString().slice(0, 30), bottom: b.bottom, footTop: ft.top }; });
+        if (r) { n++; if (r.bottom > r.footTop + 0.5) hidden.push(r); }
+      }
+      ok(`D27: every tab stop in the ${tab} column is above its pinned footer`, n > 20 && hidden.length === 0, JSON.stringify({ n, hidden: hidden.slice(0, 3) }));
+    }
     const kAttr = await attributeInjected(k, kProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + kAttr.injected;
     results.problems.push(...kAttr.kept);

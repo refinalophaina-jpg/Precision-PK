@@ -4761,7 +4761,7 @@ function pdChartSVG(a, input, nowH, widthPx) {
   const levels = (c.levels || []).slice().sort((x, y) => x.timeH - y.timeH), doses = (c.doses || []).slice().sort((x, y) => x.timeH - y.timeH);
   if (!levels.length || !a.curve || !a.curve.length) return '';
   const t0 = Math.min(doses.length ? doses[0].timeH : Infinity, levels[0].timeH) - 6, t1 = a.nextDrawH + 6;
-  const W = widthPx > 0 ? Math.round(Math.min(1200, Math.max(280, widthPx))) : 600, H = 220, P = { l: 34, r: 10, t: 14, b: 28 };
+  const W = widthPx > 0 ? Math.round(Math.min(1200, Math.max(280, widthPx))) : 600, H = 220, P = { l: 34, r: 10, t: 24, b: 28 };
   const dataMax = Math.max(goal ? goal.max : 0, ...levels.map(l => l.conc), ...a.curve.map(p => p.hi));
   const topTick = Math.ceil(dataMax - 1e-9), yMax = Math.max(dataMax * 1.15, topTick);   // a labelled tick at or above the drawn maximum
   const x = (t) => P.l + (t - t0) / (t1 - t0) * (W - P.l - P.r), y = (v) => P.t + (1 - v / yMax) * (H - P.t - P.b);
@@ -4780,9 +4780,11 @@ function pdChartSVG(a, input, nowH, widthPx) {
     d = mid;
   }
   // The unit, and a tick at or above the highest drawn value (skipped where it would sit on the goal's label).
-  g += `<text class="pd-axl" x="2" y="${f(P.t - 3)}">mg/L</text>`;
-  if (!goal || Math.abs(y(topTick) - y(goal.max)) >= 14) g += `<text class="pd-axl" x="${P.l - 6}" y="${f(y(topTick) + 4)}" text-anchor="end">${topTick}</text>`;
-  if (goal) g += `<text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.max) + 4)}" text-anchor="end">${goal.max}</text><text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.min) + 4)}" text-anchor="end">${goal.min}</text>`;
+  g += `<text class="pd-axl" x="2" y="12">mg/L</text>`;
+  const topClash = !!goal && Math.abs(y(topTick) - y(goal.max)) < 14;   // the goal's label and the top tick would overprint
+  if (!topClash || topTick > goal.max) g += `<text class="pd-axl" x="${P.l - 6}" y="${f(y(topTick) + 4)}" text-anchor="end">${topTick}</text>`;
+  // When the top tick (above the goal) lands on the goal's upper label, the tick wins: it is the highest value drawn.
+  if (goal) g += `${topClash && topTick > goal.max ? '' : `<text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.max) + 4)}" text-anchor="end">${goal.max}</text>`}<text class="pd-axl" x="${P.l - 6}" y="${f(y(goal.min) + 4)}" text-anchor="end">${goal.min}</text>`;
   if (nowH > t0 && nowH < t1) g += `<line class="pd-now" x1="${f(x(nowH))}" x2="${f(x(nowH))}" y1="${P.t}" y2="${f(yb)}"/><text class="pd-axl" x="${f(x(nowH))}" y="${P.t - 3}" text-anchor="middle">now</text>`;
   g += `<line class="pd-draw" x1="${f(x(a.nextDrawH))}" x2="${f(x(a.nextDrawH))}" y1="${P.t}" y2="${f(yb)}"/>`;
   const up = a.curve.map(p => `${f(x(p.t))},${f(y(p.hi))}`), dn = a.curve.slice().reverse().map(p => `${f(x(p.t))},${f(y(p.lo))}`);
@@ -8537,6 +8539,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
     marks.push([tx(i * tau + Math.min(tinf, tau)), ty(p.peak)], [tx((i + 1) * tau), ty(p.trough)]); } });
   // Candidates are {l, r, y}: a label's left and right edges and its top. The first that leaves every
   // vertex and marker clear wins; otherwise the least crossed. A marker counts when it is within 7 px.
+  const rects = [];   // labels already placed: x0, x1, y0, y1
   const clearestPlace = (cands, h) => {
     let best = null, fewest = Infinity;
     for (const c of cands) {
@@ -8544,6 +8547,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
       let n = 0;
       for (const [x, yy] of drawn) if (x >= x0 && x <= x1 && yy >= y0 && yy <= y1) n++;
       for (const m of marks) if (m[0] >= x0 - 7 && m[0] <= x1 + 7 && m[1] >= y0 - 7 && m[1] <= y1 + 7) n += 10;
+      for (const q of rects) if (x1 >= q.x0 && x0 <= q.x1 && y1 >= q.y0 && y0 <= q.y1) n += 10;
       if (n < fewest) { best = c; fewest = n; }
       if (!n) break;
     }
@@ -8575,6 +8579,7 @@ function drawPKGraph(canvasId, dose, tau, tinf, kel, vd, opts) {
       const at = clearestPlace(inPlot.length ? inPlot : cands, hO) || cands[0];
       ctx.textAlign = at.a;
       haloText(txtO, at.x, at.y);
+      rects.push({ x0: at.l, x1: at.r, y0: at.y, y1: at.y + hO });
     }
   }
 
