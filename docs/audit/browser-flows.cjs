@@ -1430,6 +1430,16 @@ async function enterCourse(page) {
     ok('D26: final review: the copy summary and the announcement carry the hold, with no clock time',
        /^Hold: recheck a level before the next dose/.test(c1.summary) && /^Result: Hold: recheck a level before the next dose/.test(c1.said)
        && !/\d\d:\d\d/.test(c1.summary.split('. ')[0]), JSON.stringify({ summary: c1.summary, said: c1.said }));
+    // Task 21b: the horizon is said from the origin it is counted from (U2: the due time), on the hold line, the
+    // readout and the projection's note alike; never "for the next 72 h".
+    await a.locator('#b-proj-fwd').check(); await a.waitForTimeout(400);
+    const hz = await a.evaluate(() => ({ why: ((document.querySelector('#b-results .vx-hold-why') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      readout: ((document.getElementById('b-first-readout') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      note: ((document.getElementById('b-proj-auc-note') || {}).textContent || '').trim() }));
+    ok('D27: the "recheck a level" horizon is named from the due time on the hold line, the readout and the projection note',
+       [hz.why, hz.readout, hz.note].every(t => /until 72 h after the next dose is due/.test(t) && !/for the next 72 h|after the dose was due/.test(t))
+       && /^No projection: /.test(hz.note), JSON.stringify(hz));
+    await a.locator('#b-proj-fwd').uncheck(); await a.waitForTimeout(200);
     ok('D26: final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
        /No further dose until a level is drawn/.test(c1.all) && !/Give a single weight-based loading dose/.test(c1.all) && !/not the actual 8\b/.test(c1.all),
        c1.all.slice(c1.all.indexOf('Severe renal'), c1.all.indexOf('Severe renal') + 300));

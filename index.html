@@ -10351,10 +10351,15 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     if (j.c >= TROUGH_HIGH_MGL) holdAt(j, fromH);
   }
   // The resume time is the later of the two crossings below the threshold (both must be
-  // below it), on the HOLD_SEARCH_STEP_H grid from the time held, within HOLD_SEARCH_MAX_H.
+  // below it), on the HOLD_SEARCH_STEP_H grid from the time held, up to HOLD_SEARCH_MAX_H after
+  // the due time (U2). The due time (Task 21b; final review minor) is the planned dose held, or
+  // when the next dose is due as this plan reads it (the new regimen's interval from the last
+  // dose, or now once that has passed): never a chosen time, which was counted from itself
+  // (chosen + 72 h) while every surface named the due time.
   let resumeH = null;
+  const horizonFromH = holdPlannedH != null ? holdPlannedH : Math.max(last.timeH + rec.tau, nowH);
   if (hold) {
-    for (let k = 1; k * HOLD_SEARCH_STEP_H <= HOLD_SEARCH_MAX_H + 1e-9; k++) {
+    for (let k = 1; holdAtH + k * HOLD_SEARCH_STEP_H <= horizonFromH + HOLD_SEARCH_MAX_H + 1e-9; k++) {
       const t = holdAtH + k * HOLD_SEARCH_STEP_H;
       if (judge(rFit, t).c < TROUGH_HIGH_MGL) { resumeH = t; break; }
     }
@@ -10470,8 +10475,13 @@ function holdSentence(plan) {
   const at = `${holdBasisAt(plan)}, at or above ${TROUGH_HIGH_MGL} mg/L`;
   const lead = holdLead(plan);
   return plan.holdNoTime
-    ? `${lead}: recheck a level before the next dose; ${at}, and stays there for the next ${HOLD_SEARCH_MAX_H} h.`
+    ? `${lead}: recheck a level before the next dose; ${at}, and stays there until ${holdHorizonText(plan)}.`
     : `${lead}: next dose not before ${fmtClock(plan.resumeH)}; ${at}.`;
+}
+// How far the "recheck a level" horizon reaches, from the origin firstDosePlan counts it from
+// (Task 21b; U2): "72 h after the next dose is due", or after the planned dose held.
+function holdHorizonText(plan) {
+  return `${HOLD_SEARCH_MAX_H} h after ${plan && plan.holdPlannedH != null ? 'the planned dose' : 'the next dose is due'}`;
 }
 // What set the hold, at the time held (the user's ruling U1): the fitted level, the measured
 // level carried down the fitted slope, or both. One sentence fragment for every surface.
@@ -10527,7 +10537,7 @@ function holdHeadHTML(plan) {
   const head = plan.holdNoTime ? `${holdLead(plan)}: recheck a level before the next dose` : `${holdLead(plan)}: next dose not before ${fmtClock(plan.resumeH)}`;
   const at = plan.holdPlannedH != null ? 'At the planned dose, ' : plan.chosen ? 'At the time chosen, ' : '';
   const why = plan.holdNoTime
-    ? `${holdBasisAt(plan)}, at or above ${TROUGH_HIGH_MGL} mg/L, and stays there for the next ${HOLD_SEARCH_MAX_H} h on this fit. Recheck a level before giving the regimen below.`
+    ? `${holdBasisAt(plan)}, at or above ${TROUGH_HIGH_MGL} mg/L, and on this fit stays there until ${holdHorizonText(plan)}. Recheck a level before giving the regimen below.`
     : `${at}${holdBasisAt(plan)}, at or above ${TROUGH_HIGH_MGL} mg/L; ${plan.holdBasis === 'both' ? 'both fall' : 'it falls'} below ${TROUGH_HIGH_MGL} by ${fmtClock(plan.resumeH)}. Resume with the regimen below.`;
   return holdLineHTML(head, why.charAt(0).toUpperCase() + why.slice(1));
 }
@@ -10589,7 +10599,7 @@ function firstDoseReadoutHTML(plan, rec, print) {
   const lvl = `<strong${plan.hold ? ' class="tone-alarm"' : ''}>${shown} mg/L</strong>`;
   const byWhat = byCarried ? ` (measured, carried down the fitted slope; fitted ${plan.pre.toFixed(1)})` : '';
   if (plan.holdNoTime) {
-    const stays = `at or above ${TROUGH_HIGH_MGL} mg/L for the next ${HOLD_SEARCH_MAX_H} h on this fit`;
+    const stays = `at or above ${TROUGH_HIGH_MGL} mg/L until ${holdHorizonText(plan)} on this fit`;
     const held = `<strong class="tone-alarm">${plan.holdPre.toFixed(1)} mg/L</strong>`;
     // The number is labelled by the value it is (wave 2 label fix): holdPre is the higher of the two
     // bases, so on a 'both' hold it is usually the carried measured level, never "fitted level".
@@ -15834,7 +15844,7 @@ function refreshProfileGraph() {
     if (proj.refused) {
       // Refuse rather than approximate (Task 2 review): with no time the fit allows, the
       // verdict says recheck a level, so no regimen is drawn as if it were being given.
-      if (noteEl) noteEl.textContent = `No projection: the level stays at or above ${TROUGH_HIGH_MGL} mg/L for ${HOLD_SEARCH_MAX_H} h after the dose was due. Recheck a level.`;
+      if (noteEl) noteEl.textContent = `No projection: the level stays at or above ${TROUGH_HIGH_MGL} mg/L until ${holdHorizonText(fpProj)}. Recheck a level.`;
       if (legendEl) legendEl.style.display = 'none';
     } else {
       // Show AUC note

@@ -9023,13 +9023,48 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const calc = fn45('calculate').toString();
     assert((calc.match(/troughHold\([^;]*, Date\.now\(\) \/ 3600000\)/g) || []).length === 3, 'level, two-level and random-level pass now');
   });
+  // The hold horizon text matches what was counted (final review minor). U2: 72 h from the due time. A chosen
+  // first-dose time was counted from itself (chosen + 72 h) while the projection note said "72 h after the dose was
+  // due". The count is now from the time the next dose is due (firstDosePlan's own "when the next dose is due": the
+  // new regimen's interval from the last dose, or now once that has passed) or the planned dose held, and every
+  // surface names that origin.
+  test('45.48 the hold horizon is counted from the due time, chosen time or not, and every surface says "72 h after the next dose is due" [T21b]', () => {
+    // 44.37's fixture: one 2 g dose at 0 h, Buelga, V 50 L, now 4 h; the new regimen 500 mg q24h, due at 24 h.
+    const mk = (CL) => ({ model: 'buelga', CL_ind: CL, V_ind: 50, doses: [{ mg: 2000, tinfH: 2, timeH: 0 }], levels: [], fitNowH: 4 });
+    const at = (r, t) => fn45('predictFittedAt')(r, t);
+    const crossAt = (h) => { let lo = 0.01, hi = 5; for (let k = 0; k < 80; k++) { const m = (lo + hi) / 2; if (at(mk(m), h) >= K45.TROUGH_HIGH_MGL) lo = m; else hi = m; } return mk(hi); };
+    const rec = { dose: 500, tau: 24, tinfH: 1, auc24: 500 }, plan = (r, atH) => fn45('firstDosePlan')(r, rec, 4, atH, null);
+    // Crossing 80 h after the due time: past the horizon whether or not a later time is chosen (it was given a time
+    // when 40 h was chosen: 40 + 72 = 112 h reaches 104 h).
+    const r80 = crossAt(24 + 80);
+    assert(plan(r80, null).holdNoTime === true, 'unchosen: recheck');
+    const c40 = plan(r80, 40);
+    assert(c40.hold && c40.holdNoTime === true && c40.resumeH === null, `chosen 40 h, crossing at 104 h: ${JSON.stringify({ resume: c40.resumeH, noTime: c40.holdNoTime })}`);
+    // Crossing 70 h after the due time: a time whether or not an earlier time is chosen (chosen 10 h: 10 + 72 = 82 h
+    // missed it).
+    const r70 = crossAt(24 + 70);
+    const c10 = plan(r70, 10), u70 = plan(r70, null);
+    assert(c10.hold && !c10.holdNoTime && Math.abs(c10.resumeH - 94) <= 0.25 && !u70.holdNoTime && Math.abs(u70.resumeH - 94) <= 0.25,
+      `crossing at 94 h: chosen 10 h ${c10.resumeH}, unchosen ${u70.resumeH}`);
+    // A planned dose held: counted from the planned dose (it is the dose that was due).
+    const rp = Object.assign({}, r70, { doses: r70.doses.concat([{ mg: 500, tinfH: 1, timeH: 30 }]) });
+    const pp = plan(rp, null);
+    assert(pp.hold && pp.holdPlannedH === 30, `planned hold: ${JSON.stringify({ hold: pp.hold, at: pp.holdPlannedH })}`);
+    // The words: one origin, named the same on every surface; never "for the next 72 h" (counted from the time held).
+    const said = (p) => [fn45('holdSentence')(p), fn45('holdHeadHTML')(p), fn45('firstDoseReadoutHTML')(p, rec, false), fn45('firstDoseReadoutHTML')(p, rec, true)];
+    for (const h of said(c40)) assert(h.indexOf(`until ${K45.HOLD_SEARCH_MAX_H} h after the next dose is due`) >= 0 && !/for the next \d+ h/.test(h), h.slice(0, 400));
+    const rpNo = Object.assign({}, r80, { doses: r80.doses.concat([{ mg: 500, tinfH: 1, timeH: 30 }]) }), ppNo = plan(rpNo, null);
+    assert(ppNo.holdNoTime && said(ppNo).every(h => h.indexOf(`until ${K45.HOLD_SEARCH_MAX_H} h after the planned dose`) >= 0), said(ppNo)[0]);
+    assert(/fpProj\.holdPlannedH != null|holdHorizonText\(fpProj\)/.test(fn45('refreshProfileGraph').toString()) && !/after the dose was due/.test(fn45('refreshProfileGraph').toString()),
+      'the projection note names the same origin');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 606;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.47 + D27 redraw)
+const EXPECTED_TOTAL = 607;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.48 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
