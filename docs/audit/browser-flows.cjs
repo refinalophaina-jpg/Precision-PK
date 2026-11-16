@@ -2543,6 +2543,52 @@ async function enterCourse(page) {
     results.problems.push(...hAttr.kept);
     await hctx.close();
   }
+  // ── Task 21b (D27): Release 1 carry-overs a pharmacist reads as clinical fact. Real input under the CSP.
+  {
+    const bctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const b = await bctx.newPage();
+    const bProblems = watch(b, 'task21b');
+    await b.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await b.goto(BASE + '?v=pwt21b-' + Date.now(), { waitUntil: 'networkidle' });
+    // A held planned dose is not drawn as given. D26's C1 patient (fictional 60 M, 80 kg, 178 cm, SCr 3.0, Buelga;
+    // 1.5 g q8h x 6 over 2 h, a 48 mg/L level at 09:00) with a seventh 1.5 g row planned for 12:00, two hours ahead.
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '60'); await typeInto(b, '#b-tbw', '80'); await typeInto(b, '#b-height', '178'); await typeInto(b, '#b-scr', '3.0');
+    await b.locator('[data-onclick="k39"]').click();
+    const times = [[day(-2), '12:00'], [day(-2), '20:00'], [day(-1), '04:00'], [day(-1), '12:00'], [day(-1), '20:00'], [day(0), '04:00'], [day(0), '12:00']];
+    for (let n = 1; n <= times.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, '1500'); await typeInto(b, `#b-dose-tinf-${n}`, '2');
+      await b.locator(`#b-dose-date-${n}`).fill(times[n - 1][0]); await typeInto(b, `#b-dose-time-${n}`, times[n - 1][1]);
+    }
+    await b.locator('[data-onclick="k46"]').click();
+    await typeInto(b, '#b-lvl-conc-1', '48'); await b.locator('#b-lvl-date-1').fill(day(0)); await typeInto(b, '#b-lvl-time-1', '09:00');
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await b.waitForTimeout(500);
+    const plannedH = await b.evaluate((d) => new Date(`${d}T12:00`).getTime() / 3600000, day(0));
+    const drawn = () => b.evaluate((pH) => {
+      const c = document.getElementById('b-profile-canvas'), P = c && c._pkPlot, s = document.getElementById('b-course-strip');
+      const v = document.querySelector('#b-results .vx-verdict');
+      return { first: v ? v.innerText.trim().split('\n')[0].trim() : '',
+        curve: P ? P.doses.map(d => d.timeH) : null, plannedOnCurve: P ? P.doses.some(d => Math.abs(d.timeH - pH) < 1e-6) : null,
+        before: P ? P.predInd(pH - 0.01) : NaN, after: P ? P.predInd(pH + 2.5) : NaN,
+        bars: s ? s.querySelectorAll('rect.bar:not(.proj)').length : -1, proj: s ? s.querySelectorAll('rect.bar.proj').length : -1,
+        held: s ? [...s.querySelectorAll('.held')].map(g => (g.querySelector('title') || {}).textContent || '') : [],
+        heldWord: s ? [...s.querySelectorAll('.held text')].map(t => t.textContent) : [] }; }, plannedH);
+    const p0 = await drawn();
+    ok('D27: a planned dose the answer holds is not drawn as given: off the curve\'s simulated concentration, no dose bar, a "held" mark on the strip',
+       /^Hold the planned dose at /.test(p0.first) && p0.plannedOnCurve === false && p0.curve.length === 6 && p0.after < p0.before
+       && p0.bars === 6 && p0.held.length === 1 && /held/.test(p0.held[0]) && p0.heldWord.indexOf('held') >= 0, JSON.stringify(p0));
+    await b.locator('#b-course-strip').screenshot({ path: path.join(OUT, 'task21b-held-strip.png') });
+    await b.locator('#b-proj-fwd').check(); await b.waitForTimeout(400);
+    const p1 = await drawn();
+    ok('D27: with the projection ticked the held planned dose stays off the curve, its "held" mark stays, and the projection is drawn',
+       p1.plannedOnCurve === false && p1.bars === 6 && p1.proj > 0 && p1.held.length === 1, JSON.stringify(p1));
+    await b.locator('#b-proj-fwd').uncheck(); await b.waitForTimeout(200);
+    const bAttr = await attributeInjected(b, bProblems);
+    results.problems.push(...bAttr.kept);
+    await bctx.close();
+  }
+  // ── end Task 21b
   await browser.close();
 
   results.checks = checks;

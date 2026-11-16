@@ -1573,9 +1573,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const refresh = sandbox.refreshProfileGraph.toString();
     assert(/const arrive = r !== _profileArrivedFor && profileMotionOK\(\);/.test(refresh) && /_profileArrivedFor = r;/.test(refresh), 'gated on a new result');
     // v3.11.0: both also take the same clock (nowH) after the gate — SUITE 40.8.
-    assert(/drawCourseStrip\([\s\S]*arrive, nowH\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive, nowH \}/.test(refresh), 'the strip and the curve share the gate');
+    assert(/drawCourseStrip\([\s\S]*arrive, nowH, course\.held\)/.test(refresh) && /sessions: r\.hdSessions \|\| \[\], arrive, nowH, held: course\.held \}/.test(refresh), 'the strip and the curve share the gate');   // Task 21b: and the held rows
     assert(/prefers-reduced-motion: reduce/.test(sandbox.profileMotionOK.toString()), 'reduced motion is honoured');
-    const pr = src.slice(src.indexOf('const gp = gotiGraphParams(r);\n    drawProfileGraph(off'), src.indexOf('const url = off.toDataURL'));
+    const pr = src.slice(src.indexOf('drawProfileGraph(off'), src.indexOf('const url = off.toDataURL'));   // Task 21b: its dose list is computed above it
     assert(pr.length > 0 && !/arrive/.test(pr), 'print draws without the arrival');
     // The static path settles synchronously: the plot geometry exists straight away.
     assert(runProfile(q8h, lev, 4.5, 60).plot, 'no arrival requested: drawn and settled at once');
@@ -5333,9 +5333,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(near.tStart === base.tStart && near.tEnd > base.tEnd + 20, `reached with a margin: ${JSON.stringify(near)}`);
     assert(sandbox.profileDomain(doses, 0.1, [], [], base.tEnd + 200).tEnd === base.tEnd, 'a profile opened days later is not flattened to reach it');
     assert(/const nowH = Date\.now\(\) \/ 3600000;/.test(bodyOf40('refreshProfileGraph')), 'one clock read per redraw');
-    assert(/arrive, nowH \}\)/.test(bodyOf40('refreshProfileGraph')) && /r\.hdSessions \|\| \[\], arrive, nowH\);/.test(bodyOf40('refreshProfileGraph')), 'handed to both');
-    assert(/profileDomain\(doses, kelInd, opts\.sessions, levels, tNow\)/.test(bodyOf40('drawProfileGraph')), 'the curve');
-    assert(/profileDomain\(doses, kelInd, sessions, levels, tNow\)/.test(bodyOf40('drawCourseStrip')), 'the strip');
+    assert(/arrive, nowH, held: course\.held \}\)/.test(bodyOf40('refreshProfileGraph')) && /r\.hdSessions \|\| \[\], arrive, nowH, course\.held\);/.test(bodyOf40('refreshProfileGraph')), 'handed to both');   // Task 21b: with the held rows
+    assert(/profileDomain\(doses, kelInd, opts\.sessions, levels, tNow, opts\.held\)/.test(bodyOf40('drawProfileGraph')), 'the curve');   // Task 21b: the held rows stay on the axis
+    assert(/profileDomain\(doses, kelInd, sessions, levels, tNow, held\)/.test(bodyOf40('drawCourseStrip')), 'the strip');
   });
   // Final review (v3.11.0), raised by the reviewer and approved by the user: the model advice was
   // never told the patient is on dialysis, so Goti-HD read "Standard adult — Buelga 2005 is
@@ -7429,7 +7429,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
   };
   const statusText44 = (env) => env.status.map(s => s.textContent).join(' | ');
-  Object.assign(__suiteShared, { profEnv44, withProf44, profFixture44, PROF_KEY44, fit44 });   // SUITE 45 reuses them
+  Object.assign(__suiteShared, { profEnv44, withProf44, profFixture44, PROF_KEY44, fit44, c1Case, trough44 });   // SUITE 45 reuses them
 
   test('44.24 a malformed profile (no demographics, no snapshot, a non-numeric savedAt) does not throw, leaves the form untouched and says so', () => {
     const base = profFixture44[0];
@@ -8947,13 +8947,53 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     try { fn45('showActionFailure')({ getAttribute: () => null, textContent: 'Load' }); } finally { sandbox.document.getElementById = prevGet; }
     assert(order.indexOf('hidden=false') >= 0 && order.indexOf('hidden=false') < order.lastIndexOf('filled'), order.join(' → '));
   });
+
+  // ── Task 21b (D27): Release 1 carry-overs a pharmacist reads as clinical fact (rulings R32, R33).
+  // A held planned dose is not drawn as given. D26's C1 fixture (fictional 60 M, SCr 3.0, Buelga; 1.5 g q8h x 6
+  // over 2 h, 48 mg/L at 45 h, now 46 h) plus a planned 1.5 g at 48 h, which the answer holds (44.5a).
+  test('45.46 a planned dose the answer holds is left off the curve\'s doses and marked "held" on the strip, never drawn as given [T21b]', () => {
+    const { c1Case } = __suiteShared;
+    const { r: r0, rec, nowH, cur } = c1Case();
+    const planned = { mg: 1500, tinfH: 2, timeH: 48 };
+    const r = Object.assign({}, r0, { doses: r0.doses.concat([planned]) });
+    const plan = fn45('firstDosePlan')(r, rec, nowH, null, cur);
+    assert(plan.hold && plan.holdPlannedH === 48, `fixture: a hold on the planned dose: ${JSON.stringify({ hold: plan.hold, at: plan.holdPlannedH })}`);
+    const c = fn45('profileCourseDoses')(r, plan, []);
+    assert(c.held.length === 1 && c.held[0] === planned && c.doses.length === 6 && c.doses.indexOf(planned) < 0, JSON.stringify(c));
+    // The curve's concentration after the held time is the fit without the dose (what the hold was judged on).
+    const given = Object.assign({}, r, { doses: c.doses });
+    const at = (rr, t) => fn45('predictFittedAt')(rr, t);
+    assert(at(given, 50) < at(given, 48) && at(r, 50) > at(given, 50) + 5, `drawn ${at(given, 50)} vs as-given ${at(r, 50)} at 50 h`);
+    // A projection is added after the rows that are drawn; the held row stays out.
+    const proj = [{ mg: 500, tinfH: 1, timeH: plan.resumeH }];
+    const cp = fn45('profileCourseDoses')(r, plan, proj);
+    assert(cp.doses.length === 7 && cp.doses[6] === proj[0] && cp.doses.indexOf(planned) < 0, 'with the projection');
+    // No hold, nothing held: the planned row is drawn (it will be given).
+    const fine = fn45('profileCourseDoses')(r, Object.assign({}, plan, { hold: false }), []);
+    assert(fine.held.length === 0 && fine.doses.length === 7, 'no hold');
+    // A refusal's hold ("recheck a level before the next dose") holds every planned row too.
+    assert(fn45('heldPlannedDoses')(r, { noSolution: true, hold: true, holdNoTime: true, holdPlannedH: null }).length === 1, 'refusal hold');
+    // The axis is the one it was: the held row is on it (the strip marks it there).
+    const dAll = fn45('profileDomain')(r.doses, r.CL_ind / r.V_ind, [], r.levels, nowH);
+    const dHeld = fn45('profileDomain')(c.doses, r.CL_ind / r.V_ind, [], r.levels, nowH, c.held);
+    assert(dAll.tStart === dHeld.tStart && dAll.tEnd === dHeld.tEnd, `axis ${JSON.stringify(dAll)} vs ${JSON.stringify(dHeld)}`);
+    // The strip: six bars (the given doses), and one "held" mark titled with the dose and its time.
+    const el = { clientWidth: 600, innerHTML: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, classList: { toggle() {} } };
+    fn45('drawCourseStrip')(el, c.doses, 0, r.levels, [], r.CL_ind / r.V_ind, [], false, nowH, c.held);
+    const bars = (el.innerHTML.match(/<rect [^>]*class="bar"/g) || []).length, held = el.innerHTML.match(/<g class="held"><title>([^<]*)<\/title>/g) || [];
+    assert(bars === 6 && held.length === 1 && /1\.5 g planned at .*: held, not given/.test(held[0]) && />held<\/text>/.test(el.innerHTML) && /<svg [^>]*class="ic"/.test(el.innerHTML),
+      `bars ${bars}, held ${held.join(' | ')}`);
+    // The screen and print draw from it, through the hold the verdict shows.
+    assert(/profileCourseDoses\(r, answerHoldPlanOf\(r\), projDoses\)/.test(fn45('refreshProfileGraph').toString())
+      && /profileCourseDoses\(r, answerHoldPlanOf\(r\), \[\]\)/.test(fn45('_buildPrintGraph').toString()), 'refreshProfileGraph and the print graph draw through profileCourseDoses');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 604;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.45 + D27 redraw)
+const EXPECTED_TOTAL = 605;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.46 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

@@ -2125,6 +2125,11 @@
   .course .cap.proj { fill: var(--series-projection); }
   .course .dl   { font-size: 12px; font-weight: 500; fill: var(--ink); }
   .course .dl.proj { fill: var(--terracotta-ink); }
+  /* A planned dose the answer holds (Task 21b): an empty dashed outline, the drawn caution icon and
+     the word "held", in the caution tone. Never a filled bar: it was not given. */
+  .course .held { color: var(--amber); }
+  .course .held .hb { fill: none; stroke: var(--amber); stroke-width: 1.25; stroke-dasharray: 3 2; }
+  .course .held .hw { font-size: 12px; font-weight: 500; fill: var(--amber); }
   .course .gap  { font-size: 12px; fill: var(--ink-muted); }
   .course .lv   { fill: var(--series-measured); stroke: var(--paper); stroke-width: 1.5; }
   .course .lvv  { font-size: 12px; font-weight: 500; fill: var(--ink); }
@@ -10477,6 +10482,7 @@ function holdLead(plan) {
 // the verdict's hold line, the Copy summary and the curve's label follow it. Nothing
 // else is re-rendered (k82 stays a partial update).
 function refreshHoldSlots(r, plan) {
+  if (typeof bState !== 'undefined' && bState) bState.holdFor = { r, plan };   // the curve redraws from it (Task 21b)
   if (typeof document === 'undefined') return;
   const hh = document.getElementById('b-hold');
   if (hh) hh.innerHTML = answerHeadHTML(plan);
@@ -12465,7 +12471,7 @@ function drawProfileGraph(canvas, doses, levels, CLind, Vind, CLpop, Vpop, gotiI
   // Same domain and side padding as the course strip above, so the two share
   // one time axis at every width.
   const tNow   = Number.isFinite(opts.nowH) ? opts.nowH : Date.now() / 3600000;
-  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions, levels, tNow);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, opts.sessions, levels, tNow, opts.held);
 
   // Dispatch to 1-comp or 2-comp based on gotiInd presence
   const predAt = (CL) => gotiInd
@@ -14355,9 +14361,11 @@ function profileArriveDelay(xFromLeft, gW) {
 // axis will stretch to show a planned session or "now" before the curve flattens
 // into a sliver.
 const PROFILE_REACH_H = 72;
-function profileDomain(doses, kelInd, sessions, levels, nowH) {
+// held: planned rows the answer holds (Task 21b). They are on the axis as before (the strip marks
+// them "held"), though neither the curve nor the strip draws them as given.
+function profileDomain(doses, kelInd, sessions, levels, nowH, held) {
   const tStart = doses[0].timeH;
-  const lastD = doses[doses.length - 1];
+  const lastD = (held || []).reduce((a, d) => (d.timeH > a.timeH ? d : a), doses[doses.length - 1]);
   const span = lastD.timeH - tStart;
   // Enough tail to show the terminal decay without letting it dominate: about
   // three half-lives, at least 12 h, never more than 48 h.
@@ -14389,11 +14397,11 @@ function profileDomain(doses, kelInd, sessions, levels, nowH) {
 // The course strip: what was given (bars as wide as each infusion), what was
 // measured (dots with values), creatinine (ticks), and "now" — on the same time
 // axis as the curve beneath it. Drawn as SVG so it reflows and prints crisply.
-function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive, nowH) {
+function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive, nowH, held) {
   if (!el || !doses.length) return;
   const W = Math.max(280, el.clientWidth || 600), H = 76;
   const tNow = Number.isFinite(nowH) ? nowH : Date.now() / 3600000;
-  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions, levels, tNow);
+  const { tStart, tEnd } = profileDomain(doses, kelInd, sessions, levels, tNow, held);
   const P = PROFILE_PAD, gW = W - P.left - P.right, span = tEnd - tStart;
   const x = t => P.left + (t - tStart) / span * gW;
   // On a new result each mark appears as the curve's trace below passes its time
@@ -14422,6 +14430,16 @@ function drawCourseStrip(el, doses, nProj, levels, scr, kelInd, sessions, arrive
       const xp = x(doses[i - 1].timeH), gap = d.timeH - doses[i - 1].timeH;
       if (x0 - xp > 44) gapLbls.push({ cx: (x0 + xp) / 2, txt: `${+gap.toFixed(1)} h`, x0 });
     }
+  });
+  // A planned dose the answer holds (Task 21b): never a dose bar. In its place an empty dashed
+  // outline as wide as its infusion in the caution tone, the drawn caution icon and the word
+  // "held" (on the first), titled with the dose and its time. The curve below leaves it out.
+  (held || []).forEach((d, i) => {
+    const x0 = x(d.timeH), w = Math.max(2, x(d.timeH + d.tinfH) - x0);
+    s += `<g class="held"><title>${fmtDose(d.mg)} planned at ${fmtClock(d.timeH)}: held, not given</title>`
+      + `<rect class="hb" x="${x0.toFixed(1)}" y="${Y.dose - 5}" width="${w.toFixed(1)}" height="10"/>`
+      + ICON.caution.replace('<svg ', `<svg x="${x0.toFixed(1)}" y="${Y.dose - 18}" width="11" height="11" `)
+      + (i === 0 ? `<text x="${(x0 + 13).toFixed(1)}" y="${Y.dose - 8}" class="hw">held</text>` : '') + '</g>';
   });
   // Each level's value sits right of its dot, or left when the next dot is too close
   // (two levels drawn hours apart printed one value over the other, "15●228.4"); with
@@ -14680,6 +14698,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const firstPlan = !isHD && rec && !rec.noSolution && !r.lowCrClHold ? firstDosePlan(r, rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen) : null;
   const nsHold = !isHD ? noSolutionHold(r, r.fitNowH, bState.curRegimen) : null;
   const holdPlan = firstPlan || nsHold;
+  bState.holdFor = { r, plan: holdPlan };   // the curve and the strip draw what it holds as held (Task 21b)
   // It reads the state of the fit (D26): a conflicted fit is told to draw a level, never
   // that one "would add little" beside a Low rating; and a hold is told to recheck a level
   // (final review C1). One context, kept so k82's chosen time re-reads it (bayesNextStep).
@@ -15749,14 +15768,36 @@ function drawCompareCanvas(canvas, series) {
 // ─── Refresh dosing profile graph (with optional projected doses) ───
 // The projected doses from the first-dose plan (v3.9.0: they start where the readout
 // says). Task 2 review: under a hold they start at the resume time (the plan's firstH);
-// with no time the fit allows (holdNoTime) none are drawn — refused, not approximated;
-// under a hold on a planned dose the planned rows are dropped from the drawing.
+// with no time the fit allows (holdNoTime) none are drawn — refused, not approximated.
+// The planned rows a hold holds are left out by profileCourseDoses, projection or not.
 function projectedDoses(fp, dose, tau, n, tinfH, fallbackStartH) {
-  if (fp && fp.holdNoTime) return { doses: [], refused: true, dropPlanned: false };
+  if (fp && fp.holdNoTime) return { doses: [], refused: true };
   const startT = fp ? fp.firstH : fallbackStartH;
   const doses = [];
   for (let i = 0; i < n; i++) doses.push({ mg: dose, tinfH, timeH: startT + i * tau });
-  return { doses, refused: false, dropPlanned: !!(fp && fp.holdPlannedH != null) };
+  return { doses, refused: false };
+}
+// The planned rows the answer holds (Task 21b, D27; D26 R5 and I2). A held planned dose is not a dose
+// given, so it is never drawn as one: the curve's simulated concentration leaves it out and the course
+// strip marks it "held" in its place. Held: every planned row (after the fit's "now") under a hold on a
+// planned dose (holdPlannedH; the plan is fitted without them all), and under a refusal's hold ("recheck
+// a level before the next dose": no dose until a level is drawn). Before, the curve drew them as given
+// whenever "Project next doses" was off, and under "recheck a level" even with it on.
+function heldPlannedDoses(r, plan) {
+  if (!(r && plan && plan.hold) || !(plan.holdPlannedH != null || plan.noSolution)) return [];
+  const nowH = r.fitNowH != null ? r.fitNowH : Date.now() / 3600000;
+  return (r.doses || []).filter(d => d.timeH > nowH + 1e-9);
+}
+// The hold the verdict on screen shows for this result (renderBayesianResults, then k82's re-plan through
+// refreshHoldSlots), or null.
+function answerHoldPlanOf(r) {
+  const h = typeof bState !== 'undefined' && bState ? bState.holdFor : null;
+  return h && h.r === r ? h.plan : null;
+}
+// What the curve and the strip draw as doses (every row not held, then any projection), and the held rows.
+function profileCourseDoses(r, plan, projDoses) {
+  const held = heldPlannedDoses(r, plan);
+  return { doses: ((r && r.doses) || []).filter(d => held.indexOf(d) < 0).concat(projDoses || []), held };
 }
 function refreshProfileGraph() {
   const r = bState.result;
@@ -15765,7 +15806,7 @@ function refreshProfileGraph() {
   if (!canvas) return;
 
   const projEnabled = document.getElementById('b-proj-fwd')?.checked;
-  let projDoses = [], projDropPlanned = false;
+  let projDoses = [];
   if (projEnabled) {
     const projDose = parseFloat(document.getElementById('b-proj-dose')?.value) || (r.rec?.dose || 1000);
     const projTau  = parseFloat(document.getElementById('b-proj-tau')?.value)  || 12;
@@ -15776,7 +15817,6 @@ function refreshProfileGraph() {
     const fpProj   = firstDosePlan(r, { dose: projDose, tau: projTau, tinfH }, r.fitNowH, bState.firstDoseAtH, bState.curRegimen);
     const proj     = projectedDoses(fpProj, projDose, projTau, projN, tinfH, lastDose.timeH + projTau);
     projDoses = proj.doses;
-    projDropPlanned = proj.dropPlanned;
     const noteEl  = document.getElementById('b-proj-auc-note');
     const legendEl = document.getElementById('b-proj-legend');
     if (proj.refused) {
@@ -15797,8 +15837,10 @@ function refreshProfileGraph() {
     if (legendEl) legendEl.style.display = 'none';
   }
 
-  // Under a hold on a planned dose the projection replaces the planned rows it holds.
-  const allDoses  = [...(projDropPlanned ? r.doses.filter(d => !(d.timeH > (r.fitNowH != null ? r.fitNowH : Date.now() / 3600000) + 1e-9)) : r.doses), ...projDoses];
+  // The planned rows the answer holds are not drawn as given (Task 21b): the hold the verdict shows,
+  // as k82 last re-planned it (bState.holdFor).
+  const course = profileCourseDoses(r, answerHoldPlanOf(r), projDoses);
+  const allDoses = course.doses;
   // A new result arrives once; a redraw of the same one (theme, resize, a toggle) does not.
   const arrive = r !== _profileArrivedFor && profileMotionOK();
   _profileArrivedFor = r;
@@ -15807,11 +15849,11 @@ function refreshProfileGraph() {
     const row = fitUncertaintyRow(r);   // the row the decision read (D27)
     const nowH = Date.now() / 3600000;   // one clock for the curve and the strip: one axis
     drawProfileGraph(canvas, allDoses, r.levels, r.CL_ind, r.V_ind, r.CL_pop, r.V_pop, gp.ind, gp.pop, projDoses.length,
-                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [], arrive, nowH });
+                     { band: { lo: row.lo, hi: row.hi }, sessions: r.hdSessions || [], arrive, nowH, held: course.held });
     let scr = [];
     try { scr = readSerialScr(); } catch (e) {}
     drawCourseStrip(document.getElementById('b-course-strip'), allDoses, projDoses.length, r.levels, scr,
-                    r.CL_ind / r.V_ind, r.hdSessions || [], arrive, nowH);
+                    r.CL_ind / r.V_ind, r.hdSessions || [], arrive, nowH, course.held);
   });
 }
 
@@ -16825,15 +16867,17 @@ function _buildPrintGraph(r) {
     // Engine audit 2026-09-28: r.goti's keys are k10_ind/Vc_ind, not k10/Vc, so
     // passing it straight through drew NaN. gotiGraphParams maps them.
     const gp = gotiGraphParams(r);
-    drawProfileGraph(off, r.doses, r.levels || [], r.CL_ind, r.V_ind, r.CL_pop, r.V_pop,
-                     gp.ind, gp.pop, r.nProj || 0, { sessions: r.hdSessions || [] });
+    // The planned rows the answer holds are not drawn as given (Task 21b), as on screen.
+    const course = profileCourseDoses(r, answerHoldPlanOf(r), []), heldN = course.held.length;
+    drawProfileGraph(off, course.doses, r.levels || [], r.CL_ind, r.V_ind, r.CL_pop, r.V_pop,
+                     gp.ind, gp.pop, r.nProj || 0, { sessions: r.hdSessions || [], held: course.held });
     try { Object.defineProperty(window, 'devicePixelRatio', { value: prevDpr, configurable: true }); } catch (e) {}
     const url = off.toDataURL('image/png');
     return `<div class="pr-section pr-section-wide"><h2 class="pr-section-title">Concentration–time profile</h2>
       <div class="pr-graph"><img src="${url}" alt="Vancomycin concentration-time profile"></div>
       <div class="pr-caption">Solid line: individual (Bayesian) fit. Long dashes: population prediction.
         Filled points: measured levels; open rings: the fit at each level, joined by a hairline (the residual).
-        Marks on the axis: doses.${(r.hdSessions || []).length ? ' Shaded columns: haemodialysis sessions.' : ''}</div></div>`;
+        Marks on the axis: doses.${heldN ? ` The ${heldN === 1 ? 'planned dose' : `${heldN} planned doses`} held by the answer ${heldN === 1 ? 'is' : 'are'} not drawn.` : ''}${(r.hdSessions || []).length ? ' Shaded columns: haemodialysis sessions.' : ''}</div></div>`;
   } catch (e) {
     return '';
   } finally {
