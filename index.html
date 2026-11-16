@@ -2263,6 +2263,7 @@
   .hd-gap .toggle-opt { min-height: 44px; min-width: 56px; font-variant-numeric: tabular-nums; }
   .vx-hd-onetime { margin-top: 10px; }
   .vx-hd-onetime td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .vx-hd-onetime tbody th[scope="row"] { white-space: nowrap; }   /* "250 mg" never breaks between the number and its unit (UI review M5) */
   .vx-hd-onetime .hd-in { color: var(--ink); margin-left: 4px; }
   .vx-hd-onetime .hd-in .ic { width: 12px; height: 12px; vertical-align: -1px; }
   .vx-hd-onetime tr.is-pick th, .vx-hd-onetime tr.is-pick td { background: var(--paper-deep); }
@@ -10586,7 +10587,7 @@ function firstDayAucHTML(plan) {
   if (a == null || plan.holdNoTime) return '';   // no time to give a first day from (D26)
   const n = Math.round(a);   // judged on the number shown: never "400, below 400–600" (D21's rule)
   if (n >= AUC24_TARGET_MIN && n <= AUC24_TARGET_MAX) return '';
-  return `<span class="tone-caution">First 24 h AUC₂₄ ${n}, ${n < AUC24_TARGET_MIN ? 'below' : 'above'} ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span> <span class="vx-muted">steady state unchanged</span>`;
+  return `<span class="tone-caution">First 24 h AUC₂₄ ${n}, ${n < AUC24_TARGET_MIN ? 'below' : 'above'} ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX}</span> <span class="vx-muted">· steady state unchanged</span>`;
 }
 // Evidence sections with nothing to show yet, as one line (v3.11.0, D22): each named
 // with what it needs, sections that need the same thing joined.
@@ -14901,7 +14902,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       const dTr  = rec.Ctrough != null && cur.Ctrough != null ? rec.Ctrough - cur.Ctrough : null;
       delta = Math.abs(dAUC) < 0.5
       ? `<p class="vx-delta">Same as the current regimen.</p>`
-      : `<p class="vx-delta">Against the current regimen: AUC₂₄ ${dAUC >= 0 ? '+' : '−'}${Math.abs(dAUC).toFixed(0)} mg·h/L${dTr != null ? `, trough ${dTr >= 0 ? '+' : '−'}${Math.abs(dTr).toFixed(1)} mg/L` : ''}.</p>`;
+      : `<p class="vx-delta">Against the current regimen: AUC₂₄ ${Math.abs(dAUC).toFixed(0)} mg·h/L ${dAUC >= 0 ? 'higher' : 'lower'}${dTr != null ? `, trough ${Math.abs(dTr).toFixed(1)} mg/L ${dTr >= 0 ? 'higher' : 'lower'}` : ''}.</p>`;
     }
     // A hold (D26) leads the answer; the regimen under it is what to resume with. Its own
     // slot, so a chosen time (k82) can make or clear it without a re-render.
@@ -17884,8 +17885,8 @@ function txVerdictHTML(o) {
         ${o.aucBand ? `<span class="tx-band">${o.aucBand}</span>` : ''}</p>
       <p class="vx-sub tx-trough"><span class="vx-k">Trough</span> <span class="${tw.cls}">${o.trough.toFixed(1)} mg/L</span>
         <span class="vx-muted">${o.troughWord ? `${o.troughWord} · ` : ''}${tw.text}</span></p>
-      <p class="vx-sub"><span class="vx-k">Peak</span> ${o.peak.toFixed(1)} mg/L · <span class="vx-k">AUC/MIC</span>
-        <span class="${aucMic >= 400 ? '' : 'tone-caution'}">${aucMic.toFixed(0)}</span></p>
+      <p class="vx-sub"><span class="vx-k">Peak</span> ${o.peak.toFixed(1)} mg/L${Math.abs(o.mic - 1) > 1e-9 ? ` · <span class="vx-k">AUC/MIC</span>
+        <span class="${aucMic >= 400 ? '' : 'tone-caution'}">${aucMic.toFixed(0)}</span>` : ''}</p>
       ${o.action || ''}
       ${o.flags ? `<div class="tx-flags">${o.flags}</div>` : ''}
       <p class="tx-basis">${o.basis}</p>
@@ -18151,7 +18152,7 @@ function _prRecommendation(r, screen) {
     const fp = !r.lowCrClHold ? firstDosePlan(r, r.rec, r.fitNowH != null ? r.fitNowH : Date.now() / 3600000, bState.firstDoseAtH, bState.curRegimen) : null;
     h += answerHeadHTML(fp);                             // v3.14.0 (D26): a hold leads, as on screen
     h += regimenActionHTML(best, r.targetAUC, 'head');   // v3.14.0 (D25): continue, or change and why — as on screen
-    h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? '<span class="pr-prov">provisional</span>' : ''}</p>`;
+    h += `<p class="pr-regimen">${fmtRegimen(best.dose, best.tau)}${screen.provisional ? ' <span class="pr-prov">provisional</span> ' : ''}</p>`;
     if (fp) h += firstDoseHTML(fp, r.rec, true);
     h += `<dl class="pr-dl">`
       + `<div><dt>Infusion</dt><dd>${fmtHrs(tinf)}</dd></div>`

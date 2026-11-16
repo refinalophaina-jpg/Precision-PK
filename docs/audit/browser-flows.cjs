@@ -2141,6 +2141,79 @@ async function enterCourse(page) {
     results.problems.push(...nAttr.kept);
     await nctx.close();
   }
+  // D27 (UI review M4-M8, Task 20b): the Trough verdict shows AUC/MIC only when MIC is not 1 (AUC Precision
+  // already does); the HD dose table's row heads stay on one line; the delta line reads "141 mg·h/L higher",
+  // never "+141"; the first-day caution and "steady state unchanged" are separate clauses; the print's text
+  // layer has a space before "provisional".
+  {
+    const xctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const x = await xctx.newPage();
+    const xProblems = watch(x, 'verdict-fixes');
+    await x.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await x.goto(BASE + '?v=pwv-' + Date.now(), { waitUntil: 'networkidle' });
+    // Trough: MIC 1, then MIC 2.
+    await x.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await typeInto(x, '#age', '60'); await typeInto(x, '#tbw', '80'); await typeInto(x, '#height', '175'); await typeInto(x, '#scr', '1.0');
+    await x.locator('[data-onclick="k9"]').first().click();
+    const troughVerdict = async () => { await x.locator('[data-onclick="k31"]').click(); await x.waitForSelector('#results-content .vx-auc-line', { timeout: 20000 }); await x.waitForTimeout(300);
+      return x.evaluate(() => document.querySelector('#results-content .tx-verdict').textContent.replace(/\s+/g, ' ')); };
+    const mic1 = await troughVerdict();
+    await typeInto(x, '#mic', '2');
+    const mic2 = await troughVerdict();
+    ok('D27: the Trough verdict shows AUC/MIC only when MIC is not 1', !/AUC\/MIC/.test(mic1) && /AUC\/MIC \d+/.test(mic2), JSON.stringify({ mic1: mic1.slice(0, 160), mic2: (mic2.match(/.{20}AUC\/MIC.{10}/) || [''])[0] }));
+    // AUC Precision: a change from 1.75 g q24h (below range) to 1.25 g q12h.
+    await x.locator('[data-onclick="k2"]').click();
+    await typeInto(x, '#b-age', '55'); await typeInto(x, '#b-tbw', '72'); await typeInto(x, '#b-height', '176'); await typeInto(x, '#b-scr', '1.0');
+    await x.locator('[data-onclick="k39"]').click();
+    const qtimes = [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']];
+    for (let n = 1; n <= qtimes.length; n++) {
+      await x.locator('[data-onclick="k43"]').click();
+      await typeInto(x, `#b-dose-mg-${n}`, '1750'); await typeInto(x, `#b-dose-tinf-${n}`, '2');
+      await x.locator(`#b-dose-date-${n}`).fill(qtimes[n - 1][0]); await typeInto(x, `#b-dose-time-${n}`, qtimes[n - 1][1]);
+    }
+    await x.locator('[data-onclick="k46"]').click();
+    await typeInto(x, '#b-lvl-conc-1', '6'); await x.locator('#b-lvl-date-1').fill(day(0)); await typeInto(x, '#b-lvl-time-1', '07:30');
+    await typeInto(x, '#b-auc-target', '400');
+    await x.locator('[data-onclick="k47"]').click(); await x.waitForSelector('#b-results .vx-delta', { timeout: 20000 }); await x.waitForTimeout(300);
+    const dl = await x.evaluate(() => ({ delta: document.querySelector('#b-results .vx-delta').textContent.replace(/\s+/g, ' ').trim(),
+      first: [...document.querySelectorAll('#b-results .vx-first, #b-results .vx-sub')].map(e => e.textContent.replace(/\s+/g, ' ').trim()).filter(t => /First 24 h/.test(t)) }));
+    ok('D27: the delta line reads "141 mg·h/L higher", not "+141"',
+       /^Against the current regimen: AUC₂₄ \d+ mg·h\/L (higher|lower), trough [\d.]+ mg\/L (higher|lower)\.$/.test(dl.delta) && !/[+−]/.test(dl.delta), dl.delta);
+    ok('D27: the first-day caution and "steady state unchanged" are separate clauses',
+       dl.first.length > 0 && dl.first.every(t => /below|above/.test(t) && /\d–\d+ · steady state unchanged/.test(t)), JSON.stringify(dl.first));
+    // Goti on haemodialysis: the one-time table's row heads ("250 mg") on one line at 1280.
+    await x.locator('#b-model-btn-gotihd').click();
+    await x.locator('[data-onclick="k74"]').click();
+    await x.locator('#b-hd-date-1').fill(D2); await typeInto(x, '#b-hd-time-1', '13:00'); await typeInto(x, '#b-hd-hours-1', '4');
+    await x.locator('[data-onclick="k47"]').click();
+    await x.waitForFunction(() => /One-time|No dose now|Pre-HD/.test((document.querySelector('#b-results .vx-verdict') || {}).textContent || ''), null, { timeout: 20000 });
+    await x.waitForTimeout(400);
+    const hd = await x.evaluate(() => { const ths = [...document.querySelectorAll('#b-results .vx-hd-onetime tbody th[scope="row"]')];
+      return { n: ths.length, lines: ths.map(t => { const r = document.createRange(); r.selectNodeContents(t); return new Set([...r.getClientRects()].map(q => Math.round(q.top))).size; }),
+        ws: ths.length ? getComputedStyle(ths[0]).whiteSpace : null }; });
+    ok('D27: the HD dose table\'s row heads stay on one line at 1280', hd.n >= 3 && hd.lines.every(l => l === 1) && hd.ws === 'nowrap', JSON.stringify(hd));
+    // A de-rated result: the print's text layer has a space before "provisional".
+    await x.goto(BASE + '?v=pwv2-' + Date.now(), { waitUntil: 'networkidle' });
+    await x.locator('[data-onclick="k2"]').click();
+    await typeInto(x, '#b-age', '76'); await typeInto(x, '#b-tbw', '70'); await typeInto(x, '#b-height', '175'); await typeInto(x, '#b-scr', '0.5');
+    await x.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await x.locator('[data-onclick="k43"]').click();
+      await typeInto(x, `#b-dose-mg-${i}`, '1000'); await typeInto(x, `#b-dose-tinf-${i}`, '1');
+      await x.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(x, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await x.locator('[data-onclick="k46"]').click();
+    await typeInto(x, '#b-lvl-conc-1', '19.9'); await x.locator('#b-lvl-date-1').fill(day(0)); await typeInto(x, '#b-lvl-time-1', '07:30');
+    await x.locator('[data-onclick="k47"]').click(); await x.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await x.waitForTimeout(300);
+    const pv = await x.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const p = document.querySelector('#print-report .pr-regimen'); return { text: p ? p.textContent : null, prov: !!document.querySelector('#b-results .vx-prov') }; });
+    ok('D27: the print\'s text layer reads "1 g IV q12h provisional" (a space each side of "provisional")',
+       pv.prov && /^\S.* q\d+h provisional\s*$/.test(pv.text || ''), JSON.stringify(pv));
+    const xAttr = await attributeInjected(x, xProblems);
+    results.problems.push(...xAttr.kept);
+    await xctx.close();
+  }
   await browser.close();
 
   results.checks = checks;
