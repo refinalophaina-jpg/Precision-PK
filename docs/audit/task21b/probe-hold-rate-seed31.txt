@@ -1,0 +1,52 @@
+probe-hold-rate: n = 1000 per cell; base seed 31 (cell seed = base + 1000 x model index + 17 x design index); threshold 20 mg/L; shipped engine (mapFit, regimenDecision, firstDosePlan / noSolutionHold)
+Fired: % of patients. True / false: % of the Holds that fired (true level at the time held >= / < threshold).
+False, true < 15: a false Hold whose true level at the time held is under 15 mg/L (well below the threshold, not a near miss).
+false|fitted, false|measured: false Holds among those that fired on that basis. Fitted-only: fired on the fitted basis with the
+carried measured level below the threshold (or none), false among them.
+Prevalence: true level >= threshold at the time judged. Missed: no Hold, true level >= threshold.
+
+| model | design | n | fitted | measured | either (Hold) | true hold | false hold | false, true < 15 | false|fitted | false|measured | fitted-only (false) | prevalence | missed | refusals (held) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| buelga | ss-trough | 1000 | 208 (20.8%) | 227 (22.7%) | 232 (23.2%) | 178 (76.7%) | 54 (23.3%) | 9 (3.9%) | 37/208 (17.8%) | 50/227 (22.0%) | 4/5 (80.0%) | 213 (21.3%) | 35 (3.5%) | 0 (0) |
+| buelga | ss-trough-peak | 1000 | 206 (20.6%) | 236 (23.6%) | 244 (24.4%) | 187 (76.6%) | 57 (23.4%) | 7 (2.9%) | 30/206 (14.6%) | 54/236 (22.9%) | 3/8 (37.5%) | 213 (21.3%) | 26 (2.6%) | 0 (0) |
+| buelga | load-one | 1000 | 3 (0.3%) | 9 (0.9%) | 9 (0.9%) | 3 (33.3%) | 6 (66.7%) | 3 (33.3%) | 1/3 (33.3%) | 6/9 (66.7%) | 0/0 (—) | 4 (0.4%) | 1 (0.1%) | 0 (0) |
+| buelga | load-two | 1000 | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (—) | 0 (—) | 0 (—) | 0/0 (—) | 0/0 (—) | 0/0 (—) | 12 (1.2%) | 12 (1.2%) | 0 (0) |
+| goti | ss-trough | 1000 | 475 (47.5%) | 459 (45.9%) | 497 (49.7%) | 397 (79.9%) | 100 (20.1%) | 18 (3.6%) | 86/475 (18.1%) | 76/459 (16.6%) | 24/38 (63.2%) | 483 (48.3%) | 86 (8.6%) | 0 (0) |
+| goti | ss-trough-peak | 1000 | 442 (44.2%) | 431 (43.1%) | 481 (48.1%) | 393 (81.7%) | 88 (18.3%) | 11 (2.3%) | 56/442 (12.7%) | 74/431 (17.2%) | 14/50 (28.0%) | 460 (46.0%) | 67 (6.7%) | 0 (0) |
+| goti | load-one | 1000 | 1 (0.1%) | 10 (1.0%) | 10 (1.0%) | 3 (30.0%) | 7 (70.0%) | 4 (40.0%) | 0/1 (0.0%) | 7/10 (70.0%) | 0/0 (—) | 4 (0.4%) | 1 (0.1%) | 0 (0) |
+| goti | load-two | 1000 | 9 (0.9%) | 0 (0.0%) | 9 (0.9%) | 7 (77.8%) | 2 (22.2%) | 0 (0.0%) | 2/9 (22.2%) | 0/0 (—) | 2/9 (22.2%) | 32 (3.2%) | 25 (2.5%) | 0 (0) |
+| hughes | ss-trough | 1000 | 168 (16.8%) | 193 (19.3%) | 234 (23.4%) | 168 (71.8%) | 66 (28.2%) | 11 (4.7%) | 19/168 (11.3%) | 61/193 (31.6%) | 5/41 (12.2%) | 223 (22.3%) | 55 (5.5%) | 0 (0) |
+| hughes | ss-trough-peak | 1000 | 157 (15.7%) | 164 (16.4%) | 197 (19.7%) | 150 (76.1%) | 47 (23.9%) | 4 (2.0%) | 18/157 (11.5%) | 39/164 (23.8%) | 8/33 (24.2%) | 192 (19.2%) | 42 (4.2%) | 0 (0) |
+| hughes | load-one | 1000 | 0 (0.0%) | 2 (0.2%) | 2 (0.2%) | 1 (50.0%) | 1 (50.0%) | 0 (0.0%) | 0/0 (—) | 1/2 (50.0%) | 0/0 (—) | 18 (1.8%) | 17 (1.7%) | 0 (0) |
+| hughes | load-two | 1000 | 5 (0.5%) | 0 (0.0%) | 5 (0.5%) | 3 (60.0%) | 2 (40.0%) | 1 (20.0%) | 2/5 (40.0%) | 0/0 (—) | 2/5 (40.0%) | 19 (1.9%) | 16 (1.6%) | 0 (0) |
+
+False-hold examples (up to 3 per cell; fictional):
+  buelga ss-trough: levels 24.0 at 95.5 h; held at 96.00 h (fitted+measured); true 16.1 mg/L
+  buelga ss-trough: levels 29.5 at 95.5 h; held at 96.00 h (fitted+measured); true 19.9 mg/L
+  buelga ss-trough: levels 20.5 at 95.5 h; held at 96.00 h (measured); true 12.5 mg/L
+  buelga ss-trough-peak: levels 38.4 at 86.0 h, 21.7 at 95.5 h; held at 96.00 h (fitted+measured); true 17.8 mg/L
+  buelga ss-trough-peak: levels 28.9 at 86.0 h, 21.0 at 95.5 h; held at 96.00 h (measured); true 18.8 mg/L
+  buelga ss-trough-peak: levels 41.3 at 86.0 h, 31.4 at 95.5 h; held at 108.00 h (measured); true 18.2 mg/L
+  buelga load-one: levels 22.9 at 7.0 h; held at 8.00 h (measured); true 11.8 mg/L
+  buelga load-one: levels 22.2 at 7.8 h; held at 8.27 h (measured); true 14.4 mg/L
+  buelga load-one: levels 25.8 at 8.1 h; held at 12.00 h (measured); true 17.4 mg/L
+  goti ss-trough: levels 23.1 at 95.5 h; held at 96.00 h (measured); true 18.9 mg/L
+  goti ss-trough: levels 25.4 at 95.5 h; held at 96.00 h (fitted+measured); true 13.5 mg/L
+  goti ss-trough: levels 20.7 at 95.5 h; held at 96.00 h (fitted+measured); true 18.5 mg/L
+  goti ss-trough-peak: levels 22.5 at 86.0 h, 28.4 at 95.5 h; held at 108.00 h (measured); true 19.3 mg/L
+  goti ss-trough-peak: levels 64.4 at 86.0 h, 48.4 at 95.5 h; held at 132.00 h (fitted+measured); true 18.6 mg/L
+  goti ss-trough-peak: levels 42.6 at 86.0 h, 20.1 at 95.5 h; held at 96.00 h (fitted); true 17.2 mg/L
+  goti load-one: levels 37.5 at 7.7 h; held at 24.00 h (measured); true 11.3 mg/L
+  goti load-one: levels 53.0 at 6.0 h; held at 24.00 h (measured); true 12.3 mg/L
+  goti load-one: levels 39.5 at 7.9 h; held at 24.00 h (measured); true 14.7 mg/L
+  goti load-two: levels 31.4 at 4.0 h, 32.5 at 11.5 h; held at 36.00 h (fitted); true 17.8 mg/L
+  goti load-two: levels 44.5 at 4.5 h, 32.0 at 11.5 h; held at 36.00 h (fitted); true 18.2 mg/L
+  hughes ss-trough: levels 21.0 at 95.5 h; held at 96.00 h (fitted); true 16.6 mg/L
+  hughes ss-trough: levels 27.6 at 95.5 h; held at 108.00 h (measured); true 18.8 mg/L
+  hughes ss-trough: levels 28.2 at 95.5 h; held at 108.00 h (measured); true 17.9 mg/L
+  hughes ss-trough-peak: levels 28.4 at 86.0 h, 33.6 at 95.5 h; held at 132.00 h (measured); true 18.6 mg/L
+  hughes ss-trough-peak: levels 29.7 at 86.0 h, 26.4 at 95.5 h; held at 108.00 h (measured); true 15.3 mg/L
+  hughes ss-trough-peak: levels 26.7 at 86.0 h, 23.7 at 95.5 h; held at 96.00 h (fitted+measured); true 19.9 mg/L
+  hughes load-one: levels 34.9 at 9.0 h; held at 24.00 h (measured); true 15.6 mg/L
+  hughes load-two: levels 32.7 at 5.0 h, 25.9 at 11.5 h; held at 36.00 h (fitted); true 14.9 mg/L
+  hughes load-two: levels 43.8 at 5.0 h, 31.6 at 11.5 h; held at 36.00 h (fitted); true 19.1 mg/L
