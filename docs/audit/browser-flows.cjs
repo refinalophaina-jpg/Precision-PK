@@ -2501,6 +2501,23 @@ async function enterCourse(page) {
     ok('D27: a stale result is copied with the stale marker first, then its summary',
        /^Inputs changed since this result — recalculate before relying on this summary\.\n/.test(staleCopy) && staleCopy.endsWith(fresh.summary), JSON.stringify(staleCopy).slice(0, 160));
     await typeInto(h, '#b-age', '60'); await h.waitForTimeout(250);
+    // Fix round 1 (review 4, 5): the static dose fields carry the constants' limits once loaded, and the AUC
+    // tinkerer refuses an out-of-range dose in words, then previews an in-range one.
+    const lim = await h.evaluate(() => {
+      const a = (id) => { const e = document.getElementById(id); return e ? ['min', 'max', 'step'].map(k => e.getAttribute(k)).join('/') : 'missing'; };
+      const want = `${INPUT_LIMITS.dose.min}/${INPUT_LIMITS.dose.max}/${MATRIX_DOSE_STEP}`;
+      return { want, dose: a('dose'), tl: a('tl-dose'), rl: a('rl-dose'), pd: a('pd-set-max'), wantPd: `${MATRIX_DOSE_MIN}/${HD_LOADING_MAX_MG}/${MATRIX_DOSE_STEP}` }; });
+    ok('D27: the static dose fields read their min, max and step from the constants (Trough three; PD local maximum the Rec 11 cap)',
+       lim.dose === lim.want && lim.tl === lim.want && lim.rl === lim.want && lim.pd === lim.wantPd, JSON.stringify(lim));
+    await h.evaluate(() => { const d = document.getElementById('ev-explore'); if (d) d.open = true; });
+    await typeInto(h, '#b-tink-dose', '5000');
+    await h.locator('[data-onclick="k66"]').click(); await h.waitForTimeout(200);
+    const refusedTxt = (await h.locator('#b-tink-result').innerText()).replace(/\s+/g, ' ').trim();
+    await typeInto(h, '#b-tink-dose', '1000');
+    await h.locator('[data-onclick="k66"]').click(); await h.waitForTimeout(300);
+    const okTxt = (await h.locator('#b-tink-result').innerText()).replace(/\s+/g, ' ').trim();
+    ok('D27: the AUC tinkerer refuses 5000 mg in words ("Enter a dose of 100–4000 mg to try."), then previews 1000 mg',
+       refusedTxt === 'Enter a dose of 100–4000 mg to try.' && /AUC/.test(okTxt) && !/Enter a dose/.test(okTxt), JSON.stringify({ refusedTxt, okTxt: okTxt.slice(0, 80) }));
     // A handler that throws: Undo's runUndo is made to throw for this check only, and an Undo button is clicked.
     await h.evaluate(() => { window.runUndo = () => { throw new Error('flow-induced failure'); };
       const b = document.createElement('button'); b.type = 'button'; b.id = 't21-undo'; b.textContent = 'Undo'; b.setAttribute('data-onclick', 'k97');

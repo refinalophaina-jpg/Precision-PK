@@ -8779,6 +8779,23 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const f = fn45('computeGuidelineDose').toString();
     assert(/GUIDELINE_DOSE_CAP_MG/.test(f) && /GUIDELINE_INTERVAL_BY_CRCL/.test(f) && !/\b2500\b|crcl\s*>\s*\d/.test(f),
       'computeGuidelineDose reads its cap and cut-points from the named constants');
+    // Fix round 1 (review item 4): the four static dose fields carry no literal limit in markup; they are set at
+    // load from the constants (CSP-safe: setAttribute, no inline handler), and what is set matches them.
+    const body = fs.readFileSync(htmlPath, 'utf8').split('<script>')[0];
+    const ids = ['dose', 'tl-dose', 'rl-dose', 'pd-set-max'];
+    for (const id of ids) {
+      const tag = (body.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`)) || [''])[0];
+      assert(tag && !/\b(min|max|step)="/.test(tag), `#${id} still carries a literal limit: ${tag}`);
+    }
+    const set = {}, prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = (id) => ids.includes(id) ? { setAttribute: (k, v) => { (set[id] = set[id] || {})[k] = String(v); } } : prevGet(id);
+    try { fn45('applyDoseFieldLimits')(); } finally { sandbox.document.getElementById = prevGet; }
+    const L = K45.INPUT_LIMITS.dose, step = String(K45.MATRIX_DOSE_STEP);
+    for (const id of ['dose', 'tl-dose', 'rl-dose']) {
+      assert(set[id] && set[id].min === String(L.min) && set[id].max === String(L.max) && set[id].step === step, `#${id}: ${JSON.stringify(set[id])}`);
+    }
+    assert(set['pd-set-max'] && set['pd-set-max'].min === String(K45.MATRIX_DOSE_MIN) && set['pd-set-max'].max === String(K45.HD_LOADING_MAX_MG)
+      && set['pd-set-max'].step === step, `#pd-set-max: ${JSON.stringify(set['pd-set-max'])}`);
   });
 
   // Task 21 (code report M11, M12, M13): the action registry, driven through its real delegation. The
@@ -8868,13 +8885,75 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(run45('_tinkSSRedraw') === null, `after reset: ${typeof run45('_tinkSSRedraw')}`);
     } finally { sandbox.document.getElementById = prevGet; }
   });
+
+  // Fix round 1 (Task 21 review). Item 1: syncDtPair ran its host's handler with a second, unguarded lookup.
+  test('45.42 a date-and-time pair runs its host\'s handler through the one lookup: own keys only, a failure said on screen [review 1]', () => {
+    const box = { hidden: true, innerHTML: '' }, errors = [];
+    const host = { value: '', attrs: { 'data-oninput': 'k23' }, getAttribute(n) { return this.attrs[n] || null; } };
+    const els = { 't21-host': host, 't21-host-date': { value: '2026-11-14' }, 't21-host-time': { value: '08:00' },
+      't21-host-rb': { textContent: '' }, 'action-status': box };
+    const prev = { get: sandbox.document.getElementById, calc: sandbox.calcTimeDelta, con: sandbox.console };
+    sandbox.document.getElementById = (id) => els[id] || null;
+    sandbox.calcTimeDelta = () => { throw new TypeError('boom at index.html:9:9'); };
+    sandbox.console = Object.assign({}, console, { error: (...a) => errors.push(a.map(String).join(' ')) });
+    const pair = { getAttribute: (n) => n === 'data-dt-for' ? 't21-host' : null };
+    const ev = { type: 'input', target: { getAttribute: (n) => n === 'aria-label' ? 'Last dose given, time (24-hour)' : null, textContent: '' } };
+    const run = () => { try { fn45('syncDtPair')(pair, ev); return null; } catch (e) { return e; } };
+    try {
+      const threw = run();
+      assert(!threw, `the failure escaped syncDtPair: ${threw && threw.message}`);
+      assert(errors.length === 1 && /k23/.test(errors[0]), `console: ${errors.join('; ')}`);
+      assert(box.hidden === false && /&quot;Last dose given, time \(24-hour\)&quot; did not finish/.test(box.innerHTML) && !/boom/.test(box.innerHTML), box.innerHTML);
+      host.attrs['data-oninput'] = '__defineGetter__'; host.value = ''; box.hidden = true; box.innerHTML = ''; errors.length = 0;
+      const threw2 = run();
+      assert(!threw2 && errors.length === 0 && box.hidden === true, `an inherited key ran: ${threw2 && threw2.message} ${errors.join('; ')}`);
+    } finally {
+      sandbox.document.getElementById = prev.get; sandbox.calcTimeDelta = prev.calc; sandbox.console = prev.con;
+    }
+  });
+  // Item 3: the comparison line read the cap back off the rounding; the function says whether it capped.
+  test('45.43 computeGuidelineDose says whether its cap applied, and the comparison line reads that [review 3]', () => {
+    const g = fn45('computeGuidelineDose');
+    assert(g(200, 80).capped === true && g(70, 80).capped === false && g(174, 80).capped === false && g(175, 80).capped === true,
+      `capped: 200 kg ${g(200, 80).capped}, 70 kg ${g(70, 80).capped}, 174 kg ${g(174, 80).capped}, 175 kg ${g(175, 80).capped}`);
+    const r = fn45('renderBayesianResults').toString();
+    assert(/gd\.capped \?/.test(r) && !/gd\.rawDose \/ MATRIX_DOSE_STEP/.test(r), 'the comparison line still re-derives the cap');
+  });
+  // Item 5: the AUC tinkerer had no range check, and the Trough one refused with a red border and no words.
+  test('45.44 both tinkerers refuse a dose outside INPUT_LIMITS.dose with the same plain words [review 5]', () => {
+    const L = K45.INPUT_LIMITS.dose, words = `Enter a dose of ${L.min}–${L.max} mg to try.`;
+    const res = { style: { display: 'none' }, innerHTML: '', classList: { add() {}, remove() {} } };
+    const vals = { 'b-tink-dose': '5000', 'b-tink-int': '12', 'b-mic': '1', 'b-auc-target': '450', 'tinker-dose-t': '5000', 'tinker-tau-t': '12' };
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = (id) => id === 'b-tink-result' || id === 'tinker-result-t' ? res
+      : vals[id] != null ? { value: vals[id], style: {}, setAttribute() {}, removeAttribute() {} } : prevGet(id);
+    try {
+      run45('bState.result = { model: "buelga", CL_ind: 4.2, V_ind: 55, CL_pop: 5, V_pop: 60, goti: null, doses: [], levels: [] };');
+      try { fn45('runBayesTinkerer')(); } catch (e) { throw new Error(`AUC tinkerer threw on 5000 mg: ${e.message}`); }
+      assert(res.innerHTML.includes(words) && res.style.display !== 'none', `AUC tinkerer, 5000 mg: "${res.innerHTML.slice(0, 120)}"`);
+      res.innerHTML = '';
+      fn45('tinkerDose')('t');
+      assert(res.innerHTML.includes(words), `Trough tinkerer, 5000 mg: "${res.innerHTML.slice(0, 120)}"`);
+      assert(fn45('tinkerDoseRefusal')(L.min) === '' && fn45('tinkerDoseRefusal')(L.max) === '' && fn45('tinkerDoseRefusal')(NaN) === words, 'one refusal helper, inclusive limits');
+    } finally { sandbox.document.getElementById = prevGet; run45('bState.result = null;'); }
+  });
+  // Item 7: a role="alert" region is announced reliably when it is shown first and filled after.
+  test('45.45 the failed-action line is shown before it is filled [review 7]', () => {
+    const order = [], box = {};
+    Object.defineProperty(box, 'hidden', { set(v) { order.push('hidden=' + v); }, get() { return false; } });
+    Object.defineProperty(box, 'innerHTML', { set(v) { order.push(v ? 'filled' : 'emptied'); }, get() { return ''; } });
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = (id) => id === 'action-status' ? box : prevGet(id);
+    try { fn45('showActionFailure')({ getAttribute: () => null, textContent: 'Load' }); } finally { sandbox.document.getElementById = prevGet; }
+    assert(order.indexOf('hidden=false') >= 0 && order.indexOf('hidden=false') < order.lastIndexOf('filled'), order.join(' → '));
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 600;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.41 + D27 redraw)
+const EXPECTED_TOTAL = 604;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.45 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

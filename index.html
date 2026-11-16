@@ -1084,6 +1084,7 @@
     flex-wrap: wrap;
   }
   .tinkerer-result.visible { display: flex; }
+  .tinker-refusal { margin: 0; font-size: var(--fs-sm); color: var(--ink); }
   .tinkerer-chip {
     display: flex;
     flex-direction: column;
@@ -3123,7 +3124,7 @@
             <div class="field-group">
               <label class="field-label" for="dose">Dose</label>
               <div class="input-row">
-                <input type="number" id="dose" placeholder="—" min="100" max="4000" step="250">
+                <input type="number" id="dose" placeholder="—">
                 <span class="unit-badge">mg</span>
               </div>
             </div>
@@ -3296,7 +3297,7 @@
             <div class="field-group">
               <label class="field-label" for="tl-dose">Dose given</label>
               <div class="input-row">
-                <input type="number" id="tl-dose" placeholder="—" min="100" max="4000" step="250">
+                <input type="number" id="tl-dose" placeholder="—">
                 <span class="unit-badge">mg</span>
               </div>
             </div>
@@ -3431,7 +3432,7 @@
             <div class="field-group">
               <label class="field-label" for="rl-dose">Dose</label>
               <div class="input-row">
-                <input type="number" id="rl-dose" placeholder="—" min="100" max="4000" step="250">
+                <input type="number" id="rl-dose" placeholder="—">
                 <span class="unit-badge">mg</span>
               </div>
             </div>
@@ -3644,7 +3645,7 @@
         <summary>Your settings (this browser)</summary>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
           <p class="field-hint">Kept in this browser only, never part of the app. Use them for your institution's numbers.</p>
-          <div class="field-group"><label class="field-label" for="pd-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="pd-set-max" min="250" max="3000" step="250" placeholder="none" data-onchange="k92"><span class="unit-badge">mg</span></div></div>
+          <div class="field-group"><label class="field-label" for="pd-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="pd-set-max" placeholder="none" data-onchange="k92"><span class="unit-badge">mg</span></div></div>
           <div class="field-group"><label class="field-label" for="pd-set-peak">Target peak, to compare</label><div class="input-row"><input type="number" id="pd-set-peak" min="10" max="50" step="1" placeholder="none" data-onchange="k92"><span class="unit-badge">mg/L</span></div></div>
           <div class="field-group"><label class="field-label" for="pd-set-amlabs">AM labs drawn at (06:00 if blank)</label><div class="input-row"><input type="text" id="pd-set-amlabs" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" data-onchange="k92"><span class="unit-badge">24 h</span></div></div>
           <p class="field-hint" id="pd-set-status" role="status"></p>
@@ -4316,12 +4317,17 @@ function __dispatchAction(type, ev) {
   if (!t || !t.closest) return;
   const el = t.closest('[data-on' + type + ']');
   if (!el) return;
-  const key = el.getAttribute('data-on' + type);
+  __runAction(el.getAttribute('data-on' + type), el, ev, el);
+}
+// The one way a registry handler runs (rule 2): the delegated events above and the date-and-time
+// pairs (syncDtPair) both come here. named is the control the failure line names: the element
+// itself, or for a pair the half that was edited.
+function __runAction(key, el, ev, named) {
   if (key == null || !Object.hasOwn(__ACT, key)) return;
-  try { __ACT[key](el, ev, el.getAttribute('data-arg')); }
+  try { __ACT[key](el, ev || null, el.getAttribute('data-arg')); }
   catch (e) {
     if (typeof console !== 'undefined') console.error('handler ' + key + ' failed', e);
-    showActionFailure(el);
+    showActionFailure(named || el);
   }
 }
 function __bindActions() {
@@ -4339,9 +4345,10 @@ function showActionFailure(el) {
     const attr = (n) => (el && typeof el.getAttribute === 'function' && el.getAttribute(n)) || '';
     const name = String(attr('aria-label') || (el && el.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const what = name ? `"${name}"` : 'That action';
+    // Shown first, then filled: a role="alert" region is announced when content arrives in it.
+    box.hidden = false;
     box.innerHTML = `${ICON.caution}<span class="action-status-text">${escHtml(what)} did not finish. What is on screen may be incomplete: check it before relying on it.</span>`
       + `<button type="button" class="text-action" data-onclick="k101">Dismiss</button>`;
-    box.hidden = false;
   } catch (e) { if (typeof console !== 'undefined') console.error('the failure line could not be shown', e); }
 }
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') __bindActions();
@@ -8221,19 +8228,43 @@ function calcPRNDose() {
     totalTimeToTrough, wbDose, mgKgRef, tbw, cAtRedose, redoseThresh, t12, troughMin });
 }
 
+// The four static dose fields take their limits from the constants at load (Task 21 review, M5):
+// INPUT_LIMITS.dose for what a dose field accepts, the dispensing step, and for the PD local maximum
+// the Rec 11 cap it can only lower (pdLoadingDose). setAttribute, so the CSP is untouched.
+function applyDoseFieldLimits() {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+  const set = (id, min, max) => {
+    const el = document.getElementById(id);
+    if (!el || typeof el.setAttribute !== 'function') return;
+    el.setAttribute('min', min); el.setAttribute('max', max); el.setAttribute('step', MATRIX_DOSE_STEP);
+  };
+  ['dose', 'tl-dose', 'rl-dose'].forEach(id => set(id, INPUT_LIMITS.dose.min, INPUT_LIMITS.dose.max));
+  set('pd-set-max', MATRIX_DOSE_MIN, HD_LOADING_MAX_MG);
+}
+// A dose either tinkerer will not try: outside INPUT_LIMITS.dose, the one table every dose field
+// reads. '' when it is in range. One wording for both modules (Task 21 review).
+function tinkerDoseRefusal(mg) {
+  const L = INPUT_LIMITS.dose;
+  return Number.isFinite(mg) && mg >= L.min && mg <= L.max ? '' : `Enter a dose of ${L.min}–${L.max} mg to try.`;
+}
+function tinkerRefusalHTML(msg) { return `<p class="tinker-refusal" role="status">${cautionHTML(msg)}</p>`; }
+
 function tinkerDose(suffix) {
   const doseEl = document.getElementById('tinker-dose-' + suffix);
   const tauEl  = document.getElementById('tinker-tau-' + suffix);
   if (!doseEl || !tauEl) return;
   const d   = parseFloat(doseEl.value);
   const tau = parseFloat(tauEl.value);
-  if (!d || d < INPUT_LIMITS.dose.min || d > INPUT_LIMITS.dose.max) {
-    doseEl.style.borderColor = 'var(--danger)';
-    doseEl.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--danger) 15%, transparent)';
+  const refused = tinkerDoseRefusal(d);
+  if (refused) {
+    // Said in words where the comparison would have been (it was a red border, with no words).
+    const res = document.getElementById('tinker-result-' + suffix);
+    if (res) { res.innerHTML = tinkerRefusalHTML(refused); res.classList.add('visible'); }
+    delete _txTinkView[suffix];
+    if (typeof doseEl.setAttribute === 'function') doseEl.setAttribute('aria-invalid', 'true');
     return;
   }
-  doseEl.style.borderColor = '';
-  doseEl.style.boxShadow = '';
+  if (typeof doseEl.removeAttribute === 'function') doseEl.removeAttribute('aria-invalid');
   const { tinf, kel, vd, clv, troughMin, troughMax, mic } = _pk;
   if (!kel || !vd || !clv) return;
   const pt  = calcPeakTrough(d, tau, tinf, kel, vd);
@@ -10028,8 +10059,7 @@ function syncDtPair(pair, ev) {
   if (rb) { const ms = v ? new Date(v).getTime() : NaN; rb.textContent = Number.isFinite(ms) ? fmtClock(ms / 3600000) : ''; }
   if (host.value === v) return;
   host.value = v;
-  const k = host.getAttribute('data-oninput');
-  if (k && __ACT[k]) __ACT[k](host, ev || null, host.getAttribute('data-arg'));
+  __runAction(host.getAttribute('data-oninput'), host, ev, (ev && ev.target) || host);
 }
 // Set a pair from code (a cleared form, Undo): both halves, the instant and the read-back.
 function setDtPair(id, value) {
@@ -10324,7 +10354,7 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
     // The first day's doses. Bounded by that day (k <= 24 / tau), so a first-dose time that is not a
     // number ends the loop instead of hanging the page (code report M18); for whole-hour intervals the
     // bound admits every dose the break does, a clock change's 23 h day included.
-    for (let k = 0; k <= 24 / rec.tau; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
+    for (let k = 0; rec.tau > 0 && k <= 24 / rec.tau; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
     auc24First = fittedAUC(Object.assign({}, rFit, { doses: rFit.doses.concat(regimen) }), firstH, firstH + 24);
   }
   // "Was due" means v3.13.0's: the first dose is now because the current regimen's due
@@ -11916,7 +11946,7 @@ function ceilingCautionOf(over) {
 const MATRIX_INTERVALS = [8, 12, 24, 48];   // same set bayesDoseOptimizer ranks
 const MATRIX_ROWS      = 6;                 // dose steps shown, centred on target
 // The dispensing increment. Every 250 mg step in the file reads it, in both modules (code report
-// M5, Task 21); the ceiling is DOSE_MAX_PER_DOSE_MG, read directly (DOSE_MAX_PER_DOSE_MG duplicated it).
+// M5, Task 21); the ceiling is DOSE_MAX_PER_DOSE_MG, read directly (MATRIX_DOSE_MAX duplicated it).
 const MATRIX_DOSE_STEP = 250;
 const MATRIX_DOSE_MIN  = 250;               // the smallest dose offered: one step
 
@@ -13274,8 +13304,9 @@ function markSuggestedModel() {
 // this repository's docs, Vancomycin_TDM_Software_Instructions.md and the literature register. None
 // states them; §3.2 of the instructions reads differently (CrCl > 90, 60-90, 30-59, 10-29, < 10;
 // a 3000 mg maximum single dose). Both are therefore preferences, kept at their shipped values.
-// PREFERENCE (rule 8): the largest dose the comparison line shows. It orders nothing; it changes the
-// line's dose, AUC24 and trough above about 167 kg (15 mg/kg), never a dose offered.
+// PREFERENCE (rule 8): the largest dose the comparison line shows. It orders nothing. From 175 kg
+// (15 mg/kg is 2,625 mg, which rounds to 2,750) it changes the line's dose, AUC24 and trough,
+// never a dose offered.
 const GUIDELINE_DOSE_CAP_MG = 2500;
 // PREFERENCE (rule 8): the CrCl (mL/min) cut-points that pick the comparison line's interval:
 // above 90 q8h, above 50 q12h, above 30 q24h, above 15 q36h, otherwise GUIDELINE_INTERVAL_LAST_H.
@@ -13284,11 +13315,12 @@ const GUIDELINE_INTERVAL_BY_CRCL = [[90, 8], [50, 12], [30, 24], [15, 36]];
 const GUIDELINE_INTERVAL_LAST_H  = 48;
 function computeGuidelineDose(tbw, crcl) {
   const rawDose = 15 * tbw;   // 15 mg/kg TBW
-  const dose    = Math.min(GUIDELINE_DOSE_CAP_MG, Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP);
+  const rounded = Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
+  const dose    = Math.min(GUIDELINE_DOSE_CAP_MG, rounded);
   const band    = GUIDELINE_INTERVAL_BY_CRCL.find(([cut]) => crcl > cut);
   const tau     = band ? band[1] : GUIDELINE_INTERVAL_LAST_H;
   const tinfH = autoTinf(dose);
-  return { dose, tau, tinfH, rawDose: rawDose.toFixed(0) };
+  return { dose, tau, tinfH, rawDose: rawDose.toFixed(0), capped: rounded > GUIDELINE_DOSE_CAP_MG };
 }
 
 // ─── Main Bayesian runner ───
@@ -15376,7 +15408,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       const guidAUC24 = gd.dose * (24 / gd.tau) / r.CL_pop;
       guidelineLine = `<div class="ev-sub guideline-line">
         <p class="ev-note"><strong>Weight-based guideline comparison (ASHP/IDSA 2020):</strong>
-          ${fmtRegimen(gd.dose, gd.tau)} — 15 mg/kg × ${(gd.rawDose / 15).toFixed(1)} kg = ${gd.rawDose} mg, ${Math.round(gd.rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP > gd.dose ? `capped at ${fmtDose(gd.dose)} (this tool's limit for the comparison)` : `rounded to ${fmtDose(gd.dose)}`};
+          ${fmtRegimen(gd.dose, gd.tau)} — 15 mg/kg × ${(gd.rawDose / 15).toFixed(1)} kg = ${gd.rawDose} mg, ${gd.capped ? `capped at ${fmtDose(gd.dose)} (this tool's limit for the comparison)` : `rounded to ${fmtDose(gd.dose)}`};
           interval by CrCl ${r.crcl.toFixed(0)} mL/min on this tool's cut-points; infuse over ${fmtHrs(gd.tinfH)}.
           Population-based estimate: AUC₂₄ ${guidAUC24.toFixed(0)} mg·h/L, trough ${guTr != null ? guTr.toFixed(1) : '—'} mg/L.
           Not individualised — the Bayesian regimen above is the one fitted to this patient.</p>
@@ -15950,11 +15982,22 @@ function pickMatrixCell(arg) {
 function runBayesTinkerer() {
   if (!bState.result) return;
   const { CL_ind, V_ind } = bState.result;
-  const dose      = parseFloat(document.getElementById('b-tink-dose').value);
+  const doseEl    = document.getElementById('b-tink-dose');
+  const dose      = parseFloat(doseEl.value);
   const tau       = parseFloat(document.getElementById('b-tink-int').value);
   const mic       = parseFloat(document.getElementById('b-mic').value) || 1;
   const targetAUC = parseFloat(document.getElementById('b-auc-target').value) || 450;
-  if (!dose || !tau) return;
+  // The same range check and words as the Trough tinkerer (Task 21 review): it had none.
+  const refused = tinkerDoseRefusal(dose);
+  if (refused) {
+    const res = document.getElementById('b-tink-result');
+    if (res) { res.style.display = 'block'; res.innerHTML = tinkerRefusalHTML(refused); }
+    _tinkSSRedraw = null;
+    if (typeof doseEl.setAttribute === 'function') doseEl.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  if (typeof doseEl.removeAttribute === 'function') doseEl.removeAttribute('aria-invalid');
+  if (!tau) return;
 
   const tinfH  = autoTinf(dose);
   const auc24  = dose * (24/tau) / CL_ind;
@@ -17128,6 +17171,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 // ══════════════════════════════════════════
 // Init
 updateModelInfo();
+applyDoseFieldLimits();
 renderProfileList();
 updatePrintFabVisibility();
 
