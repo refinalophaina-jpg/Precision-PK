@@ -8780,13 +8780,91 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/GUIDELINE_DOSE_CAP_MG/.test(f) && /GUIDELINE_INTERVAL_BY_CRCL/.test(f) && !/\b2500\b|crcl\s*>\s*\d/.test(f),
       'computeGuidelineDose reads its cap and cut-points from the named constants');
   });
+
+  // Task 21 (code report M11, M12, M13): the action registry, driven through its real delegation. The
+  // listeners __bindActions registers are captured, and a fake event is dispatched to them.
+  const act45 = (el, type) => {
+    const ty = type || 'click', listeners = {}, errors = [];
+    const box = { hidden: true, innerHTML: '', textContent: '' };
+    const prevAdd = sandbox.document.addEventListener, prevGet = sandbox.document.getElementById, prevCon = sandbox.console;
+    sandbox.document.addEventListener = (t, f) => { (listeners[t] = listeners[t] || []).push(f); };
+    sandbox.document.getElementById = (id) => id === 'action-status' ? box : prevGet(id);
+    sandbox.console = Object.assign({}, console, { error: (...a) => errors.push(a.map(String).join(' ')) });
+    try {
+      fn45('__bindActions')();
+      const target = { closest: (sel) => sel === `[data-on${ty}]` ? el : null };
+      (listeners[ty] || []).forEach(f => f({ type: ty, target }));
+    } finally {
+      if (prevAdd === undefined) delete sandbox.document.addEventListener; else sandbox.document.addEventListener = prevAdd;
+      sandbox.document.getElementById = prevGet; sandbox.console = prevCon;
+    }
+    return { box, errors };
+  };
+  const actEl45 = (key, extra) => Object.defineProperties({ textContent: '', getAttribute: (n) => n === 'data-onclick' ? key : null },
+    Object.getOwnPropertyDescriptors(extra || {}));   // descriptors, so a getter stays a getter
+  test('45.37 __ACT runs its own keys only: an inherited name in markup (constructor, toString, __defineGetter__, hasOwnProperty) runs nothing [M11]', () => {
+    for (const key of ['constructor', 'toString', '__defineGetter__', 'hasOwnProperty', '__proto__']) {
+      const { box, errors } = act45(actEl45(key));
+      assert(errors.length === 0 && box.hidden === true, `data-onclick="${key}" reached Object.prototype: ${errors.join('; ')}`);
+    }
+  });
+  test('45.38 a handler that throws is said on screen, in plain words with no error text; the console still has it [M12]', () => {
+    const el = actEl45('k60', { getAttribute: (n) => n === 'data-onclick' ? 'k60' : n === 'aria-label' ? 'Dose 1 amount (mg)' : null,
+      get value() { throw new TypeError('boom at index.html:1:2'); } });
+    const { box, errors } = act45(el);
+    assert(errors.length === 1 && /k60/.test(errors[0]), `console: ${errors.join('; ')}`);
+    assert(box.hidden === false && /did not finish/.test(box.innerHTML), `status line: hidden ${box.hidden}, "${box.innerHTML}"`);
+    assert(/Dose 1 amount \(mg\)/.test(box.innerHTML), 'it names the control');
+    assert(!/boom|TypeError|Error|index\.html|:\d+:\d+|!/.test(box.innerHTML.replace(/<[^>]*>/g, '')), `no error text, stack or exclamation: ${box.innerHTML}`);
+  });
+  test('45.39 Copy summary returns to its label however fast it is pressed, and a stale result is copied with the stale marker [M13]', () => {
+    const timers = [], copied = [];
+    const prev = { st: sandbox.setTimeout, ct: sandbox.clearTimeout, nav: sandbox.navigator, stale: sandbox.resultIsStale };
+    sandbox.setTimeout = (f) => { timers.push(f); return timers.length; };
+    sandbox.clearTimeout = (id) => { if (id > 0) timers[id - 1] = null; };
+    sandbox.navigator = { clipboard: { writeText: (t) => { copied.push(t); return { then: (ok) => ok() }; } } };
+    let stale = false;
+    sandbox.resultIsStale = (scope) => stale && (scope === 'auc' || scope === 'trough');
+    try {
+      run45('bState.summaryText = "Give 1.25 g IV q12h; AUC24 about 480."; state.pdLast = { answer: {} }; state.pdSummary = "Give 750 mg today.";');
+      const btn = actEl45('k81', { textContent: 'Copy summary' });
+      act45(btn); act45(btn);
+      assert(btn.textContent === 'Copied', `after two presses: "${btn.textContent}"`);
+      timers.forEach(f => f && f());
+      assert(btn.textContent === 'Copy summary', `stuck on "${btn.textContent}"`);
+      assert(copied[0] === 'Give 1.25 g IV q12h; AUC24 about 480.', `fresh: "${copied[0]}"`);
+      stale = true;
+      act45(btn);
+      const msg = run45('STALE_MSG');
+      assert(copied[2].startsWith(msg) && copied[2].endsWith('Give 1.25 g IV q12h; AUC24 about 480.'), `stale AUC copy: "${copied[2]}"`);
+      act45(actEl45('k95', { textContent: 'Copy summary' }));
+      assert(copied[3].startsWith(msg) && copied[3].endsWith('Give 750 mg today.'), `stale PD copy: "${copied[3]}"`);
+    } finally {
+      for (const [k, v] of [['setTimeout', prev.st], ['clearTimeout', prev.ct], ['navigator', prev.nav], ['resultIsStale', prev.stale]]) {
+        if (v === undefined) delete sandbox[k]; else sandbox[k] = v;
+      }
+      run45('bState.summaryText = ""; state.pdLast = null; state.pdSummary = "";');
+    }
+  });
+  test('45.40 firstDosePlan ends when the first-dose time is not a number (its loop is bounded by the first day) [M18]', () => {
+    sandbox.__fd45 = { r: { model: 'buelga', CL_ind: 3, V_ind: 60, doses: [{ mg: 1000, tinfH: 1, timeH: 0 }], levels: [], fitNowH: 20 },
+      rec: { dose: 1750, tau: 24, tinfH: 2 } };
+    try {
+      let plan;
+      try { plan = vm.runInContext('firstDosePlan(__fd45.r, __fd45.rec, NaN)', sandbox, { timeout: 500 }); }
+      catch (e) { throw new Error(`firstDosePlan with a NaN time did not return: ${e.message}`); }
+      assert(plan && !Number.isFinite(plan.firstH), JSON.stringify(plan && plan.firstH));
+      const ok = vm.runInContext('firstDosePlan(__fd45.r, Object.assign({}, __fd45.rec, { tau: 8, dose: 750, tinfH: 1 }), 20)', sandbox, { timeout: 500 });
+      assert(ok && Number.isFinite(ok.auc24First) && ok.times.length === 3, 'q8h: three first-day doses, a first-day AUC');
+    } finally { delete sandbox.__fd45; }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 595;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.36 + D27 redraw)
+const EXPECTED_TOTAL = 599;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.40 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

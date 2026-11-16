@@ -2465,6 +2465,67 @@ async function enterCourse(page) {
     results.problems.push(...dAttr.kept);
     await dctx.close();
   }
+
+  // D27 (Task 21, code report M11-M13): Copy summary returns to its label however fast it is pressed and
+  // carries the stale marker on a stale result; a handler that throws is said on screen in plain words,
+  // and an inherited name in data-onclick runs nothing. Real clicks under the production CSP.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const h = await hctx.newPage();
+    const hProblems = watch(h, 'task21');
+    await h.goto(BASE + '?v=pwt21-' + Date.now(), { waitUntil: 'networkidle' });
+    // The clipboard is stubbed in the page so the copied text can be read back (headless has no clipboard).
+    await h.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+    await h.locator('[data-onclick="k2"]').click();
+    await h.locator('[data-onclick="k39"]').first().click();
+    await typeInto(h, '#b-age', '60'); await typeInto(h, '#b-tbw', '80');
+    await typeInto(h, '#b-height', '175'); await typeInto(h, '#b-scr', '1.0');
+    await enterCourse(h);
+    await h.locator('[data-onclick="k47"]').click();
+    await h.waitForSelector('#b-results .rec-dose', { timeout: 20000 });
+    await h.waitForTimeout(400);
+    const copyBtn = h.locator('#b-results [data-onclick="k81"]').first();
+    await copyBtn.click(); await copyBtn.click();
+    const during = (await copyBtn.textContent()).trim();
+    await h.waitForTimeout(1900);
+    const after = (await copyBtn.textContent()).trim();
+    const fresh = await h.evaluate(() => ({ copied: window.__copied.slice(), summary: String(bState.summaryText || '') }));
+    ok('D27: Copy summary pressed twice in quick succession says "Copied", then returns to "Copy summary"',
+       during === 'Copied' && after === 'Copy summary', JSON.stringify({ during, after }));
+    ok('D27: a current result is copied as its summary, with no stale marker',
+       fresh.copied.length === 2 && fresh.copied[1] === fresh.summary && fresh.summary.length > 20 && !/Inputs changed/.test(fresh.copied[1]), JSON.stringify(fresh.copied[1]).slice(0, 160));
+    await typeInto(h, '#b-age', '61'); await h.waitForTimeout(250);
+    await copyBtn.click(); await h.waitForTimeout(150);
+    const staleCopy = await h.evaluate(() => window.__copied[window.__copied.length - 1]);
+    ok('D27: a stale result is copied with the stale marker first, then its summary',
+       /^Inputs changed since this result — recalculate before relying on this summary\.\n/.test(staleCopy) && staleCopy.endsWith(fresh.summary), JSON.stringify(staleCopy).slice(0, 160));
+    await typeInto(h, '#b-age', '60'); await h.waitForTimeout(250);
+    // A handler that throws: Undo's runUndo is made to throw for this check only, and an Undo button is clicked.
+    await h.evaluate(() => { window.runUndo = () => { throw new Error('flow-induced failure'); };
+      const b = document.createElement('button'); b.type = 'button'; b.id = 't21-undo'; b.textContent = 'Undo'; b.setAttribute('data-onclick', 'k97');
+      document.querySelector('#b-results').prepend(b);
+      const g = document.createElement('button'); g.type = 'button'; g.id = 't21-inherited'; g.textContent = 'Inherited'; g.setAttribute('data-onclick', '__defineGetter__');
+      document.querySelector('#b-results').prepend(g); });
+    await h.locator('#t21-inherited').click(); await h.waitForTimeout(150);
+    const inh = await h.evaluate(() => !document.getElementById('action-status').hidden);
+    await h.locator('#t21-undo').click(); await h.waitForTimeout(150);
+    const line = await h.evaluate(() => { const b = document.getElementById('action-status'), r = b.getBoundingClientRect();
+      const head = document.querySelector('.header').getBoundingClientRect(), reg = document.querySelector('#b-results .vx-regimen, #b-results .rec-dose').getBoundingClientRect();
+      return { shown: !b.hidden && getComputedStyle(b).display !== 'none' && r.height > 0, text: b.textContent.replace(/\s+/g, ' ').trim(), top: r.top, bottom: r.bottom, headBottom: head.bottom, clearOfRegimen: [reg, (document.querySelector('#app-shell-bayesian .panel-actions') || document.body).getBoundingClientRect()].every(q => q === null || r.bottom <= q.top || r.top >= q.bottom || r.right <= q.left || r.left >= q.right || q.height >= 790),
+        icon: !!b.querySelector('svg.ic'), dismiss: !!b.querySelector('[data-onclick="k101"]') }; });
+    ok('D27: an inherited name in data-onclick (__defineGetter__) runs nothing and shows nothing', inh === false, String(inh));
+    ok('D27: a handler that throws shows one plain line in the window, below the header and clear of the regimen, naming the control, with no error text, and a Dismiss',
+       line.shown && /^"Undo" did not finish\. What is on screen may be incomplete: check it before relying on it\. ?Dismiss$/.test(line.text)
+       && !/flow-induced|Error|!/.test(line.text) && line.top >= line.headBottom - 0.5 && line.bottom <= 800 && line.clearOfRegimen && line.icon && line.dismiss, JSON.stringify(line));
+    await h.screenshot({ path: path.join(OUT, 'task21-action-status.png') });
+    await h.locator('#action-status [data-onclick="k101"]').click(); await h.waitForTimeout(100);
+    ok('D27: Dismiss hides the failed-action line', await h.evaluate(() => document.getElementById('action-status').hidden), '');
+    // The induced failure is logged to the console by design; anything else is a problem.
+    const hAttr = await attributeInjected(h, hProblems.filter(p => !/handler k97 failed/.test(p)));
+    results.problems.push(...hAttr.kept);
+    await hctx.close();
+  }
   await browser.close();
 
   results.checks = checks;

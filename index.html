@@ -1341,6 +1341,21 @@
   .panel-tools { display: flex; justify-content: flex-end; align-items: center; gap: 4px 18px; flex-wrap: wrap; margin: -10px 0 -6px; }
   .undo-line { font-size: var(--fs-sm); color: var(--ink-soft); display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; }
   .undo-line:empty { display: none; }
+  /* A handler that failed (code report M12, Task 21): one plain line at the window's lower right
+     until it is dismissed, clear of the regimen at the top of the answer and of the pinned run
+     button at the foot of the input column. Paper and a hairline, never a shadow; the caution hue
+     on the drawn icon only. */
+  .action-status {
+    position: fixed; z-index: 60; right: 16px; bottom: 16px; left: auto;
+    width: min(560px, calc(100% - 32px)); padding: 0 4px 0 14px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px;
+    background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius-sm);
+    font-size: var(--fs-sm); line-height: 1.5; color: var(--ink);
+  }
+  .action-status[hidden] { display: none; }
+  .action-status .ic { color: var(--amber); flex: none; }
+  .action-status-text { flex: 1 1 16em; padding: 10px 0; }
+  @media print { .action-status { display: none !important; } }
 
   /* Print-only header/footer (hidden on screen) */
   .print-header { display: none; }
@@ -2795,6 +2810,7 @@
 </head>
 <body>
 <div id="sr-announce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+<div id="action-status" class="action-status" role="alert" hidden></div>
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
@@ -4074,7 +4090,7 @@ const __ACT = {
   ampPick:          (el, ev, arg) => { ampPick(arg); },
   k0: (el, ev, arg) => { window.print() },   /* window.print() */
   k80: (el, ev, arg) => { if (ev && ev.preventDefault) ev.preventDefault(); openEvidence(String(arg)); },   /* open an evidence section */
-  k81: (el, ev, arg) => { copyResultSummary(el); },   /* copy the one-sentence summary */
+  k81: (el, ev, arg) => { copyResultSummary(el, undefined, 'auc'); },   /* copy the one-sentence summary */
 
   /* design track A keys (kA1, kA2, …) below */
   kA1: (el, ev, arg) => { ampJointKey(ev, arg); },   /* Enter / Space on an amputation joint */
@@ -4170,10 +4186,11 @@ const __ACT = {
   k92: (el, ev, arg) => { savePdLocalSettings(); },
   k94: (el, ev, arg) => { pdToggleFields(); },
   k93: (el, ev, arg) => { switchModule('trough'); setCalcMode('pd'); },   /* AUC Precision PD guard → the PD mode (D23) */
-  k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || ''); },   /* Copy summary, PD mode */
+  k95: (el, ev, arg) => { copyResultSummary(el, (state.pdLast && state.pdSummary) || '', 'trough'); },   /* Copy summary, PD mode */
   k97: (el, ev, arg) => { runUndo(); },   /* Undo (D24) */
   k98: (el, ev, arg) => { markSuggestedModel(); },   /* ICU changes the suggested model (D24) */
   k100: (el, ev, arg) => { deleteAllProfiles(); },   /* Delete all profiles, with Undo (Task 20b) */
+  k101: (el, ev, arg) => { const b = document.getElementById('action-status'); if (b) { b.hidden = true; b.innerHTML = ''; } },   /* dismiss the failed-action line (Task 21) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4290,20 +4307,42 @@ function renderAmputation() {
   if (typeof updateCrCl === 'function') updateCrCl();
 }
 
+// One action, looked up and run (v3.15.0, Task 21). Own keys only: a name in markup such as
+// "constructor" or "hasOwnProperty" used to reach Object.prototype (code report M11). A handler
+// that throws is logged, as before, and now also said on screen (M12): it used to fail with
+// nothing but a console line, and a half-run handler can leave the screen half-changed (I2).
+function __dispatchAction(type, ev) {
+  const t = ev && ev.target;
+  if (!t || !t.closest) return;
+  const el = t.closest('[data-on' + type + ']');
+  if (!el) return;
+  const key = el.getAttribute('data-on' + type);
+  if (key == null || !Object.hasOwn(__ACT, key)) return;
+  try { __ACT[key](el, ev, el.getAttribute('data-arg')); }
+  catch (e) {
+    if (typeof console !== 'undefined') console.error('handler ' + key + ' failed', e);
+    showActionFailure(el);
+  }
+}
 function __bindActions() {
   ['click','input','change','keydown','focusout'].forEach(type => {
-    document.addEventListener(type, (ev) => {
-      const t = ev.target;
-      if (!t || !t.closest) return;
-      const el = t.closest('[data-on' + type + ']');
-      if (!el) return;
-      const fn = __ACT[el.getAttribute('data-on' + type)];
-      if (!fn) return;
-      try { fn(el, ev, el.getAttribute('data-arg')); }
-      catch (e) { if (typeof console !== 'undefined') console.error('handler ' +
-        el.getAttribute('data-on' + type) + ' failed', e); }
-    });
+    document.addEventListener(type, (ev) => __dispatchAction(type, ev));
   });
+}
+// The status line for a handler that failed: plain words, the control's own name, never the
+// error text or a stack (those stay in the console). It stays until dismissed (k101).
+function showActionFailure(el) {
+  try {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const box = document.getElementById('action-status');
+    if (!box) return;
+    const attr = (n) => (el && typeof el.getAttribute === 'function' && el.getAttribute(n)) || '';
+    const name = String(attr('aria-label') || (el && el.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const what = name ? `"${name}"` : 'That action';
+    box.innerHTML = `${ICON.caution}<span class="action-status-text">${escHtml(what)} did not finish. What is on screen may be incomplete: check it before relying on it.</span>`
+      + `<button type="button" class="text-action" data-onclick="k101">Dismiss</button>`;
+    box.hidden = false;
+  } catch (e) { if (typeof console !== 'undefined') console.error('the failure line could not be shown', e); }
 }
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') __bindActions();
 
@@ -5335,9 +5374,20 @@ function openEvidence(id) {
   const s = d.querySelector('summary'); if (s) s.focus({ preventScroll: true });
 }
 
-function copyResultSummary(btn, summary) {
-  const text = summary != null ? summary : (bState && bState.summaryText) || '';
-  const done = (ok) => { if (!btn) return; const old = btn.textContent; btn.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { btn.textContent = old; }, 1600); };
+// scope ('auc' or 'trough') is the result's form: a stale result is copied with the stale marker
+// first, as the printed report carries it (code report M13). The button always returns to its own
+// label: it used to read its label back when pressed, so a second press inside the 1.6 s
+// captured "Copied" and kept it.
+const COPY_SUMMARY_LABEL = 'Copy summary';
+function copyResultSummary(btn, summary, scope) {
+  let text = summary != null ? summary : (bState && bState.summaryText) || '';
+  if (scope && resultIsStale(scope)) text = `${STALE_MSG} — recalculate before relying on this summary.\n${text}`;
+  const done = (ok) => {
+    if (!btn) return;
+    btn.textContent = ok ? 'Copied' : 'Copy failed';
+    if (btn._copyTimer) clearTimeout(btn._copyTimer);
+    btn._copyTimer = setTimeout(() => { btn._copyTimer = null; btn.textContent = COPY_SUMMARY_LABEL; }, 1600);
+  };
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
     else done(false);
@@ -10271,7 +10321,10 @@ function firstDosePlan(r, rec, nowH, atH, cur) {
   let auc24First = null;
   if (rec.dose > 0) {
     const tinfH = rec.tinfH || autoTinf(rec.dose), regimen = [];
-    for (let k = 0; ; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
+    // The first day's doses. Bounded by that day (k <= 24 / tau), so a first-dose time that is not a
+    // number ends the loop instead of hanging the page (code report M18); for whole-hour intervals the
+    // bound admits every dose the break does, a clock change's 23 h day included.
+    for (let k = 0; k <= 24 / rec.tau; k++) { const t = wall(k).getTime() / 3600000; if (t >= firstH + 24 - 1e-9) break; regimen.push({ mg: rec.dose, tinfH, timeH: t }); }
     auc24First = fittedAUC(Object.assign({}, rFit, { doses: rFit.doses.concat(regimen) }), firstH, firstH + 24);
   }
   // "Was due" means v3.13.0's: the first dose is now because the current regimen's due
