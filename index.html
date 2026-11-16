@@ -14560,11 +14560,11 @@ function bayesAnnouncement(r, rec, conf, plan) {
 function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   p2c = p2c || {};
   levelWarnings = Array.isArray(levelWarnings) ? levelWarnings : [];
-  // Keep what this render was given, so a redraw (resize, rotate, theme toggle)
-  // re-renders the SAME result. redrawAllCanvases read these four from bState,
-  // where nothing ever stored them, so every redraw threw "levelWarnings is not
-  // iterable" and — since the renderer clears the panel first — wiped the
-  // dosing answer mid-verification (design audit 2026-09-28).
+  // Keep what this render was given, so a re-render of the SAME result (the HD gap, k78, and
+  // the give-at time, k79) can pass it again. Since D27 a resize or theme change no longer
+  // re-renders at all: redrawAllCanvases repaints the canvases only. (These four were first stored
+  // when that redraw read them from bState, where nothing had put them, and every redraw threw
+  // "levelWarnings is not iterable"; design audit 2026-09-28.)
   bState.divergeMsg = divergeMsg; bState.levelWarnings = levelWarnings;
   bState.mic = mic; bState.p2c = p2c;
   // r.rec is read once the rating is known (finalizeDecision below), never before.
@@ -16064,6 +16064,7 @@ function runBayesTinkerer() {
 // ─── Reset ───
 function resetBayesian() {
   bState = { sex:null, result:null, tinkCompare:[], model:'buelga', dial:false, regimenOverrideH:null };
+  _tinkSSRedraw = null;   // the old patient's Tinkerer preview is never repainted after a reset (Task 21)
   const _ro = document.getElementById('b-regimen-override');
   if (_ro) { _ro.value = 'auto'; }
   const _rw = document.getElementById('b-regimen-custom-wrap');

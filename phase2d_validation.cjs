@@ -8858,13 +8858,23 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(ok && Number.isFinite(ok.auc24First) && ok.times.length === 3, 'q8h: three first-day doses, a first-day AUC');
     } finally { delete sandbox.__fd45; }
   });
+  test('45.41 resetBayesian forgets the Dose Tinkerer preview\'s redraw (a new patient repaints nothing of the old one)', () => {
+    // A DOM stub whole enough for resetBayesian's own clearing (every element has a style and a value).
+    const prevGet = sandbox.document.getElementById;
+    sandbox.document.getElementById = () => Object.assign(makeEl(), { style: { display: '' }, dataset: {}, querySelector: () => null });
+    try {
+      run45('_tinkSSRedraw = () => {};');
+      fn45('resetBayesian')();
+      assert(run45('_tinkSSRedraw') === null, `after reset: ${typeof run45('_tinkSSRedraw')}`);
+    } finally { sandbox.document.getElementById = prevGet; }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 599;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.40 + D27 redraw)
+const EXPECTED_TOTAL = 600;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.41 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
