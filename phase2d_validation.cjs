@@ -6309,7 +6309,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       if (vals['init-interval'] != null) get('init-interval').value = String(vals['init-interval']);
       fn44('calculate')();
       const h = get('results-content').innerHTML;
-      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent };
+      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent, hint: get('interval-hint').textContent };
     } finally {
       sandbox.document = prevDoc; sandbox.setTimeout = prevST;
       vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null;`, sandbox);
@@ -8425,8 +8425,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assertClose(nl.loNext, auc * (1 - next.lo), 1e-6, 'the next band is the steady-state row for one more level (low)');
     assertClose(nl.hiNext, auc * (1 + next.hi), 1e-6, 'the next band is the steady-state row for one more level (high)');
     assertClose(fitHi.steadyFromH, fn45('steadyFromH')(r.doses, r.t12_ind, 'hughes'), 1e-9, 'steadyFromH');
-    if (nl.detail.indexOf(fn45('aucBandText')(R(2, 'hughes', false))) >= 0)
-      assert(nl.detail.indexOf(`drawn at steady state, from ${fn45('fmtDT')(fitHi.steadyFromH)}.`) > 0, nl.detail);
+    // Task 21b (Task 19 minor): unconditional. The detail quotes the next band (the steady-state row for one more
+    // level), then when a level reads it: from steadyFromH.
+    const bNext = fn45('aucBandText')(R(2, 'hughes', false)), at = nl.detail.indexOf(bNext);
+    assert(at >= 0, `the next band is quoted: ${bNext} | ${nl.detail}`);
+    assert(nl.detail.indexOf(`drawn at steady state, from ${fn45('fmtDT')(fitHi.steadyFromH)}.`) > at, nl.detail);
   });
   test('45.4c the early band moves the decision: a reported flip, through runBayesian, is the early-row answer and not the steady-state-row answer [T19-1, T19-2, T19-5]', () => {
     // From the Task 19 sweep (change -> continue): 1000 mg q8h x 3; one level, 14 mg/L, 3 h after the start of
@@ -9094,13 +9097,28 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       && f.highestAny.tau !== 12 && fn45('troughCapBoundHTML')(f).indexOf(`The highest admissible regimen, ${fn45('fmtRegimen')(f.highestAny.dose, f.highestAny.tau)}, falls short at AUC₂₄ ${f.highestAny.auc.toFixed(0)}`) >= 0,
       `unit: ${JSON.stringify(f.highestAny)} ${fn45('troughCapBoundHTML')(f).replace(/<[^>]+>/g, '').slice(0, 300)}`);
   });
+  // The trough44 helper honours the interval passed (ledger Task 3). setPatientSex refreshes the CrCl readout, whose
+  // suggestInterval overwrites #init-interval; the helper sets it again after (fixed in the Task 3 review, 0f0cdcb).
+  // 44.8 and 44.8a pass the interval the suggestion would give (q48h at CrCl 6.5, q8h at CrCl 303), so they cannot
+  // tell; this check uses intervals that differ from the suggestion, and fails if the helper's re-set is removed.
+  test('45.50 the trough44 helper calculates at the interval passed, not the one the CrCl readout suggests [T21b]', () => {
+    const { trough44 } = __suiteShared;
+    // CrCl 303 (suggests q8h) at q12h: the refusal is said of q12h.
+    const arc = trough44('initial', 'M', { age: 25, tbw: 95, height: 185, scr: 0.5, 'init-interval': 12, 'init-tinf': 1 });
+    assert(/At q12h no dose within the conventional ceilings/.test(arc.text) && !/At q8h no dose/.test(arc.text), arc.text.slice(0, 300));
+    // CrCl about 80 (suggests q12h) at q24h: the regimen is q24h.
+    const n = trough44('initial', 'M', { age: 60, tbw: 80, height: 175, scr: 1.0, 'init-interval': 24, 'init-tinf': 1 });
+    assert(/<span class="vx-freq">q24h<\/span>/.test(n.h), n.text.slice(0, 300));
+    // And the suggestion does differ for both (so this is not a coincidence again).
+    assert(/Q8H suggested/.test(arc.hint) && /Q12H suggested/.test(n.hint), `suggestions: ${arc.hint} | ${n.hint}`);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 608;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.49 + D27 redraw)
+const EXPECTED_TOTAL = 609;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.50 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

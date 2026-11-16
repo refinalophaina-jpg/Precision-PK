@@ -2085,8 +2085,7 @@ async function enterCourse(page) {
         await f.keyboard.press('Tab');
         stops.push(await f.evaluate(() => { const el = document.activeElement, cs = getComputedStyle(el), probe = document.createElement('i');
           probe.style.color = 'var(--terracotta-ink)'; document.body.appendChild(probe); const ink = getComputedStyle(probe).color; probe.remove();
-          const isField = /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && !/checkbox|radio/.test(el.type);
-          return { id: el.id || el.className.toString().slice(0, 30), style: cs.outlineStyle, color: cs.outlineColor, ink, w: cs.outlineWidth, isField, bd: cs.borderTopColor }; }));
+          return { id: el.id || el.className.toString().slice(0, 30), style: cs.outlineStyle, color: cs.outlineColor, ink, w: cs.outlineWidth }; }));
       }
     }
     const bad = stops.filter(x => x.style !== 'none' && x.color !== x.ink);
