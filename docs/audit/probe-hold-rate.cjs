@@ -21,6 +21,8 @@
 //   ss-trough-peak  the same trough + a peak 1 h after the end of dose 8's infusion (86 h); now and judged as above
 //   load-one        one level 6-10 h after the start of the load (uniform). Now 0.5 h after it (6.5-10.5 h); only the
 //                   load given. Judged at the load + the answered interval (the first maintenance dose: 12 h on q12h)
+//   dose-one        no load: 1000 mg q12h from 0 h; one level 2-11 h after the first dose (uniform). Now 0.5 h after it; only the
+//                   first dose given. Judged at the first dose + the answered interval (Task 21d, U6a)
 //   load-two        2 h after the end of the load's infusion, and 0.5 h before the first maintenance dose (11.5 h).
 //                   Now 11.75 h, BEFORE the 12 h maintenance dose (fix round, review item 2: at 12.0 h that dose counted
 //                   as given, the 11.5 h level predated it, no measured basis could fire, and 36 h was judged); only
@@ -39,6 +41,9 @@
 //
 // Task 21c (the user's ruling U5): on Goti (not on dialysis) a fitted-only reading is a caution, not a Hold. The table keeps
 // the pre-U5 columns (they reproduce the Task 21b output) and adds U5 Hold, U5 false Hold and U5 caution.
+// Task 21d (the user's ruling U6a; R55): a measured basis from a level drawn after the course's first dose and before the
+// second is a caution on every model (with the fitted also >= 20: Buelga/Hughes hold, Goti caution). Adds U5+U6 Hold,
+// U5+U6 false Hold, U6 caution, and the dose-one design (an unloaded first dose, one level before dose 2).
 //
 // Usage: node docs/audit/probe-hold-rate.cjs [n=1000] [seed=2111] [models=buelga,goti,hughes]
 // Seeded and reproducible (uncertainty-load.cjs's LCG; one seed per cell, derived from the base seed).
@@ -46,13 +51,13 @@
 const { sb, C, rnd, randn, setSeed } = require('./uncertainty-load.cjs');
 const { buelgaPopPK, burtonObjective, predictConc1comp, gotiPopPK, burtonObj3D, predictConc2comp, hughesPopPK,
   burtonObj3D_hughes, aucUncertaintyRow, latestLevelEarly, autoTinf, regimenDecision, firstDosePlan, noSolutionHold,
-  inferCurrentRegimen, computeFFM, mapFit } = sb;
+  inferCurrentRegimen, computeFFM, mapFit, predictFittedAt, measuredHoldLevel } = sb;
 const vm = require('vm');
 const TROUGH_HIGH_MGL = vm.runInContext('TROUGH_HIGH_MGL', sb);
 const args = process.argv.slice(2);
 const N = +args[0] || 1000, SEED = +args[1] || 2111;
 const MODELS = (args[2] || 'buelga,goti,hughes').split(',');
-const DESIGNS = ['ss-trough', 'ss-trough-peak', 'load-one', 'load-two'];
+const DESIGNS = ['ss-trough', 'ss-trough-peak', 'load-one', 'load-two', 'dose-one'];   // dose-one appended (Task 21d): earlier cells keep their seeds
 const TAU = 12, MAINT = 1000;
 
 function course(design, tbw) {
@@ -64,6 +69,11 @@ function course(design, tbw) {
     return { doses, times, nowH: design === 'load-one' ? times[0] + 0.5 : TAU - 0.25 };
   }
   const doses = [];
+  if (design === 'dose-one') {   // Task 21d (U6a): a first dose with no load, one level before dose 2
+    for (let d = 0; d < 8; d++) doses.push({ mg: MAINT, tinfH: 1, timeH: d * TAU });
+    const times = [2 + rnd() * 9];
+    return { doses, times, nowH: times[0] + 0.5 };
+  }
   for (let d = 0; d < 8; d++) doses.push({ mg: MAINT, tinfH: 1, timeH: d * TAU });   // dose 9 is the one due at 96 h
   return { doses, times: design === 'ss-trough' ? [8 * TAU - 0.5] : [7 * TAU + 2, 8 * TAU - 0.5], nowH: 8 * TAU };
 }
@@ -71,7 +81,7 @@ function course(design, tbw) {
 function cell(model, design, seed) {
   setSeed(seed);
   const c = { n: 0, fitted: 0, measured: 0, either: 0, trueHold: 0, falseHold: 0, falseFitted: 0, falseMeasured: 0,
-    fittedOnlyFalse: 0, fittedOnly: 0, falseUnder15: 0, caution: 0, cautionFalse: 0, prevalent: 0, missed: 0, refusals: 0, refusalHolds: 0, skipped: 0, falseExamples: [] };
+    fittedOnlyFalse: 0, fittedOnly: 0, falseUnder15: 0, caution: 0, cautionFalse: 0, caution6: 0, caution6False: 0, prevalent: 0, missed: 0, refusals: 0, refusalHolds: 0, skipped: 0, falseExamples: [] };
   for (let i = 0; i < N; i++) {
     const age = 30 + Math.floor(rnd() * 50); let tbw = 50 + rnd() * 50; const scr = 0.7 + rnd() * 1.5;
     if (model === 'hughes') tbw = 110 + rnd() * 70;
@@ -122,19 +132,24 @@ function cell(model, design, seed) {
     // U5 (Task 21c): a Goti fitted-only reading is a caution, not a Hold. It is counted here as the Hold it was before
     // U5 (the same time judged: no planned rows, no chosen time), so the pre-U5 columns reproduce the Task 21b table,
     // and separately as a caution, so the U5 columns are the pre-U5 ones less the cautions.
-    let hold = false, fitted = false, measured = false, atH = null, caution = false;
+    // Task 21d (U6a): cautions of every kind ('fitted' U5; 'first-level' and 'fitted-first' U6a) are counted as the Holds
+    // they were before (same time judged), and the pre-U5 basis flags are read from the raw readings at that time (the
+    // D26 rule: fitted, or the measured level carried down the fitted slope), so the pre-U5 columns still reproduce.
+    let hold = false, atH = null, caution = null;
     if (rec && rec.noSolution) {
       c.refusals++;
       const h = noSolutionHold(r, nowH, cur);
-      if (h && h.fittedCaution) { hold = true; caution = true; fitted = true; atH = h.dueH; }
-      else if (h) { hold = true; c.refusalHolds++; fitted = h.fitted >= TROUGH_HIGH_MGL; measured = !!h.measured; atH = h.dueH; }
+      if (h && h.holdCaution) { hold = true; caution = h.holdCaution.kind; atH = h.dueH; }
+      else if (h) { hold = true; c.refusalHolds++; atH = h.dueH; }
       else atH = cur && cur.tau > 0 && Math.max(...given.map(d => d.timeH)) + cur.tau > nowH ? Math.max(...given.map(d => d.timeH)) + cur.tau : nowH;
     } else {
       const p = firstDosePlan(r, rec, nowH, null, cur);
-      if (p && p.hold) { hold = true; fitted = p.holdFitted >= TROUGH_HIGH_MGL; measured = p.holdCarried != null && p.holdCarried >= TROUGH_HIGH_MGL; atH = p.holdAtH; }
-      else if (p && p.fittedCaution) { hold = true; caution = true; fitted = true; atH = p.fittedCaution.atH; }
+      if (p && p.hold) { hold = true; atH = p.holdAtH; }
+      else if (p && p.holdCaution) { hold = true; caution = p.holdCaution.kind; atH = p.holdCaution.atH; }
       else atH = p ? p.firstH : nowH;
     }
+    const mhP = measuredHoldLevel(r, nowH);
+    const fitted = hold && predictFittedAt(r, atH) >= TROUGH_HIGH_MGL, measured = hold && !!mhP && atH >= mhP.timeH && mhP.at(atH) >= TROUGH_HIGH_MGL;
     const truth = trueAt(given, atH);
     if (truth >= TROUGH_HIGH_MGL) c.prevalent++;
     if (fitted) c.fitted++;
@@ -142,7 +157,8 @@ function cell(model, design, seed) {
     if (fitted && !measured) c.fittedOnly++;
     if (!hold) { if (truth >= TROUGH_HIGH_MGL) c.missed++; continue; }
     c.either++;
-    if (caution) { c.caution++; if (truth < TROUGH_HIGH_MGL) c.cautionFalse++; }
+    if (caution === 'fitted') { c.caution++; if (truth < TROUGH_HIGH_MGL) c.cautionFalse++; }
+    if (caution && caution !== 'fitted') { c.caution6++; if (truth < TROUGH_HIGH_MGL) c.caution6False++; }
     if (truth >= TROUGH_HIGH_MGL) c.trueHold++;
     else {
       c.falseHold++; if (truth < 15) c.falseUnder15++; if (fitted) c.falseFitted++; if (measured) c.falseMeasured++; if (fitted && !measured) c.fittedOnlyFalse++;
@@ -169,11 +185,16 @@ console.log('  ss-trough-peak  peak at 86 h + trough at 95.5 h; now and judged a
 console.log('  load-one        one level 6-10 h after the load; now 0.5 h after it; only the load given; judged at load + interval (12 h on q12h, 24 h on q24h)');
 console.log('  load-two        levels 2 h after the load infusion ends and at 11.5 h; now 11.75 h (before the 12 h dose); only the load given;');
 console.log('                  judged at load + interval, at least 11.75 h (11.75-12 h on q8h/q12h, 24 h on q24h)');
+console.log('  dose-one        no load: one level 2-11 h after the first 1000 mg dose; now 0.5 h after it; only that dose given;');
+console.log('                  judged at the first dose + interval, at least now (12 h on q12h, 24 h on q24h)');
 console.log('Pre-U5 columns: the rule shipped in v3.14.0 / Task 21b (a Goti fitted-only reading held). U5 columns (Task 21c, the user\'s');
 console.log('ruling U5, shipped): U5 Hold = Holds that still fire; U5 false Hold = % of them false; U5 caution = Goti fitted-only readings');
-console.log('now shown as a caution instead (false: the true level at that time was under the threshold).\n');
+console.log('now shown as a caution instead (false: the true level at that time was under the threshold).');
+console.log('U6a columns (Task 21d, the user\'s ruling U6a, shipped with U5): U5+U6 Hold = Holds that still fire; U5+U6 false Hold = % of them');
+console.log('false; U6 caution = readings now a caution because their measured basis is a level drawn after the first dose and before the');
+console.log('second (alone, or with the fitted on Goti), with the false ones. Buelga/Hughes with the fitted level also >= 20 still hold (R55).\n');
 const head = ['model', 'design', 'n', 'fitted', 'measured', 'either (Hold, pre-U5)', 'true hold', 'false hold', 'false, true < 15', 'false|fitted', 'false|measured', 'fitted-only (false)', 'prevalence', 'missed', 'refusals (held)',
-  'U5 Hold', 'U5 false Hold', 'U5 caution (false)'];
+  'U5 Hold', 'U5 false Hold', 'U5 caution (false)', 'U5+U6 Hold', 'U5+U6 false Hold', 'U6 caution (false)'];
 const rows = [];
 MODELS.forEach((m, mi) => DESIGNS.forEach((d, di) => {
   const c = cell(m, d, seedOf(['buelga', 'goti', 'hughes'].indexOf(m), di));
@@ -182,7 +203,10 @@ MODELS.forEach((m, mi) => DESIGNS.forEach((d, di) => {
     `${c.falseMeasured}/${c.measured} (${pc(c.falseMeasured, c.measured)})`, `${c.fittedOnlyFalse}/${c.fittedOnly} (${pc(c.fittedOnlyFalse, c.fittedOnly)})`,
     `${c.prevalent} (${pc(c.prevalent, c.n)})`, `${c.missed} (${pc(c.missed, c.n)})`, `${c.refusals} (${c.refusalHolds})`,
     `${c.either - c.caution} (${pc(c.either - c.caution, c.n)})`, `${c.falseHold - c.cautionFalse} (${pc(c.falseHold - c.cautionFalse, c.either - c.caution)})`,
-    `${c.caution} (${c.cautionFalse}, ${pc(c.cautionFalse, c.caution)})`]);
+    `${c.caution} (${c.cautionFalse}, ${pc(c.cautionFalse, c.caution)})`,
+    `${c.either - c.caution - c.caution6} (${pc(c.either - c.caution - c.caution6, c.n)})`,
+    `${c.falseHold - c.cautionFalse - c.caution6False} (${pc(c.falseHold - c.cautionFalse - c.caution6False, c.either - c.caution - c.caution6)})`,
+    `${c.caution6} (${c.caution6False}, ${pc(c.caution6False, c.caution6)})`]);
   rows[rows.length - 1].examples = c.falseExamples;
   rows[rows.length - 1].skipped = c.skipped;
 }));
