@@ -1433,11 +1433,13 @@ async function enterCourse(page) {
     // Task 21b: the horizon is said from the origin it is counted from (U2: the due time), on the hold line, the
     // readout and the projection's note alike; never "for the next 72 h".
     await a.locator('#b-proj-fwd').check(); await a.waitForTimeout(400);
-    const hz = await a.evaluate(() => ({ why: ((document.querySelector('#b-results .vx-hold-why') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+    const hz = await a.evaluate(() => ({ summary: String(bState.summaryText || ''), said: ((document.getElementById('sr-announce') || {}).textContent || ''),
+      why: ((document.querySelector('#b-results .vx-hold-why') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
       readout: ((document.getElementById('b-first-readout') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
       note: ((document.getElementById('b-proj-auc-note') || {}).textContent || '').trim() }));
-    ok('D27: the "recheck a level" horizon is named from the due time on the hold line, the readout and the projection note',
-       [hz.why, hz.readout, hz.note].every(t => /until 72 h after the next dose is due/.test(t) && !/for the next 72 h|after the dose was due/.test(t))
+    ok('D27: the "recheck a level" horizon is named from the origin counted (now, the due time having passed) on the hold line, the readout, the projection note, Copy summary and the announcement',
+       // R51: this patient's dose was due days ago, so the horizon is counted, and named, from now.
+       [hz.why, hz.readout, hz.note, hz.summary, hz.said].every(t => /until 72 h from now/.test(t) && !/for the next 72 h|after the dose was due|after the next dose is due/.test(t))
        && /^No projection: /.test(hz.note), JSON.stringify(hz));
     await a.locator('#b-proj-fwd').uncheck(); await a.waitForTimeout(200);
     ok('D26: final review (I5): beside the Hold the severe-renal note says no further dose until a level, with no loading-dose sentence and no clamp that did not happen',
@@ -2599,9 +2601,31 @@ async function enterCourse(page) {
     await b.locator('#b-results [data-onclick="k81"]').first().click(); await b.waitForTimeout(150);
     const pasted = await b.evaluate(() => (window.__copied || [])[0] || '');
     ok('D27: Copy summary carries "AUC₂₄", never "AUC24"', /AUC₂₄ is \d+ mg·h\/L/.test(pasted) && !/AUC24/.test(pasted), pasted.slice(0, 300));
-    // Trough hold "not before" is never in the past. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h
-    // over 1.5 h started yesterday 01:00, 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon,
-    // so at today 10:00 the answer is "not before" now, and says when it fell.
+    // The severe-renal hold ("No further dose until a level is drawn") withholds a planned dose too (controller ruling):
+    // drawn as held, off the curve. Fictional 70 M (70 kg, 175 cm, SCr 8.5, CrCl 8), Goti, no level; 1.5 g yesterday
+    // 04:00 and 1 g today 04:00 given, 1 g planned today 12:00.
+    await b.goto(BASE + '?v=pwt21bsr-' + Date.now(), { waitUntil: 'networkidle' });
+    await b.locator('[data-onclick="k2"]').click();
+    await typeInto(b, '#b-age', '70'); await typeInto(b, '#b-tbw', '70'); await typeInto(b, '#b-height', '175'); await typeInto(b, '#b-scr', '8.5');
+    await b.locator('[data-onclick="k39"]').click(); await b.locator('#b-model-btn-goti').click();
+    const sr = [['1500', day(-1), '04:00'], ['1000', day(0), '04:00'], ['1000', day(0), '12:00']];
+    for (let n = 1; n <= sr.length; n++) {
+      await b.locator('[data-onclick="k43"]').click();
+      await typeInto(b, `#b-dose-mg-${n}`, sr[n - 1][0]); await typeInto(b, `#b-dose-tinf-${n}`, '2');
+      await b.locator(`#b-dose-date-${n}`).fill(sr[n - 1][1]); await typeInto(b, `#b-dose-time-${n}`, sr[n - 1][2]);
+    }
+    await b.locator('[data-onclick="k47"]').click(); await b.waitForSelector('#b-results .vx-verdict', { timeout: 20000 }); await b.waitForTimeout(500);
+    const srPlanned = await b.evaluate((d) => new Date(`${d}T12:00`).getTime() / 3600000, day(0));
+    const sv = await b.evaluate((pH) => { const c = document.getElementById('b-profile-canvas'), P = c && c._pkPlot, st = document.getElementById('b-course-strip');
+      return { text: ((document.querySelector('#b-results') || {}).textContent || '').replace(/\s+/g, ' '),
+        curve: P ? P.doses.length : null, plannedOnCurve: P ? P.doses.some(d => Math.abs(d.timeH - pH) < 1e-6) : null,
+        bars: st ? st.querySelectorAll('rect.bar:not(.proj)').length : -1, held: st ? st.querySelectorAll('.held').length : -1 }; }, srPlanned);
+    ok('D27: under the severe-renal "No further dose until a level is drawn", a planned dose is drawn as held and kept off the curve',
+       /No further dose until a level is drawn/.test(sv.text) && sv.plannedOnCurve === false && sv.curve === 2 && sv.bars === 2 && sv.held === 1,
+       JSON.stringify(Object.assign({}, sv, { text: sv.text.slice(0, 160) })));
+    // Trough hold "not before" is never in the past (controller ruling): a level that has fallen to 20 mg/L by now is
+    // no Hold. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h over 1.5 h started yesterday 01:00,
+    // 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon, so at today 10:00 the ordinary answer stands.
     await b.locator('[data-onclick="k1"]').click();
     await typeInto(b, '#age', '60'); await typeInto(b, '#tbw', '80'); await typeInto(b, '#height', '178'); await typeInto(b, '#scr', '1.0');
     await b.locator('[data-onclick="k9"]').first().click();
@@ -2616,9 +2640,9 @@ async function enterCourse(page) {
       const v = document.querySelector('#results-content .tx-verdict'), a = v && v.querySelector('.vx-action'), w = v && v.querySelector('.vx-hold-why');
       return { act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', why: w ? w.textContent.replace(/\s+/g, ' ').trim() : '',
         now: fmtClock(Date.now() / 3600000), said: (document.getElementById('sr-announce') || {}).textContent || '' }; });
-    ok('D27: a Trough hold whose level fell to 20 mg/L before the calculation reads "not before" now, never a time gone, and says when it fell',
-       tNow.act === `Hold: next dose not before ${tNow.now}` && /fell to 20 mg\/L [\d.]+ h after the last dose started \(by \d{1,2} [A-Z][a-z]{2} \d\d:\d\d\), before this calculation/.test(tNow.why)
-       && tNow.said.indexOf(`Hold: next dose not before ${tNow.now}`) >= 0, JSON.stringify(tNow));
+    const tReg = await b.evaluate(() => ((document.getElementById('tx-regimen') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D27: a Trough level that fell to 20 mg/L before the calculation gives no Hold (never "not before" a time gone or now); the regimen is shown',
+       !/Hold/.test(tNow.act + tNow.why) && !/Hold/.test(tNow.said) && /IV q\d+h/.test(tReg) && /^Result: /.test(tNow.said), JSON.stringify(Object.assign({ reg: tReg }, tNow)));
     // Two-level and random-level refusals name only intervals their select offers (q8h-q48h, never q6h), and the
     // no-interval alarm names the regimen whose AUC it quotes.
     const verdictText = () => b.evaluate(() => { const t = ((document.querySelector('#results-content') || {}).innerText || '').replace(/\s+/g, ' ');
