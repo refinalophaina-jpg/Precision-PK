@@ -261,7 +261,7 @@ logic, the engine moves.
 
 **Release 2 (D27, v3.15.0):** the review's test, model and UI findings; two Hold cautions; the engine moves.
 - **Tests that can fail:** Hughes constants parsed (rule 6); `EXPECTED_TOTAL` pins the count in all three
-  suites; `docs/audit/mutation.cjs` (60 mutants, in memory, never writes `index.html`) and CI
+  suites; `docs/audit/mutation.cjs` (63 mutants, in memory, never writes `index.html`) and CI
   (`.github/workflows/test.yml`) on every push.
 - **Resize and theme repaint canvases only** (`redrawAllCanvases`); the result is never rebuilt.
 - **MAP starts:** three-parameter fits also start at ±1 and ±2 SD on Vp (`mapFit(…, omega2Vp)`). Hughes missed
@@ -277,11 +277,17 @@ logic, the engine moves.
     (`heldPlannedDoses`).
   - The 72 h horizon counts from the later of the due time and now, or the planned dose, and every surface names
     the origin (R51, R54). A Trough level fallen to 20 by now is no Hold (`calculationNowH`).
-  - **U5:** on non-HD Goti a fitted-only reading at 20 or more is one caution line, not a Hold.
-  - **U6a:** in AUC Precision, a Hold whose only measured basis is a level drawn after the course's first dose and
-    before the second is the same caution (`firstIntervalLevel`, `holdBasisOf`).
-  - Under either caution the regimen and first dose stand and the Next line is "Draw a level before giving the
-    next dose". Buelga and Hughes with the fitted level also at 20 hold on the fitted basis (R55, R57). A refusal
+  - **U5:** on non-HD Goti a fitted-only reading at 20 or more is one caution line, not a Hold: "… no level drawn
+    since the last dose confirms it. Draw a level before giving the next dose."
+  - **U6a, bounded by U7:** in AUC Precision, a Hold whose only measured basis is a level drawn within
+    `FIRST_INTERVAL_CAUTION_H` (12 h, a preference) of the start of the course's first dose and before the second is the
+    same caution: "Repeat the level before giving the next dose" (`firstIntervalLevel`, `holdBasisOf`). A later level
+    before the second dose (a trough on q24h or q48h) is an ordinary measured Hold.
+  - **R59:** the fitted and the carried measured level both at 20 or more is a Hold on both bases on every model, Goti
+    and a first-interval level included (it replaced R55; R57's fitted-basis clause could no longer arise and went).
+  - Under either caution the regimen and first dose stand. One helper (`holdCautionWords`) words the caution line,
+    the Next line, the panel, Copy summary and the announcement; a refusal says "… before any further dose" and draws
+    its planned rows as held; the projection note repeats the caution. No ruling id reaches the screen. A refusal
     with nothing planned, Goti-HD and the Trough module are unchanged (R53, R55, R56).
 - **UI:** focus clear of the pinned footer and `--terracotta-ink` everywhere; PD announced and its chart readable;
   one notation (`userNotation`, display only); 44 px targets at 375 px; Delete all profiles with Undo, and profile
@@ -353,9 +359,12 @@ dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
      cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the
      weight-based level-dosing cuts; `HOLD_SEARCH_MAX_H` (72 h, the user's ruling U2, counted from the
      later of the due time and now, or the planned dose, R51): when a hold gives "recheck a level" instead
-     of a resume time; and `SS_FRACTION_EARLY` (Buelga 0.925, Goti 0.775, Hughes 0.575, D27): below this
+     of a resume time; `SS_FRACTION_EARLY` (Buelga 0.925, Goti 0.775, Hughes 0.575, D27): below this
      fraction of steady state the most recent level is "early", so the fit reads the early uncertainty row
-     that the dots and `regimenDecision` count (calibrated by simulation, R45, R47).
+     that the dots and `regimenDecision` count (calibrated by simulation, R45, R47); and
+     `FIRST_INTERVAL_CAUTION_H` (12 h, the user's ruling U7, D27): a measured level drawn within it of the first
+     dose's start, and before the second dose, is a caution rather than a Hold (the hold-rate probe's window), so it
+     decides whether a dose is held.
 
    Everything they sit beside is sourced: sigma is each model's published residual error, the AUC
    band is Rybak 2020 Rec 1, the 250 mg step is the dispensing increment, the hold threshold is the
@@ -374,13 +383,13 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **617/617 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` |
+| `phase2d_validation.cjs` | **621/621 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` |
 | `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
 | `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
-| `docs/audit/mutation.cjs` | **60 of 60 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
+| `docs/audit/mutation.cjs` | **63 of 63 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27). The script prints the first 40 |
-| `docs/audit/browser-flows.cjs` | **221/221** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **223/223** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -531,9 +540,9 @@ one must go through `escHtml()`.** About 150 call sites do (149 on 131 lines, 20
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 221 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 223 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
-| `docs/audit/mutation.cjs` | The mutation gate: 60 mutants, each must be killed by the Node suites |
+| `docs/audit/mutation.cjs` | The mutation gate: 63 mutants, each must be killed by the Node suites |
 | `.github/workflows/test.yml` | CI: the Node suites and the mutation gate on every push and pull request |
 | `docs/audit/probe-map-starts.cjs`, `docs/audit/uncertainty-by-model.cjs --early`, `docs/audit/probe-hold-rate.cjs` | D27's evidence: the MAP starts, the early band and its decision flips (`docs/audit/task19/`), and how often the Hold fires and is false (`docs/audit/task21b/`) |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |

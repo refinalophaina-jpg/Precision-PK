@@ -2212,9 +2212,9 @@ rules.
 Release 1 reviews deferred (R32). As in D26, a finding is named by its report: "code I4", "models I2", "UI M3".
 Branch `v3.15.0-tests-ui-hughes`, cut from the released v3.14.0 (`b410477`). The engine moves: the MAP fit's
 starts (Task 17), the uncertainty row a fit reads (Task 19), one ln 2 (Task 21), and the Hold (Tasks 21b–21d).
-The ledger and the task reports are in `.superpowers/sdd/2026-11-14-review-fixes-and-dialysis/`; every number
-below comes from a report's final fix round, a committed probe output under `docs/audit/`, or a command run
-for this record.
+Every number below comes from a committed probe and its output under `docs/audit/` (each named where it is used),
+from the unit test or browser check named beside it, or from a command run for this record; commits are named where
+they matter. The final whole-branch review's fix wave (after `3032fbd`) is recorded under "The final review's fix wave".
 
 **The user's rulings (2026-11-15) that bind it.**
 - **U5:** on Goti, not on dialysis, a fitted pre-dose level of 20 mg/L or more with no measured basis is a
@@ -2225,13 +2225,16 @@ for this record.
 - **U6a** (replaces U6's trigger, which needed a loading-dose definition the app does not have for one given
   dose): U6 keys on "the only measured basis is a level drawn after the course's first dose and before the
   second", whether or not the first dose was a load. No new field.
+- **U7** (after the final review, bounds U6a): the caution applies only to a level drawn within 12 h of the start of
+  the first dose, the window the hold-rate probe measured. A later level before the second dose is an ordinary
+  measured basis (a Hold at 20 or more). The 12 h is a PREFERENCE (rule 8).
 
 ### What was fixed, and the tests that pin it
 
-New unit tests are SUITE 45 in `phase2d_validation.cjs` (62 tests: 45.1–45.3, 45.4a–e, 45.5–45.58) and one
-SUITE 28 test; the suite runs 617, pinned by `EXPECTED_TOTAL`. New browser checks are the 60 `D27:` checks in
-`docs/audit/browser-flows.cjs` (161 → 221). The mutation gate holds 60 mutants. Every fix began with a test
-seen failing; the RED and GREEN output is in the task reports.
+New unit tests are SUITE 45 in `phase2d_validation.cjs` (66 tests: 45.1–45.3, 45.4a–e, 45.5–45.62) and one
+SUITE 28 test; the suite runs 621, pinned by `EXPECTED_TOTAL`. New browser checks are the 62 `D27:` checks in
+`docs/audit/browser-flows.cjs` (161 → 223). The mutation gate holds 63 mutants. Every fix began with a test
+seen failing on the commit before it.
 
 **Tests that can fail (Tasks 13, 14, 16).**
 - **Code I3, I7, M15, M16: rule 6 for Hughes, a pinned count, time zones** (Task 13). `harness_constants.cjs`
@@ -2258,8 +2261,12 @@ seen failing; the RED and GREEN output is in the task reports.
     D25 branches, the fit fingerprint, a stale fit saved as `staleFit`, profile delete and Undo, and the override
     range. Three tests the code report found could not fail were rewritten as behaviour tests (SUITE 14's inline
     handler detector, the stale target and MIC, the stale serial SCr and override).
-  - Later tasks added T19-1 to T19-5 (the early row), U5-a to U5-g and U6-a to U6-i: **60 mutants, all killed**.
-    Mutants whose target text a task moved were retargeted, never dropped (R31).
+  - Later tasks added T19-1 to T19-5 (the early row), U5-a to U5-g and U6-a to U6-i; the final review's fix wave
+    retargeted U5-c, U6-e and U6-f to the rewritten `holdBasisOf` and added R59-a, U7-a, I1-a and M-a: **63 mutants,
+    all killed**. Mutants whose target text a task moved were retargeted, never dropped (R31), with one exception:
+    U6-i targeted R57's fitted-basis clause, whose code R59 made unreachable and the fix wave removed; 45.57 pins the
+    same case under R59. (The fix wave's first gate run found U6-c surviving: R59 had made 45.55's early-second-dose
+    fixture a Hold on both bases whatever the second-dose rule said; a fixture with the fitted level under 20 kills it.)
 - **Code I6: no CI** (Task 16). `.github/workflows/test.yml` runs on push and pull request with
   `permissions: contents: read`, actions pinned by commit SHA, Node 22 and no install step: the syntax check,
   `phase2d`, `phase2d` under `TZ=Pacific/Auckland`, `phase3`, `phase4` and the mutation gate. Its first run on
@@ -2390,30 +2397,49 @@ Trough graphs and the comparison. Open sections, a typed dose, the focus and the
 - **Focus:** Delete all profiles, a row's Delete and Clear all fields move focus to their Undo; Undo moves it to
   the status line saying what came back ("Restored all 2 saved profiles.", "Form restored.").
 
-**The Hold cautions** (Tasks 21c and 21d; U5, U6a).
+**The Hold cautions** (Tasks 21c and 21d; U5, U6a; the final review's fix wave: R59, U7, R60).
 - **U5** (`fittedOnlyCaution`: Goti and not dialysis). A reading at or above 20 on the fitted basis alone is not a
   Hold. It leads the verdict as one caution line, `.vx-ceiling-head.vx-fitted-caution.tone-caution` with the drawn
   caution icon, in the `#b-hold` slot: "Caution: the fitted level when the next dose is due (16 Nov 07:30) is
-  29.3 mg/L, at or above 20 mg/L on the fit alone; no measured level confirms it. Consider drawing a level before
-  giving the next dose." The first dose is timed as usual and a planned row stays given. The Next line reads "Draw
-  a level before giving the next dose", the panel is tagged "Caution", and Copy summary, the announcement and print
-  carry it. On a refusal the same reading is a caution above "No regimen recommended" ("… before any further
-  dose").
-- **U6a** (`firstIntervalLevel`). In AUC Precision, a Hold whose only measured basis is a level drawn after the
-  course's first given dose and before the second is the same caution line. "Before the second" is the second
-  dose if given, else the first planned row, else the first dose plus the answered regimen's interval (never a
-  projected one). Wording: "Caution: the measured 40.0 mg/L at 15 Nov 09:00, drawn after the first dose and before
-  the second, carried down the fitted slope, is 27.2 mg/L when the next dose is due (…), at or above 20 mg/L; no
-  later level confirms it. Consider drawing a level before giving the next dose." On Goti with both bases the
-  sentence names both readings ("… no later level confirms them.").
-- **One mapping:** `holdBasisOf(fitted, carried, gotiFitted, firstLevel)` returns the basis and the kind of caution
-  (`fitted`, `first-level`, `fitted-first`) for both `firstDosePlan` and `noSolutionHold`.
-- **What still holds:** a measured basis from a later level, on every model; Buelga and Hughes with the fitted level
-  also at 20 or more (on the fitted basis, R55, which then names the first-interval level when that level sets the
-  resume time, R57); a refusal with nothing planned (R56); Goti-HD (R53); the Trough module.
-- Pinned by 45.53–45.57, "D27 (U5) …" and "D27 (U6a) …", and mutants U5-a to U5-g and U6-a to U6-i.
+  29.3 mg/L, at or above 20 mg/L on the fit alone; no level drawn since the last dose confirms it. Draw a level
+  before giving the next dose." The first dose is timed as usual and a planned row stays given. On a refusal the same
+  reading is a caution above "No regimen recommended" ("… before any further dose").
+- **U6a, bounded by U7** (`firstIntervalLevel`). In AUC Precision, a Hold whose only measured basis is a level drawn
+  after the course's first given dose, within `FIRST_INTERVAL_CAUTION_H` (12 h) of its start, and before the second
+  is the same caution line. "Before the second" is the second dose if given, else the first planned row, else the
+  first dose plus the answered regimen's interval (never a projected one). Wording: "Caution: the measured 40.0 mg/L
+  at 15 Nov 09:00, drawn after the first dose and before the second, carried down the fitted slope, is 27.2 mg/L when
+  the next dose is due (…), at or above 20 mg/L. Repeat the level before giving the next dose."
+- **R59: both readings hold.** When the fitted level and the carried measured level are both at or above 20 at the
+  time judged, it is a Hold on both bases on every model, Goti and a first-interval level included; the Hold line
+  names both. U5 and U6a each rule on one uncorroborated reading; neither speaks for two that agree. The final
+  review's reproduction (Goti, CrCl 25, 70 kg, 2 g at 0 h, 1 g planned at 12 h and 24 h, 45 mg/L at 11.5 h, now
+  11.75 h) read a caution and gave both planned doses, where Buelga held them; it now holds both on Goti, Buelga and
+  Hughes (45.59, "D27 (R59) …"). Goti's `fitted-first` caution is gone. Buelga and Hughes held these readings before
+  too (R55, on the fitted basis); they now hold on both bases and name the level. R57's clause (a fitted-basis Hold
+  naming the first-interval level that sets its resume time) could no longer arise: a fitted-basis Hold now means the
+  carried level was under 20 when held, and it only falls. Its code and mutant went; 45.57 pins the reviewer's case
+  as a Hold on both bases that names the level and keeps the later crossing.
+- **R60: one instruction per caution, everywhere.** `holdCautionWords(kind, refusal)` holds the words: U5 "Draw a
+  level before giving the next dose", U6a "Repeat the level before giving the next dose", and "… before any further
+  dose" beside a refusal, on the caution line, the Next line (`refusalNextLine` on a refusal), the further-level panel
+  (tagged "Caution"), Copy summary and the announcement. The panel's detail is worded by the kind (final review I1:
+  one fixed sentence about the fitted level, true only for U5, carried "the user's ruling U5" onto the screen). No
+  ruling id or ledger reference is in a user-facing string (45.61 scans the script's string literals).
+- **The minors.** A refusal's caution draws its planned rows as held, as its Hold does (`heldPlannedDoses`). With
+  "Project next doses" on, the projection note repeats the caution after the projected AUC₂₄ (`projectionNoteText`).
+  The early uncertainty text says "simulated for levels drawn before steady state" (it also said "after a loading
+  dose", untrue for an unloaded course; the simulation design stays in the code comment). SUITE 45's fixture
+  asserts read `TROUGH_HIGH_MGL` through the harness (rule 6).
+- **One mapping:** `holdBasisOf(fitted, carried, gotiFitted, firstLevel)` returns the basis (`both`, `fitted`,
+  `measured`) or the kind of caution (`fitted`, `first-level`) for both `firstDosePlan` and `noSolutionHold`.
+- **What still holds:** a measured basis from a later level, on every model, including a level before the second
+  dose but more than 12 h after the first (U7); both readings at 20 or more (R59); a refusal with nothing planned
+  (R56); Goti-HD (R53); the Trough module.
+- Pinned by 45.53–45.57 and 45.59–45.62, "D27 (U5) …", "D27 (U6a) …", "D27 (U7) …" and "D27 (R59) …", and mutants
+  U5-a to U5-g, U6-a to U6-h, R59-a, U7-a, I1-a and M-a.
 
-### Controller rulings R30–R58, each with what it costs if wrong
+### Controller rulings R30–R60, each with what it costs if wrong
 
 - **R30.** Every task that adds or removes a unit test bumps `EXPECTED_TOTAL` in the same commit. *If wrong:* none
   (mechanical).
@@ -2468,14 +2494,21 @@ Trough graphs and the comparison. Open sections, a typed dose, the focus and the
   long overdue.
 - **R55.** U6 applies in AUC Precision to every model, Goti-HD excluded, the Trough module unchanged. When the
   fitted basis also fires, Buelga and Hughes hold on the fitted basis; Goti gives the caution (U5 with U6). *If
-  wrong:* the user meant both modules, or Goti-HD too.
+  wrong:* the user meant both modules, or Goti-HD too. (Its second sentence is superseded by R59.)
 - **R56.** A refusal with nothing planned has no second-dose time, so its measured Hold stands (D26's anuric
   refusal, 44.4 and 44.29). *If wrong:* an anuric patient with one post-first-dose level gets a Hold rather than a
   caution (the safe direction).
 - **R57.** A fitted-basis Hold keeps the later crossing as its resume time and names the first-interval level when
-  that level sets it. *If wrong:* a slightly longer hold line.
+  that level sets it. *If wrong:* a slightly longer hold line. (Under R59 those readings hold on both bases and the
+  level is named as a basis; the later crossing stands.)
 - **R58.** Task 22 split as R24: 22a (version, this record, the docs, the gate), the final review, one fix wave,
   then 22b, the release mechanics; the user runs the production merge. *If wrong:* none.
+- **R59** (the final review's C1; replaces R55's Goti half). The fitted and the carried measured level both at 20
+  or more is a Hold on every model (basis both), Goti and a first-interval level included. *If wrong:* Goti holds
+  slightly more often than the user's U5 intended.
+- **R60** (the final review's I1 and I3). The caution's wording unified: U5 "no level drawn since the last dose
+  confirms it … Draw a level before giving the next dose."; U6a "Repeat the level before giving the next dose.";
+  refusals "… before any further dose"; no ruling numbers in user-facing text. *If wrong:* wording only.
 
 ### Measured
 
@@ -2560,7 +2593,35 @@ patient's own level at the time held. Fired is a share of patients; true and fal
   dose plus the answered interval (for example a level at 8–11.5 h on a q8h answer).
 - Held-out seed 31 agrees: Goti steady-state Holds 49.7% → 45.9% (false 20.1% → 16.6%) and 48.1% → 43.1% (18.3% →
   17.2%); after the load, Buelga 9 → 4 and 4 → 1, Goti 10 → 0 and 10 → 0, Hughes 2 → 0 and 17 → 2.
-- Not modelled: `finalizeDecision` (ruling 3), dialysis, planned rows and chosen times.
+- Not modelled: `finalizeDecision` (ruling 3), dialysis, planned rows (but for the late designs below) and chosen
+  times.
+
+**R59 and U7 in the probe (the final review's fix wave; both seeds regenerated).** The last columns of the outputs are
+now the shipped rule (U5, U6a bounded by U7, R59), and a new column counts the U7 Holds: a measured level alone, drawn
+in the first interval more than 12 h after the first dose (a U6a caution before U7).
+- **Designs whose levels fall within 12 h of the first dose** (load-one 6–10 h, load-two about 4–5 h and 11.5 h,
+  dose-one 2–11 h) and the steady-state designs: every table cell is identical to the earlier output on both seeds,
+  and the U7 column is 0 everywhere, except the cells R59 moves. There a Goti `fitted-first` caution is now a Hold:
+  seed 2111 Goti load-two (U6 cautions 6 → 5, Holds 0 → 1, a false one); seed 31 Goti load-one (10 → 9, 0 → 1, true)
+  and load-two (10 → 9, 0 → 1, true).
+- **The late-first-interval designs** (the final review's recommendation; `late-q24`: a 25 mg/kg load at 0 h, 1 g
+  planned at 24 h, one trough-timed level at 23.5 h, now 23.75 h, SCr 1.5–3.0 mg/dL; `late-q48`: 1 g planned at 48 h,
+  the level at 47.5 h, now 47.75 h, SCr 2.5–5.0; judged at the planned dose). n = 1,000 per cell:
+
+  | Model | Design | Holds (false) | of which U7 Holds (false) | Seed 31: Holds (false); U7 (false) |
+  |---|---|---|---|---|
+  | Buelga | late-q24 | 35 (24) | 21 (20) | 55 (40); 34 (29) |
+  | Buelga | late-q48 | 28 (19) | 12 (10) | 26 (15); 13 (10) |
+  | Goti | late-q24 | 52 (40) | 42 (36) | 56 (36); 43 (31) |
+  | Goti | late-q48 | 30 (27) | 26 (24) | 23 (20); 20 (19) |
+  | Hughes | late-q24 | 78 (48) | 50 (39) | 80 (49); 53 (41) |
+  | Hughes | late-q48 | 59 (32) | 30 (22) | 48 (31); 22 (15) |
+
+  (Goti's Holds exclude its U5 cautions: 9 and 12 on seed 2111, 3 and 4 on seed 31.) **U7's Holds here are mostly
+  false: 68–95% of them on either seed**, a true level under 20 at the planned dose. Many are near misses (a true level
+  under 15 in 0–41% of each cell's Holds; the outputs' "false, true < 15" column), and the prevalence of a true level
+  of 20 or more at that dose is low (2–6% of patients), so a single level's residual error decides many of them.
+  U7 is the user's ruling and is shipped as ruled; these figures are recorded for the user (see "Open questions").
 
 **The guideline comparison's numbers (Task 21).** A search of the repository's documents, the clinical
 instructions and the local literature found no source for the 2,500 mg cap or the CrCl cut-points 90/50/30/15 (the
@@ -2589,8 +2650,9 @@ PREFERENCE. The cap binds from 175 kg (15 × 175 = 2,625, rounded to 2,750); 174
   CL 9.7, V 55, q24h and q48h → 2 g q18h (274.9); CL 0.9, V 85, q8h → null. The regimen behind `highestAucAny`, so
   the alarm can name it. `highestAucAny` and the reason text are unchanged.
 - **Not in the corpus:** `runBayesian`, `regimenDecision` with a row, `firstDosePlan`, `noSolutionHold`,
-  `holdBasisOf`, `troughHold`, `nextLevelValue` with a fit. SUITE 45, the probes above and the browser checks are
-  their record. No other task changed the count (each task report's parity run).
+  `holdBasisOf`, `firstIntervalLevel`, `troughHold`, `nextLevelValue` with a fit. SUITE 45, the probes above and the
+  browser checks are their record. No other task changed the count (each task report's parity run). The final
+  review's fix wave reads 0 differences against `3032fbd` and the same 23 against `b410477`.
 
 ### Verified (2026-11-15, Task 22a, branch head before the final review)
 
@@ -2604,6 +2666,16 @@ PREFERENCE. The cap binds from 175 kg (15 × 175 = 2,625, rounded to 2,750); 174
 - Engine parity against `b410477`: the 23 differences above.
 - JS syntax check: OK.
 
+### Verified after the final review's fix wave (2026-11-15)
+
+- JS syntax check: OK. `node phase2d_validation.cjs`: **621/621**, and 621/621 under `TZ=Pacific/Auckland`.
+- `node phase3_simulation.cjs`: **21/21**. `node phase4_regimen_validation.cjs`: **49/49**.
+- `node phase2d_comprehensive_validation.cjs`: only scenarios 3 and 4 fail, by design, with the same figures (344.2;
+  351.3, 14.6, 38.0%); scenario 6 75.2%.
+- `node docs/audit/mutation.cjs`: **63 of 63 killed**, exit 0.
+- Browser flows under the CSP, run alone: **223/223**, 0 console problems.
+- Engine parity: 23 against `b410477` (the list above), 0 against `3032fbd`.
+
 ### Known limits (recorded, not changed)
 
 - **Haemodialysis was not simulated.** Neither the steady-state nor the early uncertainty rows were simulated on
@@ -2612,9 +2684,9 @@ PREFERENCE. The cap binds from 175 kg (15 × 175 = 2,625, rounded to 2,750); 174
   why U5 and U6a exclude Goti-HD (R53, R55).
 - **U6a depends on the course being entered completely.** With only the latest dose entered, a high level after it
   reads as a first-interval level and gives the caution, not a Hold.
-- **U6a's reach depends on the answered interval.** On long intervals (q24h–q48h) it covers levels drawn late in
-  the first interval, beyond the probe's evidence (levels at 6–11.5 h on q12h). On short ones fewer late levels
-  count as before the second dose.
+- **U6a's reach depends on the answered interval.** On short intervals fewer levels count as before the second
+  dose. On long ones (q24h–q48h) it used to cover levels drawn late in the first interval, beyond the probe's
+  evidence; U7 bounds it to 12 h after the first dose (the final review's I2).
 - **Age is entered in whole years.** A 24-year-old is flagged as below Hughes' 24.2 (the strict, cautious
   direction).
 - **The ω² Vp constants** differ from ln(CV² + 1) in the fourth decimal (Hughes 0.4974 against 0.4976, Goti 0.2824
@@ -2625,10 +2697,10 @@ PREFERENCE. The cap binds from 175 kg (15 × 175 = 2,625, rounded to 2,750); 174
   from which that holds.
 - **The forest plot** applies the active fit's early flag to every model's row; each model's own half-life could
   disagree. Presentation only.
-- **The R57 why line** says the fitted level falls below 20 "sooner" without checking a same-step crossing; a
-  refusal with a projection can time a Hold where `noSolutionHold` says "recheck" (pre-existing).
-- **Under a caution, a short projected interval** draws doses from now while the carried level is still 20 or more,
-  and the projection note does not repeat the caution (a final-review candidate).
+- **A refusal with a projection** can time a Hold where `noSolutionHold` says "recheck" (pre-existing). (R57's why
+  line, which said "sooner" without checking a same-step crossing, went with R59.)
+- **Under a caution, a short projected interval** draws doses from now while the carried level is still 20 or more;
+  the projection note now repeats the caution beside them.
 - **Wording and display:** the PD goal band's top edge is unlabelled when the top tick takes its place (the goal is
   in the sub-line); print shows a whole-number SCr with one decimal ("1.0" for a typed "1"); engine flag strings keep hyphen ranges
   ("400-600"); announcements and aria-labels keep "AUC24" (spoken text); the failure line on a programmatic
@@ -2649,6 +2721,11 @@ PREFERENCE. The cap binds from 175 kg (15 × 175 = 2,625, rounded to 2,750); 174
 1. **Should a Hughes out-of-population line also lower the confidence rating?** Shipped: the line only.
 2. **Should an in-range regimen judged on the early row get ruling 3's protection?** On the least informative data,
    near the band's edge, the early row turns some continues into changes (155 of 148,500 simulated answers).
+3. **U7's late first-interval Holds are mostly false in the probe** (68–95% of them in the late-q24 and late-q48
+   designs; "Measured" above). Shipped as ruled: a Hold. Should a level drawn more than 12 h after
+   the first dose and before the second keep U7's Hold, or would the user rather see the probe's figures change the
+   window?
 
 The two questions the probe raised during this release were answered by the user on 2026-11-15: Goti's fitted-only
-Hold (U5) and the measured Hold from a level drawn soon after the first dose (U6, U6a).
+Hold (U5) and the measured Hold from a level drawn soon after the first dose (U6, U6a, bounded by U7 after the final
+review).
