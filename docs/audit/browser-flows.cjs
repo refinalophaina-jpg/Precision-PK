@@ -2214,6 +2214,190 @@ async function enterCourse(page) {
     results.problems.push(...xAttr.kept);
     await xctx.close();
   }
+  // D27 (UI review M10, M11, Task 20b): reduced motion also resets CSS smooth scrolling; at 375 px every
+  // interactive element in both modules' input columns and results reaches 44 px (the offenders are listed).
+  {
+    const rctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+    const r = await rctx.newPage();
+    await r.goto(BASE + '?v=pwrm-' + Date.now(), { waitUntil: 'networkidle' });
+    const rm = await r.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+    await rctx.close();
+    const nctx2 = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'no-preference' });
+    const r2 = await nctx2.newPage();
+    await r2.goto(BASE + '?v=pwrm2-' + Date.now(), { waitUntil: 'networkidle' });
+    const nm = await r2.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+    await nctx2.close();
+    ok('D27: reduced motion resets scroll-behavior (smooth otherwise)', rm === 'auto' && nm === 'smooth', JSON.stringify({ reduce: rm, none: nm }));
+  }
+  {
+    const mctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const m = await mctx.newPage();
+    const mProblems = watch(m, 'touch-targets');
+    await m.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await m.goto(BASE + '?v=pwt-' + Date.now(), { waitUntil: 'networkidle' });
+    const small = (where) => m.evaluate((where) => {
+      [...document.querySelectorAll('details')].forEach(d => { d.open = true; });
+      const sel = 'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=radio], [role=checkbox], [tabindex]:not([tabindex="-1"]), [data-onclick]';
+      const out = [];
+      for (const el of document.querySelectorAll(sel)) {
+        if (!el.checkVisibility() || el.closest('.sr-only')) continue;
+        const rc = el.getBoundingClientRect(); if (!rc.width || !rc.height) continue;
+        let w = rc.width, h = rc.height;
+        // a checkbox or radio is hit through its label: the larger of the two is the target
+        if (/^(checkbox|radio)$/.test(el.type)) { const l = el.closest('label') || (el.id && document.querySelector(`label[for="${el.id}"]`));
+          if (l) { const lr = l.getBoundingClientRect(); w = Math.max(w, lr.width); h = Math.max(h, lr.height); } }
+        if (w < 43.5 || h < 43.5) out.push(`${where}: ${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${String(el.className).split(' ')[0]} ${Math.round(w)}x${Math.round(h)}`);
+      }
+      return out;
+    }, where);
+    const offenders = [];
+    await m.locator('.module-tab', { hasText: 'Trough' }).first().tap();
+    for (const mode of ['initial', 'level', 'twolevels', 'randomlevel', 'pd']) {
+      await m.locator(`#mode-btn-${mode}`).tap(); await m.waitForTimeout(150);
+      if (mode === 'level') await m.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+      offenders.push(...await small('Trough ' + mode));
+    }
+    await m.locator('#mode-btn-initial').tap();
+    await typeInto(m, '#age', '60'); await typeInto(m, '#tbw', '80'); await typeInto(m, '#height', '175'); await typeInto(m, '#scr', '1.0');
+    await m.locator('[data-onclick="k9"]').first().tap();
+    await m.locator('[data-onclick="k31"]').tap(); await m.waitForSelector('#results-content .tx-legend', { timeout: 20000 }); await m.waitForTimeout(500);
+    offenders.push(...await small('Trough result'));
+    await m.locator('.module-tab', { hasText: 'AUC' }).first().tap();
+    await typeInto(m, '#b-age', '76'); await typeInto(m, '#b-tbw', '70'); await typeInto(m, '#b-height', '175'); await typeInto(m, '#b-scr', '0.5');
+    await m.locator('[data-onclick="k39"]').tap();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await m.locator('[data-onclick="k43"]').tap();
+      await typeInto(m, `#b-dose-mg-${i}`, '1500'); await typeInto(m, `#b-dose-tinf-${i}`, '1.5');
+      await m.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(m, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await m.locator('[data-onclick="k46"]').tap();
+    await typeInto(m, '#b-lvl-conc-1', '19.9'); await m.locator('#b-lvl-date-1').fill(day(0)); await typeInto(m, '#b-lvl-time-1', '07:30');
+    offenders.push(...await small('AUC input'));
+    await m.locator('[data-onclick="k47"]').tap(); await m.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await m.waitForTimeout(500);
+    const hasMore = await m.locator('#b-results .vx-more').count();
+    offenders.push(...await small('AUC result'));
+    await m.locator('#b-model-btn-gotihd').tap(); await m.locator('[data-onclick="k74"]').tap(); await m.waitForTimeout(200);
+    offenders.push(...await small('AUC Goti-HD input'));
+    const uniq = [...new Set(offenders.map(o => o.replace(/^[^:]+: /, '')))];
+    ok('D27: at 375 px every interactive element in both modules reaches 44 px (a "N more notes" link and the projection fields included)',
+       hasMore > 0 && offenders.length === 0, JSON.stringify({ hasMore, offenders: uniq.slice(0, 12), n: offenders.length }));
+    const mAttr = await attributeInjected(m, mProblems);
+    results.problems.push(...mAttr.kept);
+    await mctx.close();
+  }
+  // D27 (UI review M2, M12, M13, M14, Task 20b): the keys match what is drawn (Regimens: a visible, unfilled
+  // "below band" swatch beside fills that share the cells' hues; Trough chart: Peak and Trough swatches in the
+  // colours of the markers the canvas draws), the PD "Options" gist reads as a choice, and the schedule says
+  // "consistent schedule", never "high confidence".
+  {
+    const lctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const l = await lctx.newPage();
+    const lProblems = watch(l, 'legends');
+    await l.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await l.goto(BASE + '?v=pwl-' + Date.now(), { waitUntil: 'networkidle' });
+    // The colour a CSS colour resolves to, as r,g,b (alpha apart), through a canvas pixel.
+    const rgbOf = `(c) => { const k = document.createElement('canvas'); k.width = k.height = 1; const x = k.getContext('2d'); x.fillStyle = '#000'; x.fillStyle = c; x.fillRect(0, 0, 1, 1);
+      const d = x.getImageData(0, 0, 1, 1).data; return d[0] + ',' + d[1] + ',' + d[2]; }`;
+    // Trough, steady state with a level (current + recommendation) and an initial dose (the recommendation alone).
+    await l.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await typeInto(l, '#age', '60'); await typeInto(l, '#tbw', '80'); await typeInto(l, '#height', '175'); await typeInto(l, '#scr', '1.0');
+    await l.locator('[data-onclick="k9"]').first().click();
+    const drawnAndKey = () => l.evaluate(`(async () => {
+      const rgb = ${rgbOf};
+      const P = CanvasRenderingContext2D.prototype, keep = P.arc, log = { peak: [], trough: [] };
+      const paper = rgb(getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#faf5ed');
+      P.arc = function (x, y, r, a, b, c) { if (this.canvas && this.canvas.id === 'pk-graph-ss' && r === 3.5) {
+        const f = rgb(this.fillStyle), s = rgb(this.strokeStyle); if (f !== s) { if (s === paper) log.peak.push(f); else if (f === paper) log.trough.push(s); } }
+        return keep.call(this, x, y, r, a, b, c); };
+      try { redrawAllCanvases(); } finally { P.arc = keep; }
+      const swatches = (word) => [...document.querySelectorAll('#results-content .tx-legend .legend-item')].filter(e => e.textContent.trim() === word)
+        .flatMap(e => [...e.querySelectorAll('i.lg')]).map(i => { const cs = getComputedStyle(i); return word === 'Peak' ? rgb(cs.backgroundColor) : rgb(cs.borderTopColor); });
+      const uniq = (a) => [...new Set(a)].sort().join(' | ');
+      return { drawnPeak: uniq(log.peak), drawnTrough: uniq(log.trough), keyPeak: uniq(swatches('Peak')), keyTrough: uniq(swatches('Trough')), n: log.peak.length };
+    })()`);
+    await l.locator('[data-onclick="k31"]').click(); await l.waitForSelector('#results-content .tx-legend', { timeout: 20000 }); await l.waitForTimeout(600);
+    const kInit = await drawnAndKey();
+    await l.locator('#mode-btn-level').click();
+    await typeInto(l, '#dose', '1000'); await l.locator('#interval').selectOption('12');
+    await l.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
+    await typeInto(l, '#level-val', '24');
+    await l.locator('#time-dose-given-date').fill(D2); await typeInto(l, '#time-dose-given-time', '0800');
+    await l.locator('#time-level-drawn-date').fill(D2); await typeInto(l, '#time-level-drawn-time', '1930');
+    await l.locator('[data-onclick="k31"]').click(); await l.waitForTimeout(700);
+    const kSS = await drawnAndKey();
+    const okKey = (k, want) => k.n > 0 && k.drawnPeak === k.keyPeak && k.drawnTrough === k.keyTrough && k.keyPeak.split(' | ').length === want;
+    ok('D27: Trough key: Peak and Trough swatches are in the colour of the markers drawn (one series, then two)', okKey(kInit, 1) && okKey(kSS, 2), JSON.stringify({ kInit, kSS }));
+    // AUC Precision, the Regimens key and the schedule words.
+    await l.locator('[data-onclick="k2"]').click();
+    await typeInto(l, '#b-age', '55'); await typeInto(l, '#b-tbw', '72'); await typeInto(l, '#b-height', '176'); await typeInto(l, '#b-scr', '1.0');
+    await l.locator('[data-onclick="k39"]').click();
+    const when = [[D1, '08:00'], [D1, '20:00'], [D2, '08:00'], [D2, '20:00']];
+    for (let i = 1; i <= when.length; i++) {
+      await l.locator('[data-onclick="k43"]').click();
+      await typeInto(l, `#b-dose-mg-${i}`, '1250'); await typeInto(l, `#b-dose-tinf-${i}`, '1.5');
+      await l.locator(`#b-dose-date-${i}`).fill(when[i - 1][0]); await typeInto(l, `#b-dose-time-${i}`, when[i - 1][1]);
+    }
+    await l.locator('[data-onclick="k46"]').click();
+    await typeInto(l, '#b-lvl-conc-1', '16'); await l.locator('#b-lvl-date-1').fill(day(0)); await typeInto(l, '#b-lvl-time-1', '07:30');
+    await l.locator('[data-onclick="k47"]').click(); await l.waitForSelector('#b-results .rec-dose', { timeout: 20000 }); await l.waitForTimeout(400);
+    const rg = await l.evaluate(`(() => {
+      const px = (c) => { const k = document.createElement('canvas'); k.width = k.height = 1; const x = k.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, 1, 1); return [...x.getImageData(0, 0, 1, 1).data]; };
+      [...document.querySelectorAll('#b-results details')].forEach(d => { d.open = true; });
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const over = (c, bg) => [0, 1, 2].map(i => c[i] * c[3] / 255 + bg[i] * (1 - c[3] / 255));
+      const contrast = (c1, c2) => { const l1 = lum(over(c1, c2)), l2 = lum(c2); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); };
+      const page = px(getComputedStyle(document.body).backgroundColor);
+      const out = {};
+      for (const [cls, name] of [['mx-in', 'in'], ['mx-sub-b', 'below'], ['mx-supra', 'above']]) {
+        const cell = document.querySelector('#b-results .mx-grid .' + cls), sw = document.querySelector('#b-results .mx-key i.' + cls);
+        if (!cell || !sw) { out[name] = { missing: true }; continue; }
+        const cs = getComputedStyle(sw), c = px(getComputedStyle(cell).backgroundColor), s = px(cs.backgroundColor);
+        out[name] = { cellA: c[3], swA: s[3], sameHue: c[3] === 0 || [0, 1, 2].every(i => Math.abs(c[i] - s[i]) <= 8),
+          border: +contrast(px(cs.borderTopColor), page).toFixed(2), bw: cs.borderTopWidth };
+      }
+      return out; })()`);
+    ok('D27: Regimens key: each swatch is the cells\' own hue; "below band" (an unfilled cell) is a visible hairline box',
+       !rg.in.missing && !rg.below.missing && !rg.above.missing
+       && rg.in.sameHue && rg.above.sameHue && rg.in.swA > rg.in.cellA - 0.001 && rg.above.swA > rg.above.cellA - 0.001
+       && rg.below.cellA === 0 && rg.below.swA === 0 && rg.below.border >= 3 && parseFloat(rg.below.bw) >= 1, JSON.stringify(rg));
+    const sched = await l.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const note = (document.getElementById('b-regimen-detected') || {}).textContent || '';
+      const rows = [...document.querySelectorAll('#print-report .pr-table tr')].map(tr => [...tr.children].map(c => c.textContent.trim()).slice(0, 2)).filter(r => /^(Schedule|Confidence)$/.test(r[0]));
+      return { note: note.replace(/\s+/g, ' ').trim(), rows }; });
+    ok('D27: the schedule reads "consistent schedule", on screen and in print, never "high confidence"',
+       /^Detected q12h — consistent schedule\.$/.test(sched.note) && !/confidence/.test(sched.note)
+       && sched.rows.length === 1 && sched.rows[0][0] === 'Schedule' && sched.rows[0][1] === 'consistent', JSON.stringify(sched));
+    const lAttr = await attributeInjected(l, lProblems);
+    results.problems.push(...lAttr.kept);
+    await lctx.close();
+  }
+  {
+    // The PD "Options" gist: "9 doses, given now" read as nine doses given; it is nine choices, each if given now.
+    const pctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const pd = await pctx.newPage();
+    const pdProblems = watch(pd, 'pd-gist');
+    await pd.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await pd.goto(BASE + '?v=pwpdg-' + Date.now(), { waitUntil: 'networkidle' });
+    await pd.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await pd.locator('#mode-btn-pd').click();
+    await typeInto(pd, '#tbw', '63');
+    await pd.selectOption('#pd-modality', 'ccpd');
+    await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
+    await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
+    await typeInto(pd, '#pd-load-kg', '61');
+    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
+    const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
+    await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
+    await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
+    await pd.locator('[data-onclick="k31"]').click(); await pd.waitForSelector('#results-content .pd-verdict', { timeout: 20000 }); await pd.waitForTimeout(300);
+    const gist = await pd.evaluate(() => { const s = document.querySelector('#pd-options > summary'); return s ? s.textContent.replace(/\s+/g, ' ').trim() : null; });
+    ok('D27: PD "Options" gist reads as a choice: "N choices, each if given …"', /^Options\W*\d+ choices, each if given (now|\d)/.test(gist || '') && !/doses, given/.test(gist || ''), String(gist));
+    const pAttr = await attributeInjected(pd, pdProblems);
+    results.problems.push(...pAttr.kept);
+    await pctx.close();
+  }
   await browser.close();
 
   results.checks = checks;
