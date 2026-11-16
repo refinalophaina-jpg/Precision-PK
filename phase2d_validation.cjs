@@ -6256,9 +6256,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const shownAfter = h.atH - start, lvl = 30 * Math.exp(-kel * (shownAfter - 8.4));
     assert(shownAfter >= exact - 1e-9 && lvl < K44.TROUGH_HIGH_MGL, `shown ${shownAfter.toFixed(3)} h, level there ${lvl.toFixed(3)} mg/L`);
     const calc = body44('calculate');
-    assert(/troughHold\(nextPre, tau, adjKel, doseStartHourOf\('time-dose-given'\), tDoseToLvl > tinf \? \{ c: levelVal, h: tDoseToLvl \} : null\)/.test(calc),
+    assert(/troughHold\(nextPre, tau, adjKel, doseStartHourOf\('time-dose-given'\), tDoseToLvl > tinf \? \{ c: levelVal, h: tDoseToLvl \} : null, Date\.now\(\) \/ 3600000\)/.test(calc),   // Task 21b: and now
       'level mode passes the level and its time to troughHold');
-    assert(/troughHold\([^;]*\{ c: tlC2, h: tlT2 \}\)/.test(calc), 'two-level mode times from level 2');
+    assert(/troughHold\([^;]*\{ c: tlC2, h: tlT2 \}, Date\.now\(\) \/ 3600000\)/.test(calc), 'two-level mode times from level 2');   // Task 21b: and now
   });
   test('44.5d the projection: none under "recheck a level", and it starts at the resume time under a hold', () => {
     const pd = fn44('projectedDoses');
@@ -8005,7 +8005,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/^Result: Hold: next dose not before /.test(ss.said), ss.said);
     assert(before44(ss.h, 'vx-hold-head', 'id="tx-regimen"'), 'the hold leads the verdict');
     // Its time is the level carried down the fitted Kel: 9 h + ln(42/20)/Kel after the dose started.
-    const m = ss.text.match(/Kel ([\d.]+) h⁻¹\) it falls to 20 mg\/L ([\d.]+) h after the last dose started/);
+    // Task 21b: a fixture dated before the run's clock fell to 20 before the calculation, and says so ("fell").
+    const m = ss.text.match(/Kel ([\d.]+) h⁻¹\) it (?:falls|fell) to 20 mg\/L ([\d.]+) h after the last dose started/);
     assert(m && Math.abs(+m[2] - (9 + Math.log(42 / 20) / +m[1])) < 0.11, `timed from the level: ${m && m[0]}`);
     // Below 20 at the due time (12 h on q12h): no hold.
     const low = rl('steadystate', 22, '2026-11-14T09:00');
@@ -8987,13 +8988,48 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/profileCourseDoses\(r, answerHoldPlanOf\(r\), projDoses\)/.test(fn45('refreshProfileGraph').toString())
       && /profileCourseDoses\(r, answerHoldPlanOf\(r\), \[\]\)/.test(fn45('_buildPrintGraph').toString()), 'refreshProfileGraph and the print graph draw through profileCourseDoses');
   });
+  // Trough hold "not before" is never in the past and never before the due time (ledger Task 2 minors). AUC
+  // Precision judges the hold at the later of the due time and now (firstDosePlan's fromH); the Trough clock time
+  // was the dose start plus the decline alone, so a level entered hours after its fall to 20 read "not before" a
+  // time already gone.
+  test('45.47 Trough hold: "not before" is the later of the fall to 20 mg/L, the due time and now; I3, I4 and N2 still hold [T21b]', () => {
+    const th = fn45('troughHold'), start = new Date('2026-11-14T01:00Z').getTime() / 3600000;
+    // 44.5c's level: 30 mg/L at 8.4 h on q8h (Vd 56 L, 1.5 g over 1.5 h); it falls to 20 at 13.38 h.
+    const kel = fn45('fitKelFromLevel')(30, 8.4, 1500, 8, 1.5, 56).kel, reach = 8.4 + Math.log(30 / 20) / kel;
+    const minuteUp = (h) => Math.ceil(h * 60 - 1e-6) / 60;
+    // Now before the fall: the fall decides, as before (and a call with no "now" is unchanged).
+    const early = th(30, 8, kel, start, { c: 30, h: 8.4 }, start + 9);
+    assert(early && Math.abs(early.atH - th(30, 8, kel, start, { c: 30, h: 8.4 }).atH) < 1e-12 && early.atH - start >= reach - 1e-9 && !early.floored,
+      `now before the fall: ${early && (early.atH - start)}`);
+    // Now after the fall (the result read 20 h after the dose started): never a time already gone.
+    const nowH = start + 20.25;
+    const late = th(30, 8, kel, start, { c: 30, h: 8.4 }, nowH);
+    assert(late && late.atH >= nowH - 1e-9 && Math.abs(late.atH - (minuteUp(nowH) + 1 / 3600000)) < 1e-9 && late.floored === true,
+      `now after the fall: not before ${late && (late.atH - start)} h, now ${nowH - start} h`);
+    const said = fn45('troughHoldHTML')(late);
+    assert(/Hold: next dose not before /.test(said) && /before this calculation/.test(said) && said.indexOf(fn45('fmtClock')(late.atH)) > 0, said);
+    // Never before the due time, on every measured basis (I3: one below 20 by then is no hold).
+    for (const [c, h, due, k] of [[30, 8.4, 8, kel], [25, 7.9, 8, 0.08], [25, 24, 12, 0.03], [40, 3, 12, 0.05], [21, 11.9, 12, 0.15]]) {
+      const x = th(c * Math.exp(-k * (due - h)), due, k, start, { c, h }, start);
+      assert(x && x.atH >= start + due - 1e-9 && x.atH >= start + x.afterDoseH - 1e-9, `${c} mg/L at ${h} h, due ${due} h: ${x && (x.atH - start)}`);
+    }
+    // I3: 20.5 mg/L at 7.6 h, Kel 0.15, due 8 h: it is 19.3 by then, so no hold (the ledger's 7.77 h case).
+    assert(th(20.5 * Math.exp(-0.15 * 0.4), 8, 0.15, start, { c: 20.5, h: 7.6 }, start) === null, 'I3: below 20 at the due time is no hold');
+    // N2: drawn after the due time it is judged as drawn: 18 at 24 h is no hold; 25 at 24 h holds from 24 h.
+    assert(th(18 * Math.exp(0.03 * 12), 12, 0.03, start, { c: 18, h: 24 }, start) === null, 'N2: 18 mg/L drawn after the due time');
+    const n2 = th(25 * Math.exp(0.03 * 12), 12, 0.03, start, { c: 25, h: 24 }, start);
+    assert(n2 && n2.late && n2.cPre === 25 && n2.atH >= start + 24, JSON.stringify(n2));
+    // The three Trough modes hand it the time of the calculation (I4: random-level too).
+    const calc = fn45('calculate').toString();
+    assert((calc.match(/troughHold\([^;]*, Date\.now\(\) \/ 3600000\)/g) || []).length === 3, 'level, two-level and random-level pass now');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 605;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.46 + D27 redraw)
+const EXPECTED_TOTAL = 606;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.47 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

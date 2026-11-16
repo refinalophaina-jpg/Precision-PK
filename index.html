@@ -7180,7 +7180,7 @@ function calculate() {
     const rlPre  = rlPost ? rlC * Math.exp(-indKel * (rlDueH - rlT))
       : state.rlMode === 'steadystate' ? calcPeakTrough(rlDose, rlDueH, rlTinf, indKel, popVd).trough
       : predictConc1comp([{ mg: rlDose, tinfH: rlTinf, timeH: 0 }], rlDueH, indKel, popVd);
-    const rlHold = troughHold(rlPre, rlDueH, indKel, doseStartHourOf('rl-dose-time'), rlPost ? { c: rlC, h: rlT } : null);
+    const rlHold = troughHold(rlPre, rlDueH, indKel, doseStartHourOf('rl-dose-time'), rlPost ? { c: rlC, h: rlT } : null, Date.now() / 3600000);
     renderRandomLevel({
       age, sex:state.sex, tbw, ibw, adjbw, bmi, scr,
       crcl:crclVal, popClv, popVd, popKel,
@@ -7257,7 +7257,7 @@ function calculate() {
     // D26: the fitted level when the next dose is due — on the interval the patient was on
     // (steady state), else the recommended one — from level 2 down the fitted decline.
     const tlDueH = state.tlBasis === 'steadystate' ? accumTau : tlTau;
-    const tlHold = troughHold(tlC2 * Math.exp(-tlPK.kel * (tlDueH - tlT2)), tlDueH, tlPK.kel, doseStartHourOf('tl-dose-time'), { c: tlC2, h: tlT2 });
+    const tlHold = troughHold(tlC2 * Math.exp(-tlPK.kel * (tlDueH - tlT2)), tlDueH, tlPK.kel, doseStartHourOf('tl-dose-time'), { c: tlC2, h: tlT2 }, Date.now() / 3600000);
 
     renderTwoLevels({
       age, sex:state.sex, tbw, ibw, adjbw, bmi, scr,
@@ -7453,7 +7453,7 @@ function calculate() {
     const nextPre = earlyLevel
       ? predictConc1comp(Array.from({ length: fitted.doseNumber }, (_, i) => ({ mg: dose, tinfH: tinf, timeH: i * tau })), fitted.doseNumber * tau, adjKel, vd)
       : trueTrough;
-    troughHoldInfo = troughHold(nextPre, tau, adjKel, doseStartHourOf('time-dose-given'), tDoseToLvl > tinf ? { c: levelVal, h: tDoseToLvl } : null);
+    troughHoldInfo = troughHold(nextPre, tau, adjKel, doseStartHourOf('time-dose-given'), tDoseToLvl > tinf ? { c: levelVal, h: tDoseToLvl } : null, Date.now() / 3600000);
   } else {
     // Pure population — predict from regimen
     peak   = popPeak;
@@ -8125,7 +8125,12 @@ function timeToDecayTo(cCurrent, cTarget, kel) {
 // cPre is then the level judged (the measured one, carried down or as drawn), so the sentence
 // names what decided it. Past HOLD_SEARCH_MAX_H after the due time (72 h, the user's ruling U2):
 // no time, "recheck a level".
-function troughHold(cPre, dueH, kel, doseStartH, from) {
+// nowH (Task 21b; ledger Task 2 minors): the time of the calculation. The clock time is the later of
+// the fall to the threshold, the due time and now, so "not before" is never a time already gone
+// (AUC Precision judges at the later of the due time and now) and never before the due time (the
+// fall is never before it: a level below the threshold by then is no hold, above). floored: now
+// decided it (the level fell to the threshold before the calculation); reachAtH is when it fell.
+function troughHold(cPre, dueH, kel, doseStartH, from, nowH) {
   if (!(kel > 0) || !(dueH > 0)) return null;
   const measured = !!(from && from.c > 0 && from.h > 0);
   const late = measured && from.h > dueH;
@@ -8135,10 +8140,14 @@ function troughHold(cPre, dueH, kel, doseStartH, from) {
   const reachH = ref.h + timeToDecayTo(ref.c, TROUGH_HIGH_MGL, kel);
   const noTime = reachH - dueH > HOLD_SEARCH_MAX_H;
   const afterDoseH = noTime ? null : reachH;
+  const clock = !noTime && Number.isFinite(doseStartH);
+  const reachAtH = clock ? doseStartH + afterDoseH : null;
+  const floorH = clock ? Math.max(doseStartH + dueH, Number.isFinite(nowH) ? nowH : -Infinity) : null;
+  const floored = clock && floorH > reachAtH;
   // The clock time is rounded up to the minute, so "not before" is never early; the
   // added millisecond keeps the float above the minute boundary, which Date truncates.
-  return { cPre: c, dueH, kel, noTime, afterDoseH, late, drawnH: measured ? from.h : null,
-           atH: !noTime && Number.isFinite(doseStartH) ? Math.ceil((doseStartH + afterDoseH) * 60 - 1e-6) / 60 + 1 / 3600000 : null };
+  return { cPre: c, dueH, kel, noTime, afterDoseH, late, drawnH: measured ? from.h : null, floored, reachAtH,
+           atH: clock ? Math.ceil(Math.max(reachAtH, floorH) * 60 - 1e-6) / 60 + 1 / 3600000 : null };
 }
 // refused (D26): no regimen is recommended below the hold, so the closing sentence says
 // so rather than pointing at one.
@@ -8149,8 +8158,11 @@ function troughHoldHTML(h, refused) {
   if (h.noTime) return holdLineHTML('Hold: recheck a level before the next dose',
     `${lead}, at or above ${TROUGH_HIGH_MGL} mg/L, and on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it stays there for more than ${HOLD_SEARCH_MAX_H} h after the due time. ${refused ? 'Recheck a level before any further dose; no regimen is recommended below.' : 'Recheck a level before giving the regimen below.'}`);
   const after = `${+h.afterDoseH.toFixed(1)} h after the last dose started`;
+  // Fallen to the threshold before the calculation (Task 21b): said, and the time is now's.
+  const fell = h.floored ? `fell to ${TROUGH_HIGH_MGL} mg/L ${after} (by ${fmtClock(Math.ceil(h.reachAtH * 60 - 1e-6) / 60 + 1 / 3600000)}), before this calculation`
+    : `falls to ${TROUGH_HIGH_MGL} mg/L ${after}`;
   return holdLineHTML(`Hold: next dose not before ${h.atH != null ? fmtClock(h.atH) : after}`,
-    `${lead}, at or above ${TROUGH_HIGH_MGL} mg/L; on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it falls to ${TROUGH_HIGH_MGL} mg/L ${after}. ${refused ? 'No regimen is recommended at this interval; see below.' : 'Resume with the regimen below.'}`);
+    `${lead}, at or above ${TROUGH_HIGH_MGL} mg/L; on the fitted elimination (Kel ${h.kel.toFixed(4)} h⁻¹) it ${fell}. ${refused ? 'No regimen is recommended at this interval; see below.' : 'Resume with the regimen below.'}`);
 }
 // The hold, heard first (D26): '' or "Hold: next dose not before … . Then ".
 function troughHoldSaid(h) {

@@ -2584,6 +2584,26 @@ async function enterCourse(page) {
     ok('D27: with the projection ticked the held planned dose stays off the curve, its "held" mark stays, and the projection is drawn',
        p1.plannedOnCurve === false && p1.bars === 6 && p1.proj > 0 && p1.held.length === 1, JSON.stringify(p1));
     await b.locator('#b-proj-fwd').uncheck(); await b.waitForTimeout(200);
+    // Trough hold "not before" is never in the past. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h
+    // over 1.5 h started yesterday 01:00, 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon,
+    // so at today 10:00 the answer is "not before" now, and says when it fell.
+    await b.locator('[data-onclick="k1"]').click();
+    await typeInto(b, '#age', '60'); await typeInto(b, '#tbw', '80'); await typeInto(b, '#height', '178'); await typeInto(b, '#scr', '1.0');
+    await b.locator('[data-onclick="k9"]').first().click();
+    await b.locator('#mode-btn-level').click();
+    await typeInto(b, '#dose', '1500'); await b.locator('#interval').selectOption('8'); await typeInto(b, '#tinf', '1.5');
+    await b.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
+    await typeInto(b, '#level-val', '30');
+    await b.locator('#time-dose-given-date').fill(day(-1)); await typeInto(b, '#time-dose-given-time', '0100');
+    await b.locator('#time-level-drawn-date').fill(day(-1)); await typeInto(b, '#time-level-drawn-time', '0924');
+    await b.locator('[data-onclick="k31"]').click(); await b.waitForTimeout(600);
+    const tNow = await b.evaluate(() => {
+      const v = document.querySelector('#results-content .tx-verdict'), a = v && v.querySelector('.vx-action'), w = v && v.querySelector('.vx-hold-why');
+      return { act: a ? a.textContent.replace(/\s+/g, ' ').trim() : '', why: w ? w.textContent.replace(/\s+/g, ' ').trim() : '',
+        now: fmtClock(Date.now() / 3600000), said: (document.getElementById('sr-announce') || {}).textContent || '' }; });
+    ok('D27: a Trough hold whose level fell to 20 mg/L before the calculation reads "not before" now, never a time gone, and says when it fell',
+       tNow.act === `Hold: next dose not before ${tNow.now}` && /fell to 20 mg\/L [\d.]+ h after the last dose started \(by \d{1,2} [A-Z][a-z]{2} \d\d:\d\d\), before this calculation/.test(tNow.why)
+       && tNow.said.indexOf(`Hold: next dose not before ${tNow.now}`) >= 0, JSON.stringify(tNow));
     const bAttr = await attributeInjected(b, bProblems);
     results.problems.push(...bAttr.kept);
     await bctx.close();
