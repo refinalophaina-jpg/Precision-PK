@@ -2652,7 +2652,7 @@ async function enterCourse(page) {
         action: !!(c && c.classList.contains('vx-action')),
         said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
     ok('D27 (U5): a Goti Hold on the fitted level alone is one caution line — the regimen and first dose stand; no Hold or recheck anywhere; the caution is copied, heard and printed',
-       /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no measured level confirms it\. Consider drawing a level before giving it\.$/.test(u5v.caution)
+       /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no measured level confirms it\. Consider drawing a level before giving the next dose\.$/.test(u5v.caution)
        && u5v.tone && u5v.icon && u5v.hold === '' && /IV q\d+h/.test(u5v.reg) && !/Hold/.test(u5v.readout + u5v.next + u5v.said + u5v.copied + u5v.print)
        && !/Recheck a level before the next dose/.test(u5v.next + u5v.said + u5v.copied) && u5v.copied.indexOf(u5v.caution) >= 0 && u5v.said.indexOf(u5v.caution) >= 0
        && u5v.print.indexOf(u5v.caution) >= 0 && !u5v.action
@@ -2683,7 +2683,7 @@ async function enterCourse(page) {
       return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'),
         said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
     ok('D27 (U6a): a Hold resting only on a level drawn after the first dose (no load) is one caution line; the regimen stands; Next asks for a level; copied, heard and printed',
-       /^Caution: .*the measured 40\.0 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00, drawn after the first dose and before the second, carried down the fitted slope, is [\d.]+ mg\/L.*no later level confirms (it|them)\. Consider drawing a level before giving it\.$/.test(u6v.caution)
+       /^Caution: .*the measured 40\.0 mg\/L at \d{1,2} [A-Z][a-z]{2} 09:00, drawn after the first dose and before the second, carried down the fitted slope, is [\d.]+ mg\/L.*no later level confirms (it|them)\. Consider drawing a level before giving the next dose\.$/.test(u6v.caution)
        && u6v.hold === '' && /IV q\d+h/.test(u6v.reg) && u6v.next === 'Next Draw a level before giving the next dose.'
        && !/Hold/.test(u6v.said + u6v.copied + u6v.print) && [u6v.said, u6v.copied, u6v.print].every(x => x.indexOf(u6v.caution) >= 0),
        JSON.stringify(Object.assign({}, u6v, { print: u6v.print.slice(0, 100) })));

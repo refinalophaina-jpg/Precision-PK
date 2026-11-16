@@ -195,9 +195,9 @@ const MUTANTS = [
 
   // Task 21d (the user's ruling U6a; R55): a measured basis from a level drawn after the first dose, before the second, is a caution.
   { id: 'U6-a', what: 'firstIntervalLevel always false (first-interval levels hold again) [45.55]',
-    find: 'if (!mh || !r || r.dial) return false;\n  const doses', replace: 'return false;\n  const doses' },
+    find: 'if (!mh || dial) return false;\n  const byTime', replace: 'return false;\n  const byTime' },
   { id: 'U6-b', what: 'Goti-HD swept into U6a (the r.dial guard dropped) [45.55]',
-    find: 'if (!mh || !r || r.dial) return false;\n  const doses', replace: 'if (!mh || !r) return false;\n  const doses' },
+    find: 'if (!mh || dial) return false;\n  const byTime', replace: 'if (!mh) return false;\n  const byTime' },
   { id: 'U6-c', what: 'a second dose already given ignored (a level after it read as first-interval) [45.55]',
     find: 'const secondH = given.length >= 2 ? given[1].timeH : planned.length', replace: 'const secondH = planned.length' },
   { id: 'U6-d', what: "the second dose's time ignored (a level after it, or with none known, still a caution) [45.55]",
@@ -207,7 +207,11 @@ const MUTANTS = [
   { id: 'U6-f', what: 'R55 undone: Buelga/Hughes fitted plus a first-interval level read as a caution [45.55]',
     find: "if (f && !gotiFitted) return { basis: 'fitted', caution: null };", replace: "if (f && !gotiFitted && !m) return { basis: 'fitted', caution: null };" },
   { id: 'U6-g', what: "firstDosePlan: no second-dose time from the answered interval (U6a never applies without a planned row) [45.55]",
-    find: 'const first = firstIntervalLevel(r, mh, nowH, rec.tau);', replace: 'const first = firstIntervalLevel(r, mh, nowH, NaN);' },
+    find: 'plannedDoses, answeredTau, r.dial);', replace: 'plannedDoses, NaN, r.dial);' },
+  { id: 'U6-h', what: 'the second dose judged on the plan\'s own (projected) interval, not the answered one [45.56]',
+    find: 'const answeredTau = r.rec ? (r.rec.noSolution ? NaN : r.rec.tau) : rec.tau;', replace: 'const answeredTau = rec.tau;' },
+  { id: 'U6-i', what: 'R57 undone: a fitted-basis Hold no longer names the first-interval level that sets its resume time [45.57]',
+    find: "const resumeSetBy = hold && holdBasis === 'fitted'", replace: "const resumeSetBy = false && holdBasis === 'fitted'" },
 
   // "Tests that cannot fail on what they name" (code report): the mutations that showed it.
   { id: 'CF-1', what: 'fingerprint target and MIC made inert, names left in a comment',
