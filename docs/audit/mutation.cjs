@@ -176,6 +176,22 @@ const MUTANTS = [
     find: 'function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, opts) {\n  const o = opts || {};',
     replace: 'function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, opts) {\n  row = row && aucUncertaintyRow(row.n, row.key, false);\n  const o = opts || {};' },
 
+  // Task 21c (the user's ruling U5): a Goti fitted-only reading is a caution, not a Hold; each mutant names the test that kills it.
+  { id: 'U5-a', what: 'fittedOnlyCaution always false (Goti fitted-only holds again) [45.53, 45.54]',
+    find: "return !!(r && r.model === 'goti' && !r.dial);", replace: 'return false;' },
+  { id: 'U5-b', what: 'Goti-HD swept into U5 (the !r.dial guard dropped) [45.53]',
+    find: "return !!(r && r.model === 'goti' && !r.dial);", replace: "return !!(r && r.model === 'goti');" },
+  { id: 'U5-c', what: "firstDosePlan: 'both' read as fitted-only (basis !== 'measured') [45.53]",
+    find: "if (u5 && j.basis === 'fitted')", replace: "if (u5 && j.basis !== 'measured')" },
+  { id: 'U5-d', what: "noSolutionHold: a refusal on both bases read as fitted-only [45.53]",
+    find: "if (basis === 'fitted' && fittedOnlyCaution(r)) return {", replace: "if (basis !== 'measured' && fittedOnlyCaution(r)) return {" },
+  { id: 'U5-e', what: 'Copy summary drops the caution [45.53, 45.54]',
+    find: 'if (fittedCaution) parts.push(fittedCaution);', replace: '' },
+  { id: 'U5-f', what: 'the refusal verdict reads holdHeadHTML again (the caution vanishes from the rendered refusal) [45.54]',
+    find: '${answerHeadHTML(nsHold)}', replace: '${holdHeadHTML(nsHold)}' },
+  { id: 'U5-g', what: 'the Next line and panel ignore the caution [45.53, 45.54]',
+    find: "  } else if (f.caution) {\n    kind = 'caution';", replace: "  } else if (false) {\n    kind = 'caution';" },
+
   // "Tests that cannot fail on what they name" (code report): the mutations that showed it.
   { id: 'CF-1', what: 'fingerprint target and MIC made inert, names left in a comment',
     find: "target: g('b-auc-target'), mic: g('b-mic'),", replace: "target: '', mic: '', // g('b-auc-target') g('b-mic')" },

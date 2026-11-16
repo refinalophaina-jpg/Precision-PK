@@ -9014,8 +9014,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const just = th(30, 8, kel, start, { c: 30, h: 8.4 }, start + reach - 1 / 60);
     assert(just && just.atH > start + reach - 1 / 60 && just.atH - start >= reach - 1e-9 && just.atH - start <= reach + 1 / 60 + 1e-6,
       `it crosses 20 one minute after now: a Hold, not before the crossing (${just && (just.atH - start)} h, crossing ${reach} h)`);
-    // The no-time hold (past the 72 h horizon) is never cleared by now: it has no time to pass.
-    assert(th(40, 12, Math.log(2) / 73, start, null, start + 30).noTime === true, 'recheck a level stands');
+    // Ruling R54 (fix round; this line pinned the old behaviour, rule 9): the no-time branch reads the same origin as AUC
+    // Precision (R51), the later of the due time and now, and R52 applies to it too. 40 mg/L due at 12 h with a 73 h
+    // half-life reaches 20 at 85 h: from the due time that is past 72 h ("recheck"), but read at 30 h it is 55 h away, a time.
+    assert(th(40, 12, Math.log(2) / 73, start, null, start + 1).noTime === true, 'due ahead: 73 h after the due time is "recheck a level"');
+    const r54 = th(40, 12, Math.log(2) / 73, start, null, start + 30);
+    assert(r54 && r54.noTime === false && r54.atH >= start + 85 - 1e-9 && r54.horizonFrom === 'now', `read at 30 h: ${JSON.stringify(r54)}`);
+    const n54 = th(40, 12, Math.log(2) / 100, start, null, start + 30);
+    assert(n54 && n54.noTime === true && n54.horizonFrom === 'now' && /more than 72 h from now/.test(fn45('troughHoldHTML')(n54)), fn45('troughHoldHTML')(n54));
+    assert(/more than 72 h after the due time/.test(fn45('troughHoldHTML')(th(40, 12, Math.log(2) / 100, start, null, start + 1))), 'due ahead: "after the due time"');
+    assert(th(40, 12, Math.log(2) / 100, start, null, start + 12 + 100 + 1) === null, 'R52 on the no-time branch: fallen to 20 by now, no hold');
     // Never before the due time, on every measured basis (I3: one below 20 by then is no hold).
     for (const [c, h, due, k] of [[30, 8.4, 8, kel], [25, 7.9, 8, 0.08], [25, 24, 12, 0.03], [40, 3, 12, 0.05], [21, 11.9, 12, 0.15]]) {
       const x = th(c * Math.exp(-k * (due - h)), due, k, start, { c, h }, start);
@@ -9180,8 +9188,22 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     for (const [k, t] of [['summary', summary], ['said', said]]) assert(t.indexOf(want) >= 0 && !/Hold|Recheck a level before the next dose/.test(t), `${k}: ${t}`);
     const screen = fn45('firstDoseReadoutHTML')(p, rec53, false), paper = fn45('firstDoseReadoutHTML')(p, rec53, true);
     assert(!/Hold/.test(screen + paper) && /<strong class="tone-caution">/.test(screen), screen);
-    assert(fn45('nextLevelFit')(rr, { rank: 0, level: 'High', reasons: [] }, p) === fn45('nextLevelFit')(rr, { rank: 0, level: 'High', reasons: [] }, null)
-      || JSON.stringify(fn45('nextLevelFit')(rr, { rank: 0, level: 'High', reasons: [] }, p)) === JSON.stringify(fn45('nextLevelFit')(rr, { rank: 0, level: 'High', reasons: [] }, null)), 'the Next line reads no hold');
+    // Fix round (review item 1): the Next line and the further-level panel read the caution. At High confidence, on
+    // this fixture, they used to say "A further level would add little" under a "Precision only" panel, beside the
+    // caution's "Consider drawing a level before giving it".
+    const ctx = { r: rr, conf: { rank: 0, level: 'High', reasons: [] }, auc: 400, nLev: 0, model: 'goti', tau: 12, CL: 1.5, fixed: '' };
+    const step = fn45('bayesNextStep')(ctx, p), panel = fn45('voiHTML')(fn45('bayesNextLevel')(ctx, p));
+    assert(step === 'Draw a level before giving the next dose.', `Next: ${step}`);
+    assert(/<span class="voi-tag">Caution<\/span>/.test(panel) && /Draw a level before giving the next dose/.test(panel) && !/Precision only|would add little/.test(panel), panel);
+    assert(/would add little|Precision/.test(fn45('voiHTML')(fn45('bayesNextLevel')(ctx, null))) || fn45('bayesNextStep')(ctx, null) !== step, 'without the caution the line is the ordinary one');
+    assert(/Draw a level before giving the next dose\./.test(summary) && /Draw a level before giving the next dose\./.test(said), `the summary and the announcement say it: ${summary} | ${said}`);
+    // The time chosen (k82) and "now" (the due time passed, no time chosen) name themselves.
+    const ch = fn45('firstDosePlan')(fo, rec53, 40, 44, cur53);
+    assert(!ch.hold && ch.fittedCaution && ch.fittedCaution.at === 'chosen' && fn45('fittedCautionText')(ch).indexOf(`at the time chosen (${fn45('fmtClock')(44)}) is `) > 0, fn45('fittedCautionText')(ch));
+    const late = Object.assign({}, fo, { fitNowH: 50 }), pl = fn45('firstDosePlan')(late, rec53, 50, null, cur53);
+    assert(!pl.hold && pl.fittedCaution && pl.fittedCaution.at === 'now' && /^Caution: the fitted level now is [\d.]+ mg\/L/.test(fn45('fittedCautionText')(pl)), fn45('fittedCautionText')(pl));
+    // Not the action line (review item 5).
+    assert(!/vx-action/.test(head) && /class="vx-ceiling-head vx-fitted-caution tone-caution"/.test(head), head);
     // A planned row at a fitted-only level: given as planned (no Hold), and the caution names the planned dose.
     const fp = Object.assign({}, fo, { doses: fo.doses.concat([{ mg: 1500, tinfH: 2, timeH: 48 }]) }), pp = plan53(fp);
     assert(!pp.hold && pp.fittedCaution && pp.fittedCaution.at === 'planned' && fn45('heldPlannedDoses')(fp, pp).length === 0 && /at the planned dose/.test(fn45('fittedCautionText')(pp)), JSON.stringify(pp.fittedCaution));
@@ -9203,11 +9225,35 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(ns(refused({ CL: 1.5, model: 'hughes' }), 40, cur53).hold === true, 'Hughes refusal: Hold');
     const nm = ns(refused({ CL: 10, levels: [{ conc: 30, timeH: 46.5 }], now: 47 }), 47, cur53);
     assert(nm && nm.hold === true && nm.measured, 'Goti refusal on a measured level: Hold');
+    const nb = ns(refused({ CL: 1.5, levels: [{ conc: 60, timeH: 46.5 }], now: 47 }), 47, cur53);
+    assert(nb && nb.hold === true && nb.fitted >= 20 && nb.measured, 'Goti refusal on both: Hold');
+    // The refusal's Next line and panel read its caution too.
+    const nctx = { r: Object.assign(refused({ CL: 1.5 }), {}), conf: { rank: 0, level: 'High', reasons: [] }, auc: 400, nLev: 0, model: 'goti', tau: 12, CL: 1.5, fixed: '' };
+    const npanel = fn45('voiHTML')(fn45('bayesNextLevel')(nctx, nf));
+    assert(/Draw a level before any further dose/.test(npanel) && !/Precision only/.test(npanel), npanel);
     const rsN = Object.assign(refused({ CL: 1.5 }), {});
     assert(fn45('bayesAnnouncement')(rsN, rsN.rec, conf, nf).indexOf('Caution: the fitted level') > 0 && !/Hold/.test(fn45('bayesAnnouncement')(rsN, rsN.rec, conf, nf)), 'refusal heard');
     // Print and the verdict read the same head (answerHeadHTML), the refusal's too; the Next line asks for a recheck only under a Hold.
     const src = fs.readFileSync(htmlPath, 'utf8');
-    assert(/h \+= answerHeadHTML\(noSolutionHold\(/.test(src) && /\$\{answerHeadHTML\(nsHold\)\}/.test(src) && /nsHold && nsHold\.hold \? 'Recheck a level before the next dose\. '/.test(src), 'print, verdict and Next');
+    assert(/h \+= answerHeadHTML\(noSolutionHold\(/.test(src), 'print reads the same head');
+  });
+  // A rendered Goti refusal whose hold reading is fitted alone (fix round, review item 8f: a rendered check, not a source
+  // regex). Fictional 70 M, 70 kg, 175 cm, SCr 8.5 (CrCl 8), Goti; 1.75 g at -100 h and again 1 h ago; 44.29's flat levels
+  // (52, 51, 50.2 mg/L at -74, -50 and -3 h), all before the last dose, so there is no measured basis after it. Every candidate breaches
+  // a hard limit at this clearance: "No regimen recommended", with the caution, never a Hold.
+  test('45.54 U5 rendered: a Goti refusal on the fitted level alone shows the caution above "No regimen recommended", no Hold; its Next line and panel ask for a level [T21c]', () => {
+    const { fit44 } = __suiteShared;
+    const o = fit44({ model: 'goti', age: 70, tbw: 70, ht: 175, scr: 8.5, mg: 1750, tinf: 2, tau: 99, n: 2, lastAgo: 1,
+      levels: [{ conc: 52, after: -73 }, { conc: 51, after: -49 }, { conc: 50.2, after: -2 }] });
+    assert(o.r.rec && o.r.rec.noSolution && !o.r.lowCrClHold, `fixture: a refusal (${o.r.rec && o.r.rec.action} ${o.r.rec && o.r.rec.dose} q${o.r.rec && o.r.rec.tau}, CL ${o.r.CL_ind})`);
+    const ns = fn45('noSolutionHold')(o.r, o.r.fitNowH, null);
+    assert(ns && ns.hold === false && ns.fittedCaution, `fixture: fitted-only ${JSON.stringify(ns)}`);
+    const caution = (o.html.match(/<p class="vx-ceiling-head vx-fitted-caution tone-caution">[\s\S]*?<span>([^<]*)<\/span><\/p>/) || [])[1] || '';
+    assert(/^Caution: the fitted level /.test(caution) && /Consider drawing a level before any further dose\.$/.test(caution), `caution: "${caution}" | ${o.text.slice(0, 400)}`);
+    assert(o.html.indexOf('vx-fitted-caution') < o.html.indexOf('No regimen recommended') && !/vx-hold-head|Hold: /.test(o.html), o.text.slice(0, 400));
+    const next = ((o.html.match(/<p class="vx-next">([\s\S]*?)<\/p>/) || [])[1] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    assert(/^Next Draw a level before any further dose\./.test(next) && !/Recheck a level/.test(next), next);
+    assert(o.summary.indexOf(caution) >= 0 && o.said.indexOf(caution) >= 0 && !/Hold/.test(o.summary + o.said), `${o.summary} | ${o.said}`);
   });
 }
 
@@ -9215,7 +9261,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 612;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.53 + D27 redraw)
+const EXPECTED_TOTAL = 613;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.54 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

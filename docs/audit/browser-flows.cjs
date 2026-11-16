@@ -2648,13 +2648,18 @@ async function enterCourse(page) {
       const c = document.querySelector('#b-results .vx-fitted-caution');
       window.dispatchEvent(new Event('beforeprint'));
       return { caution: c ? c.textContent.replace(/\s+/g, ' ').trim() : '', tone: !!(c && c.classList.contains('tone-caution')), icon: !!(c && c.querySelector('svg.ic')),
-        hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'), readout: t('#b-first-readout'),
+        hold: t('#b-hold .vx-hold-head'), reg: t('#vx-regimen'), next: t('#b-results .vx-next'), readout: t('#b-first-readout'), voi: t('#b-voi'),
+        action: !!(c && c.classList.contains('vx-action')),
         said: t('#sr-announce'), copied: (window.__copied || [])[0] || '', print: t('#print-report') }; });
     ok('D27 (U5): a Goti Hold on the fitted level alone is one caution line — the regimen and first dose stand; no Hold or recheck anywhere; the caution is copied, heard and printed',
        /^Caution: the fitted level when the next dose is due \(\d{1,2} [A-Z][a-z]{2} \d\d:\d\d\) is [\d.]+ mg\/L, at or above 20 mg\/L on the fit alone; no measured level confirms it\. Consider drawing a level before giving it\.$/.test(u5v.caution)
        && u5v.tone && u5v.icon && u5v.hold === '' && /IV q\d+h/.test(u5v.reg) && !/Hold/.test(u5v.readout + u5v.next + u5v.said + u5v.copied + u5v.print)
        && !/Recheck a level before the next dose/.test(u5v.next + u5v.said + u5v.copied) && u5v.copied.indexOf(u5v.caution) >= 0 && u5v.said.indexOf(u5v.caution) >= 0
-       && u5v.print.indexOf(u5v.caution) >= 0, JSON.stringify(Object.assign({}, u5v, { print: u5v.print.slice(0, 120) })));
+       && u5v.print.indexOf(u5v.caution) >= 0 && !u5v.action
+       // Fix round (review item 1): the Next line and the further-level panel ask for the level too, never "would add little".
+       && u5v.next === 'Next Draw a level before giving the next dose.' && /Caution/.test(u5v.voi) && /Draw a level before giving the next dose/.test(u5v.voi)
+       && !/would add little|Precision only/.test(u5v.next + u5v.voi) && /Draw a level before giving the next dose\./.test(u5v.copied + u5v.said),
+       JSON.stringify(Object.assign({}, u5v, { print: u5v.print.slice(0, 120) })));
     // Trough hold "not before" is never in the past (controller ruling): a level that has fallen to 20 mg/L by now is
     // no Hold. Level mode, fictional 60 M (80 kg, 178 cm, SCr 1.0): 1.5 g q8h over 1.5 h started yesterday 01:00,
     // 30 mg/L drawn at 09:24 (8.4 h); it fell to 20 mg/L yesterday afternoon, so at today 10:00 the ordinary answer stands.
