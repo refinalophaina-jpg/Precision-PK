@@ -62,8 +62,9 @@ public, and they are third-party copyrighted papers.
 
 ## Modules
 
-Two modules. **Trough-Based** — deterministic, four sub-modes: initial population dose (with loading
-dose), steady-state trough fit, two-level Sawchuk–Zaske, and single random level.
+Two modules. **Trough-Based** — deterministic, five sub-modes: initial population dose (with loading
+dose), steady-state trough fit, two-level Sawchuk–Zaske, single random level, and IV vancomycin on
+peritoneal dialysis (level-based, not a model).
 
 **AUC Precision** — MAP Bayesian fitting against a Burton 1985 objective, with four
 population priors:
@@ -79,8 +80,9 @@ population priors:
 Cross-cutting: KDIGO AKI staging from serial creatinine, augmented-renal-clearance and
 very-low-CrCl advisories, `localStorage` profiles, and a print report.
 
-**Not implemented:** CRRT, paediatrics, neonates, continuous infusion. Do not use this tool
-for those populations.
+**Not implemented:** session-clearance HD modelling, intradialytic dosing recommendations, CRRT,
+SLED, intraperitoneal vancomycin dosing, AUC or Bayesian dosing for peritoneal dialysis, paediatrics,
+neonates, continuous infusion. Do not use this tool for those.
 
 ## Validation
 

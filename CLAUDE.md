@@ -28,9 +28,9 @@ git hash-object index.html
 
 | Range (approx) | Contents |
 |---|---|
-| 1–2,660 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
-| 2,660–3,705 | Markup — print report, header, module tabs, the two module panels |
-| 3,706–end | One inline `<script>` — the whole engine and UI |
+| 1–2,810 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
+| 2,811–4,067 | Markup — print report, header, module tabs, the two module panels |
+| 4,068–end | One inline `<script>` — the whole engine and UI |
 
 **Two modules** (tabs, switched by `switchModule()`):
 
@@ -301,7 +301,9 @@ dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
    - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
      splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9);
      `AUC24_MODEST_BELOW_MIN` (325); the Trough AUC band (±22% / ±30%); `MAP_TIE_OBJ` /
-     `MAP_SPLIT_CL` (two MAP minima); `NOTE_CLAMP_CHARS` (300); `PROFILE_ARRIVE_MS`.
+     `MAP_SPLIT_CL` (two MAP minima); `NOTE_CLAMP_CHARS` (300); `PROFILE_ARRIVE_MS`; and the
+     weight-based guideline comparison line's `GUIDELINE_DOSE_CAP_MG` (2,500) and
+     `GUIDELINE_INTERVAL_BY_CRCL` (CrCl 90 / 50 / 30 / 15), which no source states (Task 21).
    - **Labels and windows that gate an answer:** `HD_PRE_LABEL_H` (12 h) and
      `HD_POSTSESSION_HALF_LIVES` (3, the redistribution window, `hdRedistributionWindowH`, which
      since D26's U1 also marks a 2-comp level as past the distribution phase for the measured
@@ -361,8 +363,10 @@ exists. Pure `function` declarations are.
 does **not** authorise event-handler attributes. Inline handlers therefore die silently in
 production — the page renders, the engine loads, and nothing responds to a click.
 
-Handlers live in the `__ACT` registry and are bound by delegation (`__bindActions`). To add
-one: add an entry, then put `data-onclick="kN"` (or `data-oninput` / `data-onchange` /
+Handlers live in the `__ACT` registry and are bound by delegation (`__bindActions` →
+`__dispatchAction`, which runs own keys only, `Object.hasOwn`). A handler that throws is logged and
+shows one plain line, `#action-status` (`showActionFailure`, Dismiss `k101`); never the error text.
+To add one: add an entry, then put `data-onclick="kN"` (or `data-oninput` / `data-onchange` /
 `data-onkeydown`) on the element, plus `data-arg="${...}"` if it takes a value. Delegation
 also means markup rendered later via `innerHTML` is bound for free. `SUITE 14` fails the
 build if an inline handler, a `javascript:` URL, or an `eval`-family call reappears.
@@ -416,7 +420,7 @@ Rules the 2026-09 design pass learned the hard way:
 | | The site uses | So this file uses |
 |---|---|---|
 | Rectangular radius | `4px`, one value | `--radius-sm/md/lg`, all `4px` |
-| Pill | `999px` | `--radius-pill` — chips, badges, the switch, the print FAB |
+| Pill | `999px` | `--radius-pill` — chips, badges, the switch |
 | Circle | `50%` | dots and the brand mark |
 | `box-shadow` | **none, anywhere** | focus rings only |
 | Gradients | the page atmosphere only: three faint radials of terracotta, purple and moss on the ground | the same wash on `body`, mirrored; on components, only the therapeutic-range gauge, which is data |
@@ -471,7 +475,8 @@ errors — it previously called a `drawGraph()` that does not exist, inside an e
 the trough-based graphs kept their light-theme colours on the dark page for months.
 
 Results are built as HTML strings via `innerHTML`. **Any user-entered value interpolated into
-one must go through `escHtml()`** — most sites currently do not, which is an open item.
+one must go through `escHtml()`.** About 110 sites do; the 2026-11-13 review's hostile-profile probe
+found one gap (the profile id in `data-arg`), closed in v3.14.0.
 
 ## Where things are
 
