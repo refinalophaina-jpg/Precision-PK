@@ -4510,7 +4510,7 @@ function addPdRow(kind) {
   if (kind === 'dose') tr.innerHTML = `
     <td class="course-head"><span class="course-n">Dose ${n}</span></td>
     <td class="course-what">
-      <span class="course-field"><input type="number" id="pd-dose-mg-${n}" inputmode="decimal" min="100" max="4000" step="50" aria-label="Dose ${n} amount (mg)"><span class="course-unit" aria-hidden="true">mg</span></span>
+      <span class="course-field"><input type="number" id="pd-dose-mg-${n}" inputmode="decimal" min="${INPUT_LIMITS.dose.min}" max="${INPUT_LIMITS.dose.max}" step="50" aria-label="Dose ${n} amount (mg)"><span class="course-unit" aria-hidden="true">mg</span></span>
       <span class="course-over" aria-hidden="true">over</span>
       <span class="course-field"><input type="number" id="pd-dose-tinf-${n}" inputmode="decimal" min="0.25" max="6" step="0.25" value="1" aria-label="Dose ${n} infusion duration (h)"><span class="course-unit" aria-hidden="true">h</span></span>
     </td>${when('Dose')}${rm('k87', 'dose')}`;
@@ -4608,7 +4608,7 @@ function readPdForm() {
   for (const tr of document.querySelectorAll('#pd-dose-tbody tr[data-n]')) {
     const n = tr.dataset.n, mg = num(`pd-dose-mg-${n}`), tinf = num(`pd-dose-tinf-${n}`), w = pdHoursAt(`pd-dose-date-${n}`, `pd-dose-time-${n}`);
     if (isNaN(mg) && w.blank) continue;
-    if (!(mg >= 100 && mg <= 4000)) bad(`pd-dose-mg-${n}`, `Dose ${n}: an amount of 100–4000 mg.`);
+    if (!(mg >= INPUT_LIMITS.dose.min && mg <= INPUT_LIMITS.dose.max)) bad(`pd-dose-mg-${n}`, `Dose ${n}: an amount of ${INPUT_LIMITS.dose.min}–${INPUT_LIMITS.dose.max} mg.`);
     else if (!(tinf >= 0.25 && tinf <= 6)) bad(`pd-dose-tinf-${n}`, `Dose ${n}: an infusion time of 0.25–6 h.`);
     else if (w.h == null) bad(`pd-dose-date-${n}`, `Dose ${n}: a date and a 24-hour time.`);
     else doses.push({ mg, tinfH: tinf, timeH: w.h });
@@ -4770,7 +4770,7 @@ function pdResultsHTML(a, input, nowH) {
     return wrap(`
     <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
       <h3 class="vx-regimen" id="tx-regimen"><span class="rec-dose">${fmtDose(L.mg)}</span> IV <span class="vx-freq">loading dose</span></h3>
-      <p class="vx-inf">Infuse over ${fmtHrs(autoTinf(L.mg))} · ${PD_LOAD_MG_PER_KG} mg/kg × ${(+c.nowKg).toFixed(1)} kg actual body weight, rounded to 250 mg${L.capped ? ` · capped at ${fmtDose(L.cap)}` : ''}</p>
+      <p class="vx-inf">Infuse over ${fmtHrs(autoTinf(L.mg))} · ${PD_LOAD_MG_PER_KG} mg/kg × ${(+c.nowKg).toFixed(1)} kg actual body weight, rounded to ${MATRIX_DOSE_STEP} mg${L.capped ? ` · capped at ${fmtDose(L.cap)}` : ''}</p>
       ${nextLine('First level', L.firstLevelH, 'about 48 h after the load (institutional convention)')}
       ${actions}
     </section>`, '', [course, method]);
@@ -4994,7 +4994,7 @@ function calcLoadingDose(popClv, popVd, targetPeak) {
   // settle it, then take the time the table gives for the dose actually chosen.
   let tinf = 1, uncappedMg = 0;
   for (let i = 0; i < 6; i++) {
-    uncappedMg = Math.max(250, Math.round(doseFor(tinf) / 250) * 250);
+    uncappedMg = roundDose250(doseFor(tinf));
     const t = autoTinf(uncappedMg);
     if (t === tinf) break;
     tinf = t;
@@ -6583,7 +6583,7 @@ const TROUGH_INTERVALS_H = [6, 8, 12, 18, 24, 36, 48];
 // alone: judge this interval only (the per-interval call a refusal makes for the others).
 function findOptimalDose(troughMin, troughMax, tau, tinf, kel, vd, clv, alone) {
   const all = [];
-  for(let d = 250; d <= DOSE_MAX_PER_DOSE_MG; d += 250) {
+  for(let d = MATRIX_DOSE_STEP; d <= DOSE_MAX_PER_DOSE_MG; d += MATRIX_DOSE_STEP) {
     const pt  = calcPeakTrough(d, tau, tinf, kel, vd);
     const auc = calcAUC(d, tau, clv);
     const judged = evalRegimen(d, tau, tinf, clv, vd, null);
@@ -6661,11 +6661,11 @@ function troughRefusal(all, admissible, tau) {
   const out = (capBound, highest, why) => ({ refused: true, capBound, highest, tau, why, reason: why });
   if (!admissible.length) {
     const first = all[0];
-    return out(false, null, `At ${q} every dose on 250 mg steps breaches a hard limit: even ${fmtRegimen(first.c.dose, tau)}, `
+    return out(false, null, `At ${q} every dose on ${MATRIX_DOSE_STEP} mg steps breaches a hard limit: even ${fmtRegimen(first.c.dose, tau)}, `
       + `${first.hardFail.join('; ')}.`);
   }
   const highest = admissible[admissible.length - 1];
-  const nextDose = highest.dose + 250;
+  const nextDose = highest.dose + MATRIX_DOSE_STEP;
   const capBound = highest.auc < AUC24_TARGET_MIN &&
     (nextDose > DOSE_MAX_PER_DOSE_MG || nextDose * 24 / tau > DOSE_MAX_TDD_MG);
   if (capBound) return out(true, highest,
@@ -6673,7 +6673,7 @@ function troughRefusal(all, admissible, tau) {
   const below = admissible.filter(c => c.auc < AUC24_TARGET_MIN).pop();
   const aboveX = all.find(x => x.c.auc > AUC24_TARGET_MAX);
   const above = aboveX ? `${at(aboveX.c)}${aboveX.c.auc > AUC24_ABSOLUTE_MAX ? `, above the absolute ceiling of ${AUC24_ABSOLUTE_MAX}` : ''}` : '';
-  return out(false, highest, `At ${q} no dose on 250 mg steps lands in AUC₂₄ ${band} mg·h/L: `
+  return out(false, highest, `At ${q} no dose on ${MATRIX_DOSE_STEP} mg steps lands in AUC₂₄ ${band} mg·h/L: `
     + (below ? `${at(below)} and ${above}` : `even ${above}`) + '.');
 }
 
@@ -6688,7 +6688,7 @@ function optFlagHTML(flag, flagMsg, tau, auc, trough, troughMin) {
            : flag === 'auc_therapeutic_trough_low'  ? 'Trough below target' : 'Optimiser note';
   const inBand = auc >= AUC24_TARGET_MIN && auc <= AUC24_TARGET_MAX;
   if (flag === 'auc_supra' || flag === 'auc_sub' || (flag === 'auc_borderline' && !inBand)) {
-    msg = `No dose at ${fmtFreq(tau)} on 250 mg steps reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L; `
+    msg = `No dose at ${fmtFreq(tau)} on ${MATRIX_DOSE_STEP} mg steps reaches AUC₂₄ ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L; `
         + `this is the closest (AUC₂₄ ${auc.toFixed(0)}). Check the dose explorer for another interval.`;
     word = 'Target not reachable at this interval';
   } else if (flag === 'auc_borderline') {
@@ -7295,7 +7295,7 @@ function calculate() {
         // Task 3 review: nothing has been given yet, so never "obtain a level" here.
         next: initOpt.others.length ? 'Choose one of the intervals named above.'
             : initOpt.capBound ? 'No interval reaches the target within the conventional ceilings: see the recommendation limit.'
-            : 'No interval on 250 mg steps reaches the target: review the inputs.' });
+            : `No interval on ${MATRIX_DOSE_STEP} mg steps reaches the target: review the inputs.` });
       return;
     }
     dose = initOpt.dose;
@@ -8145,7 +8145,7 @@ function calcPRNDose() {
 
   // Raw dose to achieve target peak starting from cAtRedose
   const rawDose = calcOneDoseToTargetPeak(cAtRedose, targetPeak, kel, vd, prnTinf);
-  const roundedDose = Math.round(rawDose / 250) * 250;
+  const roundedDose = Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
 
   // What peak and AUC-like metric will that dose achieve?
   const actualPeak = cAtRedose * Math.exp(-kel * prnTinf) + (roundedDose / (prnTinf * kel * vd)) * (1 - Math.exp(-kel * prnTinf));
@@ -8157,7 +8157,7 @@ function calcPRNDose() {
 
   // Weight-based comparison
   const mgKgRef = weightBasedDoseMgKg(rlC, troughMin, troughMax);
-  const wbDose  = tbw ? Math.round(tbw * mgKgRef / 250) * 250 : null;
+  const wbDose  = tbw ? Math.round(tbw * mgKgRef / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP : null;
 
   // Urgency framing
   const hoursToRedose = Math.max(0, timeToRedose);
@@ -8177,7 +8177,7 @@ function tinkerDose(suffix) {
   if (!doseEl || !tauEl) return;
   const d   = parseFloat(doseEl.value);
   const tau = parseFloat(tauEl.value);
-  if (!d || d < 100 || d > 6000) {
+  if (!d || d < INPUT_LIMITS.dose.min || d > INPUT_LIMITS.dose.max) {
     doseEl.style.borderColor = 'var(--danger)';
     doseEl.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--danger) 15%, transparent)';
     return;
@@ -8276,7 +8276,7 @@ function tinkererHTML(suffix, tau) {
     <div class="tinkerer-box">
       <div class="tinkerer-header">Try an alternative dose &amp; interval</div>
       <div class="tinkerer-row" data-enter-scope>
-        <input type="number" class="tinkerer-input" id="tinker-dose-${suffix}" placeholder="mg" step="250" aria-label="Dose to try (mg)">
+        <input type="number" class="tinkerer-input" id="tinker-dose-${suffix}" placeholder="mg" step="${MATRIX_DOSE_STEP}" aria-label="Dose to try (mg)">
         <select class="tinkerer-tau" id="tinker-tau-${suffix}" title="Dosing interval">
           ${tauOpts}
         </select>
@@ -9066,7 +9066,7 @@ function addBayesDose() {
   tr.innerHTML = `
     <td class="course-head"><span class="course-n">Dose ${id}</span> <span class="course-readback" id="${rb}"></span></td>
     <td class="course-what">
-      <span class="course-field"><input type="number" id="b-dose-mg-${id}" inputmode="decimal" min="100" max="4000" step="50" value="${mgStr}"
+      <span class="course-field"><input type="number" id="b-dose-mg-${id}" inputmode="decimal" min="${INPUT_LIMITS.dose.min}" max="${INPUT_LIMITS.dose.max}" step="50" value="${mgStr}"
          aria-label="Dose ${id} amount (mg)" data-oninput="k60" data-arg="${id}"><span class="course-unit" aria-hidden="true">mg</span></span>
       <span class="course-over" aria-hidden="true">over</span>
       <span class="course-field"><input type="number" id="b-dose-tinf-${id}" inputmode="decimal" min="0.25" max="6" step="0.25" value="${tinfStr}"
@@ -9885,7 +9885,7 @@ function pdAnswer(input, nowH) {
     return { state: 'need-level', hasLevel: true, nextDrawH: next0, drawOnCycler, giveAtH: giveAt, giveIsNow,
       provisional: below && mg > 0 ? { mg, peak: cNow + mg / vNow } : null,
       message: below && mg > 0 ? 'No decline has been measured yet, so the next level cannot be projected. Until it is, the dose shown brings the peak to the top of the goal, no further.'
-        : below ? 'No decline has been measured yet. The level is below the goal by less than one 250 mg step can add without passing its top: no dose now; the next level measures the decline.'
+        : below ? `No decline has been measured yet. The level is below the goal by less than one ${MATRIX_DOSE_STEP} mg step can add without passing its top: no dose now; the next level measures the decline.`
         : 'No decline has been measured yet. The level is at or above the goal: no dose now; the next level measures the decline.',
       lastLevel: last, cautions, intervals, context };
   }
@@ -9920,7 +9920,7 @@ function pdAnswer(input, nowH) {
     const dist = (r) => (ok.length ? Math.abs(r.mid - mid) : (r.mid < goal.min ? goal.min - r.mid : r.mid - goal.max));
     const best = (ok.length ? ok : rows).reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
     if (best.mg) { state = 'dose'; pick = { mg: best.mg, closest: !ok.length }; }
-    else cautions.push({ tier: 'caution', word: 'No step reaches the goal', html: 'Every 250 mg step lands further from the goal than giving nothing; no dose is the closest. Recheck at the next draw.' });
+    else cautions.push({ tier: 'caution', word: 'No step reaches the goal', html: `Every ${MATRIX_DOSE_STEP} mg step lands further from the goal than giving nothing; no dose is the closest. Recheck at the next draw.` });
   }
   // The chosen option's projected range, sampled for the chart (and its breakpoints).
   const optMg = pick ? pick.mg : 0, optDose = optMg ? [{ mg: optMg, tinfH: autoTinf(optMg), timeH: giveAt }] : [];
@@ -10075,7 +10075,7 @@ function hdNextDoseHTML(rec, derated, nowH, print) {
   if (rec.kind === 'hold') {
     const lead = k ? `With the ${ks} entered and no further dose, the` : 'Without a dose, the';
     const tail = rec.reason === 'overshoot'
-      ? ` — below ${HD_PREDIALYSIS_MIN}, but every 250 mg step overshoots ${HD_PREDIALYSIS_MAX}. Recheck the pre-HD level before dosing.`
+      ? ` — below ${HD_PREDIALYSIS_MIN}, but every ${MATRIX_DOSE_STEP} mg step overshoots ${HD_PREDIALYSIS_MAX}. Recheck the pre-HD level before dosing.`
       : ` — ${where(rec.pre)} mg/L. Recheck the pre-HD level.`;
     return `
       <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">No dose after session ${rec.session}</h3>
@@ -10085,7 +10085,7 @@ function hdNextDoseHTML(rec, derated, nowH, print) {
       <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">after HD</span></h3>
       <p class="vx-inf">After session ${rec.session} ends · ${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
       <p class="vx-sub"><span class="vx-k">Pre-HD, session ${rec.sizing}</span> <strong>${rec.pre.toFixed(1)} mg/L</strong>
-        ${rec.kind === 'closest' ? `— no 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : `· within ${range} mg/L`}</p>
+        ${rec.kind === 'closest' ? `— no ${MATRIX_DOSE_STEP} mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : `· within ${range} mg/L`}</p>
       <p class="vx-sub"><span class="vx-k">AUC₂₄</span> ${rec.auc24.toFixed(0)} mg·h/L <span class="vx-muted">over the 24 h before it</span>
         <span class="vx-nb"><span class="vx-k">Peak</span> ${rec.peak.toFixed(1)} mg/L</span></p>
       ${rec.repeat.length ? `<p class="vx-delta">Repeated after each planned session: ${rec.repeat.map(x => `pre-HD ${x.n} ${x.pre.toFixed(1)}`).join(' · ')} mg/L</p>` : ''}
@@ -10156,7 +10156,7 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
   if (rec.kind === 'hold') {
     const lead = k ? `With the ${ks} entered and no further dose, the` : 'Without a dose, the';
     const tail = rec.reason === 'overshoot'
-      ? ` — below ${HD_PREDIALYSIS_MIN}, but every 250 mg step overshoots ${HD_PREDIALYSIS_MAX}. Recheck the level before dosing.`
+      ? ` — below ${HD_PREDIALYSIS_MIN}, but every ${MATRIX_DOSE_STEP} mg step overshoots ${HD_PREDIALYSIS_MAX}. Recheck the level before dosing.`
       : ` — ${where(rec.pre)} mg/L. Recheck the pre-HD level.`;
     return missed + `
       <h3 class="vx-regimen vx-regimen-hd" id="vx-regimen">${rec.after != null ? `No dose after session ${rec.after}` : 'No dose now'}</h3>
@@ -10166,7 +10166,7 @@ function hdOneTimeHTML(rec, derated, nowH, print) {
   return missed + `<div class="rec-box vx-rec${derated ? ' rec-derated' : ''}">
       <h3 class="vx-regimen" id="vx-regimen"><span class="rec-dose">${fmtDose(rec.mg)}</span> IV <span class="vx-freq">${when}</span></h3>
       <p class="vx-inf"><strong>One-time</strong> · ${rec.after != null ? `after session ${rec.after} ends · ` : assumedTxt}${fmtClock(rec.doseAtH)} · infuse over ${fmtHrs(rec.tinfH)}${rec.kind === 'closest' ? ' · <span class="vx-prov">closest available</span>' : ''}${prov}</p>
-      <p class="vx-sub">Sized for a pre-HD level of <strong>${rec.pre.toFixed(1)} mg/L</strong> if the next HD starts ${nextAtB}${rec.kind === 'closest' ? ` — no 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : ''}.</p>
+      <p class="vx-sub">Sized for a pre-HD level of <strong>${rec.pre.toFixed(1)} mg/L</strong> if the next HD starts ${nextAtB}${rec.kind === 'closest' ? ` — no ${MATRIX_DOSE_STEP} mg step up to ${DOSE_MAX_PER_DOSE_MG} mg lands in ${range}` : ''}.</p>
       ${gapRow}${giveRow}${stale}
       <p class="vx-sub"><span class="vx-k">AUC₂₄</span> ${rec.auc24.toFixed(0)} mg·h/L <span class="vx-muted">over the 24 h before it</span>
         <span class="vx-nb"><span class="vx-k">Peak</span> ${rec.peak.toFixed(1)} mg/L</span></p>
@@ -10568,7 +10568,7 @@ function hdEmpiricHTML(rows, abwKg, doses) {
         <tr><th scope="row">High permeability</th><td>${cell(at('after', 'high'))}</td><td>${cell(at('intradialytic', 'high'))}</td></tr>
         <tr><th scope="row">Low permeability</th><td>${cell(at('after', 'low'))}</td><td>${cell(at('intradialytic', 'low'))}</td></tr>
       </tbody></table>
-    <p class="vx-hold vx-muted">Rybak 2020, Rec 13 (rounded to 250 mg); loading by actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rec 11)${rows.some(r => r.ldCapped) ? ' — * capped' : ''}${rows.some(r => r.mdOverCeiling) ? `; † above the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling` : ''}.
+    <p class="vx-hold vx-muted">Rybak 2020, Rec 13 (rounded to ${MATRIX_DOSE_STEP} mg); loading by actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rec 11)${rows.some(r => r.ldCapped) ? ' — * capped' : ''}${rows.some(r => r.mdOverCeiling) ? `; † above the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling` : ''}.
       Once a pre-HD level exists, it — not weight — drives the dose (Rec 14).</p>`;
 }
 
@@ -11281,16 +11281,16 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
     // same interval are exactly equidistant from the target, the stable tie-break
     // keeps the historical Math.round choice. Without this, 4 of 7,398 grid
     // cases silently moved to the lower step — a change nobody asked for.
-    const nearest = Math.round(rawDose / 250) * 250;
-    const other   = nearest > rawDose ? Math.floor(rawDose / 250) * 250 : Math.ceil(rawDose / 250) * 250;
+    const nearest = Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
+    const other   = nearest > rawDose ? Math.floor(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP : Math.ceil(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
     // ...and the largest dose the caps allow at this interval. Neighbours alone
     // are not enough: at CL 9.72 / target 550 both Q8H neighbours (1750, 2000)
     // exceed the 4500 mg daily cap, while 1500 mg Q8H (TDD exactly 4500, AUC24
     // 463, in band) is admissible two steps down. It is farther from target
     // than any admissible neighbour, so it is chosen only when both neighbours
     // breach a cap — i.e. only where there would otherwise be a refusal.
-    const capped  = Math.floor(Math.min(DOSE_MAX_PER_DOSE_MG, DOSE_MAX_TDD_MG * tau / 24) / 250) * 250;
-    const steps = [...new Set([nearest, other, capped])].filter(d => d >= 250);
+    const capped  = Math.floor(Math.min(DOSE_MAX_PER_DOSE_MG, DOSE_MAX_TDD_MG * tau / 24) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
+    const steps = [...new Set([nearest, other, capped])].filter(d => d >= MATRIX_DOSE_MIN);
     for (const dose of steps) {
       const c = evalRegimen(dose, tau, autoTinf(dose), CLind, Vind, goti2comp, mic);
       if (c) results.push(c);
@@ -11304,7 +11304,7 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
 // flags, regimenDecision's exposure tie-break (D26, R12) and nextLevelValue's "outright"; it
 // was computed inline in two places before. NaN when the interval or clearance is not positive.
 function roundingGraceAUC(tau, CLind) {
-  return (tau > 0 && CLind > 0) ? 250 * (24 / tau) / CLind / 2 : NaN;
+  return (tau > 0 && CLind > 0) ? MATRIX_DOSE_STEP * (24 / tau) / CLind / 2 : NaN;
 }
 
 // The dose ceilings a regimen breaks (per dose, per day), in evalRegimen's hard-reject wording.
@@ -11665,7 +11665,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
       k.troughSetAside = lattice.some(c => c.danger && !twin(c)
         && (c.dots > k.dots || off(c.auc24) < off(k.auc24) - roundingGraceAUC(c.tau, CLind)));
       k.flags = (k.flags || []).concat([{ level: 'warning',
-        text: `The current regimen sits outside ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L (AUC₂₄ ${k.auc24.toFixed(0)}), and ${k.troughSetAside ? `the regimens that would do better are set aside because their predicted trough is ${TROUGH_HIGH_MGL} mg/L or more; no other` : 'no'} admissible regimen puts more of its plausible AUCs in range or brings AUC₂₄ nearer the band by more than half a 250 mg step, so it is not changed. Review before continuing; another level may settle it.` }]);
+        text: `The current regimen sits outside ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L (AUC₂₄ ${k.auc24.toFixed(0)}), and ${k.troughSetAside ? `the regimens that would do better are set aside because their predicted trough is ${TROUGH_HIGH_MGL} mg/L or more; no other` : 'no'} admissible regimen puts more of its plausible AUCs in range or brings AUC₂₄ nearer the band by more than half a ${MATRIX_DOSE_STEP} mg step, so it is not changed. Review before continuing; another level may settle it.` }]);
     }
     k.regimen = k; k.noSolution = false;
     return withCap(k);
@@ -11783,7 +11783,7 @@ function regimenActionHTML(rec, targetAUC, part) {
         + (rec.troughSetAside   // engine report M2: say why the better regimens are not offered
           ? `the regimens that would do better are set aside because their predicted trough is ${TROUGH_HIGH_MGL} mg/L or more, and no other admissible regimen`
           : 'no admissible regimen')
-        + ` puts more in range or brings AUC₂₄ nearer the band by more than half a 250 mg step.${alt}`;
+        + ` puts more in range or brings AUC₂₄ nearer the band by more than half a ${MATRIX_DOSE_STEP} mg step.${alt}`;
     } else if (rec.continueReason === 'low-confidence') {
       // Ruling 3 (UI report I8): the change the dots would make, named, and why it is not made.
       // No target-box sentence here: it named another regimen beside the one set aside, and in
@@ -11862,9 +11862,10 @@ function ceilingCautionOf(over) {
 // sourced numbers — not against an invented preference.
 const MATRIX_INTERVALS = [8, 12, 24, 48];   // same set bayesDoseOptimizer ranks
 const MATRIX_ROWS      = 6;                 // dose steps shown, centred on target
-const MATRIX_DOSE_STEP = 250;               // the dispensing granularity
-const MATRIX_DOSE_MIN  = 250;
-const MATRIX_DOSE_MAX  = 2000;              // = DOSE_MAX_PER_DOSE_MG
+// The dispensing increment. Every 250 mg step in the file reads it, in both modules (code report
+// M5, Task 21); the ceiling is DOSE_MAX_PER_DOSE_MG, read directly (DOSE_MAX_PER_DOSE_MG duplicated it).
+const MATRIX_DOSE_STEP = 250;
+const MATRIX_DOSE_MIN  = 250;               // the smallest dose offered: one step
 
 function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
   if (!(CLind > 0) || !(targetAUC > 0)) return null;
@@ -11880,10 +11881,10 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
   let lo = Math.floor(Math.min.apply(null, targetDoses) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
   let hi = Math.ceil (Math.max.apply(null, targetDoses) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
   lo = Math.max(MATRIX_DOSE_MIN, lo);
-  hi = Math.min(MATRIX_DOSE_MAX, Math.max(hi, lo + MATRIX_DOSE_STEP));
+  hi = Math.min(DOSE_MAX_PER_DOSE_MG, Math.max(hi, lo + MATRIX_DOSE_STEP));
   // Pad a thin ladder outwards so there is room to move around the target.
   while (((hi - lo) / MATRIX_DOSE_STEP) + 1 < MATRIX_ROWS) {
-    const grewLo = lo > MATRIX_DOSE_MIN, grewHi = hi < MATRIX_DOSE_MAX;
+    const grewLo = lo > MATRIX_DOSE_MIN, grewHi = hi < DOSE_MAX_PER_DOSE_MG;
     if (!grewLo && !grewHi) break;
     if (grewLo) lo -= MATRIX_DOSE_STEP;
     if (grewHi && ((hi - lo) / MATRIX_DOSE_STEP) + 1 < MATRIX_ROWS) hi += MATRIX_DOSE_STEP;
@@ -12148,7 +12149,7 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   const bNow = aucBandText(rNow), bNext = aucBandText(rNext);
 
   // smallest prescribable change in exposure at this interval
-  const stepAUC = (tau > 0 && CLind > 0) ? 250 * (24 / tau) / CLind : NaN;
+  const stepAUC = (tau > 0 && CLind > 0) ? MATRIX_DOSE_STEP * (24 / tau) / CLind : NaN;
   const margin  = Math.min(auc24 - AUC24_TARGET_MIN, AUC24_TARGET_MAX - auc24);
   const nearEdge = isFinite(stepAUC) ? margin < stepAUC : margin < 50;
   // The same derived rounding grace the optimizer uses (half of one 250 mg
@@ -12181,7 +12182,7 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
     detail = f.action === 'continue'
       ? `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
         + `${ceilings} reaches the band: the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range `
-        + `or brings AUC₂₄ nearer the band by more than half a 250 mg step, so the regimen is continued rather than changed. `
+        + `or brings AUC₂₄ nearer the band by more than half a ${MATRIX_DOSE_STEP} mg step, so the regimen is continued rather than changed. `
         + `Confirm the clearance with a level before considering a dose beyond the ceiling or another agent.`
       : `This regimen sits below ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen ${ceilings} `
         + `reaches the band: ${f.action === 'start' ? 'this is the highest admissible regimen, and the ceiling binds' : 'the ceiling binds'}. `
@@ -12202,7 +12203,7 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
     detail = `With ${n} level${n===1?'':'s'} the interval is ${bNow}; another would take it to about `
            + `${bNext} — a ${pct(gain)}% narrowing. The maintenance regimen lands in the same place either way. `
            + (nearEdge
-              ? `The estimate does sit within one 250 mg step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, `
+              ? `The estimate does sit within one ${MATRIX_DOSE_STEP} mg step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, `
                 + `but a further level is not the lever that resolves that — cystatin C, a fresh creatinine, or comparing `
                 + `models will do more. `
               : `It sits comfortably inside the band. `)
@@ -12210,14 +12211,14 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   } else if (nearEdge) {
     kind = 'management';
     headline = 'A further level may change the regimen';
-    detail = `The estimate is within one 250 mg dose step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, and a `
+    detail = `The estimate is within one ${MATRIX_DOSE_STEP} mg dose step of the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band edge, and a `
            + `further level narrows ${bNow} to about ${bNext} `
            + `(${loNow.toFixed(0)}–${hiNow.toFixed(0)} → ${loNext.toFixed(0)}–${hiNext.toFixed(0)} mg·h/L). `
            + `That is enough to change which dose you would write.`;
   } else {
     kind = 'precision';
     headline = 'A further level would improve precision, not the regimen';
-    detail = `The estimate sits more than one 250 mg dose step inside the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band, `
+    detail = `The estimate sits more than one ${MATRIX_DOSE_STEP} mg dose step inside the ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} band, `
            + `so tightening ${bNow} to ${bNext} would not change the dose you would write. `
            + `Useful for confidence; not decision-changing on its own.`;
   }
@@ -13214,15 +13215,25 @@ function markSuggestedModel() {
 }
 
 // ─── Weight-based guideline dose (ASHP/IDSA 2020) ───
+// Display only: the comparison line in Show the math (renderBayesianResults, "Weight-based guideline
+// comparison"). It never sets, orders or changes the regimen offered; that is regimenDecision's.
+// Its cap and its CrCl cut-points have no source. Searched 2026-11-15 (Task 21, D27; ruling R34):
+// this repository's docs, Vancomycin_TDM_Software_Instructions.md and the literature register. None
+// states them; §3.2 of the instructions reads differently (CrCl > 90, 60-90, 30-59, 10-29, < 10;
+// a 3000 mg maximum single dose). Both are therefore preferences, kept at their shipped values.
+// PREFERENCE (rule 8): the largest dose the comparison line shows. It orders nothing; it changes the
+// line's dose, AUC24 and trough above about 167 kg (15 mg/kg), never a dose offered.
+const GUIDELINE_DOSE_CAP_MG = 2500;
+// PREFERENCE (rule 8): the CrCl (mL/min) cut-points that pick the comparison line's interval:
+// above 90 q8h, above 50 q12h, above 30 q24h, above 15 q36h, otherwise GUIDELINE_INTERVAL_LAST_H.
+// They order nothing and change only the line's interval, AUC24 and trough, never a dose offered.
+const GUIDELINE_INTERVAL_BY_CRCL = [[90, 8], [50, 12], [30, 24], [15, 36]];
+const GUIDELINE_INTERVAL_LAST_H  = 48;
 function computeGuidelineDose(tbw, crcl) {
   const rawDose = 15 * tbw;   // 15 mg/kg TBW
-  const dose    = Math.min(2500, Math.round(rawDose / 250) * 250);
-  let tau;
-  if      (crcl > 90)  tau = 8;
-  else if (crcl > 50)  tau = 12;
-  else if (crcl > 30)  tau = 24;
-  else if (crcl > 15)  tau = 36;
-  else                  tau = 48;
+  const dose    = Math.min(GUIDELINE_DOSE_CAP_MG, Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP);
+  const band    = GUIDELINE_INTERVAL_BY_CRCL.find(([cut]) => crcl > cut);
+  const tau     = band ? band[1] : GUIDELINE_INTERVAL_LAST_H;
   const tinfH = autoTinf(dose);
   return { dose, tau, tinfH, rawDose: rawDose.toFixed(0) };
 }
@@ -14959,7 +14970,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
           <label class="vx-proj-on"><input type="checkbox" id="b-proj-fwd" data-onchange="k64"> Project next doses</label>
           <span class="vx-proj-fields">
             <label class="sr-only" for="b-proj-dose">Projected dose in mg</label>
-            <input type="number" id="b-proj-dose" value="${projDefaultDose}" min="250" max="4000" step="250" inputmode="numeric" data-oninput="k65">
+            <input type="number" id="b-proj-dose" value="${projDefaultDose}" min="${MATRIX_DOSE_MIN}" max="${INPUT_LIMITS.dose.max}" step="${MATRIX_DOSE_STEP}" inputmode="numeric" data-oninput="k65">
             <span class="vx-muted">mg every</span>
             <label class="sr-only" for="b-proj-tau">Projected interval</label>
             <select id="b-proj-tau" data-onchange="k65">
@@ -15312,8 +15323,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       const guidAUC24 = gd.dose * (24 / gd.tau) / r.CL_pop;
       guidelineLine = `<div class="ev-sub guideline-line">
         <p class="ev-note"><strong>Weight-based guideline comparison (ASHP/IDSA 2020):</strong>
-          ${fmtRegimen(gd.dose, gd.tau)} — 15 mg/kg × ${(gd.rawDose / 15).toFixed(1)} kg = ${gd.rawDose} mg, rounded to ${fmtDose(gd.dose)};
-          interval by CrCl ${r.crcl.toFixed(0)} mL/min; infuse over ${fmtHrs(gd.tinfH)}.
+          ${fmtRegimen(gd.dose, gd.tau)} — 15 mg/kg × ${(gd.rawDose / 15).toFixed(1)} kg = ${gd.rawDose} mg, ${Math.round(gd.rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP > gd.dose ? `capped at ${fmtDose(gd.dose)} (this tool's limit for the comparison)` : `rounded to ${fmtDose(gd.dose)}`};
+          interval by CrCl ${r.crcl.toFixed(0)} mL/min on this tool's cut-points; infuse over ${fmtHrs(gd.tinfH)}.
           Population-based estimate: AUC₂₄ ${guidAUC24.toFixed(0)} mg·h/L, trough ${guTr != null ? guTr.toFixed(1) : '—'} mg/L.
           Not individualised — the Bayesian regimen above is the one fitted to this patient.</p>
       </div>`;
@@ -15351,7 +15362,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     <div class="tinkerer-box">
       <div class="tinkerer-row" data-enter-scope>
         <label for="b-tink-dose">Dose</label>
-        <input type="number" class="tinkerer-input" id="b-tink-dose" value="${rec && !rec.noSolution ? rec.dose : 1000}" min="250" max="4500" step="250" inputmode="numeric">
+        <input type="number" class="tinkerer-input" id="b-tink-dose" value="${rec && !rec.noSolution ? rec.dose : 1000}" min="${MATRIX_DOSE_MIN}" max="${INPUT_LIMITS.dose.max}" step="${MATRIX_DOSE_STEP}" inputmode="numeric">
         <span class="vx-muted">mg every</span>
         <label class="sr-only" for="b-tink-int">Interval</label>
         <select id="b-tink-int" class="tinkerer-input">
@@ -15422,10 +15433,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       <li><strong>Fit.</strong> Maximum a posteriori (Burton 1985): minimise Σ ηᵢ²/ωᵢ² + Σ (Cobs − Cpred)²/σ² over the
         ${nLev} measured level${nLev === 1 ? '' : 's'}, predicting each by superposition of every dose actually given, from five starting points.</li>
       <li><strong>Result.</strong> CL ${CL_ind.toFixed(2)} L/h, ${isGotiRes && r.goti ? `Vc ${r.goti.Vc_ind.toFixed(1)} L, Vp ${r.goti.Vp_ind.toFixed(1)} L` : `V ${V_ind.toFixed(1)} L`}, t½ ${t12_ind.toFixed(1)} h${objFinal !== null ? `, objective ${objFinal.toFixed(2)}` : ''}.</li>
-      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed next session ${HD_ONE_TIME_GAPS_H.join(', ')} h after the last session began (start to start; default ${HD_ONE_TIME_GAP_DEFAULT_H} h), or after the dose when none is logged; if that session would start before a dose could be infused and distributed, the dose follows it, and a give-at time moves the dose but never the next session. On dialysis a SCr drawn after a session is replaced by that session's higher pre-dialysis reading. On this fit with every dose entered, of no dose and each 250 mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
+      ${isHD ? `<li><strong>HD rule.</strong> The dose follows the next session (or one that ended under ${HD_POSTSESSION_DOSE_WINDOW_H} h ago with no dose since) and is sized at the start of the session after it; with no such session logged it is one-time, sized at an assumed next session ${HD_ONE_TIME_GAPS_H.join(', ')} h after the last session began (start to start; default ${HD_ONE_TIME_GAP_DEFAULT_H} h), or after the dose when none is logged; if that session would start before a dose could be infused and distributed, the dose follows it, and a give-at time moves the dose but never the next session. On dialysis a SCr drawn after a session is replaced by that session's higher pre-dialysis reading. On this fit with every dose entered, of no dose and each ${MATRIX_DOSE_STEP} mg step up to ${DOSE_MAX_PER_DOSE_MG} mg reading ${HD_PREDIALYSIS_MIN}–${HD_PREDIALYSIS_MAX} mg/L (Rybak 2020 Rec 14), the one closest to ${HD_PREDIALYSIS_MID}, ties to the smaller; no dose if every step reads above ${HD_PREDIALYSIS_MAX}; else the step closest to the range, flagged. One-time only: a measured pre-HD level above ${HD_PREDIALYSIS_MAX} with no dose since means no dose now and a recheck. A planned dose already entered is read, not replaced.</li>` : ''}
       ${!isHD && rec && !rec.noSolution ? `<li><strong>Exposure.</strong> At steady state AUC₂₄ = daily dose ÷ CL = ${rec.dose} mg × 24/${rec.tau} ÷ ${CL_ind.toFixed(2)} L/h = <strong>${rec.auc24.toFixed(0)} mg·h/L</strong>.</li>
       <li><strong>Range.</strong> ${escHtml(aucUncertaintyText(nLev, uncertaintyModelKey(r), uEarly))}: ${(rec.auc24 * (1 - uRow.lo)).toFixed(0)} to ${(rec.auc24 * (1 + uRow.hi)).toFixed(0)} mg·h/L.${nLev === 0 ? ` One steady-state trough narrows it to ${escHtml(aucUncertaintyText(1, uncertaintyModelKey(r)))}; two to ${escHtml(aucUncertaintyText(2, uncertaintyModelKey(r)))}.` : ''}</li>` : ''}
-      <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on 250 mg steps.</li>
+      <li><strong>Target.</strong> AUC₂₄ ${bandMin}–${bandMax} mg·h/L at MIC 1 (Rybak 2020); the regimen is the admissible dose × interval nearest the selected target ${targetAUC} on ${MATRIX_DOSE_STEP} mg steps.</li>
     </ol>${guidelineLine}`, false);
 
   // All notes
@@ -18018,7 +18029,7 @@ function txPrnResultHTML(o) {
       <div><dt>Next redose</dt><dd>~${o.totalTimeToTrough.toFixed(1)} h <span class="vx-muted">after infusion</span></dd></div>
     </dl>
     ${o.wbDose ? `<p class="ev-note">Weight-based reference — calculator heuristic, not a guideline (${o.mgKgRef} mg/kg × ${o.tbw.toFixed(0)} kg):
-      <strong>${fmtDose(o.wbDose)}</strong> ${Math.abs(o.wbDose - o.roundedDose) <= 250
+      <strong>${fmtDose(o.wbDose)}</strong> ${Math.abs(o.wbDose - o.roundedDose) <= MATRIX_DOSE_STEP
         ? '· consistent with the kinetic estimate'
         : `· differs from the kinetic estimate (${doseTxt}) — use kinetic if Kel is well-characterised`}</p>` : ''}
     <p class="ev-note vx-muted"><strong>Assumptions:</strong> Dose given when level = ${o.cAtRedose.toFixed(1)} mg/L (at redose threshold ${escHtml(o.redoseThresh)} mg/L) ·

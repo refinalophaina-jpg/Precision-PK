@@ -2307,7 +2307,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const lo = mx.rows[0].dose, hi = mx.rows[mx.rows.length-1].dose;
     for (const tau of mx.intervals) {
       const want = 450 * CL * tau / 24;
-      const clamped = Math.min(K.MATRIX_DOSE_MAX, Math.max(K.MATRIX_DOSE_MIN, want));
+      const clamped = Math.min(K.DOSE_MAX_PER_DOSE_MG, Math.max(K.MATRIX_DOSE_MIN, want));   // the matrix's ceiling is the per-dose one (Task 21)
       assert(clamped >= lo - K.MATRIX_DOSE_STEP && clamped <= hi + K.MATRIX_DOSE_STEP,
         `Q${tau}H needs ~${want.toFixed(0)} mg but the ladder is ${lo}-${hi}`);
     }
@@ -8548,8 +8548,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   // The weight-based guideline comparison and the PD load.
-  // The 2500 mg cap and the CrCl cut-points 90/50/30/15 are literals in computeGuidelineDose with no
-  // citation yet (code report M5, rule 1). They are pinned as shipped, so a change is deliberate.
+  // The 2500 mg cap and the CrCl cut-points 90/50/30/15 have no source (code report M5, rule 1; searched in
+  // Task 21): they are GUIDELINE_DOSE_CAP_MG and GUIDELINE_INTERVAL_BY_CRCL, labelled PREFERENCE (rule 8),
+  // display only. They are pinned as shipped, so a change is deliberate (ruling R34).
   test('45.13 computeGuidelineDose: 15 mg/kg TBW to the 250 mg step, capped at 2500 mg [I4-16]', () => {
     const g = fn45('computeGuidelineDose');
     assert(g(70, 80).dose === 1000 && g(100, 80).dose === 1500, `${g(70, 80).dose}, ${g(100, 80).dose}`);
@@ -8757,13 +8758,35 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assertClose(fn45('halfLife')(Math.LN2 / 8), 8, 1e-12, 'halfLife(ln2 / 8)');
     assertClose(fn45('solveTwoLevelsPK')(1000, 1, 30, 2, 15, 10, 12, 'firstdose').t12, 8, 1e-9, 'two-level t½ from kel = ln2/8');
   });
+
+  // Task 21 (code report M5): the 250 mg step was a literal in a dozen places beside MATRIX_DOSE_STEP, the
+  // matrix carried its own copy of the per-dose ceiling, the dose fields and the two tinkerers had four
+  // different maxima (4000, 4500, 6000), and computeGuidelineDose's cap and cut-points were bare literals.
+  test('45.36 the 250 mg step and the dose limits are named; the guideline comparison\'s cap and cut-points are labelled PREFERENCE', () => {
+    const script = fs.readFileSync(htmlPath, 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+    const code = script.replace(/\/\/[^\n]*/g, '');
+    const arith = code.match(/[\/*+\-]\s*250\b|\b250\s*[\/*+]|[<>]=?\s*250\b|="250"/g) || [];
+    assert(arith.length === 0, `arithmetic or markup on a literal 250: ${arith.join(' | ')}`);
+    assert(!/MATRIX_DOSE_MAX/.test(code), 'MATRIX_DOSE_MAX is back (it duplicated DOSE_MAX_PER_DOSE_MG)');
+    const maxes = code.match(/max="\d{4,}"|[<>]=?\s*(4000|4500|6000)\b/g) || [];   // a dose-sized maximum
+    assert(maxes.length === 0, `a dose maximum not read from INPUT_LIMITS.dose: ${maxes.join(' | ')}`);
+    for (const name of ['GUIDELINE_DOSE_CAP_MG', 'GUIDELINE_INTERVAL_BY_CRCL']) {
+      const at = script.indexOf(`const ${name} =`);
+      assert(at > 0, `${name} is not declared`);
+      const lead = script.slice(script.lastIndexOf('\n\n', at), at);
+      assert(/PREFERENCE \(rule 8\)/.test(lead) && /never a dose offered/.test(lead), `${name} is not labelled as a preference that changes no dose`);
+    }
+    const f = fn45('computeGuidelineDose').toString();
+    assert(/GUIDELINE_DOSE_CAP_MG/.test(f) && /GUIDELINE_INTERVAL_BY_CRCL/.test(f) && !/\b2500\b|crcl\s*>\s*\d/.test(f),
+      'computeGuidelineDose reads its cap and cut-points from the named constants');
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 594;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.35 + D27 redraw)
+const EXPECTED_TOTAL = 595;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.36 + D27 redraw)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

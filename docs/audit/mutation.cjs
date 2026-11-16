@@ -121,8 +121,8 @@ const MUTANTS = [
     find: 'const b48 = before(KDIGO_ABS_WINDOW_H)', replace: 'const b48 = before(KDIGO_FOLD_WINDOW_H)' },
   { id: 'I4-15', what: 'checkAKI: thresholds 1.5x / 0.3 changed to 2.0x / 0.5',
     find: 'if (fold >= 1.5 || rise >= 0.3) {', replace: 'if (fold >= 2.0 || rise >= 0.5) {' },
-  { id: 'I4-16', what: 'computeGuidelineDose: dose cap 2500 changed to 4000',
-    find: 'Math.min(2500, Math.round(rawDose / 250) * 250)', replace: 'Math.min(4000, Math.round(rawDose / 250) * 250)' },
+  { id: 'I4-16', what: 'computeGuidelineDose: dose cap 2500 changed to 4000 (retargeted to the named PREFERENCE, Task 21)',
+    find: 'const GUIDELINE_DOSE_CAP_MG = 2500;', replace: 'const GUIDELINE_DOSE_CAP_MG = 4000;' },
   { id: 'I4-17', what: 'pdLoadingDose: a local maximum above 3,000 raises the Rec 11 cap',
     find: 'const cap = Math.min(HD_LOADING_MAX_MG, localMaxMg > 0 ? localMaxMg : Infinity);',
     replace: 'const cap = localMaxMg > 0 ? localMaxMg : HD_LOADING_MAX_MG;' },
@@ -142,13 +142,13 @@ const MUTANTS = [
     find: 'const nonDanger = tied.filter(r => !(Number.isFinite(r.Ctrough) && r.Ctrough >= TROUGH_HIGH_MGL));',
     replace: 'const nonDanger = tied.filter(r => true);' },
   { id: 'I4P-6a', what: 'computeGuidelineDose: interval threshold CrCl > 90 moved to > 100',
-    find: 'if      (crcl > 90)  tau = 8;', replace: 'if      (crcl > 100)  tau = 8;' },
+    find: '[[90, 8], [50, 12]', replace: '[[100, 8], [50, 12]' },   // retargeted to GUIDELINE_INTERVAL_BY_CRCL (Task 21)
   { id: 'I4P-6b', what: 'computeGuidelineDose: interval threshold CrCl > 50 moved to > 60',
-    find: 'else if (crcl > 50)  tau = 12;', replace: 'else if (crcl > 60)  tau = 12;' },
+    find: '[50, 12], [30, 24]', replace: '[60, 12], [30, 24]' },
   { id: 'I4P-6c', what: 'computeGuidelineDose: interval threshold CrCl > 30 moved to > 40',
-    find: 'else if (crcl > 30)  tau = 24;', replace: 'else if (crcl > 40)  tau = 24;' },
+    find: '[30, 24], [15, 36]', replace: '[40, 24], [15, 36]' },
   { id: 'I4P-6d', what: 'computeGuidelineDose: interval threshold CrCl > 15 moved to > 20',
-    find: 'else if (crcl > 15)  tau = 36;', replace: 'else if (crcl > 20)  tau = 36;' },
+    find: '[15, 36]];', replace: '[20, 36]];' },
 
   // I5 — profile and state handling.
   { id: 'I5-1', what: 'loadProfileIntoForm without resetBayesian() (the previous patient\'s rows remain)',

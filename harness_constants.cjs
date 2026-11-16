@@ -137,7 +137,6 @@ function extract() {
     MATRIX_ROWS:            num(src, 'MATRIX_ROWS'),
     MATRIX_DOSE_STEP:       num(src, 'MATRIX_DOSE_STEP'),
     MATRIX_DOSE_MIN:        num(src, 'MATRIX_DOSE_MIN'),
-    MATRIX_DOSE_MAX:        num(src, 'MATRIX_DOSE_MAX'),
     AUC24_TARGET_MIN:       num(src, 'AUC24_TARGET_MIN'),
     AUC24_TARGET_MAX:       num(src, 'AUC24_TARGET_MAX'),
     AUC24_ABSOLUTE_MAX:     num(src, 'AUC24_ABSOLUTE_MAX'),
