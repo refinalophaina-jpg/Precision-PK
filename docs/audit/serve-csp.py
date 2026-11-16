@@ -26,4 +26,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
     def log_message(self, *a): pass
 socketserver.TCPServer.allow_reuse_address = True
-socketserver.TCPServer(("", PORT), H).serve_forever()
+# Loopback only (code report M8): the handler serves the whole repository, .git included, so it
+# must not listen on every interface.
+socketserver.TCPServer(("127.0.0.1", PORT), H).serve_forever()
