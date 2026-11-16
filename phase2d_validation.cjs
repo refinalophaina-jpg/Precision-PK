@@ -1949,7 +1949,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('Continue Course is gone, with no orphans left behind', ()=>{
     const dead = ['continueState','loadContinueProfile','runContinueTinker','runContinueOptimizer',
                   'app-shell-continue','continue-placeholder','continue-results',
-                  'continue-profile-select','renderContinueProfileList','statusClassFor'];
+                  'continue-profile-select','renderContinueProfileList','statusClassFor',
+                  // v3.15.0 (Task 21, code report M6): its last orphans, and the result tabs before it.
+                  "'c-tinf'", 'showResultTab', 'result-tab', 'extrapolateTrough', 'continue-banner',
+                  'continue-pk-', 'continue-result-', 'CONTINUE COURSE'];
     const found = dead.filter(d => src.includes(d));
     assert(found.length === 0, `orphaned references remain: ${found.join(', ')}`);
   });
