@@ -10299,8 +10299,11 @@ const PD_CAPD_T12_MAX_H = 115;
 // interval from the range; it never changes a dose by itself.
 const PD_MIN_INTERVAL_H = 12;
 // Search bounds for an interval's elimination rate (half-life 2 h to ~290 days):
-// numerical, not clinical.
-const PD_K_SEARCH = [1e-4, 0.35];
+// numerical, not clinical. PD_K_FLOOR is the slowest decline the solver can report;
+// pdAnswer carries a level at it when no decline has been measured yet. Only
+// solveIntervalK searches between the bounds (D28).
+const PD_K_FLOOR = 1e-4;
+const PD_K_SEARCH = [PD_K_FLOOR, 0.35];
 
 // Every nominal cycler night overlapping [fromH, toH), held or not. A night starts
 // at the same wall-clock time on each calendar day, across a DST change (no
@@ -10366,14 +10369,50 @@ function pdInterval(anchor, level, doses, vL, sc, naive) {
   if (anchor.kind === 'dose' && !naive) return none('prior-drug');
   // Two levels this close together measure assay rounding, not a decline.
   if (anchor.kind === 'level' && t - ta < PD_MIN_INTERVAL_H) return none('too-short');
-  const dosesIn = doses.filter(d => d.timeH < t && (anchor.kind === 'dose' || d.timeH >= ta));
+  const why = {}, solved = solveIntervalK(anchor, level, doses, vL, why);
+  if (!solved) return none(why.flag);
+  return Object.assign(base, { k: solved.k, t12: solved.t12, flags, used: true });
+}
+// The one level-interval solver (D28; PD and CRRT read it). k is the elimination rate
+// that carries the anchor ({conc, timeH}: a measured level, or 0 mg/L at a first dose's
+// start), plus every dose from the anchor's minute up to (not at) the level's, onto the
+// measured level: one-compartment, volume vL litres, bisection between the PD search bounds.
+// Returns { k, t12 }, or null when no k in the bounds explains the level; `why`, when
+// given, then receives flag 'unexplained-high' (the level is above what the slowest
+// decline leaves, or there is no volume) or 'unexplained-low' (below the fastest).
+function solveIntervalK(anchor, level, doses, vL, why) {
+  const t = level.timeH, ta = anchor.timeH;
+  const dosesIn = (doses || []).filter(d => d.timeH >= ta && d.timeH < t);
   const pred = (k) => anchor.conc * Math.exp(-k * (t - ta)) + (vL > 0 ? predictConc1comp(dosesIn, t, k, vL) : 0);
+  const fail = (flag) => { if (why) why.flag = flag; return null; };
   let [lo, hi] = PD_K_SEARCH;
-  if (!(vL > 0) || pred(lo) < level.conc) return none('unexplained-high');
-  if (pred(hi) > level.conc) return none('unexplained-low');
+  if (!(vL > 0) || pred(lo) < level.conc) return fail('unexplained-high');
+  if (pred(hi) > level.conc) return fail('unexplained-low');
   for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (pred(m) > level.conc) lo = m; else hi = m; }
   const k = (lo + hi) / 2;
-  return Object.assign(base, { k, t12: halfLife(k), flags, used: true });
+  return { k, t12: halfLife(k) };
+}
+// The one goal pick (D28; PD and CRRT read it). rows: the 250 mg steps from 0 up,
+// each with `mid`, its expected level at the next draw. Only when giving nothing lands
+// below the goal (rows[0].mid < goal.min); otherwise null.
+// PREFERENCE (rule 8): the step whose expected level lands closest to the middle of
+// the goal, ties to the smaller. It orders the 250 mg steps; it never invents a dose.
+// When no step lands inside, the closest to the goal of all, giving nothing included
+// ({ mg: 0, closest: true } when nothing is closest).
+function pickGoalStep(rows, goal) {
+  if (!rows || !rows.length || !(rows[0].mid < goal.min)) return null;
+  const mid = (goal.min + goal.max) / 2, inGoal = (r) => r.mid >= goal.min && r.mid <= goal.max;
+  const ok = rows.filter(r => r.mg > 0 && inGoal(r));
+  const dist = (r) => (ok.length ? Math.abs(r.mid - mid) : (r.mid < goal.min ? goal.min - r.mid : r.mid - goal.max));
+  const best = (ok.length ? ok : rows).reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
+  return { mg: best.mg, closest: !ok.length };
+}
+// The one peak equation (D28; PD's target-peak reading, the haemodialysis reading):
+// V x (target peak - level now), to the nearest 250 mg step, at most capMg; 0 when
+// the level is already at or above the target (no 250 mg floor here).
+function peakEquationDose(vL, targetPeak, cNow, capMg) {
+  const raw = vL * (targetPeak - cNow);
+  return raw <= 0 ? 0 : Math.min(capMg, Math.round(raw / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP);
 }
 
 // The loading dose: PD_LOAD_MG_PER_KG x the weight now, rounded to the 250 mg step,
@@ -10482,7 +10521,7 @@ function pdAnswer(input, nowH) {
     // could be explained). The level now is carried with essentially no decline (the
     // search floor), which overstates it, and below the goal the dose is the 250 mg
     // step at or under what brings the PEAK to the goal's top: it cannot overshoot it.
-    const cNow = concAt(giveAt, PD_K_SEARCH[0]);
+    const cNow = concAt(giveAt, PD_K_FLOOR);
     const below = cNow < goal.min;
     const mg = below ? Math.min(capRows, Math.floor(vNow * (goal.max - cNow) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP) : 0;
     const drawOnCycler = pdDrawCaution(sc, next0, cautions);
@@ -10516,14 +10555,9 @@ function pdAnswer(input, nowH) {
     if (draw !== next0) rows = rowsAt(draw);
     if (rows[0].mid < goal.min) cautions.push({ tier: 'caution', word: 'Below the goal by then', html: `By ${fmtClock(draw)} the level is projected below ${goal.min} mg/L: a dose will likely be due after that level.` });
   } else if (rows[0].mid < goal.min) {
-    // PREFERENCE (rule 8): the step whose expected level lands closest to the middle of
-    // the goal, ties to the smaller. It orders the 250 mg steps; it never invents a dose.
-    // When no step lands inside, the closest to the goal of all, giving nothing included.
-    const mid = (goal.min + goal.max) / 2, inGoal = (r) => r.mid >= goal.min && r.mid <= goal.max;
-    const ok = rows.filter(r => r.mg > 0 && inGoal(r));
-    const dist = (r) => (ok.length ? Math.abs(r.mid - mid) : (r.mid < goal.min ? goal.min - r.mid : r.mid - goal.max));
-    const best = (ok.length ? ok : rows).reduce((b, r) => (dist(r) < dist(b) - 1e-9 ? r : b));
-    if (best.mg) { state = 'dose'; pick = { mg: best.mg, closest: !ok.length }; }
+    // The step nearest the goal's middle, ties to the smaller (pickGoalStep, the shared pick).
+    const best = pickGoalStep(rows, goal);
+    if (best.mg) { state = 'dose'; pick = best; }
     else cautions.push({ tier: 'caution', word: 'No step reaches the goal', html: `Every ${MATRIX_DOSE_STEP} mg step lands further from the goal than giving nothing; no dose is the closest. Recheck at the next draw.` });
   }
   // The chosen option's projected range, sampled for the chart (and its breakpoints).
@@ -10536,10 +10570,9 @@ function pdAnswer(input, nowH) {
   const drawOnCycler = pdDrawCaution(sc, draw, cautions);
   let targetPeak = null;
   if (st.targetPeak > 0) {
-    // V x (target peak - level at the give time), to the nearest step; nothing when the
-    // level is already at or above the target (no 250 mg floor here).
-    const cGive = (concAt(giveAt, kMax) + concAt(giveAt, kMin)) / 2, raw = vNow * (st.targetPeak - cGive);
-    const tmg = raw <= 0 ? 0 : Math.min(capRows, Math.round(raw / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP);
+    // V x (target peak - level at the give time), to the nearest step (peakEquationDose).
+    const cGive = (concAt(giveAt, kMax) + concAt(giveAt, kMin)) / 2;
+    const tmg = peakEquationDose(vNow, st.targetPeak, cGive, capRows);
     const dose = tmg ? [{ mg: tmg, tinfH: autoTinf(tmg), timeH: giveAt }] : [];
     targetPeak = { mg: tmg, peakTarget: st.targetPeak, atDraw: [concAt(draw, kMax, dose), concAt(draw, kMin, dose)] };
   }

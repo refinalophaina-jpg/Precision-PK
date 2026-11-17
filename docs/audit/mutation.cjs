@@ -290,6 +290,13 @@ const MUTANTS = [
     find: '  .panel-left[data-mode="hybrid"] .not-pd { display: none; }\n', replace: '' },
   { id: 'R3-25-12', what: "the AUC reference reads the Trough column's weight [46.36]",
     find: "(document.getElementById(auc ? 'b-tbw' : 'tbw') || {}).value", replace: "(document.getElementById('tbw') || {}).value" },
+  // Task 26: one level-interval solver, one goal pick, one peak equation, shared (D28).
+  { id: 'R3-26-1', what: 'the goal pick breaks an exact tie to the larger step (the tie rule\'s - 1e-9 sign flipped) [46.41]',
+    find: 'dist(r) < dist(b) - 1e-9', replace: 'dist(r) < dist(b) + 1e-9' },
+  { id: 'R3-26-2', what: 'the interval solver\'s bisection bounds swapped [46.39, 46.40, 46.44]',
+    find: 'let [lo, hi] = PD_K_SEARCH;', replace: 'let [hi, lo] = PD_K_SEARCH;' },
+  { id: 'R3-26-3', what: 'the peak equation ignores its cap [46.42, 46.44]',
+    find: 'return raw <= 0 ? 0 : Math.min(capMg,', replace: 'return raw <= 0 ? 0 : Math.max(capMg,' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

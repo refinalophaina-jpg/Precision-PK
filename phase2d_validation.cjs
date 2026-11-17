@@ -10345,13 +10345,238 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       } finally { reset46(); }
     });
   });
+  // ── Task 26: one level-interval solver, one goal pick, one peak equation (PD unchanged) ──
+  test('46.39 solveIntervalK recovers the elimination rate across a dose: k 0.05 h⁻¹ (V 49 L, 1,000 mg over 1 h at 0 h and 24 h, levels at 12 h and 36 h) to 1e-4, the second level rebuilt to 0.05 mg/L; from a first dose it starts at zero', () => {
+    const solve = fn46('solveIntervalK'), k = 0.05, V = 49;
+    const doses = [{ mg: 1000, tinfH: 1, timeH: 0 }, { mg: 1000, tinfH: 1, timeH: 24 }];
+    const c1 = sandbox.predictConc1comp(doses, 12, k, V), c2 = sandbox.predictConc1comp(doses, 36, k, V);
+    const r = solve({ conc: c1, timeH: 12 }, { conc: c2, timeH: 36 }, doses, V);
+    assert(r && Math.abs(r.k - k) < 1e-4 && r.t12 === sandbox.halfLife(r.k), JSON.stringify(r));
+    const rebuilt = c1 * Math.exp(-r.k * 24) + sandbox.predictConc1comp([doses[1]], 36, r.k, V);
+    assert(Math.abs(rebuilt - c2) < 0.05, JSON.stringify({ rebuilt, c2 }));
+    // An interval anchored at the first dose: the anchor is 0 mg/L at the dose's start, and the dose itself is counted.
+    const f = solve({ conc: 0, timeH: 0 }, { conc: c1, timeH: 12 }, doses, V);
+    assert(f && Math.abs(f.k - k) < 1e-4, JSON.stringify(f));
+  });
+
+  test('46.40 solveIntervalK with no dose between the levels is ln(C1/C2)/Δt to 1e-6; doses before the anchor or at the level\'s minute are not counted; a level it cannot explain is null, with the reason', () => {
+    const solve = fn46('solveIntervalK');
+    const outside = [{ mg: 1000, tinfH: 1, timeH: -12 }, { mg: 1000, tinfH: 1, timeH: 20 }];
+    for (const doses of [[], outside]) {
+      const r = solve({ conc: 20, timeH: 0 }, { conc: 10, timeH: 20 }, doses, 49);
+      assert(r && Math.abs(r.k - Math.log(20 / 10) / 20) < 1e-6, JSON.stringify([doses.length, r]));
+    }
+    const why = (a, l, d, v) => { const w = {}; const r = solve(a, l, d, v, w); return [r, w.flag]; };
+    const hi = why({ conc: 10, timeH: 0 }, { conc: 30, timeH: 24 }, [], 49);
+    const lo = why({ conc: 20, timeH: 0 }, { conc: 0.001, timeH: 24 }, [], 49);
+    const noV = why({ conc: 20, timeH: 0 }, { conc: 10, timeH: 20 }, [], 0);
+    assert(hi[0] === null && hi[1] === 'unexplained-high' && lo[0] === null && lo[1] === 'unexplained-low' && noV[0] === null && noV[1] === 'unexplained-high',
+      JSON.stringify([hi, lo, noV]));
+  });
+
+  test('46.41 pickGoalStep is PD\'s rule: only below the goal; the in-goal step nearest its middle, ties to the smaller; none in goal, the nearest of all, closest; nothing nearer than no dose gives 0', () => {
+    const pick = fn46('pickGoalStep'), g = { min: 10, max: 20 };
+    const tie = pick([{ mg: 0, mid: 5 }, { mg: 250, mid: 14 }, { mg: 500, mid: 16 }, { mg: 750, mid: 25 }], g);
+    assert(JSON.stringify(tie) === '{"mg":250,"closest":false}', 'an in-goal tie picks the smaller: ' + JSON.stringify(tie));
+    const near = pick([{ mg: 0, mid: 5 }, { mg: 250, mid: 8 }, { mg: 500, mid: 22 }], g);
+    assert(JSON.stringify(near) === '{"mg":250,"closest":true}', 'nothing in goal: the nearest, ties to the smaller, closest: ' + JSON.stringify(near));
+    const none = pick([{ mg: 0, mid: 9.5 }, { mg: 250, mid: 30 }], g);
+    assert(JSON.stringify(none) === '{"mg":0,"closest":true}', 'no step nearer than nothing: ' + JSON.stringify(none));
+    const zeroInGoal = pick([{ mg: 0, mid: 9 }, { mg: 250, mid: 19.9 }, { mg: 500, mid: 26 }], g);
+    assert(JSON.stringify(zeroInGoal) === '{"mg":250,"closest":false}', 'any in-goal step beats a nearer out-of-goal one: ' + JSON.stringify(zeroInGoal));
+    for (const mid0 of [25, 15, 10]) {
+      const r = pick([{ mg: 0, mid: mid0 }, { mg: 250, mid: mid0 + 5 }], g);
+      assert(r === null, `rows[0].mid ${mid0} is not below the goal: ${JSON.stringify(r)}`);
+    }
+  });
+
+  test('46.42 peakEquationDose is V × (target peak − level) to the nearest 250 mg: 56 L, 25, 11.7 → 750; at or above the target 0 (no 250 mg floor); at most the cap', () => {
+    const p = fn46('peakEquationDose');
+    const got = [p(56, 25, 11.7, 2000), p(56, 25, 25, 2000), p(56, 25, 30, 2000), p(56, 12, 11.7, 2000), p(56, 80, 10, 2000), p(56, 80, 10, 1500), p(56, 25, 3.25, 2000)];
+    assert(JSON.stringify(got) === JSON.stringify([750, 0, 0, 0, 2000, 1500, 1250]), JSON.stringify(got));
+  });
+
+  test('46.43 one copy (ruling P5): the pick comparison occurs once, in pickGoalStep, and not in pdAnswer (nor crrtAnswer once it exists); PD_K_SEARCH is read, outside its declaration, only in solveIntervalK; PD calls the shared three', () => {
+    const text = (n) => fn46(n).toString();
+    const PICK = /\w+\([^()]*\)\s*<\s*\w+\([^()]*\)\s*-\s*1e-9/g;
+    const count = (s, re) => (s.match(re) || []).length;
+    assert(count(text('pickGoalStep'), PICK) === 1, 'pickGoalStep holds the comparison once');
+    assert(count(text('pdAnswer'), PICK) === 0, 'pdAnswer holds no second copy');
+    if (typeof sandbox.crrtAnswer === 'function') assert(count(text('crrtAnswer'), PICK) === 0, 'crrtAnswer holds no second copy');
+    const solveSrc = text('solveIntervalK'), at = src46.indexOf(solveSrc);
+    assert(at > 0 && src46.indexOf(solveSrc, at + 1) === -1, 'solveIntervalK found once in index.html');
+    const declAt = src46.indexOf('\nconst PD_K_SEARCH = [') + 7;
+    const uses = [...src46.matchAll(/\bPD_K_SEARCH\b/g)].map(m => m.index).filter(i => i !== declAt);
+    assert(declAt > 7 && uses.length === 1 && uses[0] > at && uses[0] < at + solveSrc.length, 'PD_K_SEARCH outside its declaration: ' + JSON.stringify(uses.map(i => src46.slice(i - 40, i + 20))));
+    assert(count(solveSrc, /for \(let i = 0; i < \d+; i\+\+\)/g) === 1, 'one bisection');
+    const pdI = text('pdInterval'), pdA = text('pdAnswer');
+    assert(/solveIntervalK\(/.test(pdI) && !/\bfor \(/.test(pdI) && !/predictConc1comp/.test(pdI), 'pdInterval solves through solveIntervalK');
+    assert(/pickGoalStep\(rows, goal\)/.test(pdA) && /peakEquationDose\(/.test(pdA) && !/Math\.round\([^;]*\/ MATRIX_DOSE_STEP\)/.test(pdA), 'pdAnswer picks and reads the target peak through the shared functions');
+  });
+
+  // The parity guard (ruling P4). It passes before and after the extraction by design: it is not TDD evidence.
+  // The fixtures are every pdAnswer and pdIntervals call SUITE 41 makes (recorded from a run of SUITE 41, in order),
+  // plus three for paths SUITE 41 never reaches; an instant is "@<day>|HH:MM", SUITE 41's own H(day, 'HH:MM'). Each
+  // expected entry is [a readable summary, the first 16 hex of SHA-256 over the output's JSON with every number to 12
+  // significant digits], generated once by replaying these fixtures against the v3.15.0 release file (bcee5dd) and
+  // identical against 6223308 before the extraction. The time zone is pinned to America/Chicago (where they were
+  // generated) for the replay only: SUITE 41 builds its instants on the local wall clock, so the absolute hours in an
+  // output differ by zone, and a digest cannot absorb that. Digests, not 230 KB of output: a mismatch names the call.
+  const PD_PARITY_FIXTURES46 = [
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":750,"tinfH":1,"timeH":"@0|09:00"}],"levels":[{"conc":11,"timeH":"@0|06:00"},{"conc":13,"timeH":"@1|08:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"unknown","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"yes","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":500,"tinfH":1,"timeH":"@2|09:00"},{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":15.5,"timeH":"@3|07:30"},{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13.5,"timeH":"@2|02:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":["2026-06-11"],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":30,"timeH":"@0|04:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":30,"timeH":"@1|08:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":13,"timeH":"@2|07:30"},{"conc":16,"timeH":"@4|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":"@2|12:00"}}]],
+    ["pdAnswer",[{"course":{"doses":[],"levels":[],"loadKg":57,"nowKg":57,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@0|03:30","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@0|03:00"]],
+    ["pdAnswer",[{"course":{"doses":[],"levels":[],"loadKg":57,"nowKg":57,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"gt500","ipToo":false,"hd":false,"giveAtH":"@0|03:30","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@0|03:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":null,"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":10},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":true,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":true,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":0,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":30,"timeH":"@0|05:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"yes","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":9,"max":14},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":5,"max":8},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":60,"max":70},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":1000,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|07:15","settings":{"maxDoseMg":null,"targetPeak":25,"amLabs":"06:00"}},"@3|07:15"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"capd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|08:00"}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":4,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"07:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"05:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":null,"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1500,"tinfH":1.5,"timeH":"@0|04:00"},{"mg":750,"tinfH":1,"timeH":"@2|07:00"}],"levels":[{"conc":13,"timeH":"@2|07:00"}],"loadKg":70,"nowKg":70,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|08:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1500,"tinfH":1.5,"timeH":"@0|04:00"},{"mg":750,"tinfH":1,"timeH":"@2|07:01"}],"levels":[{"conc":13,"timeH":"@2|07:00"}],"loadKg":70,"nowKg":70,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|08:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":2000,"tinfH":2,"timeH":"@0|04:00"}],"levels":[{"conc":40,"timeH":"@1|07:00"},{"conc":30,"timeH":"@2|07:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":250,"tinfH":0.5,"timeH":"@2|08:00"}],"levels":[{"conc":5,"timeH":"@2|06:00"}],"loadKg":63,"nowKg":63,"vdPerKg":0.7,"prior":"unknown","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|09:00"]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"},{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"},{"conc":12.9,"timeH":"@2|08:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|04:00","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|12:00","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"05:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":28.6,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|07:15","settings":{"maxDoseMg":null,"targetPeak":25,"amLabs":"06:00"}},"@3|07:15"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":200,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[],"levels":[],"loadKg":57,"nowKg":57,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@0|03:30","settings":{"maxDoseMg":200,"targetPeak":null,"amLabs":"06:00"}},"@0|03:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|04:00"}],"levels":[],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@5|10:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":16.5},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|12:00"}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|13:00"]],
+    ["pdIntervals",[{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"},{"conc":13.5,"timeH":"@4|07:00"},{"conc":12,"timeH":"@5|07:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|12:00"}}]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"},{"conc":13.5,"timeH":"@4|07:00"},{"conc":12,"timeH":"@5|07:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|12:00"}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@5|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":["2026-06-13"],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":["2026-06-11"],"stoppedAtH":null,"exchanges":5,"fillL":2}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|05:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    // Three more, beyond SUITE 41, for the paths this task moves that SUITE 41 never reaches: an interval faster than the
+    // search ceiling (unexplained-low), no 250 mg step nearer the goal than nothing, and the target-peak reading at a local maximum.
+    ["pdIntervals",[{"doses":[],"levels":[{"conc":20,"timeH":"@0|08:00"},{"conc":0.001,"timeH":"@1|08:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"unknown","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":500,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":12,"timeH":"@2|06:00"},{"conc":10,"timeH":"@3|06:00"}],"loadKg":20,"nowKg":20,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":9.6,"max":10.2},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":500,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":12,"timeH":"@2|06:00"},{"conc":10,"timeH":"@3|06:00"}],"loadKg":20,"nowKg":20,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":500,"targetPeak":80,"amLabs":"06:00"}},"@3|09:00"]],
+  ];
+  const PD_PARITY_EXPECTED46 = [
+    ["intervals:k","e97a324329f51cd3"],
+    ["intervals:k","d9039b87c52d3444"],
+    ["intervals:prior-drug","387cca95a034ffde"],
+    ["intervals:k,k","d2aabc67ad662205"],
+    ["intervals:k","91935b0efad10661"],
+    ["intervals:k","6ed559b02f260469"],
+    ["threw","2e03b98d1e6ca876"],
+    ["intervals:unexplained-high","98a5f390333c84c8"],
+    ["intervals:k,k","c3e11aa1e775ac1c"],
+    ["load","a78c82ee7f91c49a"],
+    ["load","40c0da3b40ba82ad"],
+    ["refuse","210344b4169858da"],
+    ["refuse","210344b4169858da"],
+    ["refuse","df98635799e844e7"],
+    ["refuse","da7e5e1433a6ca72"],
+    ["refuse","53417fbebcb259c3"],
+    ["refuse","ce5a39f2c6259ef2"],
+    ["need-level","346548c5192f3a78"],
+    ["dose:250","6ce66e9f788e6226"],
+    ["dose:250","da4cf408e678b85b"],
+    ["no-dose","84b20fb53149fc1c"],
+    ["dose:250","6ce66e9f788e6226"],
+    ["dose:500","f72a3339ccffe771"],
+    ["no-dose","979191b551e9e53f"],
+    ["dose:2000","aa10651578b2ec04"],
+    ["dose:250","becd998707b53cae"],
+    ["dose:250","41519557ea04c853"],
+    ["dose:250","6ce66e9f788e6226"],
+    ["dose:250","6ce66e9f788e6226"],
+    ["dose:250","7ca321ebd02f56c4"],
+    ["dose:250","27770a57491e3804"],
+    ["dose:250","a6148c6447a42411"],
+    ["dose:500","748e591e57128d67"],
+    ["dose:250","9f51a74d05f80e89"],
+    ["refuse","210344b4169858da"],
+    ["no-dose","e3de293ddbff9511"],
+    ["no-dose","5b1b30bcf461ec5e"],
+    ["no-dose","b3edbf466219691a"],
+    ["need-level","141df158af3fcbff"],
+    ["intervals:k,too-short","de6f623f6e830140"],
+    ["intervals:k,too-short","4c6e0e42b74c2108"],
+    ["dose:250","bdb7aeaa96e7b5bd"],
+    ["dose:500","652fa8d3c23c09aa"],
+    ["dose:500","bb94c4108827b4e3"],
+    ["no-dose","a7384030b591e6fa"],
+    ["dose:250","0c2c275eeea17af1"],
+    ["load","e18751731f74737f"],
+    ["first-level","d69f6daeea5ae1a2"],
+    ["dose:500","6701d8bdec2486c3"],
+    ["dose:250","8c070c637215d5c8"],
+    ["intervals:k,k,k,k","e7e5cd682a46b436"],
+    ["no-dose","47606bf780cc4c17"],
+    ["dose:250","63c34a4818c601bb"],
+    ["dose:250","042cf3813fadc192"],
+    ["dose:250","2e5960fc8b209ad3"],
+    // the three added fixtures
+    ["intervals:unexplained-low","5af6db2d60cf05a1"],
+    ["no-dose","e921e0cd2af548ac"],
+    ["no-dose","7bf664f80688f8fc"],
+  ];
+  test('46.44 parity guard (P4): every SUITE 41 pdAnswer and pdIntervals output, and three more, is the one v3.15.0 (bcee5dd) gave', () => {
+    const crypto = require('crypto');
+    const prevTZ = process.env.TZ;
+    process.env.TZ = 'America/Chicago';
+    try {
+      const H = (d, hm) => { const [h, m] = hm.split(':').map(Number); return new Date(2026, 5, 10 + d, h, m).getTime() / 3600000; };
+      const dec = (v) => Array.isArray(v) ? v.map(dec) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, dec(x)]))
+        : typeof v === 'string' && /^@-?\d+\|\d\d:\d\d$/.test(v) ? H(+v.slice(1, v.indexOf('|')), v.slice(v.indexOf('|') + 1)) : v;
+      const norm = (v) => Array.isArray(v) ? v.map(norm) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
+        : typeof v === 'number' ? Number(v.toPrecision(12)) : v;
+      const digest = (r) => crypto.createHash('sha256').update(JSON.stringify(norm(JSON.parse(JSON.stringify(r))))).digest('hex').slice(0, 16);
+      const sum = (fn, out, threw) => threw ? 'threw' : fn === 'pdIntervals' ? 'intervals:' + out.map(i => i.used ? 'k' : (i.flags || []).join('+')).join(',')
+        : out.state + (out.pick ? ':' + out.pick.mg : '');
+      assert(PD_PARITY_FIXTURES46.length === 58 && PD_PARITY_EXPECTED46.length === 58, 'fixture count');
+      const bad = [];
+      PD_PARITY_FIXTURES46.forEach(([fn, args], i) => {
+        let out, threw = null;
+        try { out = sandbox[fn](...dec(args)); } catch (e) { threw = String(e.message); }
+        const got = [sum(fn, out, threw), digest(threw ? { threw } : out)];
+        if (JSON.stringify(got) !== JSON.stringify(PD_PARITY_EXPECTED46[i])) bad.push(`#${i} ${fn}: ${JSON.stringify(got)}, v3.15.0 ${JSON.stringify(PD_PARITY_EXPECTED46[i])}`);
+      });
+      assert(!bad.length, `${bad.length} differ: ` + bad.slice(0, 6).join('; '));
+    } finally { if (prevTZ === undefined) delete process.env.TZ; else process.env.TZ = prevTZ; }
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 659;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.38)
+const EXPECTED_TOTAL = 665;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.44)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

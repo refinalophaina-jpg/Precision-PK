@@ -158,6 +158,7 @@ function extract() {
     PD_APD_T12_OFF_H:       num(src, 'PD_APD_T12_OFF_H'),
     PD_CAPD_T12_MIN_H:      num(src, 'PD_CAPD_T12_MIN_H'),
     PD_CAPD_T12_MAX_H:      num(src, 'PD_CAPD_T12_MAX_H'),
+    PD_K_FLOOR:             num(src, 'PD_K_FLOOR'),   // D28: the interval solver's lower bound, numerical not clinical
     MATZKE_VD_GROUP3:       num(src, 'MATZKE_VD_GROUP3'),
 
     // v3.14.0 — continue the current regimen (D25)
