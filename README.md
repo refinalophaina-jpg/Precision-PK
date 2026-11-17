@@ -47,7 +47,7 @@ git hash-object index.html   # must equal the deployed blob sha
 
 | Path | What it is |
 |---|---|
-| `index.html` | The application. ~20,200 lines: CSS to ~2,833, markup to ~4,269, one inline `<script>` after that |
+| `index.html` | The application. ~20,300 lines: CSS to ~2,833, markup to ~4,269, one inline `<script>` after that |
 | `phase2d_validation.cjs` | Primary validation suite — 46 suites, traces, shrinkage, Monte Carlo, canvas rendering |
 | `phase3_simulation.cjs` | ~12,000 fits: per-model self-consistency, cross-model disagreement, stratified attainment |
 | `phase2d_comprehensive_validation.cjs` | 10,475 synthetic patients across 6 scenarios |
@@ -109,13 +109,13 @@ shipped file rather than a copy.
 
 | Suite | Result (2026-11-17, v3.16.0) |
 |---|---|
-| `phase2d_validation.cjs` | **712 / 712 pass**, also under `TZ=Pacific/Auckland` and `TZ=UTC`; the run fails if the count differs from `EXPECTED_TOTAL` |
+| `phase2d_validation.cjs` | **719 / 719 pass**, also under `TZ=Pacific/Auckland` and `TZ=UTC`; the run fails if the count differs from `EXPECTED_TOTAL` |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
-| `docs/audit/mutation.cjs` | **120 of 120 mutants killed**, exit 0 — each mutation of `index.html`, made in memory, must fail phase2d, phase3 or phase4. Part of the release gate for clinical releases |
+| `docs/audit/mutation.cjs` | **127 of 127 mutants killed**, exit 0 — each mutation of `index.html`, made in memory, must fail phase2d, phase3 or phase4. Part of the release gate for clinical releases |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72 (D26); v3.15.0 against v3.14.0 (`b410477`) reads 23 (D27); v3.16.0 against v3.15.0 (`bcee5dd`) reads 0 (D28). Every one is a deliberate change listed in the decision record |
-| `docs/audit/browser-flows.cjs` | **262 / 262** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/browser-flows.cjs` | **266 / 266** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two

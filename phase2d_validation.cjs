@@ -11360,7 +11360,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/Rybak 2020 Rec 2a \(A-II[;)]/.test(src46.slice(at - 700, at)), src46.slice(at - 700, at));
     const now = B47 + 37, t = text46(fn46('crrtResultsHTML')(crrt47(inp47(), now), inp47(), now));
     assert(/Rybak 2020, Rec 2a: the post-distributional level is drawn 1 to 2 h after the infusion/.test(t), t.slice(t.indexOf('How this works'), t.indexOf('How this works') + 700));
-    const files = ['index.html', 'CLAUDE.md', 'README.md', 'docs/v3-decisions.md'].map(f => [f, fs.readFileSync(path.join(__dirname, f), 'utf8')]);
+    const files = ['index.html', 'CLAUDE.md', 'README.md', 'docs/v3-decisions.md', 'harness_constants.cjs'].map(f => [f, fs.readFileSync(path.join(__dirname, f), 'utf8')]);
     for (const [f, txt] of files) {
       const hits = txt.match(/Rec(?:s|\.)? (?:8a|9)\b/g);
       assert(!hits, `${f}: ${hits && hits.join(', ')}`);

@@ -3237,6 +3237,9 @@ From the reviews' deferred minors, where they describe what ships:
     Such an interval is now excluded, as in PD, and same-minute duplicates are refused by name. What remains is the
     ruling's cost: CRRT levels under 12 h apart give "Draw a level"; a shorter CRRT spacing would be the user's
     PREFERENCE to set.
+  - A level under 12 h after the one before it is excluded from the rate (R103) but is still the projection's starting
+    point when it is the newest level not drawn while an infusion was distributing: the decline measured earlier is
+    carried on from it.
   - A rate needs two levels (R90). With one level the answer is "Draw a level", with the Rec 16 reference (R107).
   - A planned future dose row counts in the projection without saying so, as in PD since D23 (R110).
   - The options capped by the local maximum do not say "your setting" in the answer (PD the same).
