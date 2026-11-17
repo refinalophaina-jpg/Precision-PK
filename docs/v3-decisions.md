@@ -3288,3 +3288,26 @@ From the reviews' deferred minors, where they describe what ships:
 - **Not clinically validated.** The CRRT answer, the references and the haemodialysis reading have been checked against
   the guideline and by hand; none has been compared with patient outcomes. Institutional acceptance needs a clinical
   reviewer.
+
+### v3.16.1 — the after-release follow-ups (2026-11-17)
+
+A patch with no engine change (parity against v3.16.0, `be3c4dd`: 0 differences). Not clinically validated.
+
+- **Refusal headings in ink.** The deferred item above, done. A refusal for a missing input or a data check in PD
+  ("Choose a goal range", "Weight now missing"), CRRT ("Circuit runs overlap", "A level is dated in the future") and
+  the haemodialysis reading ("Drawn during the session", "Too soon after the previous session") now takes
+  `vx-regimen-refuse`: the display face at 1.75rem in ink. Nothing in them says a dose is unsafe; they say an answer
+  cannot be computed from what was entered. `vx-regimen-hold` (alarm) stays on the Trough and AUC Precision safety
+  refusals, "No regimen recommended" and "No empiric maintenance regimen", and the Hold line is unchanged. The
+  "generic Trough refusal" named above turned out to carry only those two safety words, so it keeps alarm.
+  Pinned by 46.99 (PD, CRRT and HD headings ink; both Trough words alarm; the class's colour is `--ink`), mutants
+  R3-P-1 to R3-P-5, and one browser check that compares the computed colour with `--ink`.
+- **Live browser runs read 0 console problems.** `attributeInjected` counted Cloudflare's injected inline script on the
+  last document only, and one context ("two-level-late") did not call it, so a check that reloaded or navigated left
+  refusals unattributed (25 against the live v3.16.0). `watch` now reads each served main-frame document and counts its
+  copies (`cfServed`), and every context attributes. A refusal beyond the copies served still counts as a problem.
+  Against the live v3.16.0: 266/266, 0 console problems, 30 copies attributed.
+- **The how-to screenshots** are regenerated from v3.16.1, so they show the Renal replacement selector, not the
+  removed checkboxes.
+- **Tests.** Unit 720/720 (Auckland and UTC too); the version pins 42.15, 43.12 and 45.58 accept a patch number, and
+  46.91 pins 3.16.1. Mutation gate 132/132. Browser 267/267, 0 console problems.

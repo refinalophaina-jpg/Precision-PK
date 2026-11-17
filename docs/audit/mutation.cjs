@@ -378,6 +378,20 @@ const MUTANTS = [
     find: "const oneLevel = a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length;", replace: 'const oneLevel = false;' },
   { id: 'R3-F-7', what: 'the CRRT "Draw a level" sentence drops the too-short reason again (R103) [46.54]',
     find: 'const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags))]', replace: "const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags).filter(f => f !== 'too-short'))]" },
+
+  // ── v3.16.1: missing-input and data-check refusal headings are ink, never the alarm hue ──
+  { id: 'R3-P-1', what: 'the PD refusal heading takes the alarm hue again [46.99]',
+    find: '<section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">\n      <h3 class="vx-regimen vx-regimen-refuse"',
+    replace: '<section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">\n      <h3 class="vx-regimen vx-regimen-hold"' },
+  { id: 'R3-P-2', what: 'the CRRT refusal heading takes the alarm hue again [46.99]',
+    find: '<section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">\n      <h3 class="vx-regimen vx-regimen-refuse"',
+    replace: '<section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">\n      <h3 class="vx-regimen vx-regimen-hold"' },
+  { id: 'R3-P-3', what: 'the HD reading refusal heading takes the alarm hue again [46.99]',
+    find: '<p class="vx-regimen vx-regimen-refuse">', replace: '<p class="vx-regimen vx-regimen-hold">' },
+  { id: 'R3-P-4', what: 'the refusal heading class is coloured with the alarm hue [46.99]',
+    find: '.vx-regimen-refuse { font-size: var(--fs-xl); color: var(--ink); }', replace: '.vx-regimen-refuse { font-size: var(--fs-xl); color: var(--alarm); }' },
+  { id: 'R3-P-5', what: 'the Trough "No regimen recommended" refusal loses the alarm hue [46.99]',
+    find: '<h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(o.word)}</h3>', replace: '<h3 class="vx-regimen vx-regimen-refuse" id="tx-regimen">${escHtml(o.word)}</h3>' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

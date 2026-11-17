@@ -2166,6 +2166,7 @@
   .vx-freq { color: var(--terracotta-ink); }
   .vx-regimen-hold { font-size: var(--fs-xl); color: var(--alarm); }
   .vx-regimen-hd   { font-size: var(--fs-xl); color: var(--ink); }   /* an HD answer (D16): not an alarm */
+  .vx-regimen-refuse { font-size: var(--fs-xl); color: var(--ink); }   /* a missing input or a data check (v3.16.1): not an alarm */
   .vx-hold { font-size: var(--fs-sm); line-height: 1.6; color: var(--ink-soft); margin: 0 0 12px; }
   .vx-inf  { font-size: var(--fs-sm); color: var(--ink-soft); margin: 0 0 16px; }
   .vx-prov { color: var(--amber); font-weight: 600; }
@@ -2838,7 +2839,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.16.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.16.1</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2869,7 +2870,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.16.0</div>
+  <div class="header-tag">Vancomycin TDM v3.16.1</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4274,7 +4275,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.16.0';
+const APP_VERSION = '3.16.1';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -5453,7 +5454,7 @@ function pdResultsHTML(a, input, nowH) {
     </div>`;
   if (a.state === 'refuse') return wrap(`
     <section class="tx-verdict pd-verdict" aria-labelledby="tx-regimen">
-      <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
+      <h3 class="vx-regimen vx-regimen-refuse" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
       <p class="vx-hold">${a.refuse.html}</p>
     </section>`);
   const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k95">Copy summary</button><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
@@ -5759,7 +5760,7 @@ function crrtResultsHTML(a, input, nowH) {
   }
   if (a.state === 'refuse') return wrap(`
     <section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">
-      <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
+      <h3 class="vx-regimen vx-regimen-refuse" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
       <p class="vx-hold">${a.refuse.html}</p>
     </section>`, '', [course]);
   const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k110">Copy summary</button><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
@@ -11616,7 +11617,7 @@ function hdReadingHTML(r) {
         Set ${r.missing.length === 1 ? 'it' : 'them'} under Your settings (this browser) in the Haemodialysis section of the form; they stay in this browser only.</p>`);
   }
   if (r.state === 'refuse') return wrap('refuse', `
-      <p class="vx-regimen vx-regimen-hold">${escHtml(r.word)}</p>
+      <p class="vx-regimen vx-regimen-refuse">${escHtml(r.word)}</p>
       <p class="vx-hold">${r.html}</p>${foot}`);
   const st = r.settings, when = escHtml(fmtClock(r.preAtH));
   const row = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;

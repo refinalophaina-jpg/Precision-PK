@@ -60,8 +60,18 @@ function watch(page, tag) {
   const notOurs = /willReadFrequently|cloudflareinsights|cdn-cgi\/challenge-platform|cdn-cgi\/rum/;
   page.on('console', m => { if ((m.type() === 'error' || m.type() === 'warning') && !notOurs.test(m.text())) problems.push(`${tag} console.${m.type()}: ${m.text()}`); });
   page.on('pageerror', e => problems.push(`${tag} pageerror: ${e.message}`));
+  // Every document this page loads is read as served, so a context that reloads or navigates
+  // again has each copy of Cloudflare's injected script counted, not only the last page's (v3.16.1).
+  const served = [];
+  cfServed.set(page, served);
+  page.on('response', r => {
+    const q = r.request();
+    if (!q.isNavigationRequest() || q.frame() !== page.mainFrame()) return;
+    served.push(r.text().then(t => (t.match(/<script[^>]*>[^<]*__CF\$cv\$params/g) || []).length).catch(() => 0));
+  });
   return problems;
 }
+const cfServed = new WeakMap();
 const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n);
   const p = (v) => String(v).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 // A date and a 24-hour time h hours from today 10:00, the fixed clock of the page the D27 Hold checks run on (b.clock), so
@@ -72,11 +82,13 @@ const D1 = day(-2), D2 = day(-1);   // doses at D1 08:00, D1 20:00, D2 08:00, D2
 // On the production domain Cloudflare injects an inline bot-check script
 // (window.__CF$cv$params) that the hash-pinned CSP refuses — the policy working,
 // not the app failing. A refused inline script is attributed to it only when the
-// page actually carries that script, and only as many refusals as it has copies;
-// anything beyond that stays a problem. (The app's own script is hash-allowed:
-// if it were refused, nothing on the page would work and the checks would fail.)
+// page actually carries that script, and only as many refusals as it has copies
+// across every document the page loaded (watch counts them as served); anything
+// beyond that stays a problem. (The app's own script is hash-allowed: if it were
+// refused, nothing on the page would work and the checks would fail.)
 async function attributeInjected(page, problems) {
-  const n = await page.evaluate(() => [...document.scripts].filter(s => !s.src && /__CF\$cv\$params/.test(s.textContent)).length);
+  const now = await page.evaluate(() => [...document.scripts].filter(s => !s.src && /__CF\$cv\$params/.test(s.textContent)).length);
+  const n = Math.max(now, (await Promise.all(cfServed.get(page) || [])).reduce((a, b) => a + b, 0));
   if (!n) return { kept: problems, injected: 0 };
   const inline = /Executing inline script violates|Refused to execute inline script|CSP violation: script-src(-elem)? inline/;
   let budget = { browser: n, listener: n };
@@ -1689,7 +1701,9 @@ async function enterCourse(page) {
     await t.locator('[data-onclick="k31"]').click(); await t.waitForTimeout(500);
     const fe2 = await t.locator('#fe-trough').isVisible().catch(() => false);
     ok('D26: the same levels on the first-dose basis are accepted', !fe2 && (await t.locator('#results-content .tx-verdict, #results-content .tx-regimen, #tx-regimen').count()) > 0);
-    results.problems.push(...tProblems);
+    const tAttr = await attributeInjected(t, tProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + tAttr.injected;
+    results.problems.push(...tAttr.kept);
     await tctx.close();
   }
 
@@ -3370,6 +3384,12 @@ async function enterCourse(page) {
     const soon = await txt('#results-content'), so = order(soon);
     ok('D28: a pre-dialysis level drawn an hour after the previous session ended is refused, naming the 2 h rule; the pointer stays first',
        so.notice === 0 && so.title > 0 && /Too soon after the previous session/.test(soon) && /within 2 h of the previous session's end/.test(soon) && !/mg after the session/.test(soon), soon.slice(0, 500));
+    // v3.16.1: a data-check refusal heading is drawn in ink, never the alarm hue (DESIGN.md: alarm is top-tier safety only).
+    const soonHead = await h.evaluate(() => { const e = document.querySelector('#results-content .vx-regimen-refuse'), ink = document.createElement('span');
+      ink.style.color = 'var(--ink)'; document.body.appendChild(ink); const want = getComputedStyle(ink).color; ink.remove();
+      return e ? { word: e.textContent.trim(), color: getComputedStyle(e).color, ink: want, hold: !!document.querySelector('#results-content .vx-regimen-hold') } : null; });
+    ok('v3.16.1: the "Too soon after the previous session" heading is ink, not the alarm hue',
+       !!soonHead && soonHead.word === 'Too soon after the previous session' && soonHead.color === soonHead.ink && !soonHead.hold, JSON.stringify(soonHead));
     await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
     await run();
     // Review: a malformed form shows its errors by real click, with the Goti 2018 · HD pointer still visible above them.
