@@ -2784,7 +2784,8 @@ New unit tests are SUITE 46 in `phase2d_validation.cjs` (46.1–46.91, 91 tests;
 browser checks are the 39 `D28:` checks in `docs/audit/browser-flows.cjs` (223 → 262). The mutation gate gained 57
 mutants, R3-23-1 to R3-29-9 (63 → 120). Each task's new behaviour began with tests seen failing on the commit before
 it. Three tests could not fail first, by design: 46.44 is a parity guard (P4); 46.64's failing evidence is mutant
-R3-27-11; and 46.79 pins a case that was already right beside its fix, 46.78.
+R3-27-11; and 46.79 pins a case that was already right beside its fix, 46.78. The final review's fix wave added 46.92–46.98, R3-F-1 to
+R3-F-7 and four browser checks (719, 127 and 266; see "The final review and its fix wave" below).
 
 **Task 23 — one renal-replacement selector** (`20b313c`, fix round `ec06c4f`).
 - `RRT_KINDS = ['none','ihd','hybrid','crrt','pd']`. One `<select>`, "Renal replacement", in each column's patient
@@ -3097,6 +3098,125 @@ it. Their record is SUITE 46 and the PD parity guard (46.44, 58 calls against `b
 - Browser flows under the CSP, run alone: **262/262**, 0 console problems.
 - Engine parity against `bcee5dd`: 0 differences.
 
+### The final review and its fix wave (2026-11-17, rulings R103–R111)
+
+The final whole-branch review (`bcee5dd..e3a7cbc`, 14 commits) returned "merge with fixes": one Critical, three
+Important and eight minor findings. It overturned no ruling, found Review Focus 1–5 holding end to end, and found the
+public-repository hygiene clean. One fix wave answered it. Every fix began with a SUITE 46 test seen failing on
+`e3a7cbc`; every behaviour change has a mutant the test kills.
+
+**C1 — a CRRT level repeated within an hour or two changed the dose, up to double (R103).** Task 27's plan read
+"too-short: flag only", so `crrtIntervals` pushed `too-short` after it had decided whether the interval was excluded. An
+interval of any length, zero included, was used for the rate. PD has excluded the same case since D23 ("assay rounding,
+not a decline; not used"). The reviewer's case (fictional): 70 kg, Bauer, goal 15–20 mg/L, 1.5 g given 40 h ago, levels
+22 mg/L 30 h ago and 14 mg/L 6 h ago. With no other level the pick is 750 mg. An extra 12.9 mg/L 1 h after the 14 gave
+1.5 g; 13.6 mg/L 30 min after gave 1.25 g; the 14 entered twice at the same minute gave 500 mg.
+- **Fixed:** an interval under `PD_MIN_INTERVAL_H` (12 h, the same constant and the same PREFERENCE, no new number) is
+  excluded, with PD's words. Two levels at the same minute are refused by name ("Two levels at the same time", naming
+  the time and both values), the rule `parseBayesCourse` applies to AUC Precision's levels. The "Draw a level" sentence
+  now names a too-short interval among its reasons.
+- **Pinned by** 46.92 (the reviewer's three variants: 750 mg each, or the named refusal), 46.54 (its last clause
+  reversed: rule 9 asks why, and the why is the reviewer's numbers above), mutants R3-F-1 ("flag only" restored),
+  R3-F-2 (no duplicate refusal) and R3-F-7 (the reason dropped from the sentence), and one browser check (a level an
+  hour after the second changes no dose).
+
+**I1 — haemodialysis rows under Renal replacement None were read as haemodialysis (R104).** Under None,
+`parseBayesSessions` fell back to haemodialysis, so haemodialysis-typed rows were accepted where hybrid rows were a
+blocking error (R78). The reviewer reproduced it by real clicks: AUC Precision on Goti-HD with two sessions answered
+"750 mg IV after HD"; "Clear all fields" in the Trough column set both columns to None and moved the tile to plain Goti,
+keeping the sessions; Run then gave "750 mg IV q48h · AUC₂₄ 549 · Within target", a dialysis patient fitted off
+dialysis.
+- **Fixed:** under any kind but haemodialysis or hybrid, every session row is a blocking error naming the row and the
+  selector: "HD session row 1 is typed haemodialysis while Renal replacement is None." A row saved before D28, with no
+  type, is the same.
+- **Pinned by** 46.93 (the parse, then the real `clearWithUndo('trough')`, the sex chosen again and a run: refused, no
+  regimen; on `e3a7cbc` the same steps print 750 mg IV q48h), mutant R3-F-3 (R3-24-2's find string gained the new
+  clause), and one browser check by real clicks. SUITE 34.1, 34.2 and 35.22 parsed haemodialysis sessions with the
+  shared state left at None; their setup now says the patient is on haemodialysis, their assertions unchanged.
+
+**I2 — two citations used Table 2 item numbers, 8a and 9, as recommendation numbers (R105).** The project cites Rybak 2020's section-summary numbers
+(`HD_LOADING_MAX_MG`'s note: Table 2 prints Recs 10 and 11 as item 12). The controller verified the text: the
+post-distributional peak "at 1 to 2 hours after infusion" is **Rec 2a** (A-II, Table 2 item 8a), and "15 to 20 mg/kg
+(based on actual body weight) administered every 8 to 12 hours … normal renal function" is **Rec 1**, its second
+sentence (A-II, Table 2 item 9). Re-cited in `index.html` (`POST_DISTRIBUTION_MIN_H`, the CRRT "How this works", the
+guideline comparison and `computeGuidelineDose`), `CLAUDE.md`, the README history row and this record, with the source
+tests moved: 46.81 now reads Rec 1, and 46.94 checks Rec 2a on screen and that no Table 2 number is cited as a
+recommendation in those four files. Values and grades are unchanged; R66's ruling stands under its new number.
+
+**I3 — the Trough placeholder promised CrCl and an AUC₂₄ regimen on dialysis screens (R106).** Off None the result area
+read "Population PK — CrCl, clearance, volume, half-life · A maintenance regimen against an AUC₂₄ of 400–600 mg·h/L",
+since D23 on PD too. `setCalcMode` now writes a lead and list per mode (`RESULTS_PLACEHOLDER`,
+`syncResultsPlaceholder`): PD, CRRT, haemodialysis and hybrid each say what they give and promise neither; None is the
+shipped text, held equal to the markup by 46.95. Pinned by 46.95, mutant R3-F-4 and one browser check (CRRT).
+
+**Minors fixed in the wave.**
+- The CRRT "Draw a level" sentence printed "(unexplained-high)": `CRRT_FLAG_WORDS` had no entry for it (the table
+  words it with the volume). Every flag `crrtIntervals` can set now has words. 46.96, mutant R3-F-5.
+- **R107:** with one level the CRRT answer is "Draw a level" and now also shows the Rec 16 reference under its lead, so
+  "Until two levels … the guideline's reference follows" is true. Sourced content, no new number. 46.97, mutant
+  R3-F-6, one browser check.
+- Changing the course Modality select rewrites every interval's modality, so no change is ever seen. The select now
+  carries a hint: "A later change goes on an effluent rate row, with the time it changed: changing it here rewrites
+  every interval, so the change is not seen." No behaviour change. 46.98 and the CRRT browser check.
+
+**Counts.** SUITE 46 gains 46.92–46.98 (`EXPECTED_TOTAL` 712 → 719). The mutation gate gains R3-F-1 to R3-F-7
+(120 → 127). The browser flows gain four `D28` checks (262 → 266). `harness_constants.cjs` now parses
+`PD_MIN_INTERVAL_H` (rule 6).
+
+**Controller rulings from the final review, each with what it costs if wrong.**
+- **R103 (C1, a plan defect in Task 27).** CRRT excludes an interval under `PD_MIN_INTERVAL_H`, as PD does, and refuses
+  same-minute duplicate levels by name: a recheck within assay imprecision must never double a dose. *If wrong:* "Draw
+  a level" when CRRT levels are under 12 h apart; the user may later rule a shorter CRRT spacing as a stated
+  PREFERENCE.
+- **R104 (I1).** A haemodialysis-typed row under None is a blocking error naming the row and the selector, as R78 does
+  for hybrid rows. The cross-column Clear (either module's reset sets None) otherwise lets Goti fit a dialysis patient
+  off dialysis. *If wrong:* one more error to clear.
+- **R105 (I2).** Cite Rec 2a (the post-distributional peak, A-II) and Rec 1 (15–20 mg/kg q8–12h, A-II), noting the
+  Table 2 item, everywhere. The earlier R66 and the Task 29 verification of the 15 mg/kg read the Table 2 lines. Recs 11–16 are
+  section-summary numbers and stand. *If wrong:* none.
+- **R106 (I3).** The Trough result placeholder is mode-specific off None: no CrCl and no AUC₂₄ promise on CRRT, hybrid,
+  haemodialysis or PD. *If wrong:* none.
+- **R107 (minor).** The CRRT one-level "Draw a level" state also shows the Rec 16 reference. *If wrong:* a longer
+  screen.
+- **R108.** The README's "Live · v3.16.0" stays: the user merges the hub PR the same day, and it is flipped back if
+  not. *If wrong:* a status line a few hours early.
+- **R109 (declined to judge).** No age limit on a CRRT starting level, and no limit on how long before the session the
+  haemodialysis level was drawn. The plan gates on recorded changes only. Recorded as open questions below, not built.
+  *If wrong:* a stale level projected (the "One interval" note and the level's date are on screen).
+- **R110 (declined to judge).** A planned future dose row counts in the CRRT projection without saying so, as in PD
+  since D23. Recorded as a known limit. *If wrong:* an unexpected dose total if a plan is entered.
+- **R111 (declined to judge).** These stand as the user's rulings or as recorded: the midpoint pick (U9, D23), the CRRT
+  volume bases (R62), the 2009 presets as a CRRT goal (U9); the "Declined" figures above come from the report's public
+  literature section, with no workplace content; the AJHP numbering rests on the advance-article PDF; a stale AUC result
+  that prints or copies after a selector change is D25's existing stale behaviour. *If wrong:* as stated for each.
+
+**Engine parity after the wave.** `node docs/audit/engine-parity.cjs --ref bcee5dd`: 225 calls, 0 differences. The
+fixes touch `crrtAnswer`, `crrtIntervals`, `parseBayesSessions` (under None only), the CRRT screen and the placeholder;
+the corpus reaches none of them on a changed path.
+
+### Verified after the final review's fix wave (2026-11-17)
+
+- JS syntax check: OK.
+- `node phase2d_validation.cjs`: **719/719**. Also 719/719 under `TZ=Pacific/Auckland` and under `TZ=UTC`.
+- `node phase3_simulation.cjs`: **21/21**. `node phase4_regimen_validation.cjs`: **49/49**.
+- `node phase2d_comprehensive_validation.cjs`: only scenarios 3 and 4 fail, by design, with the same figures as before
+  the wave (scenario 3's MAE 344.2 against 260; scenario 4's MAE 351.3 against 200, improvement 14.6 against 15 and
+  coverage 38.0% against 45%; scenario 6's dose attainment 75.2%).
+- `node docs/audit/mutation.cjs`: **127 of 127 killed**, exit 0.
+- Browser flows under the CSP, run alone: **266/266**, 0 console problems.
+- Engine parity against `bcee5dd`: 225 calls, 0 differences.
+- The seven new tests and the two moved ones (46.54, 46.81) fail on `e3a7cbc` (710 of 719); on `e3a7cbc` 46.93's
+  steps answer "750 mg IV q48h", the reviewer's finding.
+
+### Open questions for the user (R109)
+
+- **A CRRT starting level has no age limit.** The answer projects from the newest usable level however old it is,
+  provided the circuit and its setting are recorded unchanged since. Should a level older than some span be refused
+  or flagged? Any span would be a PREFERENCE (rule 8) for the user to set.
+- **The haemodialysis reading has no limit on how long before the session the pre-dialysis level was drawn.** It
+  refuses a level during a session or within 2 h of the previous one's end, but a level drawn a day before the session
+  is read as pre-dialysis. Should there be a limit?
+
 ### Known limits (recorded, not changed)
 
 From the reviews' deferred minors, where they describe what ships:
@@ -3112,11 +3232,15 @@ From the reviews' deferred minors, where they describe what ships:
   - The Rec 13 haemodialysis table does not read the local maximum; it keeps its own spelling of the 3,000 mg cap.
   - A value stored by v3.15.0 outside 250–4,000 mg is still read (R102).
 - **CRRT.**
-  - A rate needs two levels (R90). After one level the answer is "Draw a level" without the reference, though the lead
-    says the reference shows "until two levels".
-  - In the `need-level` message, the reason "unexplained-high" reaches the screen as its raw id; the decline table
-    words it.
-  - Duplicate level times are not refused by name.
+  - **Found at the final review and fixed (C1, R103):** levels under 12 h apart were flagged "too-short" and still used
+    for the rate, so a recheck an hour after a level could double the dose, and a level entered twice changed it too.
+    Such an interval is now excluded, as in PD, and same-minute duplicates are refused by name. What remains is the
+    ruling's cost: CRRT levels under 12 h apart give "Draw a level"; a shorter CRRT spacing would be the user's
+    PREFERENCE to set.
+  - A rate needs two levels (R90). With one level the answer is "Draw a level", with the Rec 16 reference (R107).
+  - A planned future dose row counts in the projection without saying so, as in PD since D23 (R110).
+  - The options capped by the local maximum do not say "your setting" in the answer (PD the same).
+  - A starting level has no age limit (R109, an open question below).
   - A run's stop exactly at the next draw counts as covering it.
   - The overlap and backwards-run messages number runs in order of start; the form numbers them by row.
   - The future-level refusal prints a date where the other messages print a clock time.
@@ -3134,6 +3258,15 @@ From the reviews' deferred minors, where they describe what ships:
   - A refused profile load drops a pending "Form cleared — Undo".
   - A refused both-flags profile stays listed with no hint that it can only be deleted.
   - There is no announcement on a renal-replacement refusal.
+  - Since R104 a run after a Trough Clear is refused while haemodialysis session rows remain, naming each row; the rows
+    are not removed for the user.
+  - Under CRRT, hybrid and PD the AUC column still shows its CrCl readout and the suggested-model mark.
+  - The AUC column's CRRT or hybrid reference keeps the weight it was drawn for when the weight changes, with no stale
+    mark.
+  - Refusal headings for missing input or a data check ("Choose a goal range", "Drawn during the session") use the
+    alarm hue, carried from PD's D23 grammar, where DESIGN.md reserves alarm for top-tier safety. Moving them to ink
+    across PD, CRRT, haemodialysis and the generic Trough refusal is deferred to after the release; "No regimen
+    recommended" and Hold keep alarm.
   - The AUC CRRT refusal says "nothing was parsed or fitted"; the session rows are not parsed, but the words could be
     "nothing was fitted".
   - The "creatinine modes not used" line appears twice in the hybrid, CRRT and HD modes.
