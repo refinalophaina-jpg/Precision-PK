@@ -2981,6 +2981,97 @@ async function enterCourse(page) {
     await rctx.close();
   }
   // ── end Release 3 Task 23
+  // ── Release 3 (v3.16.0, D28), Task 24: typed session rows, hybrid sessions to 24 h, the sessions-per-week caution.
+  {
+    const sctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const s = await sctx.newPage();
+    const sProblems = watch(s, 'd28-sessions');
+    await s.goto(BASE + '?v=pwd28s-' + Date.now(), { waitUntil: 'networkidle' });
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-age', '64'); await typeInto(s, '#b-tbw', '78'); await typeInto(s, '#b-height', '172'); await typeInto(s, '#b-scr', '6.2');
+    await s.locator('[data-onclick="k39"]').click();
+    const area = () => s.evaluate(() => { const el = document.getElementById('b-results');
+      return { text: (el.textContent || '').replace(/\s+/g, ' ').trim(), refusal: !!el.querySelector('[data-rrt-refusal]'),
+        errors: [...el.querySelectorAll('.fe-list li')].map(li => li.textContent.replace(/\s+/g, ' ').trim()), result: !!bState.result }; });
+
+    // Hybrid: the section shows on any tile; a new row is typed hybrid and takes a 14 h length from the keyboard.
+    await s.locator('#b-model-btn-buelga').click();
+    await s.locator('#b-rrt').selectOption('hybrid');
+    const shown = await s.evaluate(() => !document.getElementById('b-hd-wrap').hidden);
+    await s.locator('[data-onclick="k74"]').click();
+    const hid = await s.evaluate(() => [...document.querySelectorAll('[id^="b-hd-row-"]')].pop().id.split('-').pop());
+    const typeDefault = await s.locator(`#b-hd-type-${hid}`).inputValue();
+    await s.locator(`#b-hd-date-${hid}`).fill(D1);
+    await typeInto(s, `#b-hd-time-${hid}`, '20:00');
+    await typeInto(s, `#b-hd-hours-${hid}`, '14');
+    await s.keyboard.press('Tab');
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(200);
+    const hyb = Object.assign(await area(), await s.evaluate((id) => ({ hs: (bState.hybridSessions || []).map(x => [x.n, x.hours, x.type, +(x.endH - x.startH).toFixed(2)]),
+      max: document.getElementById(`b-hd-hours-${id}`).max, val: document.getElementById(`b-hd-hours-${id}`).value }), hid));
+    ok('D28: under hybrid the session section shows, a new row is typed hybrid, and a 14 h length typed by keyboard is read; AUC Precision still refuses',
+       shown && typeDefault === 'hybrid' && hyb.max === '24' && hyb.val === '14' && hyb.refusal && !hyb.result && !hyb.errors.length
+       && /^On hybrid therapy \(SLED \/ PIRRT\)/.test(hyb.text) && JSON.stringify(hyb.hs) === JSON.stringify([[Number(hid), 14, 'hybrid', 14]]), JSON.stringify({ shown, typeDefault, hyb }));
+
+    // Haemodialysis: the hybrid row is refused naming the row (its type select marked); retyped as haemodialysis, 14 h is prolonged therapy.
+    await s.locator('#b-rrt').selectOption('ihd');
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(200);
+    const mism = Object.assign(await area(), await s.evaluate((id) => ({ inv: document.getElementById(`b-hd-type-${id}`).getAttribute('aria-invalid'), tile: bState.tile }), hid));
+    ok('D28: on haemodialysis a row typed hybrid is a blocking error naming the row, and the type is marked',
+       mism.tile === 'gotihd' && !mism.result && mism.errors.some(e => e === `HD session row ${hid} is typed hybrid while Renal replacement is intermittent haemodialysis.`) && mism.inv === 'true',
+       JSON.stringify(mism).slice(0, 300));
+    // A real change on the select (macOS Chromium opens a closed select's menu on an arrow key rather than changing it).
+    await s.locator(`#b-hd-type-${hid}`).selectOption('ihd');
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(200);
+    const pro = Object.assign(await area(), await s.evaluate((id) => ({ type: document.getElementById(`b-hd-type-${id}`).value, max: document.getElementById(`b-hd-hours-${id}`).max,
+      inv: document.getElementById(`b-hd-hours-${id}`).getAttribute('aria-invalid') }), hid));
+    ok('D28: on haemodialysis a 14 h session is refused as prolonged therapy, pointing to Hybrid; the length field is marked',
+       pro.type === 'ihd' && pro.max === '12' && !pro.result && pro.inv === 'true'
+       && pro.errors.some(e => e === `HD session row ${hid}: missing or invalid session length (a session longer than 12 h is prolonged therapy: set Renal replacement to Hybrid (SLED / PIRRT)).`),
+       JSON.stringify(pro).slice(0, 400));
+    await s.locator(`[data-onclick="k75"][data-arg="${hid}"]`).click();
+
+    // A daily schedule ("every 1 day"), seven sessions: the Goti-HD answer carries the caution, once, citing Rec 13 and Rec 14.
+    await s.locator('[data-onclick="k43"]').click();
+    const did = await s.evaluate(() => [...document.querySelectorAll('[id^="b-dose-row-"]')].pop().id.split('-').pop());
+    await typeInto(s, `#b-dose-mg-${did}`, '2000'); await typeInto(s, `#b-dose-tinf-${did}`, '2');
+    await s.locator(`#b-dose-date-${did}`).fill(day(-6)); await typeInto(s, `#b-dose-time-${did}`, '13:00');
+    await s.locator('[data-onclick="k46"]').click();
+    const lid = await s.evaluate(() => [...document.querySelectorAll('[id^="b-lvl-conc-"]')].pop().id.split('-').pop());
+    await typeInto(s, `#b-lvl-conc-${lid}`, '17.4'); await s.locator(`#b-lvl-date-${lid}`).fill(day(-1)); await typeInto(s, `#b-lvl-time-${lid}`, '07:30');
+    await s.evaluate(() => { const d = document.querySelector('.hd-sched'); if (d) d.open = true; });
+    await s.locator('#b-hds-pattern').selectOption('N');
+    await typeInto(s, '#b-hds-n', '1');
+    await s.locator('#b-hds-date').fill(day(-6)); await typeInto(s, '#b-hds-time', '08:00');
+    await typeInto(s, '#b-hds-hours', '4'); await typeInto(s, '#b-hds-count', '7');
+    await s.locator('[data-onclick="k76"]').click();
+    const gen = await s.evaluate(() => [...document.querySelectorAll('[id^="b-hd-type-"]')].map(t => t.value));
+    await s.locator('[data-onclick="k47"]').click();
+    await s.waitForSelector('#b-results #vx-regimen', { timeout: 20000 }); await s.waitForTimeout(300);
+    const cau = await s.evaluate(() => { const el = document.getElementById('b-results');
+      const notes = [...el.querySelectorAll('.vx-notes .note')].map(n => n.textContent.replace(/\s+/g, ' ').trim());
+      const all = [...el.querySelectorAll('#ev-notes .note')].map(n => n.textContent.replace(/\s+/g, ' ').trim());
+      return { result: !!bState.result, cautions: (bState.result && bState.result.cautions || []).length,
+        inline: notes.filter(t => /More than three sessions in seven days/.test(t)), all: all.filter(t => /More than three sessions in seven days/.test(t)).length }; });
+    ok('D28: a daily schedule generated "every 1 day" is typed haemodialysis, and the Goti-HD answer carries one caution citing Rybak 2020 Rec 13 and Rec 14',
+       gen.length === 7 && gen.every(t => t === 'ihd') && cau.result && cau.cautions === 1 && cau.inline.length === 1 && cau.all === 1
+       && /7 sessions start within seven days/.test(cau.inline[0]) && /Rybak 2020 Rec 13/.test(cau.inline[0]) && /Rec 14/.test(cau.inline[0]) && /changes no number/.test(cau.inline[0]),
+       JSON.stringify({ gen, cau }).slice(0, 400));
+
+    // 375 px: a typed row's select and length field are 44 px targets and nothing scrolls sideways.
+    await s.setViewportSize({ width: 375, height: 812 });
+    await s.waitForTimeout(150);
+    const narrow = await s.evaluate(() => { const t = document.querySelector('[id^="b-hd-type-"]'), h = document.querySelector('[id^="b-hd-hours-"]');
+      return { sw: document.documentElement.scrollWidth, iw: innerWidth, th: t.getBoundingClientRect().height, hh: h.getBoundingClientRect().height,
+        tr: t.getBoundingClientRect().right, hr: h.getBoundingClientRect().right }; });
+    ok('D28: at 375 px a session row\'s type and length are 44 px targets inside the screen, with no horizontal scroll',
+       narrow.sw <= narrow.iw && narrow.th >= 43.5 && narrow.hh >= 43.5 && narrow.tr <= narrow.iw && narrow.hr <= narrow.iw, JSON.stringify(narrow));
+    await s.locator('[id^="b-hd-row-"]').first().scrollIntoViewIfNeeded();
+    await s.screenshot({ path: path.join(OUT, 'd28-sessions-375.png') });
+    const sAttr = await attributeInjected(s, sProblems);
+    results.problems.push(...sAttr.kept);
+    await sctx.close();
+  }
+  // ── end Release 3 Task 24
   await browser.close();
 
   results.checks = checks;

@@ -178,6 +178,8 @@ function extract() {
     CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
     // v3.16.0 (D28) — the renal-replacement kinds the one selector offers
     RRT_KINDS:              arrayLiteral(src, 'RRT_KINDS'),
+    // v3.16.0 (D28, Task 24) — more sessions than this in seven days is a caution (Rybak 2020 Rec 13, 14)
+    HD_SESSIONS_PER_WEEK_CAUTION: num(src, 'HD_SESSIONS_PER_WEEK_CAUTION'),
   };
 }
 

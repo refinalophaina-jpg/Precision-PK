@@ -235,9 +235,11 @@ const MUTANTS = [
   // Release 3 (v3.16.0, D28), Task 23: one renal-replacement selector.
   { id: 'R3-23-1', what: 'bState.dial derived from peritoneal dialysis instead of haemodialysis [46.9]',
     find: "bState.dial = (kind === 'ihd');", replace: "bState.dial = (kind === 'pd');" },
+  // Task 24 split the CRRT and hybrid refusals (ruling R75: hybrid reads its session rows); the course parse
+  // still comes after both, so this mutant now runs the course parse ahead of them.
   { id: 'R3-23-2', what: 'the CRRT and hybrid refusal moved after parseBayesCourse [46.3]',
-    find: "  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n  const { doses, levels, sessions, errors } = parseBayesCourse();\n",
-    replace: "  const { doses, levels, sessions, errors } = parseBayesCourse();\n  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n" },
+    find: "  if (rrt === 'crrt') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n",
+    replace: "  parseBayesCourse();\n  if (rrt === 'crrt') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n" },
   { id: 'R3-23-3', what: "rrtOf drops the legacy demographics.dial branch [46.2]",
     find: "if ((core && core.hd) || (demographics && demographics.dial)) return 'ihd';", replace: "if (core && core.hd) return 'ihd';" },
   // Task 23 review fixes: Important 1 (Review Focus 1) and the controller's ruling R74.
@@ -247,6 +249,21 @@ const MUTANTS = [
     find: '  if (m !== bayesTile()) clearBayesRrtRefusal();', replace: '' },
   { id: 'R3-23-6', what: 'R74 undone: a legacy profile with both a PD form and an HD flag loads (as PD) [46.14]',
     find: '  if (rrtLegacyConflict(s)) {\n', replace: '  if (false) {\n' },
+  // Release 3 Task 24: typed session rows, hybrid sessions to 24 h, the sessions-per-week caution (D28).
+  { id: 'R3-24-1', what: 'the sessions-per-week caution fires above four, not three [46.19, 46.20]',
+    find: 'const HD_SESSIONS_PER_WEEK_CAUTION = 3;', replace: 'const HD_SESSIONS_PER_WEEK_CAUTION = 4;' },
+  { id: 'R3-24-2', what: "the row-type check removed from the session parse parseBayesCourse calls [46.17]",
+    find: '    if (type !== want) {\n', replace: '    if (false) {\n' },
+  { id: 'R3-24-3', what: 'hybrid sessions limited to 12 h [46.15, 46.16]',
+    find: "hybridHours: { min: 0.5, max: 24,", replace: "hybridHours: { min: 0.5, max: 12," },
+  { id: 'R3-24-4', what: 'sessionsPerWeekMax counts an eight-day window [46.19]',
+    find: '    while (days[i] - days[j] >= 7) j++;', replace: '    while (days[i] - days[j] >= 8) j++;' },
+  { id: 'R3-24-5', what: 'syncHdSection reads the dialysis flag again, showing sessions on plain Goti under haemodialysis [46.23]',
+    find: "(rrt === 'ihd' && bayesTile() === 'gotihd') || rrt === 'hybrid' || hasRows", replace: "(bState && bState.model === 'goti' && bState.dial) || rrt === 'hybrid' || hasRows" },
+  { id: 'R3-24-6', what: 'the hybrid refusal reads no session rows [46.24]',
+    find: '    const hs = parseBayesSessions(rrt);\n', replace: '    const hs = { sessions: [] };\n' },
+  { id: 'R3-24-7', what: 'a saved row without a type loads as the renal replacement in force, not haemodialysis [46.22]',
+    find: "x.type == null ? 'ihd' : x.type", replace: "x.type == null ? hdSessionDefaultType() : x.type" },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

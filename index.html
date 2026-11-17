@@ -2602,6 +2602,8 @@
   .calc-mode-btn[aria-disabled="true"]:hover { transform: none; }
   .rrt-mode-note { margin-top: 6px; }
   .course-what { grid-area: what; display: flex; align-items: center; gap: 8px; }
+  /* A session row's type (D28): as wide as its longest word, the length field takes the rest. */
+  .course-what .course-type { flex: 0 1 auto; width: auto; min-width: 0; }
   .course-when {
     grid-area: when; display: grid; gap: 8px;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -4217,6 +4219,7 @@ const __ACT = {
   k101: (el, ev, arg) => { const b = document.getElementById('action-status'); if (b) { b.hidden = true; b.innerHTML = ''; } },   /* dismiss the failed-action line (Task 21) */
   k102: (el, ev, arg) => { setRrt(el.value); },   /* the renal-replacement selector, either column (D28) */
   k103: (el, ev, arg) => { switchModule('trough'); setRrt('crrt'); },   /* AUC Precision CRRT refusal → Trough-based · CRRT (D28) */
+  k104: (el, ev, arg) => { syncHdRowType(arg); },   /* a session row's type: its length field's limit (D28) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4514,15 +4517,22 @@ function rrtNoticeHTML(kind, module) {
 // print, a redraw and a saved profile all read bState.result. The refusal is marked (data-rrt-refusal)
 // because it is about the renal replacement and tile it was given: a refusal has no result, so the
 // stale mark never reaches it, and clearBayesRrtRefusal removes it when either changes (Review Focus 1).
-function showBayesRrtRefusal(html) {
+// keep: an error summary showFormErrors has just written stays below the refusal (the hybrid session rows).
+function showBayesRrtRefusal(html, keep) {
   if (typeof bState !== 'undefined' && bState) { bState.result = null; bState.resultFingerprint = null; }
   const area = formArea('auc');
-  if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = `<div data-rrt-refusal>${html}</div>`; }
+  if (!area.el) return;
+  if (area.ph) area.ph.style.display = 'none';
+  area.el.style.display = FORM_AREAS.auc.display;
+  const refusal = `<div data-rrt-refusal>${html}</div>`;
+  if (keep && typeof area.el.insertAdjacentHTML === 'function') area.el.insertAdjacentHTML('afterbegin', refusal);
+  else area.el.innerHTML = refusal + (keep ? String(area.el.innerHTML || '') : '');
 }
 // A renal-replacement refusal on screen goes, and the placeholder returns. Anything else is left alone.
 function clearBayesRrtRefusal() {
   const area = formArea('auc');
   if (!area.el || !/data-rrt-refusal/.test(String(area.el.innerHTML || ''))) return false;
+  try { clearFormInvalid('auc'); } catch (e) { /* the marks of a hybrid session error beside it; display only */ }
   area.el.innerHTML = ''; area.el.style.display = 'none';
   if (area.ph) area.ph.style.display = 'flex';
   return true;
@@ -6198,6 +6208,9 @@ const INPUT_LIMITS = {
   level:  { min: 0.1,  max: 200,  label: 'Concentration',        unit: 'mg/L' },
   // UI plausibility limit for a haemodialysis session's length, not a clinical constant.
   hdHours: { min: 0.5, max: 12,   label: 'Session length',       unit: 'h' },
+  // UI plausibility limit for a hybrid (SLED / PIRRT) session's length, not a clinical constant:
+  // prolonged intermittent therapy runs up to a day (the user's ruling 6, D28).
+  hybridHours: { min: 0.5, max: 24, label: 'Session length',     unit: 'h' },
   auc:    { min: 200,  max: 1200, label: 'Target AUC₂₄',         unit: 'mg·h/L' },
   // UI plausibility limit (the field's own min/max), not a clinical constant.
   crclOverride: { min: 1, max: 250, label: 'CrCl override',      unit: 'mL/min' },
@@ -9447,6 +9460,25 @@ function removeBayesLevel(id) {
 // ─── Haemodialysis session rows (D15) ───
 // Start date, start time (24-hour text, as doses and levels) and a length in
 // hours. Nothing is pre-filled: a guessed session time is worse than a blank.
+// D28: each row is typed — intermittent haemodialysis or hybrid therapy (SLED / PIRRT) — and the
+// type sets its length limit (hdHours, hybridHours). A row's type must be the renal replacement in
+// force; parseBayesSessions refuses one that is not, naming the row.
+const HD_SESSION_TYPES = ['ihd', 'hybrid'];
+const HD_SESSION_TYPE_WORD = { ihd: 'haemodialysis', hybrid: 'hybrid' };
+const HD_SESSION_TYPE_LIMIT = { ihd: 'hdHours', hybrid: 'hybridHours' };
+// The type a new row takes: the renal replacement when it is one of the two, else haemodialysis
+// (the only kind a session row meant before D28).
+function hdSessionDefaultType() {
+  const k = bayesRrt();
+  return HD_SESSION_TYPES.indexOf(k) >= 0 ? k : 'ihd';
+}
+// A row's length field offers its own type's limit (the field's min/max; parseBayesSessions decides).
+function syncHdRowType(id) {
+  const t = (document.getElementById(`b-hd-type-${id}`) || {}).value;
+  const h = document.getElementById(`b-hd-hours-${id}`);
+  const lim = INPUT_LIMITS[HD_SESSION_TYPE_LIMIT[t] || 'hdHours'];
+  if (h && typeof h.setAttribute === 'function') h.setAttribute('max', String(lim.max));
+}
 let bHdCount = 0;
 function addBayesSession() {
   const id    = ++bHdCount;
@@ -9455,13 +9487,18 @@ function addBayesSession() {
   const empty = tbody.querySelector('tr');
   if (empty && empty.querySelector('.course-empty-msg')) empty.remove();
   const rb = `course-rb-hd-${id}`;
+  const type = hdSessionDefaultType();
+  const lim = INPUT_LIMITS[HD_SESSION_TYPE_LIMIT[type]];
   const tr = document.createElement('tr');
   tr.id = `b-hd-row-${id}`;
   tr.className = 'course-row';
   tr.innerHTML = `
     <td class="course-head"><span class="course-n">HD ${id}</span> <span class="course-readback" id="${rb}"></span></td>
     <td class="course-what">
-      <span class="course-field"><input type="number" id="b-hd-hours-${id}" inputmode="decimal" min="0.5" max="12" step="0.25" placeholder="4"
+      <select id="b-hd-type-${id}" class="course-type" aria-label="HD session ${id} type" data-onchange="k104" data-arg="${id}">
+        ${HD_SESSION_TYPES.map(t => `<option value="${t}"${t === type ? ' selected' : ''}>${t === 'ihd' ? 'Haemodialysis' : 'Hybrid'}</option>`).join('')}
+      </select>
+      <span class="course-field"><input type="number" id="b-hd-hours-${id}" inputmode="decimal" min="${lim.min}" max="${lim.max}" step="0.25" placeholder="4"
          aria-label="HD session ${id} length (hours)"><span class="course-unit" aria-hidden="true">h</span></span>
     </td>
     <td class="course-when">
@@ -9483,14 +9520,34 @@ function removeBayesSession(id) {
   syncHdSection();
   scheduleCourseReadback();
 }
-// The section shows for the dialysis model, and whenever a session row exists —
+// The section shows for the dialysis model (Goti 2018 · HD on haemodialysis), for hybrid therapy on
+// any tile (its reference names each session's end, D28), and whenever a session row exists —
 // entered data is never hidden by a model switch.
 function syncHdSection() {
   if (typeof document === 'undefined' || !document.getElementById) return;
   const wrap = document.getElementById('b-hd-wrap');
   if (!wrap) return;
   const hasRows = !!document.querySelector('[id^="b-hd-row-"]');
-  wrap.hidden = !((bState && bState.model === 'goti' && bState.dial) || hasRows);
+  const rrt = bayesRrt();
+  wrap.hidden = !((rrt === 'ihd' && bayesTile() === 'gotihd') || rrt === 'hybrid' || hasRows);
+  // The schedule generator offers the type its rows will be stamped with.
+  const sh = document.getElementById('b-hds-hours');
+  if (sh && typeof sh.setAttribute === 'function') sh.setAttribute('max', String(INPUT_LIMITS[HD_SESSION_TYPE_LIMIT[hdSessionDefaultType()]].max));
+}
+// Saved session rows into the form (a profile load). A row saved before D28 has no type: it was a
+// haemodialysis session, the only kind a row could be, and loads as one (validProfile has refused
+// any type it does not know).
+function applyHdSessionRows(list) {
+  (list || []).forEach(x => {
+    addBayesSession();
+    const id = bHdCount;
+    const set2 = (k, v) => { const el = document.getElementById(k); if (el) el.value = v; };
+    set2(`b-hd-date-${id}`, x.date);
+    set2(`b-hd-time-${id}`, x.time);
+    set2(`b-hd-hours-${id}`, x.hours);
+    set2(`b-hd-type-${id}`, x.type == null ? 'ihd' : x.type);
+    syncHdRowType(id);
+  });
 }
 
 // ─── Parse course data from DOM ───
@@ -9558,37 +9615,10 @@ function parseBayesCourse() {
     levels.push({ conc: cChk.value, timeH: tMs / 3600000, label: `${dateS} ${timeS}`, row: rowNum(id) });
   });
 
-  // Haemodialysis sessions (D15): start date and time plus a length in hours.
-  // A length, not an end time, because an end typed as a clock time before the
-  // start would need the "+24 h" wrap this file forbids (SUITE 19).
-  const sessions = [];
-  document.querySelectorAll('[id^="b-hd-row-"]').forEach(row => {
-    const id    = row.id.replace('b-hd-row-','');
-    const dateS = (document.getElementById(`b-hd-date-${id}`) || {}).value;
-    const timeS = ((document.getElementById(`b-hd-time-${id}`) || {}).value || '').trim();
-    const hRaw  = (document.getElementById(`b-hd-hours-${id}`) || {}).value;
-    const anything = [dateS, timeS, hRaw].some(v => v !== undefined && String(v).trim() !== '');
-    if (!anything) return;
-    const miss = [];
-    const hChk = checkValue(hRaw, 'hdHours');
-    if (!dateS)      miss.push('date');
-    if (!/^\d{2}:\d{2}$/.test(timeS)) miss.push(timeS ? `start time "${timeS}" (use HH:MM)` : 'start time');
-    if (!hChk.ok)    miss.push(hRaw ? `session length (${hChk.message})` : 'session length');
-    const tMs = dateS && timeS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
-    if (dateS && timeS && !Number.isFinite(tMs)) miss.push('a valid date/time');
-    if (miss.length) {
-      errors.push(`HD session row ${rowNum(id)}: missing or invalid ${miss.join(', ')}.`);
-      return;
-    }
-    // n is the input row's own number, so "session 3" is always the row labelled HD 3.
-    sessions.push({ n: Number(id), startH: tMs / 3600000, endH: tMs / 3600000 + hChk.value, hours: hChk.value, label: `${dateS} ${timeS}` });
-  });
-  sessions.sort((a, b) => a.startH - b.startH);
-  for (let i = 1; i < sessions.length; i++) {
-    if (sessions[i].startH < sessions[i - 1].endH - 1e-9) {
-      errors.push(`The HD session at ${sessions[i].label} starts before the ${sessions[i - 1].label} session ends — check the times.`);
-    }
-  }
+  // Haemodialysis or hybrid sessions (D15, D28): one reader, parseBayesSessions.
+  const hs = parseBayesSessions(bayesRrt());
+  const sessions = hs.sessions || [];
+  if (hs.errors) errors.push(...hs.errors);
 
   doses.sort((a,b) => a.timeH - b.timeH);
   levels.sort((a,b) => a.timeH - b.timeH);
@@ -9609,6 +9639,59 @@ function parseBayesCourse() {
     }
   }
   return { doses, levels, sessions, errors };
+}
+
+// The session rows (D15; typed in D28), read once for every caller: parseBayesCourse, and AUC
+// Precision's hybrid refusal, which parses no course but names each session's end (controller
+// ruling R75). Start date and time plus a length in hours — a length, not an end time, because an
+// end typed as a clock time before the start would need the "+24 h" wrap this file forbids
+// (SUITE 19). A row's type must be the renal replacement in force (haemodialysis when it is
+// neither haemodialysis nor hybrid); its length is checked against its type's limit. A row with no
+// type select is a haemodialysis row, the only kind before D28.
+// Returns { sessions:[{n, startH, endH, hours, label, type}] } sorted by start, or { errors:[string] }.
+function parseBayesSessions(rrt) {
+  const sessions = [], errors = [];
+  const want = HD_SESSION_TYPES.indexOf(rrt) >= 0 ? rrt : 'ihd';
+  document.querySelectorAll('[id^="b-hd-row-"]').forEach(row => {
+    const id    = row.id.replace('b-hd-row-','');
+    const dateS = (document.getElementById(`b-hd-date-${id}`) || {}).value;
+    const timeS = ((document.getElementById(`b-hd-time-${id}`) || {}).value || '').trim();
+    const hRaw  = (document.getElementById(`b-hd-hours-${id}`) || {}).value;
+    const typeEl = document.getElementById(`b-hd-type-${id}`);
+    const type  = typeEl && typeEl.value != null && typeEl.value !== '' ? String(typeEl.value) : 'ihd';
+    const anything = [dateS, timeS, hRaw].some(v => v !== undefined && String(v).trim() !== '');
+    if (!anything) return;                                  // an untouched spare row (its type is a default)
+    if (HD_SESSION_TYPES.indexOf(type) < 0) { errors.push(`HD session row ${id}: unknown session type "${type}".`); return; }
+    if (type !== want) {
+      errors.push(`HD session row ${id} is typed ${HD_SESSION_TYPE_WORD[type]} while Renal replacement is ${RRT_LABEL[rrt] || 'None'}.`);
+      return;
+    }
+    const miss = [];
+    const hChk = checkValue(hRaw, HD_SESSION_TYPE_LIMIT[type]);
+    // A haemodialysis row longer than its limit, within the hybrid one, is prolonged therapy: say what to set.
+    const prolonged = type === 'ihd' && Number.isFinite(hChk.value)
+      && hChk.value > INPUT_LIMITS.hdHours.max && hChk.value <= INPUT_LIMITS.hybridHours.max;
+    if (!dateS)      miss.push('date');
+    if (!/^\d{2}:\d{2}$/.test(timeS)) miss.push(timeS ? `start time "${timeS}" (use HH:MM)` : 'start time');
+    if (!hChk.ok)    miss.push(prolonged
+      ? `session length (a session longer than ${INPUT_LIMITS.hdHours.max} h is prolonged therapy: set Renal replacement to Hybrid (SLED / PIRRT))`
+      : hRaw ? `session length (${hChk.message})` : 'session length');
+    const tMs = dateS && timeS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
+    if (dateS && timeS && !Number.isFinite(tMs)) miss.push('a valid date/time');
+    if (miss.length) {
+      errors.push(`HD session row ${id}: missing or invalid ${miss.join(', ')}.`);
+      return;
+    }
+    // n is the input row's own number, so "session 3" is always the row labelled HD 3.
+    sessions.push({ n: Number(id), startH: tMs / 3600000, endH: tMs / 3600000 + hChk.value, hours: hChk.value, label: `${dateS} ${timeS}`, type });
+  });
+  sessions.sort((a, b) => a.startH - b.startH);
+  for (let i = 1; i < sessions.length; i++) {
+    if (sessions[i].startH < sessions[i - 1].endH - 1e-9) {
+      errors.push(`The HD session at ${sessions[i].label} starts before the ${sessions[i - 1].label} session ends — check the times.`);
+    }
+  }
+  return errors.length ? { errors } : { sessions };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -9760,6 +9843,34 @@ const HD_EMPIRIC_MG_PER_KG = {
   intradialytic: { high: { ld: 35, md: [10, 15] },  low: { ld: 30, md: [7.5, 10] } },
 };
 // HD_LOADING_MAX_MG (Rec 11, 3,000 mg) is defined with its source above the severe-renal advisory.
+
+// Rybak 2020 Rec 13: maintenance doses are for thrice-weekly administration; more often, dose from levels (Rec 14). A caution only (the user's ruling U8); changes no number.
+// Rec 13 is B-II (its maintenance doses are footnoted "thrice-weekly dose administration"); Rec 14 is C-III.
+const HD_SESSIONS_PER_WEEK_CAUTION = 3;
+// The most sessions whose start falls in any seven consecutive calendar days. Calendar days, not
+// 168 h: a thrice-weekly schedule whose start times move (Mon 20:00 … next Mon 06:00), or a week
+// with a clock change in it (167 h), is still thrice weekly. Local dates, no "+24 h" arithmetic.
+function sessionsPerWeekMax(sessions) {
+  const days = (sessions || []).filter(s => s && Number.isFinite(s.startH)).map(s => {
+    const d = new Date(s.startH * 3600000);
+    return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+  }).sort((a, b) => a - b);
+  let best = 0;
+  for (let i = 0, j = 0; i < days.length; i++) {
+    while (days[i] - days[j] >= 7) j++;
+    best = Math.max(best, i - j + 1);
+  }
+  return best;
+}
+// The caution lines a Goti-HD answer carries (D28). Presentation only: runBayesian stores them on the
+// result as `cautions` and the render shows them; nothing else reads them.
+function sessionsPerWeekCautions(sessions) {
+  const n = sessionsPerWeekMax(sessions);
+  if (!(n > HD_SESSIONS_PER_WEEK_CAUTION)) return [];
+  return [{ tier: 'caution', word: 'More than three sessions in seven days', html:
+    `${n} sessions start within seven days here. Rybak 2020 Rec 13's maintenance doses are for thrice-weekly
+     administration; with more frequent sessions, dose from measured pre-HD levels (Rec 14). This changes no number shown.` }];
+}
 function roundDose250(mg) { return Math.max(MATRIX_DOSE_STEP, Math.round(mg / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP); }
 function hdEmpiricDoses(abwKg) {
   if (!(abwKg > 0)) return null;
@@ -10345,7 +10456,9 @@ function addHdSchedule() {
   const pattern = g('b-hds-pattern'), first = g('b-hds-date'), time = g('b-hds-time').trim();
   const hours = g('b-hds-hours'), count = parseInt(g('b-hds-count'), 10), everyN = parseInt(g('b-hds-n'), 10);
   const msg = document.getElementById('b-hds-msg');
-  const dates = isClock24(time) && checkValue(hours, 'hdHours').ok && (pattern !== 'N' || everyN <= 7)
+  // D28: the rows take the type a new row takes (the renal replacement in force) and its length limit.
+  const type = hdSessionDefaultType();
+  const dates = isClock24(time) && checkValue(hours, HD_SESSION_TYPE_LIMIT[type]).ok && (pattern !== 'N' || everyN <= 7)
     ? hdScheduleDates(first, pattern, everyN, Math.min(12, count)) : [];
   if (!dates.length) { if (msg) msg.textContent = 'Fill every field: pattern (and N for every N days), first date, start time (HH:MM), length and number of sessions.'; return; }
   for (const ds of dates) {
@@ -10354,6 +10467,7 @@ function addHdSchedule() {
     document.getElementById(`b-hd-date-${id}`).value = ds;
     document.getElementById(`b-hd-time-${id}`).value = time;
     document.getElementById(`b-hd-hours-${id}`).value = hours;
+    const t = document.getElementById(`b-hd-type-${id}`); if (t) t.value = type;
   }
   if (msg) msg.textContent = `Added ${dates.length} session${dates.length === 1 ? '' : 's'}.`;
   scheduleCourseReadback();
@@ -13698,9 +13812,21 @@ function runBayesian() {
   // dialysis (the level-based PD mode is), on CRRT or on hybrid therapy; on haemodialysis only
   // Goti 2018 · HD carries dialysis, so any other tile would fit a patient off dialysis.
   const rrt = bayesRrt();
+  bState.hybridSessions = null;   // the hybrid refusal's sessions belong to the run that read them
   if (rrt === 'pd') { showBayesRrtRefusal(rrtNoticeHTML('pd', 'auc')); return; }
   if (rrt === 'ihd' && bayesTile() !== 'gotihd') { showBayesRrtRefusal(rrtNoticeHTML('ihd', 'auc')); return; }
-  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }
+  if (rrt === 'crrt') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }
+  // Hybrid (ruling R75): no course is parsed and nothing is fitted, but the session rows are read, so
+  // the reference can name each session's end (bState.hybridSessions, Task 25); a row that cannot be
+  // read is said beside the refusal.
+  if (rrt === 'hybrid') {
+    const hs = parseBayesSessions(rrt);
+    bState.hybridSessions = hs.sessions || null;
+    if (hs.errors) showFormErrors('auc', hs.errors, hs.errors.map(m => courseErrorTarget(m)), {
+      lead: 'Some session rows cannot be read.', tail: 'Complete or delete these rows.' });
+    showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc'), !!hs.errors);
+    return;
+  }
   const { doses, levels, sessions, errors } = parseBayesCourse();
   bState.hdGiveAtH = null;   // a give-at time belongs to the answer it was set on (final review I4)
   bState.firstDoseAtH = null; // so does a first-dose time (v3.9.0)
@@ -13923,7 +14049,9 @@ function runBayesian() {
       model:'goti', CL_ind, V_ind:Vc_ind, CL_pop, V_pop:Vc_pop,
       kel_ind, t12_ind, kel_pop, t12_pop,
       etaCL:etaCL_opt, etaV:etaVc_opt, crcl, targetAUC, rec, decisionArgs, doses, tbw, dial: !!bState.dial, agCtx, mapAlt, lowCrClHold: lowCrClInfo.detected && filteredLevels.length === 0,
-      levels:filteredLevels, hdSessions: sessions || [], fitNowH: Date.now() / 3600000, objFinal, goti: gotiResult
+      levels:filteredLevels, hdSessions: sessions || [], fitNowH: Date.now() / 3600000, objFinal, goti: gotiResult,
+      // D28: Goti-HD's sessions-per-week caution (Rybak 2020 Rec 13, 14); read by the render only.
+      cautions: bState.dial ? sessionsPerWeekCautions(sessions || []) : []
     };
     // CODEX F-003: bind this fit to the inputs it came from.
   try { bState.resultFingerprint = bayesInputFingerprint(); } catch (e) { bState.resultFingerprint = null; }
@@ -15104,6 +15232,8 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   }
   if (divergeMsg) notes.push({ tier: 'caution', word: 'Fit', html: divergeMsg });
   for (const w of levelWarnings) notes.push({ tier: 'caution', word: 'Level timing', html: escHtml(w) });
+  // D28: cautions the fit carries (on Goti-HD, more than three sessions in seven days). They change no number.
+  for (const c of (r.cautions || [])) notes.push(c);
 
   // ── Renal-function advisories: read the covariate AND the levels ─────────
   // The ARC advisory used to fire on Cockcroft-Gault alone and recommend
@@ -16616,6 +16746,8 @@ function validProfile(p) {
   if (['core', 'target', 'pd'].some(k => s[k] != null && !isObj(s[k]))) return false;
   // D28: a stored renal-replacement kind must be one of the five; anything else is refused, never repaired.
   if (s.core && s.core.rrt !== undefined && RRT_KINDS.indexOf(s.core.rrt) < 0) return false;
+  // D28: a stored session row's type is haemodialysis or hybrid, or absent (a row saved before D28).
+  if ((s.hdSessions || []).some(x => x.type !== undefined && HD_SESSION_TYPES.indexOf(x.type) < 0)) return false;
   return true;
 }
 
@@ -16696,7 +16828,7 @@ function bayesInputFingerprint() {
       regimenOverrideH: bState.regimenOverrideH,
       doses: doses.map(d => [d.mg, d.tinfH, +d.timeH.toFixed(4)]),
       levels: levels.map(l => [l.conc, +l.timeH.toFixed(4)]),
-      hd: (sessions || []).map(x => [+x.startH.toFixed(4), x.hours]),
+      hd: (sessions || []).map(x => [+x.startH.toFixed(4), x.hours, x.type]),
     });
   } catch (e) { return null; }
 }
@@ -16730,7 +16862,8 @@ function snapshotBayesForm() {
   const hdSessions = [];
   document.querySelectorAll('[id^="b-hd-row-"]').forEach(row => {
     const id = row.id.replace('b-hd-row-','');
-    hdSessions.push({ date: val(`b-hd-date-${id}`), time: val(`b-hd-time-${id}`), hours: val(`b-hd-hours-${id}`) });
+    hdSessions.push({ date: val(`b-hd-date-${id}`), time: val(`b-hd-time-${id}`), hours: val(`b-hd-hours-${id}`),
+      type: val(`b-hd-type-${id}`) || 'ihd' });   // D28; a row without a type select is a haemodialysis row
   });
   const scrRows = [];
   document.querySelectorAll('[id^="b-scr-row-"]').forEach(row => {
@@ -17123,15 +17256,9 @@ function loadProfileIntoForm(id) {
     set2(`b-lvl-date-${id}`, l.date);
     set2(`b-lvl-time-${id}`, l.time);
   });
-  // Older profiles carry no sessions: an absent array loads as none (D15).
-  (s.hdSessions || []).forEach(x => {
-    addBayesSession();
-    const id = bHdCount;
-    const set2 = (k, v) => { const el = document.getElementById(k); if (el) el.value = v; };
-    set2(`b-hd-date-${id}`, x.date);
-    set2(`b-hd-time-${id}`, x.time);
-    set2(`b-hd-hours-${id}`, x.hours);
-  });
+  // Older profiles carry no sessions: an absent array loads as none (D15); a row without a type as
+  // haemodialysis (D28).
+  applyHdSessionRows(s.hdSessions);
   (s.scrRows || []).forEach(r => {
     addScrRow();
     const row = document.getElementById(`b-scr-row-${bScrCount}`);
@@ -17941,9 +18068,12 @@ function courseErrorTarget(msg) {
     if (/\btime\b/.test(w))           ids.push(`b-lvl-time-${n}`);
     return ids.length ? ids : [`b-lvl-conc-${n}`];
   }
+  m = /^HD session row (\d+) is typed /.exec(s);   // D28: the row's type, not the renal replacement in force
+  if (m) return [`b-hd-type-${m[1]}`];
   m = /^HD session row (\d+): (.*)$/.exec(s);
   if (m) {
     const n = m[1], w = m[2], ids = [];
+    if (/session type/.test(w))       ids.push(`b-hd-type-${n}`);
     if (/\bdate\b/.test(w))           ids.push(`b-hd-date-${n}`);
     if (/start time/.test(w))         ids.push(`b-hd-time-${n}`);
     if (/session length/.test(w))     ids.push(`b-hd-hours-${n}`);

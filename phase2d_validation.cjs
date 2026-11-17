@@ -139,7 +139,7 @@ function assertLess(a,b,label) {
 // test drive the real parseBayesCourse / readSerialScrChecked / bayesInputFingerprint /
 // snapshotBayesForm against form values, the way the page does. Fictional values only.
 // vals: { 'b-age': '60', ... } plus doses [[mg, tinf, date, time]], levels [[conc, date, time]],
-// scrRows [[val, date, time]]. Rows are numbered from 1, as the page numbers them.
+// scrRows [[val, date, time]], hdRows [[date, time, hours, type]]. Rows are numbered from 1, as the page numbers them.
 function bayesFormEnv(vals) {
   const els = {};
   const el = (id) => els[id] || (els[id] = { id, value: '', checked: false, textContent: '', innerHTML: '', style: {}, dataset: {},
@@ -158,7 +158,13 @@ function bayesFormEnv(vals) {
     const row = el(`b-scr-row-${i + 1}`), sub = { '.b-scr-val': { value: String(val) }, '.b-scr-date': { value: date }, '.b-scr-time': { value: time } };
     row.querySelector = (sel) => sub[sel] || null;
   });
-  ['doses', 'levels', 'scrRows'].forEach(k => delete v[k]);
+  // Session rows (D15; D28 typed them): [date, time, hours, type]; a row without a type has no type select.
+  (v.hdRows || []).forEach(([date, time, hours, type], i) => {
+    el(`b-hd-row-${i + 1}`); el(`b-hd-date-${i + 1}`).value = date; el(`b-hd-time-${i + 1}`).value = time;
+    el(`b-hd-hours-${i + 1}`).value = String(hours);
+    if (type !== undefined) el(`b-hd-type-${i + 1}`).value = type;
+  });
+  ['doses', 'levels', 'scrRows', 'hdRows'].forEach(k => delete v[k]);
   Object.keys(v).forEach(id => { el(id).value = String(v[id]); });
   const document = {
     getElementById: el, createElement: () => el('_new'), querySelector: () => null,
@@ -9866,13 +9872,208 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       });
     }
   });
+
+  // ── Task 24: typed session rows, hybrid sessions to 24 h, the sessions-per-week caution (D28) ──
+  // The plan's 46.13–46.20 are 46.15–46.22 here (controller ruling R76); 46.23 is the syncHdSection fix
+  // (Task 23 review minor) and 46.24 the hybrid refusal reading its sessions (ruling R75).
+  const hdH46 = (date, time) => new Date(`${date}T${time}`).getTime() / 3600000;
+  // The real parseBayesCourse on a small form, with renal replacement set as given.
+  const sess46 = (rrt, hdRows, fn) => withBayesForm({ doses: [[1000, 1, '2026-11-16', '13:00']], hdRows }, (env) => {
+    vm.runInContext(`bState.rrt = ${JSON.stringify(rrt)};`, sandbox);
+    return fn ? fn(env) : fn46('parseBayesCourse')();
+  });
+  // A fictional Goti-HD course run through runBayesian and the render, the clock frozen so two runs compare.
+  const NOW46 = new Date('2026-11-21T12:00').getTime();
+  const hdRun46 = (hdRows, stub, rrt) => withBayesForm({
+    'b-age': '64', 'b-tbw': '78', 'b-height': '172', 'b-scr': '6.2', 'b-auc-target': '450', 'b-mic': '1',
+    doses: [[2000, 2, '2026-11-16', '13:00'], [750, 1, '2026-11-18', '13:00'], [750, 1, '2026-11-20', '13:00']],
+    levels: [[17.4, '2026-11-20', '07:30']], hdRows }, (env) => {
+    const names = ['setTimeout', 'announceResult'].concat(Object.keys(stub || {}));
+    const keep = {}; names.forEach(n => { keep[n] = sandbox[n]; });
+    const realNow = Date.now;
+    sandbox.setTimeout = () => 0; sandbox.announceResult = () => {};
+    Object.assign(sandbox, stub || {});
+    Date.now = () => NOW46;
+    env.document.body = env.el('body');   // a page: the error summary is written
+    vm.runInContext(`bState.model = 'goti'; bState.tile = 'gotihd'; bState.rrt = ${JSON.stringify(rrt || 'ihd')}; bState.dial = bState.rrt === 'ihd'; bState.sex = 'M';`, sandbox);
+    try {
+      fn46('runBayesian')();
+      const r = vm.runInContext('bState.result', sandbox);
+      const html = (env.els['b-results'] || {}).innerHTML || '';
+      return { r, html, text: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ') };
+    } finally { Date.now = realNow; names.forEach(n => { sandbox[n] = keep[n]; }); }
+  });
+  const WORD46 = 'More than three sessions in seven days';
+
+  test('46.15 under hybrid a 14 h row parses; under haemodialysis a 14 h row is refused as prolonged therapy, naming the row', () => {
+    const ok = sess46('hybrid', [['2026-11-16', '20:00', '14', 'hybrid']]);
+    assert(!ok.errors.length, ok.errors.join('; '));
+    const s = ok.sessions[0];
+    assert(ok.sessions.length === 1 && s.type === 'hybrid' && s.hours === 14 && s.n === 1 && s.label === '2026-11-16 20:00', JSON.stringify(ok.sessions));
+    assertClose(s.endH - s.startH, 14, 1e-9, 'end = start + length, across midnight by arithmetic');
+    const hd = sess46('ihd', [['2026-11-16', '20:00', '14', 'ihd']]);
+    assert(hd.sessions.length === 0 && hd.errors.length === 1
+      && /^HD session row 1: .*a session longer than 12 h is prolonged therapy: set Renal replacement to Hybrid/.test(hd.errors[0]), hd.errors.join('; '));
+    const twelve = sess46('ihd', [['2026-11-16', '20:00', '12', 'ihd']]);
+    assert(!twelve.errors.length && twelve.sessions[0].type === 'ihd' && twelve.sessions[0].hours === 12, twelve.errors.join('; '));
+  });
+
+  test('46.16 INPUT_LIMITS.hybridHours is 0.5–24 h beside hdHours (0.5–12, unchanged): a 24 h hybrid row parses; 24.25 h is refused through checkValue', () => {
+    const lim = vm.runInContext('JSON.stringify([INPUT_LIMITS.hybridHours, INPUT_LIMITS.hdHours])', sandbox);
+    assert(lim === JSON.stringify([{ min: 0.5, max: 24, label: 'Session length', unit: 'h' }, { min: 0.5, max: 12, label: 'Session length', unit: 'h' }]), lim);
+    const p24 = sess46('hybrid', [['2026-11-16', '08:00', '24', 'hybrid']]);
+    assert(!p24.errors.length && p24.sessions[0].hours === 24, p24.errors.join('; '));
+    const c = fn46('checkValue')('24.25', 'hybridHours');
+    assert(!c.ok && c.message === 'Session length must be between 0.5 and 24 h. Got 24.25.', JSON.stringify(c));
+    const p = sess46('hybrid', [['2026-11-16', '08:00', '24.25', 'hybrid']]);
+    assert(p.sessions.length === 0 && p.errors.length === 1 && p.errors[0] === `HD session row 1: missing or invalid session length (${c.message}).`, p.errors.join('; '));
+  });
+
+  test('46.17 a row typed for the other kind is a blocking error naming the row; Goti-HD fits nothing with it', () => {
+    const toIhd = sess46('ihd', [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '10', 'hybrid']]);
+    assert(toIhd.errors.indexOf('HD session row 2 is typed hybrid while Renal replacement is intermittent haemodialysis.') >= 0 && toIhd.sessions.length === 0, toIhd.errors.join('; '));
+    const toHyb = sess46('hybrid', [['2026-11-16', '08:00', '10', 'hybrid'], ['2026-11-18', '08:00', '4', 'ihd']]);
+    assert(toHyb.errors.indexOf('HD session row 2 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, toHyb.errors.join('; '));
+    // parseBayesSessions returns the errors alone (ruling R75's shape), and the message points at the row's type.
+    const only = sess46('hybrid', [['2026-11-18', '08:00', '4', 'ihd']], (env) => {
+      env.document.body = env.el('body');
+      const r = fn46('parseBayesSessions')('hybrid');
+      return { r, target: fn46('courseErrorTarget')(r.errors && r.errors[0]) };
+    });
+    assert(!('sessions' in only.r) && only.r.errors.length === 1 && JSON.stringify(only.target) === '["b-hd-type-1"]', JSON.stringify(only));
+    // Blocking: Goti-HD shows the error and keeps no result.
+    const run = hdRun46([['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '4', 'hybrid']]);
+    assert(run.r === null && run.text.indexOf('HD session row 2 is typed hybrid while Renal replacement is intermittent haemodialysis.') >= 0 && !/rec-dose/.test(run.html), run.text.slice(0, 300));
+  });
+
+  test('46.18 the overlap check still fires across a 20 h hybrid row crossing midnight', () => {
+    const ovl = sess46('hybrid', [['2026-11-16', '20:00', '20', 'hybrid'], ['2026-11-17', '08:00', '4', 'hybrid']]);
+    assert(ovl.errors.some(e => e === 'The HD session at 2026-11-17 08:00 starts before the 2026-11-16 20:00 session ends — check the times.'), ovl.errors.join('; '));
+    const after = sess46('hybrid', [['2026-11-16', '20:00', '20', 'hybrid'], ['2026-11-17', '16:00', '4', 'hybrid']]);
+    assert(!after.errors.length && after.sessions.length === 2, after.errors.join('; '));
+  });
+
+  test('46.19 sessionsPerWeekMax counts the most session starts in any seven calendar days', () => {
+    const f = fn46('sessionsPerWeekMax');
+    const at = (list) => list.map(([d, t], i) => ({ n: i + 1, startH: hdH46(d, t || '08:00') }));
+    assert(__extractConsts().HD_SESSIONS_PER_WEEK_CAUTION === 3, 'HD_SESSIONS_PER_WEEK_CAUTION parsed');
+    assert(f(at([['2026-11-16'], ['2026-11-18'], ['2026-11-20']])) === 3, 'Mon/Wed/Fri');
+    assert(f(at([['2026-11-16'], ['2026-11-17'], ['2026-11-18'], ['2026-11-20']])) === 4, 'Mon/Tue/Wed/Fri');
+    assert(f(at([['2026-11-16'], ['2026-11-18'], ['2026-11-21'], ['2026-11-23']])) === 3, 'four over 8 days, no 7-day window of four');
+    assert(f(at([['2026-11-23'], ['2026-11-16'], ['2026-11-20'], ['2026-11-18']])) === 3, 'order does not matter');
+    assert(f(at([['2026-11-16'], ['2026-11-18'], ['2026-11-20'], ['2026-11-23'], ['2026-11-25'], ['2026-11-27']])) === 3, 'two weeks of MWF');
+    assert(f(at(['16', '17', '18', '19', '20', '21', '22'].map(d => [`2026-11-${d}`]))) === 7, 'daily');
+    assert(f([]) === 0 && f(null) === 0, 'none');
+    // Calendar days: a thrice-weekly schedule whose times move is still thrice weekly (154 h apart, a new week).
+    assert(f(at([['2026-11-16', '20:00'], ['2026-11-18'], ['2026-11-20'], ['2026-11-23', '06:00']])) === 3, 'Mon 20:00 … next Mon 06:00');
+    // And across each 2026 clock change (US 8 Mar, Europe 29 Mar, New Zealand 27 Sep): a 167 h week is still a week.
+    for (const w of [['02', '04', '06', '09'], ['23', '25', '27', '30']]) assert(f(at(w.map(d => [`2026-03-${d}`]))) === 3, `March ${w}`);
+    assert(f(at([['2026-09-21'], ['2026-09-23'], ['2026-09-25'], ['2026-09-28']])) === 3, 'September (NZ)');
+  });
+
+  test('46.20 on Goti-HD four sessions in seven days carry one caution line citing Rec 13 and Rec 14, and change no number', () => {
+    const rows = [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-17', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '4', 'ihd'], ['2026-11-20', '08:00', '4', 'ihd']];
+    const on = hdRun46(rows);
+    assert(on.r && on.r.model === 'goti' && on.r.dial === true, `the fit ran: ${on.text.slice(0, 300)}`);
+    assert(Array.isArray(on.r.cautions) && on.r.cautions.length === 1 && on.r.cautions[0].word === WORD46, JSON.stringify(on.r.cautions));
+    // One note: once in the answer's notes, once in "All notes" (which lists every note, by design).
+    const ev = on.html.indexOf('id="ev-notes"'), count = (h) => h.split(WORD46).length - 1;
+    assert(ev > 0 && count(on.html.slice(0, ev)) === 1 && count(on.html.slice(ev)) === 1, `the caution appears ${count(on.html)} times (All notes at ${ev})`);
+    const line = on.r.cautions[0].html;
+    assert(/Rybak 2020 Rec 13/.test(line) && /thrice-weekly/.test(line) && /Rec 14/.test(line) && /4 sessions/.test(line) && /changes no number/.test(line), line);
+    const off = hdRun46(rows, { sessionsPerWeekCautions: () => [] });
+    assert(off.r && off.r.cautions.length === 0 && off.html.indexOf(WORD46) < 0, 'suppressed');
+    // Every number in the result object (the render hangs a self-referencing regimen on it: cycles are named, not followed).
+    const minus = (r) => { const seen = new WeakSet();
+      return JSON.stringify(Object.assign({}, r, { cautions: undefined }), (k, v) => {
+        if (v && typeof v === 'object') { if (seen.has(v)) return '[seen]'; seen.add(v); }
+        return v; }); };
+    assert(minus(on.r) === minus(off.r), 'the result object differs beyond its cautions');
+    const verdict = (h) => (h.match(/<section class="vx-verdict"[\s\S]*?<\/section>/) || [''])[0];
+    assert(verdict(on.html) && verdict(on.html) === verdict(off.html), 'the verdict differs');
+  });
+
+  test('46.21 three sessions in seven days (two weeks of Mon/Wed/Fri): no caution', () => {
+    const rows = ['16', '18', '20', '23', '25', '27'].map(d => [`2026-11-${d}`, '08:00', '4', 'ihd']);
+    const r = hdRun46(rows);
+    assert(r.r && Array.isArray(r.r.cautions) && r.r.cautions.length === 0 && r.html.indexOf(WORD46) < 0, JSON.stringify(r.r && r.r.cautions));
+  });
+
+  test('46.22 a saved session row keeps its type; a v3.15.0 row without one loads as haemodialysis; an unknown type is refused', () => {
+    const snap = withBayesForm({ hdRows: [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '20:00', '14', 'hybrid']] }, () => fn46('snapshotBayesForm')());
+    assert(JSON.stringify(snap.hdSessions) === JSON.stringify([{ date: '2026-11-16', time: '08:00', hours: '4', type: 'ihd' },
+      { date: '2026-11-18', time: '20:00', hours: '14', type: 'hybrid' }]), JSON.stringify(snap.hdSessions));
+    const loaded = withBayesForm({}, (env) => {
+      // Rows the page would append: register each <tr> under its id so the row selector finds it.
+      env.document.createElement = () => ({ id: '', className: '', innerHTML: '', remove() {} });
+      env.el('b-hd-tbody').appendChild = (tr) => { env.els[tr.id] = tr; };
+      vm.runInContext("bState.rrt = 'hybrid';", sandbox);   // a new row would default to hybrid
+      fn46('applyHdSessionRows')(snap.hdSessions.concat([{ date: '2026-11-20', time: '08:00', hours: '4' }]));
+      return env.document.querySelectorAll('[id^="b-hd-row-"]').map(row => {
+        const n = row.id.replace('b-hd-row-', '');
+        return ['date', 'time', 'hours', 'type'].map(k => env.el(`b-hd-${k}-${n}`).value).join(' ');
+      });
+    });
+    assert(JSON.stringify(loaded) === JSON.stringify(['2026-11-16 08:00 4 ihd', '2026-11-18 20:00 14 hybrid', '2026-11-20 08:00 4 ihd']), JSON.stringify(loaded));
+    const base = JSON.parse(JSON.stringify(profFixture44[0]));
+    const withRow = (row) => { const c = JSON.parse(JSON.stringify(base)); c.snapshot.hdSessions = [row]; return fn46('validProfile')(c); };
+    assert(withRow({ date: '2026-11-16', time: '08:00', hours: '4' }) === true && withRow({ date: '2026-11-16', time: '08:00', hours: '4', type: 'hybrid' }) === true, 'valid rows');
+    for (const bad of ['sled', 'crrt', '', null, 3]) assert(withRow({ date: '2026-11-16', time: '08:00', hours: '4', type: bad }) === false, `type ${JSON.stringify(bad)} accepted`);
+  });
+
+  test('46.23 the session section shows on Goti-HD under haemodialysis, on any tile under hybrid, and whenever a row exists; not on plain Goti under haemodialysis', () => {
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        const shown = () => env.els['b-hd-wrap'].hidden === false;
+        env.get('b-hd-wrap');
+        fn46('setRrt')('ihd'); assert(rrt46().tile === 'gotihd' && shown(), 'Goti-HD on haemodialysis');
+        tile46(env, 'goti'); assert(rrt46().b === 'ihd' && !shown(), 'plain Goti on haemodialysis (the refused tile)');
+        fn46('setRrt')('hybrid'); tile46(env, 'buelga'); assert(shown(), 'hybrid, Buelga');
+        tile46(env, 'hughes'); assert(shown(), 'hybrid, Hughes');
+        fn46('setRrt')('none'); assert(!shown(), 'none');
+        fn46('setRrt')('crrt'); assert(!shown(), 'CRRT');
+        env.document.querySelector = (sel) => (/b-hd-row-/.test(sel) ? env.get('b-hd-row-1') : null);
+        fn46('syncHdSection')(); assert(shown(), 'a row exists');
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.24 hybrid in AUC Precision (R75): the session rows are read for the reference, an error shows beside the refusal, nothing is fitted; CRRT reads nothing', () => {
+    const spy = (env, kind, fn) => {
+      const real = { c: sandbox.parseBayesCourse, s: sandbox.parseBayesSessions }, calls = { c: 0, s: 0 };
+      sandbox.parseBayesCourse = function () { calls.c++; return real.c.apply(this, arguments); };
+      sandbox.parseBayesSessions = function () { calls.s++; return real.s.apply(this, arguments); };
+      const keep = { setTimeout: sandbox.setTimeout, announceResult: sandbox.announceResult };
+      sandbox.setTimeout = () => 0; sandbox.announceResult = () => {};
+      env.document.body = env.el('body');
+      vm.runInContext(`bState.rrt = ${JSON.stringify(kind)}; bState.dial = false; bState.model = 'goti'; bState.tile = 'goti'; bState.result = { rec: { dose: 1000, tau: 12 } }; bState.hybridSessions = 'stale';`, sandbox);
+      try { fn46('runBayesian')(); return fn(calls, (env.els['b-results'] || {}).innerHTML || ''); }
+      finally { sandbox.parseBayesCourse = real.c; sandbox.parseBayesSessions = real.s; Object.assign(sandbox, keep); }
+    };
+    const D = [[1000, 1, '2026-11-16', '13:00']];
+    withBayesForm({ doses: D, hdRows: [['2026-11-17', '20:00', '14', 'hybrid'], ['2026-11-16', '08:00', '8', 'hybrid']] }, (env) => spy(env, 'hybrid', (calls, html) => {
+      const hs = vm.runInContext('bState.hybridSessions', sandbox);
+      assert(calls.c === 0 && calls.s === 1, JSON.stringify(calls));
+      assert(/On hybrid therapy \(SLED \/ PIRRT\)/.test(html) && /data-rrt-refusal/.test(html) && vm.runInContext('bState.result', sandbox) === null, html.slice(0, 300));
+      assert(Array.isArray(hs) && hs.length === 2 && hs[0].n === 2 && hs[1].type === 'hybrid' && hs[1].label === '2026-11-17 20:00', JSON.stringify(hs));
+      assertClose(hs[1].endH, hdH46('2026-11-17', '20:00') + 14, 1e-9, 'the end Task 25 names');
+    }));
+    withBayesForm({ doses: D, hdRows: [['2026-11-16', '08:00', '4', 'ihd']] }, (env) => spy(env, 'hybrid', (calls, html) => {
+      assert(calls.c === 0 && /On hybrid therapy/.test(html) && html.indexOf('HD session row 1 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, html.slice(0, 600));
+      assert(vm.runInContext('bState.hybridSessions', sandbox) === null && vm.runInContext('bState.result', sandbox) === null, 'sessions or a result kept');
+    }));
+    withBayesForm({ doses: D, hdRows: [['2026-11-16', '08:00', '4', 'hybrid']] }, (env) => spy(env, 'crrt', (calls, html) => {
+      assert(calls.c === 0 && calls.s === 0 && /On CRRT/.test(html), JSON.stringify(calls));
+    }));
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 635;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.14)
+const EXPECTED_TOTAL = 645;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.24)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
