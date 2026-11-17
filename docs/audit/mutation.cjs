@@ -240,6 +240,13 @@ const MUTANTS = [
     replace: "  const { doses, levels, sessions, errors } = parseBayesCourse();\n  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n" },
   { id: 'R3-23-3', what: "rrtOf drops the legacy demographics.dial branch [46.2]",
     find: "if ((core && core.hd) || (demographics && demographics.dial)) return 'ihd';", replace: "if (core && core.hd) return 'ihd';" },
+  // Task 23 review fixes: Important 1 (Review Focus 1) and the controller's ruling R74.
+  { id: 'R3-23-4', what: 'an AUC renal-replacement refusal survives a selector change [46.13]',
+    find: '  if (kind !== prev) clearBayesRrtRefusal();\n', replace: '' },
+  { id: 'R3-23-5', what: 'an AUC renal-replacement refusal survives a tile change [46.13]',
+    find: '  if (m !== bayesTile()) clearBayesRrtRefusal();', replace: '' },
+  { id: 'R3-23-6', what: 'R74 undone: a legacy profile with both a PD form and an HD flag loads (as PD) [46.14]',
+    find: '  if (rrtLegacyConflict(s)) {\n', replace: '  if (false) {\n' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

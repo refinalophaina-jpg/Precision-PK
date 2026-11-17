@@ -2930,6 +2930,41 @@ async function enterCourse(page) {
     const toHd = await r.evaluate(() => ({ tile: bState.tile, rrt: bState.rrt, active: (document.querySelector('#b-model-toggle .model-opt.active') || {}).id }));
     ok('D28: the refusal\'s button selects Goti 2018 · HD, still on haemodialysis', toHd.tile === 'gotihd' && toHd.rrt === 'ihd' && toHd.active === 'b-model-btn-gotihd', JSON.stringify(toHd));
 
+    // Review Focus 1: a refusal is about the renal replacement and tile it was given. Its own button (a tile change)
+    // and a selector change each take it off screen, and the placeholder returns.
+    const aucArea = () => r.evaluate(() => { const el = document.getElementById('b-results'), ph = document.getElementById('b-placeholder');
+      return { refusal: !!el.querySelector('[data-rrt-refusal]'), text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+        shown: getComputedStyle(el).display !== 'none', ph: getComputedStyle(ph).display !== 'none', sel: document.getElementById('b-rrt').value }; });
+    const afterButton = await aucArea();
+    await r.locator('#b-rrt').selectOption('crrt');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    const crrtShown = await aucArea();
+    await r.locator('#b-rrt').selectOption('none'); await r.waitForTimeout(100);
+    const afterNone = await aucArea();
+    await r.locator('#b-rrt').selectOption('hybrid');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    await r.locator('[data-onclick="k1"]').click(); await r.locator('#t-rrt').selectOption('pd'); await r.locator('[data-onclick="k2"]').click(); await r.waitForTimeout(100);
+    const afterTrough = await aucArea();
+    ok('D28: an AUC refusal goes when its tile (its own button) or the selector (either column) changes; the placeholder returns (Review Focus 1)',
+       !afterButton.refusal && afterButton.ph && crrtShown.refusal && /^On CRRT/.test(crrtShown.text)
+       && !afterNone.refusal && !afterNone.shown && afterNone.ph && afterNone.sel === 'none' && !afterTrough.refusal && afterTrough.ph && afterTrough.sel === 'pd',
+       JSON.stringify({ afterButton, crrtShown, afterNone, afterTrough }));
+    await r.locator('#b-rrt').selectOption('none');
+
+    // R74: an older profile with both a PD form and a haemodialysis flag is refused on load; the form and storage stay.
+    const bothP = JSON.parse(JSON.stringify(fixture[0]));
+    bothP.id = 'p_d28bothflags'; bothP.label = 'Both PD and HD'; bothP.snapshot.core.hd = true; bothP.snapshot.pd.modality = 'ccpd';
+    const bothRaw = JSON.stringify([bothP]);
+    await r.evaluate(([k, v]) => { localStorage.setItem(k, v); renderProfileList(); }, ['ainadara.profiles.v1', bothRaw]);
+    await typeInto(r, '#b-age', '77');
+    await r.locator('#app-shell-bayesian .profile-item', { hasText: 'Both PD and HD' }).locator('.profile-item-btn.load').click();
+    await r.waitForTimeout(300);
+    const r74 = await r.evaluate((raw) => ({ status: [...document.querySelectorAll('#app-shell-bayesian .profile-status')].map(p => p.textContent).join(''),
+      age: document.getElementById('b-age').value, rrt: state.rrt, same: localStorage.getItem('ainadara.profiles.v1') === raw }), bothRaw);
+    ok('D28: a profile recording both haemodialysis and peritoneal dialysis is refused on load, naming both; the form and storage are unchanged (R74)',
+       /records both haemodialysis and peritoneal dialysis/.test(r74.status) && /nothing was loaded/.test(r74.status) && r74.age === '77' && r74.rrt === 'none' && r74.same,
+       JSON.stringify(r74));
+
     // 375 px: the selector, the unavailable modes and their line, and a refusal, with no horizontal scroll.
     await r.setViewportSize({ width: 375, height: 812 });
     await r.locator('#b-rrt').selectOption('hybrid');

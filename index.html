@@ -4436,6 +4436,7 @@ function selectBayesTile(key) {
 function setRrt(kind) {
   if (RRT_KINDS.indexOf(kind) < 0) return false;
   const prev = currentRrt();
+  if (kind !== prev) clearBayesRrtRefusal();
   state.rrt = kind;
   if (typeof bState !== 'undefined' && bState) {
     bState.rrt = kind;
@@ -4510,11 +4511,28 @@ function rrtNoticeHTML(kind, module) {
   return '';
 }
 // AUC Precision shows a refusal in place of a result, and forgets the previous answer in state too:
-// print, a redraw and a saved profile all read bState.result.
+// print, a redraw and a saved profile all read bState.result. The refusal is marked (data-rrt-refusal)
+// because it is about the renal replacement and tile it was given: a refusal has no result, so the
+// stale mark never reaches it, and clearBayesRrtRefusal removes it when either changes (Review Focus 1).
 function showBayesRrtRefusal(html) {
   if (typeof bState !== 'undefined' && bState) { bState.result = null; bState.resultFingerprint = null; }
   const area = formArea('auc');
-  if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = html; }
+  if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = `<div data-rrt-refusal>${html}</div>`; }
+}
+// A renal-replacement refusal on screen goes, and the placeholder returns. Anything else is left alone.
+function clearBayesRrtRefusal() {
+  const area = formArea('auc');
+  if (!area.el || !/data-rrt-refusal/.test(String(area.el.innerHTML || ''))) return false;
+  area.el.innerHTML = ''; area.el.style.display = 'none';
+  if (area.ph) area.ph.style.display = 'flex';
+  return true;
+}
+// Controller ruling R74: an older profile (no core.rrt) carrying both a PD form and a haemodialysis
+// flag is refused on load. v3.15.0 gave it no answer in either module; reading it as either kind now
+// would give a dose for a modality the profile does not settle.
+function rrtLegacyConflict(s) {
+  if (!s || (s.core && s.core.rrt != null)) return false;
+  return !!(s.pd && s.pd.modality) && !!((s.core && s.core.hd) || (s.demographics && s.demographics.dial));
 }
 
 // ══════════════════════════════════════════
@@ -11590,6 +11608,7 @@ function setBModel(el, m) {
   // D28: the Goti-HD tile means the patient is on haemodialysis. Any other tile leaves renal
   // replacement as it is; on haemodialysis AUC Precision then refuses it (runBayesian).
   if (isGotiHD && bayesRrt() !== 'ihd') setRrt('ihd');
+  if (m !== bayesTile()) clearBayesRrtRefusal();   // the refusal named the tile it was given (Review Focus 1)
   bState.tile  = m;
   bState.model = effectiveModel;
   bState.dial  = (bayesRrt() === 'ihd');
@@ -17039,6 +17058,12 @@ function loadProfileIntoForm(id) {
     return;
   }
   const s = entry.snapshot;
+  // R74: refused before anything is cleared, and the stored profile is left as it is.
+  if (rrtLegacyConflict(s)) {
+    profileStatus('This profile records both haemodialysis and peritoneal dialysis, so nothing was loaded and the form is unchanged. '
+      + 'Enter the patient, set Renal replacement, and save a new profile.');
+    return;
+  }
 
   // Both columns are cleared first (engine report I5): resetBayesian() alone left the
   // previous patient's Trough-only fields (cystatin C, baseline SCr, dose, level), and the

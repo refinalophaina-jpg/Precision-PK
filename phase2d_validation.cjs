@@ -9784,13 +9784,95 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       } finally { reset46(); }
     });
   });
+
+  // Review of Task 23, Important 1 (Review Focus 1): a refusal is not a result, so the stale mark never reached it.
+  test('46.13 an AUC renal-replacement refusal goes when the selector or the tile changes: the placeholder returns, never a refusal for the old modality', () => {
+    const shown = (env) => /data-rrt-refusal/.test(env.els['b-results'] ? env.els['b-results'].innerHTML : '');
+    const gone = (env) => !shown(env) && env.els['b-results'].innerHTML === '' && env.els['b-results'].style.display === 'none'
+      && env.els['b-placeholder'] && env.els['b-placeholder'].style.display === 'flex';
+    // The selector: each refused kind, run, then None.
+    for (const [kind, tile] of [['crrt', 'buelga'], ['hybrid', 'goti'], ['pd', 'hughes'], ['ihd', 'buelga']]) {
+      const env = env46({});
+      withProf44(env, [], () => {
+        try {
+          fn46('setRrt')(kind); tile46(env, tile);
+          fn46('runBayesian')();
+          assert(shown(env), `${kind}: no refusal to begin with: ${(env.els['b-results'] || {}).innerHTML}`);
+          fn46('setRrt')('none');
+          assert(gone(env), `${kind} → none: ${env.els['b-results'].innerHTML.slice(0, 160)} / ${env.els['b-results'].style.display}`);
+        } finally { reset46(); }
+      });
+    }
+    // The tile: the haemodialysis refusal, then its own button's action (the Goti-HD tile); and a tile change under CRRT.
+    for (const [kind, from, to] of [['ihd', 'goti', 'gotihd'], ['crrt', 'buelga', 'hughes']]) {
+      const env = env46({});
+      withProf44(env, [], () => {
+        try {
+          fn46('setRrt')(kind); tile46(env, from);
+          fn46('runBayesian')();
+          assert(shown(env), `${kind}/${from}: no refusal to begin with`);
+          tile46(env, to);
+          assert(gone(env), `${kind}: ${from} → ${to}: ${env.els['b-results'].innerHTML.slice(0, 160)}`);
+          assert(rrt46().b === kind, `${kind}: the tile changed renal replacement: ${JSON.stringify(rrt46())}`);
+        } finally { reset46(); }
+      });
+    }
+    // Unchanged selector and tile: the refusal stays (nothing about the patient moved).
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        fn46('setRrt')('crrt'); tile46(env, 'goti'); fn46('runBayesian')();
+        fn46('setRrt')('crrt'); tile46(env, 'goti');
+        assert(shown(env), 'the same kind and tile cleared the refusal');
+      } finally { reset46(); }
+    });
+  });
+
+  // Controller ruling R74: v3.15.0 gave such a profile no answer in either module; mapping it to PD now would give a dose.
+  test('46.14 a legacy profile with both a PD form and a haemodialysis flag is refused on load, naming both; nothing loads and storage is unchanged', () => {
+    const mk = (id, f) => { const p = JSON.parse(JSON.stringify(profFixture44[0])); p.id = id; p.label = id; delete p.snapshot.core.rrt; f(p.snapshot); return p; };
+    const both = [
+      mk('p_bothcore', s => { s.pd.modality = 'ccpd'; s.core.hd = true; }),
+      mk('p_bothdemo', s => { s.pd.modality = 'apd'; s.demographics.dial = true; s.model = 'goti'; }),
+    ];
+    for (const p of both) {
+      const raw = JSON.stringify([p]);
+      const env = profEnv44({ [PROF_KEY44]: raw }, { age: '82', 'b-age': '82' });
+      ['age', 'b-age'].forEach(k => env.get(k));
+      withProf44(env, ['resetForm', 'resetBayesian', 'applyPdForm', 'setRrt'], (calls) => {
+        try {
+          vm.runInContext("state.rrt = 'crrt'; bState.rrt = 'crrt';", sandbox);   // the screen before the load
+          fn46('loadProfileIntoForm')(p.id);
+          const status = env.status.map(x => x.textContent).join(' | ');
+          assert(/records both haemodialysis and peritoneal dialysis/.test(status) && /nothing was loaded/.test(status), `${p.id}: ${status}`);
+          assert(calls.resetForm === 0 && calls.resetBayesian === 0 && calls.applyPdForm === 0 && calls.setRrt === 0, `${p.id}: loaded ${JSON.stringify(calls)}`);
+          assert(env.els.age.value === '82' && env.els['b-age'].value === '82' && vm.runInContext('state.rrt', sandbox) === 'crrt', `${p.id}: the form changed`);
+          assert(env.localStorage.getItem(PROF_KEY44) === raw, `${p.id}: storage changed`);
+        } finally { reset46(); }
+      });
+    }
+    // One flag only loads as before (46.2's mappings), and a stored kind decides even beside both flags.
+    for (const [p, want] of [
+      [mk('p_pdonly', s => { s.pd.modality = 'ccpd'; s.core.hd = false; s.demographics.dial = false; }), 'pd'],
+      [mk('p_hdonly', s => { s.pd.modality = ''; s.core.hd = true; }), 'ihd'],
+      [mk('p_bothrrt', s => { s.pd.modality = 'ccpd'; s.core.hd = true; s.core.rrt = 'pd'; }), 'pd'],
+    ]) {
+      const env = profEnv44({ [PROF_KEY44]: JSON.stringify([p]) }, {});
+      withProf44(env, [], () => {
+        try {
+          fn46('loadProfileIntoForm')(p.id);
+          assert(rrt46().t === want && rrt46().b === want, `${p.id}: ${JSON.stringify(rrt46())}`);
+        } finally { reset46(); }
+      });
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 633;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.12)
+const EXPECTED_TOTAL = 635;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.14)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
