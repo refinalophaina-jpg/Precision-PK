@@ -3320,6 +3320,21 @@ async function enterCourse(page) {
        so.notice === 0 && so.title > 0 && /Too soon after the previous session/.test(soon) && /within 2 h of the previous session's end/.test(soon) && !/mg after the session/.test(soon), soon.slice(0, 500));
     await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
     await run();
+    // Review: a malformed form shows its errors by real click, with the Goti 2018 · HD pointer still visible above them.
+    await typeInto(h, '#hd-pre', '200');
+    await h.locator('[data-onclick="k31"]:visible').first().click(); await h.waitForTimeout(250);
+    const malformed = await h.evaluate(() => {
+      const rc = document.getElementById('results-content'), n = rc && rc.querySelector('.note'), e = rc && rc.querySelector('li[id^="fe-trough-"]');
+      const b = rc && rc.querySelector('[data-onclick="k77"]');
+      return { note: n ? n.textContent.replace(/\s+/g, ' ').trim() : '', noteVis: !!(n && n.offsetParent), err: e ? e.textContent.trim() : '', errVis: !!(e && e.offsetParent),
+        above: !!(n && e && (n.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) && n.getBoundingClientRect().top < e.getBoundingClientRect().top),
+        button: !!(b && b.offsetParent), reading: !!rc.querySelector('[data-hd-reading]'), invalid: document.getElementById('hd-pre').getAttribute('aria-invalid') };
+    });
+    ok('D28: a malformed haemodialysis form (a pre-dialysis level of 200) shows its error by real click, with the Goti 2018 · HD pointer visible above it and no reading',
+       malformed.noteVis && /^On haemodialysis — use AUC Precision/.test(malformed.note) && malformed.button && malformed.errVis && /Pre-dialysis level: 0\.5–100 mg\/L\./.test(malformed.err)
+       && malformed.above && !malformed.reading, JSON.stringify(malformed));
+    await typeInto(h, '#hd-pre', '18');
+    await run();
     await press('[data-onclick="k112"]');
     await h.waitForTimeout(250);
     const cleared = await h.evaluate(() => ({ t: ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim(),

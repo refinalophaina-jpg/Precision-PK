@@ -338,6 +338,9 @@ const MUTANTS = [
     find: 'const capMg = Math.min(DOSE_MAX_PER_DOSE_MG, localMax || Infinity);', replace: 'const capMg = DOSE_MAX_PER_DOSE_MG;' },
   { id: 'R3-28-8', what: 'the Goti-HD pointer is dropped from the reading screen [46.74]',
     find: 'if (rc) rc.innerHTML = troughHdNoticeHTML() + hdReadingHTML(reading);', replace: 'if (rc) rc.innerHTML = hdReadingHTML(reading);' },
+  // Task 28 review I1: no dose is worded by its cause.
+  { id: 'R3-28-9', what: 'the two no-dose sentences swapped (at or above the peak / rounds to no dose) [46.78, 46.79]',
+    find: "${r.post >= st.targetPeak ? 'The post-session estimate is at or above your target peak.'", replace: "${r.post < st.targetPeak ? 'The post-session estimate is at or above your target peak.'" },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

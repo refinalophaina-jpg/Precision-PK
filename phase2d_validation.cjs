@@ -11080,13 +11080,30 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(hd48({ settings: after }).state === 'no-settings', 'Clear returns the reading to the refusal');
   });
 
+  // Task 28 review I1: no dose is worded by its cause. peakEquationDose gives 0 when the level is at or above the target
+  // peak, and also when the top-up rounds to no 250 mg step (under 125 mg); the sentence must say which.
+  test('46.78 review I1: a top-up under half a step (pre 37, hold 40: post 24.05, 56 × 0.95 = 53 mg) is "no dose", worded as rounding, never as at or above the peak', () => {
+    const r = hd48({ pre: 37, settings: Object.assign({}, S48, { holdPreMgL: 40 }) });
+    assert(r.state === 'dose' && r.mg === 0 && near48(r.post, 24.05) && r.post < S48.targetPeak, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/No dose by your settings/.test(t) && t.indexOf('The top-up to your target peak is under 125 mg, which rounds to no dose.') >= 0
+      && t.indexOf('at or above your target peak') < 0, t.slice(0, 600));
+  });
+
+  test('46.79 review I1: a post-session estimate at or above the target peak (pre 39, hold 40: post 25.35) is "no dose", worded as at or above the peak', () => {
+    const r = hd48({ pre: 39, settings: Object.assign({}, S48, { holdPreMgL: 40 }) });
+    assert(r.state === 'dose' && r.mg === 0 && r.post >= S48.targetPeak, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(t.indexOf('The post-session estimate is at or above your target peak.') >= 0 && t.indexOf('rounds to no dose') < 0, t.slice(0, 600));
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 698;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.77)
+const EXPECTED_TOTAL = 700;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.79)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

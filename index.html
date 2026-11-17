@@ -11528,11 +11528,14 @@ function hdReadingHTML(r) {
       <p class="vx-regimen vx-regimen-hd">Hold the dose</p>
       <p class="vx-hold">The pre-dialysis level, ${n(r.pre)} mg/L at ${when}, is at or above your hold level, ${yours(st.holdPreMgL, 'mg/L')}.</p>
       ${foot}${actions}`, r.cautions);
+  // No dose has two causes (review I1): the estimate is already at or above the target peak, or the top-up is under half a
+  // dispensing step and peakEquationDose rounds it to 0. The sentence says which.
   const verdict = r.mg > 0 ? `${fmtDose(r.mg)} after the session` : 'No dose by your settings';
   const cap = !r.capped ? '' : `<p class="vx-sub">Capped at ${r.capBy === 'local' ? `${yours(fmtDose(r.capMg))}, your maximum single dose` : `${fmtDose(r.capMg)}, the per-dose maximum`}.</p>`;
   return wrap('dose', `
       <p class="vx-regimen vx-regimen-hd">${verdict}</p>
-      ${r.mg > 0 ? '' : '<p class="vx-hold">The post-session estimate is at or above your target peak.</p>'}
+      ${r.mg > 0 ? '' : `<p class="vx-hold">${r.post >= st.targetPeak ? 'The post-session estimate is at or above your target peak.'
+        : `The top-up to your target peak is under ${MATRIX_DOSE_STEP / 2} mg, which rounds to no dose.`}</p>`}
       ${cap}
       <dl class="ev-dl">
         ${row('Pre-dialysis level', `${n(r.pre)} mg/L at ${when}`)}
