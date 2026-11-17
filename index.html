@@ -11117,12 +11117,23 @@ function crrtAnswer(input, nowH) {
   if (perKg == null) return refuse('Choose a volume basis', 'Choose Bauer 0.70 L/kg or Matzke 1984 group III 0.90 L/kg, the two the peritoneal dialysis mode offers. No volume is chosen for you: none is sourced for CRRT.');
   const circuit = (inp.circuit || []).slice().sort((a, b) => a.onH - b.onH);
   if (!circuit.length || !circuit.every(r => Number.isFinite(r.onH))) return refuse('Circuit start missing', 'Enter when the circuit started (and when it stopped, if it has). The decline is read only while the circuit ran.');
+  // Controller ruling R93: runs, in order of start, never overlap. A run starting while the one before it has no stop,
+  // or before that stop, means a stop happened at a time nobody entered: refused by name, never projected across.
+  for (let i = 1; i < circuit.length; i++) {
+    const prev = circuit[i - 1], cur = circuit[i];
+    if (prev.offH == null || cur.onH < prev.offH)
+      return refuse('Circuit runs overlap', escHtml(`Run ${i} (started ${fmtClock(prev.onH)}) ${prev.offH == null ? 'has no stop time' : `is recorded to stop at ${fmtClock(prev.offH)}`}, but run ${i + 1} starts at ${fmtClock(cur.onH)} (runs in order of start). Enter the stop time of run ${i}${prev.offH == null ? '' : `, or correct the start of run ${i + 1}`}.`));
+  }
   if (!CRRT_MODALITY_LABEL[inp.modality]) return refuse('Modality missing', 'Choose the CRRT modality: CVVH, CVVHD or CVVHDF.');
   if (!(inp.effluent || []).length) return refuse('Effluent rate missing', 'Enter the effluent rate and when it was set. It is compared between levels, never used to size a dose.');
   for (const l of levels) for (const d of doses) {
     if (l.timeH > d.timeH && l.timeH < d.timeH + d.tinfH)
       return refuse('Level timing', escHtml(`The level at ${fmtClock(l.timeH)} was drawn during the infusion of ${fmtDose(d.mg)}. A level has to follow the end of the infusion.`));
   }
+  // Controller ruling R94: a level dated after now can only be a wrong date. Refused as AUC Precision refuses it (D26,
+  // review I3): one minute of tolerance covers a level typed to the minute.
+  const future = levels.filter(l => l.timeH > nowH + 1 / 60);
+  if (future.length) return refuse('A level is dated in the future', future.map(l => escHtml(`The level at ${fmtDT(l.timeH, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`)).join(' '));
   const cautions = [];
   // A local maximum below one dispensing step cannot be honoured: ignored, and said (PD's rule).
   const localMax = st.maxDoseMg >= MATRIX_DOSE_STEP ? st.maxDoseMg : null;
@@ -11153,16 +11164,17 @@ function crrtAnswer(input, nowH) {
   const startLevel = levels.slice().reverse().find(l => !crrtDistributing(l.timeH, doses));
   const newest = levels[levels.length - 1];
   if (startLevel !== newest) cautions.push({ tier: 'info', word: 'Newest level not the starting point', html: escHtml(`The level at ${fmtClock(newest.timeH)} was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end, so the projection starts at the level at ${fmtClock(startLevel.timeH)}.`) });
-  // Projection: only while one circuit run covers the whole span from the starting level to the next draw, and
-  // the setting in force over it is the one every used interval was measured at.
-  const ref = used[used.length - 1].setting;
+  // Projection: only while one recorded circuit run covers the whole span from the end of the last used interval to
+  // the next draw (controller ruling R91, revised: the same span the setting check reads), and the setting in force
+  // over it is the one every used interval was measured at.
+  const ref = used[used.length - 1].setting, coverFrom = used[used.length - 1].toH;
   const stopped = (atH) => atH <= nowH
     ? `Draw a level: the circuit stopped at ${fmtClock(atH)} since the decline was measured.`
     : `Draw a level: the circuit is recorded to stop at ${fmtClock(atH)}, before the next draw at ${fmtClock(draw)}; the decline was measured with it running.`;
-  if (!crrtRunCovering(circuit, startLevel.timeH, draw)) {
-    const stopH = crrtStopBetween(circuit, startLevel.timeH, draw);
+  if (!crrtRunCovering(circuit, coverFrom, draw)) {
+    const stopH = crrtStopBetween(circuit, coverFrom, draw);
     return needLevel('circuit', stopH != null ? stopped(stopH)
-      : `Draw a level: the circuit was not running throughout from the level at ${fmtClock(startLevel.timeH)}.`, { rate });
+      : `Draw a level: the circuit was not running throughout from the level at ${fmtClock(coverFrom)}.`, { rate });
   }
   const changeWords = (ch) => {
     const verb = ch.atH <= nowH ? 'changed' : 'is recorded to change';

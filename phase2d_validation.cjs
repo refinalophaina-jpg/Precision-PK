@@ -10840,13 +10840,56 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(noMl.errors && noMl.ids.indexOf('crrt-eff-ml-1') >= 0, JSON.stringify(noMl));
   });
 
+  // ── Task 27 review fixes (controller rulings R93, R91 revised, R94; review I4) ──
+  test('46.61 R93: circuit runs that contradict each other are refused by name, never projected: a second run starting while the first has no stop, or before its stop', () => {
+    const now = B47 + 63;
+    const open = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: null }, { onH: B47 + 62, offH: null }] }), now);
+    assert(open.state === 'refuse' && open.refuse.word === 'Circuit runs overlap' && /enter the stop time of run 1/i.test(open.refuse.html) && !open.rows,
+      JSON.stringify(open).slice(0, 400));
+    const over = crrt47(three47({ circuit: [{ onH: B47, offH: B47 + 80 }, { onH: B47 + 60, offH: null }] }), now);
+    assert(over.state === 'refuse' && over.refuse.word === 'Circuit runs overlap' && over.refuse.html.indexOf(clk47(B47 + 80)) >= 0 && over.refuse.html.indexOf(clk47(B47 + 60)) >= 0 && !over.rows,
+      JSON.stringify(over).slice(0, 400));
+    // A restart at or after the previous stop is two runs, not an overlap (46.49's record, and a restart at the stop minute).
+    const back = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 20, offH: null }] }), B47 + 61);
+    assert(back.state !== 'refuse', JSON.stringify(back).slice(0, 300));
+  });
+
+  test('46.62 R91 (revised): one recorded run must cover from the end of the last used interval to the next draw: a stop and restart inside a later, excluded interval is "Draw a level" naming the stop, as an effluent change there is', () => {
+    const now = B47 + 61;
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: B47 + 40 }, { onH: B47 + 42, offH: null }] }), now);
+    assert(a.intervals[0].used === true && a.intervals[1].flags.indexOf('circuit-off') >= 0, JSON.stringify(a.intervals && a.intervals.map(i => i.flags)));
+    assert(a.state === 'need-level' && a.reason === 'circuit' && !a.rows && a.rate && a.rate.n === 1
+      && a.message.indexOf(`Draw a level: the circuit stopped at ${clk47(B47 + 40)} since the decline was measured.`) === 0, JSON.stringify({ state: a.state, reason: a.reason, m: a.message }));
+    const e = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 40, mlPerH: 3000 }] }), now);
+    assert(e.state === 'need-level' && e.reason === 'effluent' && !e.rows, JSON.stringify({ state: e.state, reason: e.reason }));
+  });
+
+  test('46.63 R94: a level dated after now (beyond one minute) is refused by name, as AUC Precision words it; within the minute it is read', () => {
+    const now = B47 + 28;   // 8 h before the second level
+    const a = crrt47(inp47(), now);
+    assert(a.state === 'refuse' && a.refuse.word === 'A level is dated in the future' && !a.rows
+      && a.refuse.html.indexOf(`The level at ${fn46('fmtDT')(B47 + 36, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`) >= 0,
+      JSON.stringify(a).slice(0, 400));
+    const tol = crrt47(inp47(), B47 + 36 - 0.5 / 60);
+    assert(tol.state !== 'refuse', JSON.stringify(tol).slice(0, 300));
+  });
+
+  test('46.64 review I4: two used intervals measured at different settings (a change exactly at a level\'s time) are never fitted together: "Draw a level" naming the change, effluent and modality', () => {
+    const now = B47 + 61;
+    const e = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 36, mlPerH: 2500 }] }), now);
+    assert(e.intervals.every(i => i.used) && e.intervals[0].setting.mlPerH === 2000 && e.intervals[1].setting.mlPerH === 2500, JSON.stringify(e.intervals.map(i => [i.used, i.setting])));
+    assert(e.state === 'need-level' && e.reason === 'effluent' && !e.rows && e.message.indexOf(`the effluent rate changed at ${clk47(B47 + 36)} (2000 → 2500 mL/h)`) > 0, JSON.stringify({ state: e.state, m: e.message }));
+    const m = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 36, mlPerH: 2000, modality: 'cvvh' }] }), now);
+    assert(m.intervals.every(i => i.used) && m.state === 'need-level' && m.reason === 'modality' && !m.rows && /CVVHDF → CVVH\)/.test(m.message), JSON.stringify({ state: m.state, m: m.message }));
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 681;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.60)
+const EXPECTED_TOTAL = 685;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.64)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

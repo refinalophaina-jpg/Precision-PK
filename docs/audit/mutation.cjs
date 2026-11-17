@@ -299,7 +299,7 @@ const MUTANTS = [
     find: 'return raw <= 0 ? 0 : Math.min(capMg,', replace: 'return raw <= 0 ? 0 : Math.max(capMg,' },
   // Task 27: a level-based CRRT answer (D28).
   { id: 'R3-27-1', what: 'the circuit-running check removed from the CRRT projection rule (Review Focus 3) [46.51, 46.53]',
-    find: 'if (!crrtRunCovering(circuit, startLevel.timeH, draw)) {', replace: 'if (false) {' },
+    find: 'if (!crrtRunCovering(circuit, coverFrom, draw)) {', replace: 'if (false) {' },
   { id: 'R3-27-2', what: 'an effluent-changed interval is flagged but still used for the rate [46.50]',
     find: 'const excluded = flags.length > 0;', replace: "const excluded = flags.some(f => f !== 'effluent-changed');" },
   { id: 'R3-27-3', what: 'CRRT_NEXT_DRAW_DEFAULT_H 24 → 12 (the default draw time, a PREFERENCE) [46.47]',
@@ -312,6 +312,15 @@ const MUTANTS = [
     find: "if (rows.some(s => s.modality !== set.modality)) flags.push('modality-changed');", replace: '' },
   { id: 'R3-27-7', what: 'the goal control writes every mode into the PD fields (P2: a goal held per mode) [46.59]',
     find: 'document.getElementById(`${mode}-goal-min`)', replace: "document.getElementById('pd-goal-min')" },
+  // Task 27 review fixes (controller rulings R93, R91 revised, R94; review I4).
+  { id: 'R3-27-8', what: 'overlapping or open-ended circuit runs are not refused (R93) [46.61]',
+    find: 'if (prev.offH == null || cur.onH < prev.offH)', replace: 'if (false)' },
+  { id: 'R3-27-9', what: 'the circuit must cover only from the starting level, not from the end of the last used interval (R91 revised) [46.62]',
+    find: 'coverFrom = used[used.length - 1].toH;', replace: 'coverFrom = startLevel.timeH;' },
+  { id: 'R3-27-10', what: 'a level dated after now is projected, not refused (R94) [46.63]',
+    find: 'levels.filter(l => l.timeH > nowH + 1 / 60)', replace: 'levels.filter(l => false)' },
+  { id: 'R3-27-11', what: 'used intervals at different settings are fitted together (the mixed guard forced false) [46.64]',
+    find: 'const mixed = used.some(i => i.setting.mlPerH !== ref.mlPerH || i.setting.modality !== ref.modality);', replace: 'const mixed = false;' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];
