@@ -5849,7 +5849,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[3456]\.0';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[3456]\.\d+';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6063,7 +6063,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[456]\.0';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[456]\.\d+';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -9424,7 +9424,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
   // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.1[56]\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[56]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -11285,7 +11285,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
   // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
   test('46.91 the version', () => {
-    assert(/const APP_VERSION = '3\.16\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.0');
+    assert(/const APP_VERSION = '3\.16\.1';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 (the patch that ships 46.99)');
   });
 
   // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
@@ -11414,13 +11414,33 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/effluent rate row/.test(hint) && /with the time/.test(hint) && /every interval/.test(hint), hint);
   });
 
+  test('46.99 v3.16.1: a missing-input or data-check refusal heading in PD, CRRT and the HD reading is ink (vx-regimen-refuse), never the alarm hue; the Trough safety refusals keep it', () => {
+    const head = (h) => (String(h).match(/<(?:h3|p) class="vx-regimen ([^"]*)"[^>]*>([^<]*)</) || []).slice(1);
+    const pdIn = { course: { nowKg: 63 }, goal: null, urine: 'anuric', ipToo: false, hd: false, settings: {} };
+    const pd = fn46('pdAnswer')(pdIn, B47);
+    const [pdCls, pdWord] = head(fn46('pdResultsHTML')(pd, pdIn, B47));
+    assert(pd.state === 'refuse' && pdWord === 'Choose a goal range' && pdCls === 'vx-regimen-refuse', `PD: ${pdCls} / ${pdWord}`);
+    const crIn = inp47({ goal: null }), cr = crrt47(crIn, B47 + 37);
+    const [crCls, crWord] = head(fn46('crrtResultsHTML')(cr, crIn, B47 + 37));
+    assert(cr.state === 'refuse' && crWord === 'Choose a goal range' && crCls === 'vx-regimen-refuse', `CRRT: ${crCls} / ${crWord}`);
+    const hd = hd48({ preAtH: B48 + 8.5, nowH: B48 + 9 });
+    const [hdCls, hdWord] = head(fn46('hdReadingHTML')(hd));
+    assert(hd.state === 'refuse' && hdWord === 'Drawn during the session' && hdCls === 'vx-regimen-refuse', `HD: ${hdCls} / ${hdWord}`);
+    for (const w of [vm.runInContext('TROUGH_REFUSAL_WORD', sandbox), vm.runInContext('SEVERE_RENAL.word', sandbox)]) {
+      const [cls, word] = head(fn46('txRefusalVerdictHTML')({ word: w, reason: 'r' }));
+      assert(word === w && cls === 'vx-regimen-hold', `Trough "${w}": ${cls}`);
+    }
+    const css = (src46.match(/\.vx-regimen-refuse\s*\{([^}]*)\}/) || [])[1] || '';
+    assert(/color:\s*var\(--ink\)/.test(css) && !/alarm/.test(css), `the refusal heading is ink: ${css}`);
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 719;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave)
+const EXPECTED_TOTAL = 720;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

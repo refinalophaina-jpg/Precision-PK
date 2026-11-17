@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~20,300 lines / ~1.25 MB (2026-11-17, v3.16.0).
+~20,300 lines / ~1.25 MB (2026-11-17, v3.16.1).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -344,6 +344,12 @@ level-based CRRT answer and a haemodialysis reading from your settings. Not clin
   None (`RESULTS_PLACEHOLDER`, `syncResultsPlaceholder`, R106).
 - **Parity against v3.15.0 (`bcee5dd`): 0 differences.** The corpus reaches no dialysis path; SUITE 46 is the record.
 
+**v3.16.1 (patch, D28 addendum):** a missing-input or data-check refusal heading in PD, CRRT and the HD reading
+takes `vx-regimen-refuse` (ink); `vx-regimen-hold` (alarm) stays only on the Trough and AUC Precision safety
+refusals ("No regimen recommended", "No empiric maintenance regimen"). 46.99 and mutants R3-P-1–5 pin it. The
+browser checks count Cloudflare's injected script per document served (`cfServed` in `watch`), so a run against
+the live site reads 0 console problems. Parity against v3.16.0 (`be3c4dd`): 0 differences.
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, a Bayesian CRRT model, AUC in CRRT, a level-based hybrid answer,
 SLED / PIRRT dosing beyond the guideline reference, continuous infusion, intraperitoneal dosing, AUC or
@@ -437,19 +443,19 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **719/719 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
+| `phase2d_validation.cjs` | **720/720 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
 | `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
 | `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
-| `docs/audit/mutation.cjs` | **127 of 127 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
+| `docs/audit/mutation.cjs` | **132 of 132 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27); v3.16.0 against `bcee5dd` reads 0 (D28: the corpus reaches no dialysis path). The script prints the first 40 |
 | `docs/audit/pd-parity/` | The PD parity guard's scripts (D28, R87): `capture.cjs`, `replay.cjs`, `encode.cjs`, `load.cjs` and `fixtures58.json` regenerate SUITE 46.44's digests (58 PD calls at 9 significant digits) from any commit, e.g. the released `bcee5dd` |
-| `docs/audit/browser-flows.cjs` | **266/266** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **267/267** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
 for an engine or model overhaul. The history table is in the README. The release that adds a suite pins
-its version there (43.12 for v3.14.0, 45.58 for v3.15.0, 46.91 for v3.16.0); the earlier pins accept a successor.
+its version there (43.12 for v3.14.0, 45.58 for v3.15.0, 46.91 for v3.16.0, re-pinned to 3.16.1 by the patch that ships 46.99); the earlier pins accept a successor, patch numbers included.
 
 **CI.** `.github/workflows/test.yml` runs on every push and pull request (`permissions: contents: read`,
 actions pinned by commit SHA, Node 22, no install): the syntax check, phase2d, phase2d under
@@ -595,9 +601,9 @@ one must go through `escHtml()`.** About 180 call sites do (182 on 163 lines, 20
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 266 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 267 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
-| `docs/audit/mutation.cjs` | The mutation gate: 127 mutants, each must be killed by the Node suites |
+| `docs/audit/mutation.cjs` | The mutation gate: 132 mutants, each must be killed by the Node suites |
 | `docs/audit/pd-parity/` | D28's PD parity guard: the fixtures and the replay that regenerate SUITE 46.44's digests from a released commit |
 | `.github/workflows/test.yml` | CI: the Node suites and the mutation gate on every push and pull request |
 | `docs/audit/probe-map-starts.cjs`, `docs/audit/uncertainty-by-model.cjs --early`, `docs/audit/probe-hold-rate.cjs` | D27's evidence: the MAP starts, the early band and its decision flips (`docs/audit/task19/`), and how often the Hold fires and is false (`docs/audit/task21b/`) |
