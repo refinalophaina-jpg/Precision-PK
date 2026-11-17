@@ -194,6 +194,10 @@ function extract() {
     HYBRID_LOAD_MG_PER_KG_MAX: num(src, 'HYBRID_LOAD_MG_PER_KG_MAX'),
     HYBRID_MAINT_MG_PER_KG:    num(src, 'HYBRID_MAINT_MG_PER_KG'),
     RRT_NO_SAMPLE_AFTER_SESSION_H: num(src, 'RRT_NO_SAMPLE_AFTER_SESSION_H'),
+    // v3.16.0 (D28, Task 27) — the level-based CRRT answer: the post-distribution boundary (Rybak 2020 Rec 8a, A-II)
+    // and the default next-draw time, a PREFERENCE (rule 8, controller ruling R65)
+    POST_DISTRIBUTION_MIN_H:   num(src, 'POST_DISTRIBUTION_MIN_H'),
+    CRRT_NEXT_DRAW_DEFAULT_H:  num(src, 'CRRT_NEXT_DRAW_DEFAULT_H'),
   };
 }
 

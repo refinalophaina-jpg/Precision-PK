@@ -2212,7 +2212,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       const src = body.slice(body.indexOf('function ' + f + '('), body.indexOf('\nfunction ', body.indexOf('function ' + f + '(') + 10));
       assert(/new Date\([a-z0-9]+\.getFullYear\(\), [a-z0-9]+\.getMonth\(\), [a-z0-9]+\.getDate\(\) \+ [a-z0-9]+, hh, mm\)/.test(src), `${f} builds each instant from a calendar day and the clock`);
     }
-    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !recurring.test(t));
+    // D28 (Task 27): the CRRT give-at, next-draw and row times each sit beside their own date too.
+    const crrtPaired = /id="crrt-give-time"|id="crrt-draw-time"|id="\$\{id\(tf\)\}"/;
+    assert(/id="crrt-give-date"[\s\S]{0,400}id="crrt-give-time"/.test(body) && /id="crrt-draw-date"[\s\S]{0,400}id="crrt-draw-time"/.test(body), 'the CRRT give-at and next-draw times sit beside their dates');
+    assert(/id="\$\{id\(df\)\}"[^>]*>\s*<input[^>]*id="\$\{id\(tf\)\}"/.test(body), 'the CRRT row time is paired with its date');
+    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !crrtPaired.test(t) && !recurring.test(t));
     assert(orphans.length === 0,
       `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
   });
@@ -4251,7 +4255,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const staticBody = src.slice(src.indexOf('<body>'), src.indexOf('<script>'));
     assert(!/data-onclick="k0"/.test(staticBody), 'no print action outside a result');
     const prints = src.match(/<button type="button" class="vx-act" data-onclick="k0">[^<]*<\/button>/g) || [];
-    assert(prints.length === 3 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, AUC): ${prints.length}`);
+    // D28 (Task 27): the CRRT answer is a fourth answer with its own actions.
+    assert(prints.length === 4 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, CRRT, AUC): ${prints.length}`);
     const act = rules.find(r => /\.vx-act\b/.test(r.sel) && /color/.test(r.body));
     assert(act && /terracotta-ink/.test(act.body) && !/background:\s*var\(--terracotta\)/.test(act.body), 'a text action, not a filled button');
     const prevGet = sandbox.document.getElementById;
@@ -5516,13 +5521,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/mode-btn-pd'\)\.classList\.toggle\('active',\s*mode === 'pd'\)/.test(body('setCalcMode')) && /section-pd'\)\.style\.display\s*=\s*mode === 'pd'/.test(body('setCalcMode'))
       && /section-trough-shared'\)\.style\.display\s*=\s*mode === 'pd'\s*\?\s*'none'/.test(body('setCalcMode')), 'setCalcMode switches it, and hides the PK model and trough target');
     for (const k of ['k84', 'k85', 'k86', 'k87', 'k88', 'k89', 'k90', 'k91', 'k92', 'k94']) assert(new RegExp('\\n  ' + k + ': ').test(script), k);
-    assert(/id="pd-goal-min"[^>]*>/.test(src) && !/id="pd-goal-min"[^>]*value="\d/.test(src) && !/id="pd-goal-max"[^>]*value="\d/.test(src), 'its own goal fields, empty');
+    // D28 (Task 27, ruling P2): the goal fields are built by the one goal control, goalControlHTML('pd'), into the PD slot.
+    const pdGoal = sandbox.goalControlHTML('pd');
+    assert(/<div data-goal-control="pd"><\/div>/.test(src) && /id="pd-goal-min"[^>]*>/.test(pdGoal) && !/id="pd-goal-min"[^>]*value="\d/.test(pdGoal) && !/id="pd-goal-max"[^>]*value="\d/.test(pdGoal), 'its own goal fields, empty');
     assert(/data-onclick="k85" data-arg="10\|15"/.test(src) && /data-onclick="k85" data-arg="15\|20"/.test(src), 'the two presets');
     const ls = body('pdLocalSettings');
     assert(/try\s*\{[\s\S]*localStorage\.getItem\('vanco\.pd\.local'\)[\s\S]*\}\s*catch/.test(ls), 'local settings read inside try/catch');
     const calc = body('calculate');
     assert(calc.indexOf("state.calcMode === 'pd'") > 0 && calc.indexOf("state.calcMode === 'pd'") < calc.indexOf('validateFields('), 'the PD branch comes before the demographics are validated');
-    assert(/calcVd\('bauer', 0, 1, 0\)/.test(body('readPdForm')) && /MATZKE_VD_GROUP3/.test(body('readPdForm')), 'the volumes come from the existing sources');
+    // D28 (Task 27): through the one mapping CRRT shares, volumeBasisPerKg.
+    assert(/volumeBasisPerKg\(/.test(body('readPdForm')) && /calcVd\('bauer', 0, 1, 0\)/.test(body('volumeBasisPerKg')) && /MATZKE_VD_GROUP3/.test(body('volumeBasisPerKg')), 'the volumes come from the existing sources');
   });
   test('41.14 the answer on screen: verdict first, then the next draw, the options with the pick marked, the decline in words, context labelled; the chart in CSS classes only', () => {
     const b = ask(fict(), { goal: { min: 15, max: 20 }, settings: { maxDoseMg: null, targetPeak: null, amLabs: '07:00' } });
@@ -10396,13 +10404,13 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(JSON.stringify(got) === JSON.stringify([750, 0, 0, 0, 2000, 1500, 1250]), JSON.stringify(got));
   });
 
-  test('46.43 one copy (ruling P5): the pick comparison occurs once, in pickGoalStep, and not in pdAnswer (nor crrtAnswer once it exists); PD_K_SEARCH is read, outside its declaration, only in solveIntervalK; PD calls the shared three', () => {
+  test('46.43 one copy (ruling P5): the pick comparison occurs once, in pickGoalStep, and not in pdAnswer or crrtAnswer; PD_K_SEARCH is read, outside its declaration, only in solveIntervalK; PD calls the shared three', () => {
     const text = (n) => fn46(n).toString();
     const PICK = /\w+\([^()]*\)\s*<\s*\w+\([^()]*\)\s*-\s*1e-9/g;
     const count = (s, re) => (s.match(re) || []).length;
     assert(count(text('pickGoalStep'), PICK) === 1, 'pickGoalStep holds the comparison once');
     assert(count(text('pdAnswer'), PICK) === 0, 'pdAnswer holds no second copy');
-    if (typeof sandbox.crrtAnswer === 'function') assert(count(text('crrtAnswer'), PICK) === 0, 'crrtAnswer holds no second copy');
+    assert(count(text('crrtAnswer'), PICK) === 0, 'crrtAnswer holds no second copy');
     const solveSrc = text('solveIntervalK'), at = src46.indexOf(solveSrc);
     assert(at > 0 && src46.indexOf(solveSrc, at + 1) === -1, 'solveIntervalK found once in index.html');
     const declAt = src46.indexOf('\nconst PD_K_SEARCH = [') + 7;
@@ -10417,9 +10425,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The parity guard (ruling P4). It passes before and after the extraction by design: it is not TDD evidence.
   // The fixtures are every pdAnswer and pdIntervals call SUITE 41 makes (recorded from a run of SUITE 41, in order),
   // plus three for paths SUITE 41 never reaches; an instant is "@<day>|HH:MM", SUITE 41's own H(day, 'HH:MM'). Each
-  // expected entry is [a readable summary, the first 16 hex of SHA-256 over the output's JSON with every number to 12
-  // significant digits], generated once by replaying these fixtures against the v3.15.0 release file (bcee5dd) and
-  // identical against 6223308 before the extraction. The time zone is pinned to America/Chicago (where they were
+  // expected entry is [a readable summary, the first 16 hex of SHA-256 over the output's JSON with every number to 9
+  // significant digits (ruling R87: 1e-7 mg/L on a level, so a last-bit difference between Node versions cannot move
+  // a digest)], generated by replaying these fixtures against the v3.15.0 release file (bcee5dd). The scripts that
+  // generate and replay them are docs/audit/pd-parity/ (README there); fixtures58.json is this array. The time zone is pinned to America/Chicago (where they were
   // generated) for the replay only: SUITE 41 builds its instants on the local wall clock, so the absolute hours in an
   // output differ by zone, and a digest cannot absorb that. Digests, not 230 KB of output: a mismatch names the call.
   const PD_PARITY_FIXTURES46 = [
@@ -10485,17 +10494,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     ["pdAnswer",[{"course":{"doses":[{"mg":500,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":12,"timeH":"@2|06:00"},{"conc":10,"timeH":"@3|06:00"}],"loadKg":20,"nowKg":20,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":500,"targetPeak":80,"amLabs":"06:00"}},"@3|09:00"]],
   ];
   const PD_PARITY_EXPECTED46 = [
-    ["intervals:k","e97a324329f51cd3"],
-    ["intervals:k","d9039b87c52d3444"],
+    ["intervals:k","a55f728b539445e0"],
+    ["intervals:k","4ce6b2c0418aa8cb"],
     ["intervals:prior-drug","387cca95a034ffde"],
-    ["intervals:k,k","d2aabc67ad662205"],
-    ["intervals:k","91935b0efad10661"],
-    ["intervals:k","6ed559b02f260469"],
+    ["intervals:k,k","7bfdf71d132cdc27"],
+    ["intervals:k","4c7826e81b0831b1"],
+    ["intervals:k","2641aaba8ca9bda4"],
     ["threw","2e03b98d1e6ca876"],
     ["intervals:unexplained-high","98a5f390333c84c8"],
-    ["intervals:k,k","c3e11aa1e775ac1c"],
-    ["load","a78c82ee7f91c49a"],
-    ["load","40c0da3b40ba82ad"],
+    ["intervals:k,k","22b7669d371983fc"],
+    ["load","c59586800994fc23"],
+    ["load","09381052a6aa5722"],
     ["refuse","210344b4169858da"],
     ["refuse","210344b4169858da"],
     ["refuse","df98635799e844e7"],
@@ -10503,58 +10512,60 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     ["refuse","53417fbebcb259c3"],
     ["refuse","ce5a39f2c6259ef2"],
     ["need-level","346548c5192f3a78"],
-    ["dose:250","6ce66e9f788e6226"],
-    ["dose:250","da4cf408e678b85b"],
-    ["no-dose","84b20fb53149fc1c"],
-    ["dose:250","6ce66e9f788e6226"],
-    ["dose:500","f72a3339ccffe771"],
-    ["no-dose","979191b551e9e53f"],
-    ["dose:2000","aa10651578b2ec04"],
-    ["dose:250","becd998707b53cae"],
-    ["dose:250","41519557ea04c853"],
-    ["dose:250","6ce66e9f788e6226"],
-    ["dose:250","6ce66e9f788e6226"],
-    ["dose:250","7ca321ebd02f56c4"],
-    ["dose:250","27770a57491e3804"],
-    ["dose:250","a6148c6447a42411"],
-    ["dose:500","748e591e57128d67"],
-    ["dose:250","9f51a74d05f80e89"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:250","8bf88d3faf3e324f"],
+    ["no-dose","453c587e2c20c9f8"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:500","926e6edc675c3d3a"],
+    ["no-dose","3e0cb82949397955"],
+    ["dose:2000","0fd770369823bd74"],
+    ["dose:250","764be68bda8567d4"],
+    ["dose:250","6c4c744543f25fe8"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:250","b9c192ccd6666d61"],
+    ["dose:250","7f7fb258ad7a1927"],
+    ["dose:250","440812afa61f94b7"],
+    ["dose:500","bc16e3f90958cb5f"],
+    ["dose:250","f72e1ebe775bb23d"],
     ["refuse","210344b4169858da"],
-    ["no-dose","e3de293ddbff9511"],
-    ["no-dose","5b1b30bcf461ec5e"],
-    ["no-dose","b3edbf466219691a"],
-    ["need-level","141df158af3fcbff"],
-    ["intervals:k,too-short","de6f623f6e830140"],
-    ["intervals:k,too-short","4c6e0e42b74c2108"],
-    ["dose:250","bdb7aeaa96e7b5bd"],
-    ["dose:500","652fa8d3c23c09aa"],
-    ["dose:500","bb94c4108827b4e3"],
-    ["no-dose","a7384030b591e6fa"],
-    ["dose:250","0c2c275eeea17af1"],
-    ["load","e18751731f74737f"],
+    ["no-dose","88f919428b06d328"],
+    ["no-dose","b49586cb3a7e0c12"],
+    ["no-dose","c78db1d05d0e2640"],
+    ["need-level","2a3064844aabb7f4"],
+    ["intervals:k,too-short","4ab52a946f03fec2"],
+    ["intervals:k,too-short","b17db4696e5a0834"],
+    ["dose:250","687a451ad5613809"],
+    ["dose:500","daa249bc595b3fb5"],
+    ["dose:500","1d7a7c5b37f40fc4"],
+    ["no-dose","da5214e62adc0358"],
+    ["dose:250","b3643fd44b591e35"],
+    ["load","ac82e99b6176a8ec"],
     ["first-level","d69f6daeea5ae1a2"],
-    ["dose:500","6701d8bdec2486c3"],
-    ["dose:250","8c070c637215d5c8"],
-    ["intervals:k,k,k,k","e7e5cd682a46b436"],
-    ["no-dose","47606bf780cc4c17"],
-    ["dose:250","63c34a4818c601bb"],
-    ["dose:250","042cf3813fadc192"],
-    ["dose:250","2e5960fc8b209ad3"],
+    ["dose:500","f7890e6401ee6109"],
+    ["dose:250","09a873954c2a6c07"],
+    ["intervals:k,k,k,k","3a8b4f02f751a495"],
+    ["no-dose","d7ef33d0489aa7de"],
+    ["dose:250","147341da9c5e28ac"],
+    ["dose:250","f0d19b4e9fcdc6db"],
+    ["dose:250","8fc268d4b5d1cc98"],
     // the three added fixtures
     ["intervals:unexplained-low","5af6db2d60cf05a1"],
-    ["no-dose","e921e0cd2af548ac"],
-    ["no-dose","7bf664f80688f8fc"],
+    ["no-dose","e0dd456c8be284b6"],
+    ["no-dose","ae82005bb2bbe8aa"],
   ];
   test('46.44 parity guard (P4): every SUITE 41 pdAnswer and pdIntervals output, and three more, is the one v3.15.0 (bcee5dd) gave', () => {
     const crypto = require('crypto');
-    const prevTZ = process.env.TZ;
+    // The zone is restored by assignment (ruling R87): deleting TZ does not reliably reset Node's cached zone. With
+    // no TZ set, the zone in force is read first and assigned back by name.
+    const prevTZ = process.env.TZ !== undefined ? process.env.TZ : Intl.DateTimeFormat().resolvedOptions().timeZone;
     process.env.TZ = 'America/Chicago';
     try {
       const H = (d, hm) => { const [h, m] = hm.split(':').map(Number); return new Date(2026, 5, 10 + d, h, m).getTime() / 3600000; };
       const dec = (v) => Array.isArray(v) ? v.map(dec) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, dec(x)]))
         : typeof v === 'string' && /^@-?\d+\|\d\d:\d\d$/.test(v) ? H(+v.slice(1, v.indexOf('|')), v.slice(v.indexOf('|') + 1)) : v;
       const norm = (v) => Array.isArray(v) ? v.map(norm) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
-        : typeof v === 'number' ? Number(v.toPrecision(12)) : v;
+        : typeof v === 'number' ? Number(v.toPrecision(9)) : v;
       const digest = (r) => crypto.createHash('sha256').update(JSON.stringify(norm(JSON.parse(JSON.stringify(r))))).digest('hex').slice(0, 16);
       const sum = (fn, out, threw) => threw ? 'threw' : fn === 'pdIntervals' ? 'intervals:' + out.map(i => i.used ? 'k' : (i.flags || []).join('+')).join(',')
         : out.state + (out.pick ? ':' + out.pick.mg : '');
@@ -10567,7 +10578,266 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         if (JSON.stringify(got) !== JSON.stringify(PD_PARITY_EXPECTED46[i])) bad.push(`#${i} ${fn}: ${JSON.stringify(got)}, v3.15.0 ${JSON.stringify(PD_PARITY_EXPECTED46[i])}`);
       });
       assert(!bad.length, `${bad.length} differ: ` + bad.slice(0, 6).join('; '));
-    } finally { if (prevTZ === undefined) delete process.env.TZ; else process.env.TZ = prevTZ; }
+    } finally { process.env.TZ = prevTZ; }
+  });
+
+  // ── Task 27: a level-based CRRT answer (Trough-based · CRRT). The plan's 46.39–46.52 are 46.45–46.58 here (the next
+  // free numbers, in the plan's order); 46.59–46.60 are the CRRT column (R73, R62, P2) and the form. Fictional: 70 kg,
+  // Bauer 0.70 L/kg (V 49 L), goal 15–20 mg/L, on CVVHDF at 2000 mL/h, a true half-life of 23 h (k 0.03 h⁻¹).
+  const B47 = new Date(2026, 5, 10, 0, 0).getTime() / 3600000, K47 = 0.03, V47 = 49;
+  // An independent one-compartment infusion (not predictConc1comp): mg over tinf h from start, read at t.
+  const inf47 = (mg, tinf, start, t, k, V) => t <= start ? 0
+    : t <= start + tinf ? mg / tinf / (k * V) * (1 - Math.exp(-k * (t - start)))
+    : mg / tinf / (k * V) * (1 - Math.exp(-k * tinf)) * Math.exp(-k * (t - start - tinf));
+  const D1_47 = { mg: 750, tinfH: 1, timeH: B47 + 24 }, D2_47 = { mg: 750, tinfH: 1, timeH: B47 + 48 };
+  const c2_47 = 10 * Math.exp(-K47 * 24) + inf47(750, 1, B47 + 24, B47 + 36, K47, V47);
+  const c3_47 = c2_47 * Math.exp(-K47 * 24) + inf47(750, 1, B47 + 48, B47 + 60, K47, V47);
+  const L47 = [{ conc: 10, timeH: B47 + 12 }, { conc: c2_47, timeH: B47 + 36 }], L3_47 = L47.concat([{ conc: c3_47, timeH: B47 + 60 }]);
+  const inp47 = (o) => Object.assign({
+    course: { doses: [D1_47], levels: L47, nowKg: 70 },
+    circuit: [{ onH: B47 - 24, offH: null }], effluent: [{ fromH: B47 - 24, mlPerH: 2000 }], modality: 'cvvhdf',
+    urine: 'anuric', vBasis: 'bauer', goal: { min: 15, max: 20 }, giveAtH: null, nextDrawH: null, settings: { maxDoseMg: null },
+  }, o || {});
+  const three47 = (o) => inp47(Object.assign({ course: { doses: [D1_47, D2_47], levels: L3_47, nowKg: 70 } }, o || {}));
+  const crrt47 = (inp, nowH) => fn46('crrtAnswer')(inp, nowH);
+  const clk47 = (h) => fn46('fmtClock')(h);
+
+  test('46.45 CRRT refusals with levels entered: no goal → "Choose a goal range"; no volume basis → refused naming both bases; no weight → refused naming the weight; no circuit start → refused', () => {
+    const now = B47 + 37;
+    const g = crrt47(inp47({ goal: null }), now);
+    assert(g.state === 'refuse' && g.refuse.word === 'Choose a goal range' && !g.rows, JSON.stringify(g).slice(0, 300));
+    const v = crrt47(inp47({ vBasis: null }), now);
+    assert(v.state === 'refuse' && /volume/i.test(v.refuse.word) && /Bauer 0\.70 L\/kg/.test(v.refuse.html) && /Matzke/.test(v.refuse.html) && !v.rows, JSON.stringify(v).slice(0, 300));
+    for (const kg of [0, NaN, 401]) {
+      const w = crrt47(inp47({ course: { doses: [D1_47], levels: L47, nowKg: kg } }), now);
+      assert(w.state === 'refuse' && /weight/i.test(w.refuse.word) && !w.rows, `${kg}: ${JSON.stringify(w).slice(0, 300)}`);
+    }
+    for (const circuit of [[], [{ onH: NaN, offH: null }]]) {
+      const c = crrt47(inp47({ circuit }), now);
+      assert(c.state === 'refuse' && /circuit/i.test(c.refuse.word) && !c.rows, JSON.stringify(c).slice(0, 300));
+    }
+  });
+
+  test('46.46 CRRT with no level yet: the reference state, carrying the Task 25 CRRT table for the weight now and the local maximum; the screen passes the effluent now to it', () => {
+    const inp = inp47({ course: { doses: [], levels: [], nowKg: 70 } });
+    const a = crrt47(inp, B47);
+    assert(a.state === 'reference' && JSON.stringify(a.reference) === JSON.stringify(fn46('rrtReferenceDoses')('crrt', 70, null)) && !a.rows, JSON.stringify(a).slice(0, 300));
+    const capped = crrt47(inp47({ course: { doses: [], levels: [], nowKg: 70 }, settings: { maxDoseMg: 1500 } }), B47);
+    assert(JSON.stringify(capped.reference) === JSON.stringify(fn46('rrtReferenceDoses')('crrt', 70, 1500)), 'the local maximum reaches the table');
+    const t = text46(fn46('crrtResultsHTML')(a, inp, B47));
+    assert(/Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(t) && /Effluent 2000 mL\/h is 28\.6 mL\/kg\/h at 70 kg: outside 20–25 mL\/kg\/h/.test(t), t.slice(0, 900));
+  });
+
+  test('46.47 two clean levels around one dose, the circuit running throughout: a dose; every row\'s middle is the hand computation from the solved k (to 0.05 mg/L) at the default draw, 24 h after the dose; the pick is pickGoalStep\'s', () => {
+    const now = B47 + 37, a = crrt47(inp47(), now);
+    assert(a.state === 'dose' && a.rate.n === 1 && Math.abs(a.rate.kMin - K47) < 1e-4 && a.rate.kMin === a.rate.kMax, JSON.stringify({ state: a.state, rate: a.rate }));
+    const K = __extractConsts();
+    assert(K.CRRT_NEXT_DRAW_DEFAULT_H === 24 && a.giveAtH === now && a.nextDrawH === now + 24 && a.nextDrawDefault === true, JSON.stringify({ giveAtH: a.giveAtH - B47, nextDrawH: a.nextDrawH - B47 }));
+    assert(a.rows.length === 9 && a.rows.every((r, i) => r.mg === i * 250), JSON.stringify(a.rows.map(r => r.mg)));
+    const k = a.rate.kMin, T = a.nextDrawH;
+    for (const r of a.rows) {
+      const hand = c2_47 * Math.exp(-k * (T - (B47 + 36))) + (r.mg ? inf47(r.mg, sandbox.autoTinf(r.mg), now, T, k, V47) : 0);
+      assert(Math.abs(r.mid - hand) < 0.05, `${r.mg} mg: ${r.mid} vs ${hand}`);
+    }
+    assert(JSON.stringify(a.pick) === JSON.stringify(fn46('pickGoalStep')(a.rows, a.goal)) && a.pick.mg === 1000, JSON.stringify(a.pick));
+    // A next draw the user entered is the one judged at.
+    const b = crrt47(inp47({ nextDrawH: now + 12 }), now);
+    assert(b.nextDrawH === now + 12 && b.nextDrawDefault === false, String(b.nextDrawH - now));
+  });
+
+  test('46.48 a circuit stop inside the only interval: flagged circuit-off, excluded, "Draw a level" (need-level, no rows)', () => {
+    const a = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] }), B47 + 37);
+    assert(a.state === 'need-level' && !a.rows && a.intervals.length === 1 && a.intervals[0].flags.indexOf('circuit-off') >= 0 && a.intervals[0].used === false,
+      JSON.stringify({ state: a.state, i: a.intervals }));
+    // A circuit started after the first level: the interval was not on the circuit throughout either.
+    const late = crrt47(inp47({ circuit: [{ onH: B47 + 14, offH: null }] }), B47 + 37);
+    assert(late.state === 'need-level' && late.intervals[0].flags.indexOf('circuit-off') >= 0, JSON.stringify(late.intervals));
+  });
+
+  test('46.49 two intervals, one clean and one circuit-off: the rate comes from the clean one only (rate.n 1, its k)', () => {
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] }), B47 + 61);
+    assert(a.rate && a.rate.n === 1 && a.intervals[0].used === false && a.intervals[0].flags.indexOf('circuit-off') >= 0 && a.intervals[1].used === true
+      && Math.abs(a.rate.kMin - K47) < 1e-4 && (a.state === 'dose' || a.state === 'no-dose') && a.rows.length === 9, JSON.stringify({ state: a.state, rate: a.rate, i: a.intervals.map(i => i.flags) }));
+  });
+
+  test('46.50 the effluent rate or the modality changed inside an interval: flagged and excluded; a row repeating the setting in force is no change', () => {
+    const now = B47 + 37;
+    const e = crrt47(inp47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 20, mlPerH: 2500 }] }), now);
+    assert(e.state === 'need-level' && e.intervals[0].flags.indexOf('effluent-changed') >= 0 && e.intervals[0].used === false && !e.rows, JSON.stringify(e.intervals));
+    const m = crrt47(inp47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 20, mlPerH: 2000, modality: 'cvvh' }] }), now);
+    assert(m.state === 'need-level' && m.intervals[0].flags.indexOf('modality-changed') >= 0 && m.intervals[0].flags.indexOf('effluent-changed') < 0 && m.intervals[0].used === false, JSON.stringify(m.intervals));
+    const same = crrt47(inp47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 20, mlPerH: 2000, modality: 'cvvhdf' }] }), now);
+    assert(same.state === 'dose' && same.intervals[0].used === true && same.intervals[0].flags.length === 0, JSON.stringify(same.intervals));
+    // No rate recorded at the interval's start: the rate is not known to have held, so it is not used.
+    const unknown = crrt47(inp47({ effluent: [{ fromH: B47 + 20, mlPerH: 2000 }] }), now);
+    assert(unknown.intervals[0].flags.indexOf('effluent-changed') >= 0 && unknown.intervals[0].used === false, JSON.stringify(unknown.intervals));
+  });
+
+  test('46.51 Review Focus 3: the circuit stopped at now − 1 h after two clean intervals: no projection and no dose table, "Draw a level", naming the stop', () => {
+    const now = B47 + 62;
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now - 1 }] }), now);
+    assert(a.state === 'need-level' && !a.rows && !a.pick && a.intervals.length === 2 && a.intervals.every(i => i.used), JSON.stringify({ state: a.state, i: a.intervals.map(i => i.flags) }));
+    assert(a.message.indexOf(`Draw a level: the circuit stopped at ${clk47(now - 1)} since the decline was measured.`) === 0, a.message);
+    // Restarted since: the projection from the last level would still cross the stop.
+    const re = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now - 1.5 }, { onH: now - 0.5, offH: null }] }), now);
+    assert(re.state === 'need-level' && !re.rows && /the circuit stopped at/.test(re.message), re.message);
+    // Running: an answer (the control).
+    const run = crrt47(three47(), now);
+    assert((run.state === 'dose' || run.state === 'no-dose') && run.rate.n === 2, run.state);
+  });
+
+  test('46.52 the effluent rate or the modality now differs from the measured intervals: "Draw a level", naming the change', () => {
+    const now = B47 + 62;
+    const a = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: now - 1, mlPerH: 3000 }] }), now);
+    assert(a.state === 'need-level' && !a.rows && a.message.indexOf(`Draw a level: the effluent rate changed at ${clk47(now - 1)}`) === 0 && /2000 → 3000 mL\/h/.test(a.message) && /since the decline was measured/.test(a.message), a.message);
+    const m = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: now - 1, mlPerH: 2000, modality: 'cvvhd' }] }), now);
+    assert(m.state === 'need-level' && !m.rows && m.message.indexOf(`Draw a level: the modality changed at ${clk47(now - 1)}`) === 0 && /CVVHDF → CVVHD/.test(m.message), m.message);
+    // A change recorded ahead, before the next draw, also ends the projection.
+    const ahead = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: now + 6, mlPerH: 3000 }] }), now);
+    assert(ahead.state === 'need-level' && !ahead.rows && /effluent rate/.test(ahead.message), ahead.message);
+  });
+
+  test('46.53 a next draw beyond a recorded stop: "Draw a level"; a draw before it is answered', () => {
+    const now = B47 + 62;
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now + 8 }], nextDrawH: now + 24 }), now);
+    assert(a.state === 'need-level' && !a.rows && /circuit/.test(a.message) && a.message.indexOf(clk47(now + 8)) > 0, a.message);
+    const d = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 55 }] }), B47 + 37);   // the default draw, 24 h on (B+61), passes the stop at B+55
+    assert(d.state === 'need-level' && !d.rows && d.message.indexOf(`is recorded to stop at ${clk47(B47 + 55)}`) > 0, d.state + ' ' + d.message);
+    const b = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now + 8 }], nextDrawH: now + 7 }), now);
+    assert((b.state === 'dose' || b.state === 'no-dose') && b.nextDrawH === now + 7, b.state + ' ' + (b.message || ''));
+  });
+
+  test('46.54 a level 0.5 h after an infusion ends: flagged distribution (Rybak 2020 Rec 8a, POST_DISTRIBUTION_MIN_H 1 h) and excluded; at 1 h it is used; a level inside an infusion is refused; under 12 h apart is flagged too-short and still used', () => {
+    assert(__extractConsts().POST_DISTRIBUTION_MIN_H === 1, 'the constant');
+    const lvl = (t) => [{ conc: 10, timeH: B47 + 12 }, { conc: 10 * Math.exp(-K47 * (t - 12)) + inf47(750, 1, B47 + 24, B47 + t, K47, V47), timeH: B47 + t }];
+    const early = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(25.5), nowKg: 70 } }), B47 + 27);
+    assert(early.state === 'need-level' && early.intervals[0].flags.indexOf('distribution') >= 0 && early.intervals[0].used === false && !early.rows, JSON.stringify(early.intervals));
+    const atOne = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(26), nowKg: 70 } }), B47 + 27);
+    assert(atOne.intervals[0].flags.indexOf('distribution') < 0 && atOne.intervals[0].used === true, JSON.stringify(atOne.intervals));
+    const inside = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(24.5), nowKg: 70 } }), B47 + 27);
+    assert(inside.state === 'refuse' && /infusion/.test(inside.refuse.html), JSON.stringify(inside).slice(0, 300));
+    const short = crrt47(inp47({ course: { doses: [], levels: [{ conc: 20, timeH: B47 + 12 }, { conc: 20 * Math.exp(-K47 * 8), timeH: B47 + 20 }], nowKg: 70 } }), B47 + 21);
+    assert(JSON.stringify(short.intervals[0].flags) === '["too-short"]' && short.intervals[0].used === true && Math.abs(short.rate.kMin - K47) < 1e-6, JSON.stringify(short.intervals));
+  });
+
+  test('46.55 the next level above the goal with no dose: no-dose, the rows still listed, no pick', () => {
+    const a = crrt47(inp47({ course: { doses: [], levels: [{ conc: 40, timeH: B47 + 12 }, { conc: 30, timeH: B47 + 36 }], nowKg: 70 } }), B47 + 37);
+    assert(a.state === 'no-dose' && a.pick === null && a.rows.length === 9 && a.rows[0].mid > 20, JSON.stringify({ state: a.state, pick: a.pick, mid: a.rows && a.rows[0].mid }));
+  });
+
+  test('46.56 the rows stop at the local maximum when one is set (1,500 mg) and at the 2,000 mg per-dose ceiling otherwise', () => {
+    const now = B47 + 37, top = (m) => { const a = crrt47(inp47({ settings: { maxDoseMg: m } }), now); return [a.rows.length, a.rows[a.rows.length - 1].mg]; };
+    assert(JSON.stringify([top(1500), top(null), top(2500)]) === JSON.stringify([[7, 1500], [9, 2000], [9, 2000]]), JSON.stringify([top(1500), top(null), top(2500)]));
+  });
+
+  test('46.57 the answer names the modality and the effluent as recorded and says nothing of AUC; crrtAnswer reads no creatinine, no CrCl, no model and scales nothing from effluent', () => {
+    const now = B47 + 37, inp = inp47();
+    for (const a of [crrt47(inp, now), crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] }), now),
+      crrt47(inp47({ course: { doses: [], levels: [{ conc: 40, timeH: B47 + 12 }, { conc: 30, timeH: B47 + 36 }], nowKg: 70 } }), now)]) {
+      const h = fn46('crrtResultsHTML')(a, inp, now), t = text46(h);
+      assert(!/AUC/.test(h) && /CVVHDF/.test(t) && /2000 mL\/h/.test(t), `${a.state}: ${t.slice(0, 500)}`);
+    }
+    const src = fn46('crrtAnswer').toString(), iv = fn46('crrtIntervals').toString();
+    for (const [n, t] of [['crrtAnswer', src], ['crrtIntervals', iv]]) {
+      assert(!/\bscr\b|SCr|calcCrCl|CrCl|crcl|gotiPopPK|buelga|hughes|mapFit|MODEL_|POP_|prior/i.test(t), `${n} reads creatinine or a model`);
+      assert(!/mlPerH\s*[*\/]|[*\/]\s*[\w.]*mlPerH/.test(t), `${n} scales something from effluent`);
+    }
+    assert(/crrtIntervals\(/.test(src) && /solveIntervalK\(/.test(iv) && /pickGoalStep\(rows, goal\)/.test(src), 'one solver and one pick');
+  });
+
+  test('46.58 profiles: snapshot.crrt round-trips the CRRT form (rows included); a profile with rrt crrt loads into the CRRT mode with its form', () => {
+    const vals = { 'crrt-modality': 'cvvhdf', 'crrt-urine': 'lt100', 'crrt-vd': 'matzke3', 'crrt-goal-min': '15', 'crrt-goal-max': '20',
+      'crrt-give-date': '2026-06-12', 'crrt-give-time': '14:00', 'crrt-draw-date': '2026-06-13', 'crrt-draw-time': '06:00' };
+    const mk = (v) => {
+      const env = env46(v), base = env.document.querySelectorAll;
+      env.document.querySelectorAll = (sel) => { const m = /^#(crrt-\w+-tbody) tr\[data-n\]$/.exec(sel); return m ? env.get(m[1]).children : base(sel); };
+      return env;
+    };
+    const want = { modality: 'cvvhdf', urine: 'lt100', vd: 'matzke3', goalMin: '15', goalMax: '20', giveDate: '2026-06-12', giveTime: '14:00', drawDate: '2026-06-13', drawTime: '06:00',
+      circuit: [{ ondate: '2026-06-10', ontime: '08:00', offdate: '', offtime: '' }], effluent: [{ date: '2026-06-10', time: '08:00', ml: '2000', mod: '' }, { date: '2026-06-11', time: '20:00', ml: '2500', mod: 'cvvh' }],
+      doses: [{ mg: '750', tinf: '1', date: '2026-06-11', time: '00:00' }], levels: [{ conc: '10', date: '2026-06-10', time: '12:00' }, { conc: '15.7', date: '2026-06-11', time: '12:00' }] };
+    const env = mk({});
+    let snap = null;
+    withProf44(env, [], () => { fn46('applyCrrtForm')(want); snap = fn46('snapshotCrrtForm')(); });
+    assert(JSON.stringify(snap) === JSON.stringify(want), JSON.stringify(snap));
+    // Saved with a profile and loaded into a fresh form: the CRRT mode, the form as saved.
+    const T = { age: '58', tbw: '70', height: '174', scr: '1', mic: '1', 'b-mic': '1', 'b-auc-target': '450' };
+    const env2 = mk(Object.assign({}, T, vals));
+    Object.keys(T).concat(['b-age', 'b-tbw', 'b-height', 'b-scr']).forEach(k => env2.get(k));
+    env2.get('app-shell-bayesian').style.display = 'none';
+    let p = null;
+    withProf44(env2, [], () => {
+      try {
+        fn46('applyCrrtForm')(want); sandbox.setRrt('crrt'); sandbox.setPatientSex('M');
+        env2.labels[0].value = 'Patient CRRT';
+        sandbox.saveCurrentProfile();
+        p = JSON.parse(env2.localStorage.getItem(PROF_KEY44) || '[]')[0];
+      } finally { reset46(); }
+    });
+    assert(p && p.snapshot.core.rrt === 'crrt' && JSON.stringify(p.snapshot.crrt) === JSON.stringify(want), 'stored: ' + JSON.stringify(p && p.snapshot.crrt));
+    assert(sandbox.validProfile(p) === true && sandbox.validProfile(Object.assign({}, p, { snapshot: Object.assign({}, p.snapshot, { crrt: 'x' }) })) === false, 'validProfile reads crrt as an object');
+    const env3 = mk({});
+    env3.localStorage.setItem(PROF_KEY44, JSON.stringify([p]));
+    withProf44(env3, [], () => {
+      try {
+        sandbox.loadProfileIntoForm(p.id);
+        assert(vm.runInContext('state.rrt', sandbox) === 'crrt' && vm.runInContext('state.calcMode', sandbox) === 'crrt', JSON.stringify(rrt46()));
+        assert(JSON.stringify(fn46('snapshotCrrtForm')()) === JSON.stringify(want), JSON.stringify(fn46('snapshotCrrtForm')()));
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.59 the Trough CRRT column (R73, R62, P2): creatinine, loading and PK-model blocks hidden, weight kept; no volume basis preselected; one goal control, its value held per mode', () => {
+    assert(/\.panel-left\[data-mode="crrt"\] \.not-pd\s*\{\s*display:\s*none;\s*\}/.test(src46), 'the hide rule');
+    const sec = (src46.match(/<div id="section-crrt" style="display:none">[\s\S]*?<\/div><!-- \/section-crrt -->/) || [''])[0];
+    assert(sec && /<select id="crrt-vd"[^>]*>\s*<option value="">Choose…<\/option>\s*<option value="bauer">0\.70 L\/kg \(Bauer\)<\/option>\s*<option value="matzke3">0\.90 L\/kg \(Matzke 1984, CrCl &lt; 10\)<\/option>\s*<\/select>/.test(sec)
+      && !/selected/.test(sec), 'the two PD bases, nothing preselected');
+    assert(/<div data-goal-control="crrt"><\/div>/.test(sec) && /<div data-goal-control="pd"><\/div>/.test(src46), 'both modes mount the one goal control');
+    const pdG = fn46('goalControlHTML')('pd'), crG = fn46('goalControlHTML')('crrt');
+    assert(/id="crrt-goal-min"/.test(crG) && /id="pd-goal-min"/.test(pdG) && crG.replace(/crrt/g, 'pd') === pdG, 'one builder, parameterised by mode');
+    const env = env46({});
+    const panel = { dataset: {} };
+    env.document.querySelector = (sel) => (sel === '.app-shell:not(#app-shell-bayesian) > .panel-left' ? panel : null);
+    withProf44(env, [], () => {
+      try {
+        const disp = (id) => env.get(id).style.display;
+        fn46('setRrt')('crrt');
+        assert(panel.dataset.mode === 'crrt' && disp('section-crrt') === '' && disp('section-trough-shared') === 'none' && disp('section-pd') === 'none' && disp('section-rrt') === '',
+          JSON.stringify([panel.dataset.mode, disp('section-crrt'), disp('section-trough-shared'), disp('section-pd')]));
+        fn46('setGoalControl')('pd', '10|15');
+        assert(env.get('pd-goal-min').value === '10' && env.get('crrt-goal-min').value === '' && env.get('crrt-goal-max').value === '', 'a PD goal never becomes the CRRT goal');
+        fn46('setGoalControl')('crrt', '15|20');
+        assert(env.get('crrt-goal-min').value === '15' && env.get('pd-goal-max').value === '15', 'and the reverse');
+        fn46('setRrt')('none');
+        assert(disp('section-crrt') === 'none' && disp('section-trough-shared') === '', 'None restores the shared block');
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.60 readCrrtForm: the form into crrtAnswer\'s input; blank next draw and give-at are null (the engine defaults them), no basis is null, a row without a modality names none; a half-typed row is refused, never guessed', () => {
+    const h = (d, t) => new Date(`${d}T${t}`).getTime() / 3600000;
+    const vals = { tbw: '70', 'crrt-modality': 'cvvhdf', 'crrt-urine': 'anuric', 'crrt-vd': '',
+      'crrt-circ-ondate-1': '2026-06-10', 'crrt-circ-ontime-1': '08:00', 'crrt-circ-offdate-1': '', 'crrt-circ-offtime-1': '',
+      'crrt-eff-date-1': '2026-06-10', 'crrt-eff-time-1': '08:00', 'crrt-eff-ml-1': '2000', 'crrt-eff-mod-1': '',
+      'crrt-dose-mg-1': '750', 'crrt-dose-tinf-1': '1', 'crrt-dose-date-1': '2026-06-11', 'crrt-dose-time-1': '00:00',
+      'crrt-lvl-conc-1': '10', 'crrt-lvl-date-1': '2026-06-10', 'crrt-lvl-time-1': '12:00' };
+    const run = (v) => {
+      const env = env46(v);
+      ['circ', 'eff', 'dose', 'lvl'].forEach(k => { env.get(`crrt-${k}-tbody`).children.push({ dataset: { n: '1' } }); });
+      env.document.querySelectorAll = (sel) => { const m = /^#(crrt-\w+-tbody) tr\[data-n\]$/.exec(sel); return m ? env.get(m[1]).children : []; };
+      return withProf44(env, [], () => fn46('readCrrtForm')());
+    };
+    const r = run(vals);
+    assert(r.input, JSON.stringify(r));
+    const i = r.input;
+    assert(i.vBasis === null && i.goal === null && i.giveAtH === null && i.nextDrawH === null && i.modality === 'cvvhdf' && i.urine === 'anuric' && i.course.nowKg === 70, JSON.stringify(i).slice(0, 400));
+    assert(JSON.stringify(i.circuit) === JSON.stringify([{ onH: h('2026-06-10', '08:00'), offH: null }]) && JSON.stringify(i.effluent) === JSON.stringify([{ fromH: h('2026-06-10', '08:00'), mlPerH: 2000, modality: null }]), JSON.stringify([i.circuit, i.effluent]));
+    assert(JSON.stringify(i.course.doses) === JSON.stringify([{ mg: 750, tinfH: 1, timeH: h('2026-06-11', '00:00') }]) && JSON.stringify(i.course.levels) === JSON.stringify([{ conc: 10, timeH: h('2026-06-10', '12:00') }]), JSON.stringify(i.course));
+    assert(JSON.stringify(Object.keys(i.settings)) === '["maxDoseMg"]', JSON.stringify(i.settings));
+    const half = run(Object.assign({}, vals, { 'crrt-circ-offdate-1': '2026-06-11' }));
+    assert(half.errors && half.ids.indexOf('crrt-circ-offdate-1') >= 0, JSON.stringify(half));
+    const noMl = run(Object.assign({}, vals, { 'crrt-eff-ml-1': '' }));
+    assert(noMl.errors && noMl.ids.indexOf('crrt-eff-ml-1') >= 0, JSON.stringify(noMl));
   });
 
 }
@@ -10576,7 +10846,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 665;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.44)
+const EXPECTED_TOTAL = 681;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.60)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

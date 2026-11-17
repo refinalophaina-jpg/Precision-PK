@@ -2605,10 +2605,12 @@
      which no mode hides, so whatever it sets can be undone where it was set. */
   .panel-left[data-mode="pd"] .not-pd { display: none; }
   .panel-left[data-mode="hybrid"] .not-pd { display: none; }
+  .panel-left[data-mode="crrt"] .not-pd { display: none; }
   /* A creatinine-based mode while renal replacement is not None (D28): shown, not offered. */
   .calc-mode-btn[aria-disabled="true"] { color: var(--ink-muted); cursor: not-allowed; }
   .calc-mode-btn[aria-disabled="true"]:hover { transform: none; }
   .rrt-mode-note { margin-top: 6px; }
+  .goal-control { display: flex; flex-direction: column; gap: 10px; }
   .course-what { grid-area: what; display: flex; align-items: center; gap: 8px; }
   /* A session row's type (D28): as wide as its longest word, the length field takes the rest. */
   .course-what .course-type { flex: 0 1 auto; width: auto; min-width: 0; }
@@ -3635,20 +3637,8 @@
       <hr class="section-divider">
       <div>
         <h2 class="form-h2">Goal level</h2>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div class="toggle-group" role="group" aria-label="Goal presets">
-            <button type="button" class="toggle-opt" data-onclick="k85" data-arg="10|15" aria-pressed="false">10–15</button>
-            <button type="button" class="toggle-opt" data-onclick="k85" data-arg="15|20" aria-pressed="false">15–20</button>
-          </div>
-          <div class="field-group">
-            <span class="field-label" id="pd-goal-label">Or a range of your own</span>
-            <div class="form-grid-2" role="group" aria-labelledby="pd-goal-label">
-              <div class="input-row"><input type="number" id="pd-goal-min" min="5" max="30" step="0.5" placeholder="min" aria-label="Goal level, lower (mg/L)"><span class="unit-badge">min</span></div>
-              <div class="input-row"><input type="number" id="pd-goal-max" min="5" max="35" step="0.5" placeholder="max" aria-label="Goal level, upper (mg/L)"><span class="unit-badge">max</span></div>
-            </div>
-            <p class="field-hint">mg/L. Presets: the 2009 consensus trough ranges (Rybak 2009). No goal, no answer.</p>
-          </div>
-        </div>
+        <!-- The one goal control (goalControlHTML), shared with CRRT; this mode's own value (D28, ruling P2) -->
+        <div data-goal-control="pd"></div>
       </div>
 
       <hr class="section-divider">
@@ -3682,11 +3672,102 @@
       </details>
     </div><!-- /section-pd -->
 
+    <!-- CRRT, IV (D28): a level-based answer. The decline between this patient's levels, read only while the circuit
+         ran at one rate and modality. No creatinine, no model; no volume basis preselected (R62); its own goal (P2). -->
+    <div id="section-crrt" style="display:none">
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">CRRT</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="field-group">
+            <label class="field-label" for="crrt-modality">Modality</label>
+            <select id="crrt-modality">
+              <option value="">Choose…</option>
+              <option value="cvvh">CVVH — haemofiltration</option>
+              <option value="cvvhd">CVVHD — haemodialysis</option>
+              <option value="cvvhdf">CVVHDF — haemodiafiltration</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="crrt-circ-label">Circuit runs</span>
+            <div class="course-table-wrap"><table class="course-table" aria-labelledby="crrt-circ-label"><tbody id="crrt-circ-tbody"></tbody></table></div>
+            <button type="button" class="course-add-btn" data-onclick="k108" data-arg="circ">+ Circuit run</button>
+            <p class="field-hint">When the circuit started, and when it stopped; leave the stop blank while it is still running. A clotted filter or a pause for a procedure is a stop.</p>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="crrt-eff-label">Effluent rate</span>
+            <div class="course-table-wrap"><table class="course-table" aria-labelledby="crrt-eff-label"><tbody id="crrt-eff-tbody"></tbody></table></div>
+            <button type="button" class="course-add-btn" data-onclick="k108" data-arg="eff">+ Effluent rate</button>
+            <p class="field-hint">Each rate as prescribed, from the time it was set, with the modality if it changed then. Rates are compared between levels; no dose is sized from them.</p>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="crrt-urine">Residual urine output</label>
+            <select id="crrt-urine">
+              <option value="">Choose…</option>
+              <option value="anuric">Anuric</option>
+              <option value="lt100">Under 100 mL/day</option>
+              <option value="100to500">100–500 mL/day</option>
+              <option value="gt500">Over 500 mL/day</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">Volume basis</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <p class="field-hint">Weight now is the total body weight above (actual body weight). No volume is chosen for you: none is sourced for CRRT.</p>
+          <div class="field-group">
+            <label class="field-label" for="crrt-vd">Volume of distribution</label>
+            <select id="crrt-vd">
+              <option value="">Choose…</option>
+              <option value="bauer">0.70 L/kg (Bauer)</option>
+              <option value="matzke3">0.90 L/kg (Matzke 1984, CrCl &lt; 10)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">Goal level</h2>
+        <div data-goal-control="crrt"></div>
+      </div>
+
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2" id="crrt-dose-label">IV doses</h2>
+        <div class="course-table-wrap"><table class="course-table" aria-labelledby="crrt-dose-label"><tbody id="crrt-dose-tbody"></tbody></table></div>
+        <button type="button" class="course-add-btn" data-onclick="k108" data-arg="dose">+ Dose</button>
+      </div>
+      <div>
+        <h2 class="form-h2" id="crrt-lvl-label">Levels</h2>
+        <div class="course-table-wrap"><table class="course-table" aria-labelledby="crrt-lvl-label"><tbody id="crrt-lvl-tbody"></tbody></table></div>
+        <button type="button" class="course-add-btn" data-onclick="k108" data-arg="lvl">+ Level</button>
+      </div>
+      <div class="field-group">
+        <span class="field-label" id="crrt-give-label">Give the next dose at (optional; blank means now)</span>
+        <div class="form-grid-2" role="group" aria-labelledby="crrt-give-label">
+          <input type="date" id="crrt-give-date" aria-label="Date of the next dose">
+          <div class="input-row"><input type="text" id="crrt-give-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" aria-label="Time of the next dose, 24-hour"><span class="unit-badge">24 h</span></div>
+        </div>
+      </div>
+      <div class="field-group">
+        <span class="field-label" id="crrt-draw-label">Draw the next level at (optional; blank means 24 h after the dose)</span>
+        <div class="form-grid-2" role="group" aria-labelledby="crrt-draw-label">
+          <input type="date" id="crrt-draw-date" aria-label="Date of the next level">
+          <div class="input-row"><input type="text" id="crrt-draw-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" aria-label="Time of the next level, 24-hour"><span class="unit-badge">24 h</span></div>
+        </div>
+        <p class="field-hint">The options are judged by the level expected then. Your maximum single dose, under the guideline reference's settings below, caps them.</p>
+      </div>
+    </div><!-- /section-crrt -->
+
     <!-- CRRT and hybrid (D28): the guideline reference for the weight above, and its local maximum -->
     <div id="section-rrt" style="display:none">
       <hr class="section-divider">
       <h2 class="form-h2">Guideline reference</h2>
-      <p class="field-hint">Calculate shows Rybak 2020's reference doses for the weight above (actual body weight). Nothing is fitted; levels decide later doses.</p>
+      <p class="field-hint" id="rrt-ref-hint">Calculate shows Rybak 2020's reference doses for the weight above (actual body weight). Nothing is fitted; levels decide later doses.</p>
       <details class="pd-settings" id="t-rrt-settings">
         <summary>Your settings (this browser)</summary>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
@@ -4239,7 +4320,7 @@ const __ACT = {
   k79: (el, ev, arg) => { const d = (document.getElementById('b-hd-give-date') || {}).value || '', t = (document.getElementById('b-hd-give-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; if (!Number.isFinite(h) && (d || t)) { const msg = document.getElementById('b-hd-give-msg'); if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 17:00.'; return; } bState.hdGiveAtH = Number.isFinite(h) ? h : null; if (bState.result) { const nextId = ev && ev.type === 'focusout' && ev.relatedTarget && ev.relatedTarget.id; renderBayesianResults(bState.result, bState.divergeMsg, bState.levelWarnings, bState.mic, bState.p2c); const f = document.getElementById(ev && ev.type === 'focusout' ? (nextId || '') : (el && el.id ? el.id : 'b-hd-give-time')); if (f) f.focus(); } },   /* HD one-time: when the dose will be given (v3.8.0); the date commits on leaving it and focus goes where the user was heading (v3.9.0) */
   k82: (el, ev, arg) => { const d = (document.getElementById('b-first-date') || {}).value || '', t = (document.getElementById('b-first-time') || {}).value || ''; const h = isClock24(t) && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${t}`).getTime() / 3600000 : NaN; const msg = document.getElementById('b-first-msg'); if (!Number.isFinite(h) && (d || t)) { if (msg) msg.textContent = 'Use a date and a 24-hour time, e.g. 12:00.'; return; } if (msg) msg.textContent = ''; bState.firstDoseAtH = Number.isFinite(h) ? h : null; const r = bState.result, out = document.getElementById('b-first-readout'); if (r && r.rec && out) { const plan = firstDosePlan(r, r.rec, r.fitNowH, bState.firstDoseAtH, bState.curRegimen); if (plan) { out.innerHTML = firstDoseReadoutHTML(plan, r.rec, false); const auc = document.getElementById('b-first-auc'); if (auc) auc.innerHTML = firstDayAucHTML(plan); refreshHoldSlots(r, plan); } } refreshProfileGraph(); },   /* first dose of the recommended regimen: readouts + curve only (v3.9.0; one line, v3.11.0; the hold, D26) */
   k84: (el, ev, arg) => { setCalcMode('pd'); },   /* the PD mode (D23) */
-  k85: (el, ev, arg) => { pdSetGoal(arg); },   /* a goal preset */
+  k85: (el, ev, arg) => { setGoalControl(goalModeOf(el), arg); },   /* a goal preset, PD or CRRT (one control, D28) */
   k86: (el, ev, arg) => { addPdRow('dose'); focusNewRow('pd-dose-tbody'); },
   k87: (el, ev, arg) => { removePdRow('dose', arg); },
   k88: (el, ev, arg) => { addPdRow('lvl'); focusNewRow('pd-lvl-tbody'); },
@@ -4260,6 +4341,9 @@ const __ACT = {
   k105: (el, ev, arg) => { saveRrtLocalSettings(arg); },   /* the CRRT/hybrid reference's maximum dose, either column (D28) */
   k106: (el, ev, arg) => { clearRrtLocalSettings(); },   /* Clear the CRRT/hybrid settings (D28) */
   k107: (el, ev, arg) => { clearPdLocalSettings(); },   /* Clear the PD settings (D28) */
+  k108: (el, ev, arg) => { addCrrtRow(arg); focusNewRow(`crrt-${arg}-tbody`); },   /* a CRRT row: circuit run, effluent rate, dose, level (D28) */
+  k109: (el, ev, arg) => { removeCrrtRow(arg); },   /* remove a CRRT row ("kind|n") (D28) */
+  k110: (el, ev, arg) => { copyResultSummary(el, (state.crrtLast && state.crrtSummary) || '', 'trough'); },   /* Copy summary, CRRT mode (D28) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4546,9 +4630,7 @@ function rrtNoticeHTML(kind, module) {
        <button type="button" class="vx-act" data-onclick="k77">Use Goti 2018 · HD</button>` });
   }
   if (kind === 'crrt') {
-    if (!auc) return noteHTML({ tier: 'caution', word: 'On CRRT — no creatinine-based regimen', html:
-      `Trough-based dosing estimates clearance from creatinine, which does not describe vancomycin clearance on
-       continuous renal replacement therapy, so no regimen is calculated here.` }) + ref;
+    if (!auc) return crrtReferenceLeadHTML() + ref;   // the Trough CRRT mode's reference state (Task 27) reads the same lead
     return noteHTML({ tier: 'caution', word: 'On CRRT — no model here describes it', html:
       `None of the models here was developed in continuous renal replacement therapy, and creatinine does not
        describe vancomycin clearance on it, so nothing was parsed or fitted.
@@ -4752,7 +4834,7 @@ function setCalcMode(mode) {
   if (CREATININE_MODES.indexOf(mode) >= 0 && currentRrt() !== 'none') { syncRrtModeButtons(); return false; }
   state.calcMode = mode;
   // The panel shows only what the mode reads (D24): PD hides amputation, creatinine and
-  // the loading-dose blocks (.not-pd in CSS); so does hybrid (D28, ruling R73), keeping weight.
+  // the loading-dose blocks (.not-pd in CSS); so do hybrid and CRRT (D28, ruling R73), keeping weight.
   const pl = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left');
   if (pl && pl.dataset) pl.dataset.mode = mode;
   document.getElementById('mode-btn-initial').classList.toggle('active',      mode === 'initial');
@@ -4766,10 +4848,13 @@ function setCalcMode(mode) {
   document.getElementById('section-twolevels').style.display        = mode === 'twolevels'    ? '' : 'none';
   document.getElementById('section-randomlevel').style.display      = mode === 'randomlevel'  ? '' : 'none';
   document.getElementById('section-pd').style.display               = mode === 'pd'           ? '' : 'none';
+  const crrtSec = document.getElementById('section-crrt');
+  if (crrtSec) crrtSec.style.display = mode === 'crrt' ? '' : 'none';
   document.getElementById('section-trough-shared').style.display    = mode === 'pd'           ? 'none' : '';
   // Hybrid hides the PK model and the trough target too (D28): nothing there is used, and a hybrid screen shows
   // no 15–20 band (no pre-session target is validated for hybrid therapy). CRRT and hybrid show the reference section.
-  if (mode === 'hybrid') document.getElementById('section-trough-shared').style.display = 'none';
+  // CRRT likewise (D28, R73): its answer is level-based, with its own goal; nothing in that block is read.
+  if (mode === 'hybrid' || mode === 'crrt') document.getElementById('section-trough-shared').style.display = 'none';
   const rrtSec = document.getElementById('section-rrt');
   if (rrtSec) rrtSec.style.display = mode === 'crrt' || mode === 'hybrid' ? '' : 'none';
   const hints = {
@@ -4778,13 +4863,17 @@ function setCalcMode(mode) {
     twolevels:    'Two post-infusion levels from the <strong>first dose</strong> determine individual Kel &amp; Vd directly — useful when Cockcroft-Gault CrCl is unreliable (bedbound, AKI, obesity).',
     pd:           'IV vancomycin for a patient on peritoneal dialysis, dosed by level: what to give, whether to give it today, and when to draw the next level, from this patient\'s own levels and cycler schedule. No population model drives a dose.',
     ihd:          'Renal replacement is intermittent haemodialysis. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
-    crrt:         'Renal replacement is CRRT. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
+    crrt:         'Renal replacement is CRRT. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here. Before a level, Calculate shows the guideline reference; from two levels drawn with the circuit running, the dose is sized from this patient\'s own decline.',
     hybrid:       'Renal replacement is hybrid therapy (SLED / PIRRT). Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
     randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-muted)">The graph shows the recommended regimen at steady state, not the course your level came from, so the level itself is not drawn on it. Read the fitted parameters, not the curve.</span>'
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
   if (mode === 'pd') { fillPdLocalSettings(); pdToggleFields(); }
   if (mode === 'crrt' || mode === 'hybrid') fillRrtLocalSettings();
+  const refHint = document.getElementById('rrt-ref-hint');
+  if (refHint) refHint.textContent = mode === 'crrt'
+    ? 'Before the first level, Calculate shows Rybak 2020\'s reference doses for the weight above (actual body weight). Your maximum single dose also caps the level-based options.'
+    : 'Calculate shows Rybak 2020\'s reference doses for the weight above (actual body weight). Nothing is fitted; levels decide later doses.';
   syncRrtModeButtons();
   document.getElementById('results-placeholder').style.display = 'flex';
   document.getElementById('results-content').style.display = 'none';
@@ -4822,11 +4911,50 @@ function addPdRow(kind) {
   tbody.appendChild(tr);
 }
 function removePdRow(kind, n) { const tr = document.getElementById(`pd-${kind}-row-${n}`); if (tr) tr.remove(); }
-function pdSetGoal(arg) {
+// The goal control, one implementation for PD and CRRT (the user's ruling U9; controller ruling P2): the presets
+// (the 2009 consensus trough ranges, Rybak 2009) or a range of the user's own, nothing preselected. Built once per
+// mode into its [data-goal-control] slot; each mode keeps its own value (pd-goal-*, crrt-goal-*), so a PD goal
+// never becomes a CRRT goal on a mode switch, nor the reverse.
+const GOAL_CONTROL_MODES = ['pd', 'crrt'];
+function goalControlHTML(mode) {
+  return `<div class="goal-control">
+          <div class="toggle-group" role="group" aria-label="Goal presets" data-goal-for="${mode}">
+            <button type="button" class="toggle-opt" data-onclick="k85" data-arg="10|15" aria-pressed="false">10–15</button>
+            <button type="button" class="toggle-opt" data-onclick="k85" data-arg="15|20" aria-pressed="false">15–20</button>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="${mode}-goal-label">Or a range of your own</span>
+            <div class="form-grid-2" role="group" aria-labelledby="${mode}-goal-label">
+              <div class="input-row"><input type="number" id="${mode}-goal-min" min="5" max="30" step="0.5" placeholder="min" aria-label="Goal level, lower (mg/L)"><span class="unit-badge">min</span></div>
+              <div class="input-row"><input type="number" id="${mode}-goal-max" min="5" max="35" step="0.5" placeholder="max" aria-label="Goal level, upper (mg/L)"><span class="unit-badge">max</span></div>
+            </div>
+            <p class="field-hint">mg/L. Presets: the 2009 consensus trough ranges (Rybak 2009). No goal, no answer.</p>
+          </div>
+        </div>`;
+}
+// Fills each empty slot once, at load (the script follows the markup).
+function mountGoalControls() {
+  if (typeof document === 'undefined' || !document || typeof document.querySelectorAll !== 'function') return;
+  Array.from(document.querySelectorAll('[data-goal-control]') || []).forEach(el => {
+    const m = el.dataset && el.dataset.goalControl;
+    if (GOAL_CONTROL_MODES.indexOf(m) >= 0 && !el.querySelector('input')) el.innerHTML = goalControlHTML(m);
+  });
+  const lbl = document.getElementById('crrt-draw-label');
+  if (lbl) lbl.textContent = `Draw the next level at (optional; blank means ${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose)`;
+}
+// The mode a preset button belongs to (its group's data-goal-for).
+function goalModeOf(el) {
+  const g = el && typeof el.closest === 'function' ? el.closest('[data-goal-for]') : null;
+  const m = g && g.dataset ? g.dataset.goalFor : null;
+  return GOAL_CONTROL_MODES.indexOf(m) >= 0 ? m : 'pd';
+}
+// A preset (arg "lo|hi"), or the fields' own values re-marked ("lo|hi" as typed), for one mode only.
+function setGoalControl(mode, arg) {
+  if (GOAL_CONTROL_MODES.indexOf(mode) < 0) return;
   const [lo, hi] = String(arg || '').split('|');
-  const a = document.getElementById('pd-goal-min'), b = document.getElementById('pd-goal-max');
+  const a = document.getElementById(`${mode}-goal-min`), b = document.getElementById(`${mode}-goal-max`);
   if (a && b) { a.value = lo; b.value = hi; }
-  document.querySelectorAll('[data-onclick="k85"]').forEach(btn => {
+  Array.from(document.querySelectorAll(`[data-goal-for="${mode}"] [data-onclick="k85"]`) || []).forEach(btn => {
     const on = btn.dataset.arg === arg; btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', String(on));
   });
 }
@@ -4965,8 +5093,9 @@ function readPdForm() {
   const give = pdHoursAt('pd-give-date', 'pd-give-time');
   if (give.bad) bad('pd-give-date', 'Give the next dose at: a date and a 24-hour time, or leave both blank.');
   if (errors.length) return { errors, ids };
-  // The volumes come from their existing sources: Bauer 0.70 L/kg (calcVd) or Matzke group III.
-  const vdPerKg = val('pd-vd') === 'matzke3' ? MATZKE_VD_GROUP3 : calcVd('bauer', 0, 1, 0);
+  // The volumes come from their existing sources, Bauer 0.70 L/kg (calcVd) or Matzke group III, through the one
+  // mapping CRRT reads too (volumeBasisPerKg, D28). The PD select always holds one of the two.
+  const vdPerKg = volumeBasisPerKg(val('pd-vd') === 'matzke3' ? 'matzke3' : 'bauer');
   return { input: {
     course: { doses, levels, loadKg: isNaN(loadKg) ? nowKg : loadKg, nowKg, vdPerKg, prior,
       schedule: { modality, startClock, hours, heldDates, stoppedAtH, exchanges: num('pd-exchanges'), fillL: num('pd-fill') } },
@@ -4998,7 +5127,7 @@ function applyPdForm(pd) {
   const fill = (kind, list, fields) => (list || []).forEach(r => { addPdRow(kind); const n = pdRowN[kind]; fields.forEach(f => set(`pd-${kind}-${f}-${n}`, r[f])); });
   fill('dose', o.doses, ['mg', 'tinf', 'date', 'time']); fill('lvl', o.levels, ['conc', 'date', 'time']);
   fill('held', (o.held || []).map(d => ({ date: d })), ['date']);
-  pdSetGoal(`${o.goalMin || ''}|${o.goalMax || ''}`); set('pd-goal-min', o.goalMin); set('pd-goal-max', o.goalMax);
+  setGoalControl('pd', `${o.goalMin || ''}|${o.goalMax || ''}`); set('pd-goal-min', o.goalMin); set('pd-goal-max', o.goalMax);
   pdToggleFields();
 }
 function runPd() {
@@ -5046,7 +5175,8 @@ function pdSummaryText(a) {
 // goal, cycler nights and doses, on clock time. SVG coloured by CSS tokens only.
 // widthPx: the width the chart is shown at, so its 12 px text is 12 px on screen (D24). The
 // string builder has no DOM; renderPdResults measures the figure and draws it again.
-function pdChartSVG(a, input, nowH, widthPx) {
+// label (D28): the chart's spoken summary; PD's own when not given (the CRRT answer passes its summary).
+function pdChartSVG(a, input, nowH, widthPx, label) {
   const c = (input && input.course) || {}, goal = a.goal || (input && input.goal);
   const levels = (c.levels || []).slice().sort((x, y) => x.timeH - y.timeH), doses = (c.doses || []).slice().sort((x, y) => x.timeH - y.timeH);
   if (!levels.length || !a.curve || !a.curve.length) return '';
@@ -5081,7 +5211,7 @@ function pdChartSVG(a, input, nowH, widthPx) {
   g += `<path class="pd-band" d="M${up.join(' L')} L${dn.join(' L')} Z"/>`;
   for (const d of doses) if (d.timeH >= t0) g += `<line class="pd-dose" x1="${f(x(d.timeH))}" x2="${f(x(d.timeH))}" y1="${f(yb)}" y2="${f(yb - 10)}"/><text class="pd-dl" x="${f(x(d.timeH) + 3)}" y="${f(yb - 12)}">${escHtml(fmtDose(d.mg))}</text>`;
   for (const l of levels) g += `<circle class="pd-lv" cx="${f(x(l.timeH))}" cy="${f(y(l.conc))}" r="4.5"/><text class="pd-lvv" x="${f(x(l.timeH) + 7)}" y="${f(y(l.conc) - 6)}">${l.conc.toFixed(1)}</text>`;
-  return `<svg class="pd-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escHtml('Levels and the projected range to the next draw. ' + pdSummaryText(a))}">${g}</svg>`;
+  return `<svg class="pd-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escHtml('Levels and the projected range to the next draw. ' + (label != null ? label : pdSummaryText(a)))}">${g}</svg>`;
 }
 function pdResultsHTML(a, input, nowH) {
   const inp = input || {}, c = inp.course || {}, sc = c.schedule || {}, goal = a.goal || inp.goal;
@@ -5216,11 +5346,287 @@ function fitPdChart() {
   const v = state.pdView, fig = document.querySelector('#results-content .pd-figure'), svg = fig && fig.querySelector('svg.pd-chart');
   if (!v || !svg) return;
   const w = Math.round(fig.getBoundingClientRect().width);
-  if (w > 0 && Math.abs(w - Number((svg.getAttribute('viewBox') || '').split(' ')[2])) > 1) svg.outerHTML = pdChartSVG(v.a, v.input, v.nowH, w);
+  if (w > 0 && Math.abs(w - Number((svg.getAttribute('viewBox') || '').split(' ')[2])) > 1) svg.outerHTML = pdChartSVG(v.a, v.input, v.nowH, w, v.label);
 }
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   let pdFitT = 0;
   window.addEventListener('resize', () => { clearTimeout(pdFitT); pdFitT = setTimeout(() => { try { fitPdChart(); } catch (e) { /* the chart keeps its last width */ } }, 120); });
+}
+
+// ── CRRT mode (D28): the form ──
+// Circuit runs (start, and stop or blank while running), effluent rates (from a time, with the modality when
+// it changed then), doses and levels: one table each, in the PD rows' pattern.
+const crrtRowN = { circ: 0, eff: 0, dose: 0, lvl: 0 };
+const CRRT_ROW_FIELDS = { circ: ['ondate', 'ontime', 'offdate', 'offtime'], eff: ['date', 'time', 'ml', 'mod'], dose: ['mg', 'tinf', 'date', 'time'], lvl: ['conc', 'date', 'time'] };
+function addCrrtRow(kind) {
+  if (!CRRT_ROW_FIELDS[kind]) return;
+  const tbody = document.getElementById(`crrt-${kind}-tbody`);
+  if (!tbody) return;
+  const n = ++crrtRowN[kind], now = new Date(); now.setSeconds(0, 0);
+  const id = (f) => `crrt-${kind}-${f}-${n}`;
+  const tr = document.createElement('tr');
+  tr.id = `crrt-${kind}-row-${n}`; tr.className = 'course-row'; tr.dataset.n = String(n);
+  const rm = (what) => `<td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k109" data-arg="${kind}|${n}" aria-label="Remove ${what} ${n}">${courseRemoveIcon()}</button></td>`;
+  const pair = (what, df, tf, blank) => `<input type="date" id="${id(df)}" value="${blank ? '' : localDateStr(now)}" aria-label="${what} ${n} date">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="${id(tf)}" value="${blank ? '' : localTimeStr(now)}" aria-label="${what} ${n} time (24-hour)">`;
+  if (kind === 'circ') tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Run ${n}</span> <span class="course-readback">started, then stopped (blank while running)</span></td>
+    <td class="course-what">${pair('Circuit run started,', 'ondate', 'ontime')}</td>
+    <td class="course-when">${pair('Circuit run stopped (blank while running),', 'offdate', 'offtime', true)}</td>${rm('circuit run')}`;
+  else if (kind === 'eff') tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Rate ${n}</span> <span class="course-readback">from</span></td>
+    <td class="course-what">
+      <span class="course-field course-field-wide"><input type="number" id="${id('ml')}" inputmode="decimal" min="1" step="50" aria-label="Effluent rate ${n} (mL/h)"><span class="course-unit" aria-hidden="true">mL/h</span></span>
+      <select id="${id('mod')}" class="course-type" aria-label="Effluent rate ${n} modality">
+        <option value="">Modality as above</option>
+        ${Object.keys(CRRT_MODALITY_LABEL).map(k => `<option value="${k}">${CRRT_MODALITY_LABEL[k]}</option>`).join('')}
+      </select>
+    </td>
+    <td class="course-when">${pair('Effluent rate', 'date', 'time')}</td>${rm('effluent rate')}`;
+  else if (kind === 'dose') tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Dose ${n}</span></td>
+    <td class="course-what">
+      <span class="course-field"><input type="number" id="${id('mg')}" inputmode="decimal" min="${INPUT_LIMITS.dose.min}" max="${INPUT_LIMITS.dose.max}" step="50" aria-label="Dose ${n} amount (mg)"><span class="course-unit" aria-hidden="true">mg</span></span>
+      <span class="course-over" aria-hidden="true">over</span>
+      <span class="course-field"><input type="number" id="${id('tinf')}" inputmode="decimal" min="0.25" max="6" step="0.25" value="1" aria-label="Dose ${n} infusion duration (h)"><span class="course-unit" aria-hidden="true">h</span></span>
+    </td>
+    <td class="course-when">${pair('Dose', 'date', 'time')}</td>${rm('dose')}`;
+  else tr.innerHTML = `
+    <td class="course-head"><span class="course-n">Level ${n}</span></td>
+    <td class="course-what"><span class="course-field"><input type="number" id="${id('conc')}" inputmode="decimal" min="0.5" max="100" step="0.1" aria-label="Level ${n} (mg/L)"><span class="course-unit" aria-hidden="true">mg/L</span></span></td>
+    <td class="course-when">${pair('Level', 'date', 'time')}</td>${rm('level')}`;
+  tbody.appendChild(tr);
+}
+function removeCrrtRow(arg) {
+  const [kind, n] = String(arg || '').split('|');
+  if (!CRRT_ROW_FIELDS[kind]) return;
+  const tr = document.getElementById(`crrt-${kind}-row-${n}`); if (tr) tr.remove();
+}
+// The form into crrtAnswer's input, or every problem at once (for reportValidation). Only malformed entries are
+// errors here; what is missing (weight, goal, basis, circuit, modality, effluent) the answer refuses, by name.
+function readCrrtForm() {
+  const val = (id) => String((document.getElementById(id) || {}).value || '');
+  const num = (id) => { const x = val(id).trim(); return x === '' ? NaN : Number(x); };
+  const errors = [], ids = [], bad = (id, msg) => { errors.push(msg); ids.push(id); };
+  const rowsOf = (kind) => Array.from(document.querySelectorAll(`#crrt-${kind}-tbody tr[data-n]`) || []);
+  const circuit = [], effluent = [], doses = [], levels = [];
+  for (const tr of rowsOf('circ')) {
+    const n = tr.dataset.n, on = pdHoursAt(`crrt-circ-ondate-${n}`, `crrt-circ-ontime-${n}`), off = pdHoursAt(`crrt-circ-offdate-${n}`, `crrt-circ-offtime-${n}`);
+    if (on.blank && off.blank) continue;
+    if (on.h == null) bad(`crrt-circ-ondate-${n}`, `Circuit run ${n}: when it started, a date and a 24-hour time.`);
+    else if (off.bad) bad(`crrt-circ-offdate-${n}`, `Circuit run ${n}: when it stopped, a date and a 24-hour time, or both blank while it runs.`);
+    else if (off.h != null && !(off.h > on.h)) bad(`crrt-circ-offdate-${n}`, `Circuit run ${n}: the stop is not after the start.`);
+    else circuit.push({ onH: on.h, offH: off.h != null ? off.h : null });
+  }
+  for (const tr of rowsOf('eff')) {
+    const n = tr.dataset.n, ml = num(`crrt-eff-ml-${n}`), mod = val(`crrt-eff-mod-${n}`), w = pdHoursAt(`crrt-eff-date-${n}`, `crrt-eff-time-${n}`);
+    if (isNaN(ml) && w.blank && !mod) continue;
+    if (!(ml > 0 && Number.isFinite(ml))) bad(`crrt-eff-ml-${n}`, `Effluent rate ${n}: a rate in mL/h.`);
+    else if (w.h == null) bad(`crrt-eff-date-${n}`, `Effluent rate ${n}: from when, a date and a 24-hour time.`);
+    else if (mod && !CRRT_MODALITY_LABEL[mod]) bad(`crrt-eff-mod-${n}`, `Effluent rate ${n}: choose a modality, or "as above".`);
+    else effluent.push({ fromH: w.h, mlPerH: ml, modality: mod || null });
+  }
+  for (const tr of rowsOf('dose')) {
+    const n = tr.dataset.n, mg = num(`crrt-dose-mg-${n}`), tinf = num(`crrt-dose-tinf-${n}`), w = pdHoursAt(`crrt-dose-date-${n}`, `crrt-dose-time-${n}`);
+    if (isNaN(mg) && w.blank) continue;
+    if (!(mg >= INPUT_LIMITS.dose.min && mg <= INPUT_LIMITS.dose.max)) bad(`crrt-dose-mg-${n}`, `Dose ${n}: an amount of ${INPUT_LIMITS.dose.min}–${INPUT_LIMITS.dose.max} mg.`);
+    else if (!(tinf >= 0.25 && tinf <= 6)) bad(`crrt-dose-tinf-${n}`, `Dose ${n}: an infusion time of 0.25–6 h.`);
+    else if (w.h == null) bad(`crrt-dose-date-${n}`, `Dose ${n}: a date and a 24-hour time.`);
+    else doses.push({ mg, tinfH: tinf, timeH: w.h });
+  }
+  for (const tr of rowsOf('lvl')) {
+    const n = tr.dataset.n, conc = num(`crrt-lvl-conc-${n}`), w = pdHoursAt(`crrt-lvl-date-${n}`, `crrt-lvl-time-${n}`);
+    if (isNaN(conc) && w.blank) continue;
+    if (!(conc >= 0.5 && conc <= 100)) bad(`crrt-lvl-conc-${n}`, `Level ${n}: 0.5–100 mg/L.`);
+    else if (w.h == null) bad(`crrt-lvl-date-${n}`, `Level ${n}: a date and a 24-hour time.`);
+    else levels.push({ conc, timeH: w.h });
+  }
+  const gMin = num('crrt-goal-min'), gMax = num('crrt-goal-max');
+  const goal = isNaN(gMin) && isNaN(gMax) ? null : { min: gMin, max: gMax };
+  if (goal && (isNaN(gMin) || isNaN(gMax))) bad(isNaN(gMin) ? 'crrt-goal-min' : 'crrt-goal-max', 'Goal level: enter both numbers.');
+  const give = pdHoursAt('crrt-give-date', 'crrt-give-time'), draw = pdHoursAt('crrt-draw-date', 'crrt-draw-time');
+  if (give.bad) bad('crrt-give-date', 'Give the next dose at: a date and a 24-hour time, or leave both blank.');
+  if (draw.bad) bad('crrt-draw-date', 'Draw the next level at: a date and a 24-hour time, or leave both blank.');
+  if (errors.length) return { errors, ids };
+  return { input: {
+    course: { doses, levels, nowKg: num('tbw') }, circuit, effluent, modality: val('crrt-modality'), urine: val('crrt-urine'),
+    vBasis: val('crrt-vd') || null, goal, giveAtH: give.h != null ? give.h : null, nextDrawH: draw.h != null ? draw.h : null,
+    settings: { maxDoseMg: rrtLocalSettings().maxDoseMg } } };
+}
+// Saved profiles carry the CRRT fields as entered (strings), as snapshot.crrt, and restore them.
+function snapshotCrrtForm() {
+  const v = (id) => String((document.getElementById(id) || {}).value || '');
+  const rows = (kind) => Array.from(document.querySelectorAll(`#crrt-${kind}-tbody tr[data-n]`) || [])
+    .map(tr => Object.fromEntries(CRRT_ROW_FIELDS[kind].map(f => [f, v(`crrt-${kind}-${f}-${tr.dataset.n}`)])));
+  return { modality: v('crrt-modality'), urine: v('crrt-urine'), vd: v('crrt-vd'), goalMin: v('crrt-goal-min'), goalMax: v('crrt-goal-max'),
+    giveDate: v('crrt-give-date'), giveTime: v('crrt-give-time'), drawDate: v('crrt-draw-date'), drawTime: v('crrt-draw-time'),
+    circuit: rows('circ'), effluent: rows('eff'), doses: rows('dose'), levels: rows('lvl') };
+}
+// Anything entered in the CRRT form?
+function crrtFormHasContent(o) {
+  return !!o && Object.keys(o).some(k => (Array.isArray(o[k]) ? o[k].length > 0 : !!o[k]));
+}
+function applyCrrtForm(crrt) {
+  if (typeof document === 'undefined' || !document.getElementById('section-crrt')) return;
+  const o = crrt || {}, set = (id, x) => { const e = document.getElementById(id); if (e) e.value = x == null ? '' : x; };
+  set('crrt-modality', o.modality); set('crrt-urine', o.urine); set('crrt-vd', o.vd);
+  set('crrt-give-date', o.giveDate); set('crrt-give-time', o.giveTime); set('crrt-draw-date', o.drawDate); set('crrt-draw-time', o.drawTime);
+  Object.keys(CRRT_ROW_FIELDS).forEach(k => { const tb = document.getElementById(`crrt-${k}-tbody`); if (tb) tb.innerHTML = ''; });
+  const fill = (kind, list) => (Array.isArray(list) ? list : []).forEach(r => { addCrrtRow(kind); const n = crrtRowN[kind]; CRRT_ROW_FIELDS[kind].forEach(f => set(`crrt-${kind}-${f}-${n}`, r && r[f])); });
+  fill('circ', o.circuit); fill('eff', o.effluent); fill('dose', o.doses); fill('lvl', o.levels);
+  setGoalControl('crrt', `${o.goalMin || ''}|${o.goalMax || ''}`); set('crrt-goal-min', o.goalMin); set('crrt-goal-max', o.goalMax);
+}
+function runCrrt() {
+  const r = readCrrtForm();
+  if (r.errors) { reportValidation({ ok: false, errors: r.errors, ids: r.ids }); return; }
+  const nowH = Date.now() / 3600000;
+  const answer = crrtAnswer(r.input, nowH);
+  state.crrtLast = { input: r.input, answer, nowH };
+  renderCrrtResults(answer, r.input, nowH);
+  // Announced once per run, as the other modes are; a resize only redraws the chart.
+  announceResult('Result: ' + crrtSummaryText(answer, r.input));
+}
+
+// ── CRRT mode (D28): the answer on screen. No AUC anywhere (controller ruling R61). ──
+const URINE_BAND_LABEL = { anuric: 'anuric', lt100: 'under 100 mL/day', '100to500': '100–500 mL/day', gt500: 'over 500 mL/day' };
+// The circuit settings as recorded, in words: the modality and the effluent rate in force now.
+function crrtSettingWords(a, inp) {
+  const s = (a && a.effluentNow) || null;
+  const mod = CRRT_MODALITY_LABEL[(s && s.modality) || (inp && inp.modality)];
+  if (!mod && !s) return 'Modality and effluent rate not recorded';
+  return `${mod || 'Modality not recorded'} · ${s ? `effluent ${Math.round(s.mlPerH)} mL/h` : 'no effluent rate recorded for now'}, as recorded`;
+}
+function crrtSummaryText(a, inp) {
+  if (!a) return '';
+  const r = (x) => `${x[0].toFixed(1)}–${x[1].toFixed(1)} mg/L`, g = a.goal ? ` (goal ${a.goal.min}–${a.goal.max})` : '';
+  const head = `CRRT, IV vancomycin (${crrtSettingWords(a, inp)})`;
+  switch (a.state) {
+    case 'refuse': return `CRRT, IV vancomycin: ${a.refuse.word}.`;
+    case 'reference': return `${head}: no level yet. The guideline reference (Rybak 2020, Rec 16) applies until levels are drawn.`;
+    case 'need-level': return `${head}: ${a.message}`;
+    case 'dose': { const row = a.rows.find(x => x.mg === a.pick.mg);
+      return `${head}: Give ${fmtDose(a.pick.mg)} IV${a.giveIsNow === false ? ` at ${fmtClock(a.giveAtH)}` : ''}; expected ${r(row.atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}.`; }
+    default: return `${head}: no dose now; expected ${r(a.rows[0].atDraw)} at ${fmtClock(a.nextDrawH)}${g}. Next level ${fmtClock(a.nextDrawH)}.`;
+  }
+}
+// The lead of the Trough CRRT screen before any level (and of rrtNoticeHTML's Trough CRRT notice).
+function crrtReferenceLeadHTML() {
+  return noteHTML({ tier: 'caution', word: 'On CRRT — no creatinine-based regimen', html:
+    `Trough-based dosing estimates clearance from creatinine, which does not describe vancomycin clearance on
+     continuous renal replacement therapy. Until two levels drawn with the circuit running measure this patient's
+     own decline, the guideline's reference follows.` });
+}
+function crrtResultsHTML(a, input, nowH) {
+  const inp = input || {}, c = inp.course || {}, goal = a.goal || inp.goal;
+  const range = (r) => `${r[0].toFixed(1)}–${r[1].toFixed(1)} mg/L`, when = (h) => escHtml(fmtClock(h));
+  const course = crrtCourseSection(inp);
+  const setting = `<p class="vx-sub vx-muted">${escHtml(crrtSettingWords(a, inp))}.</p>`;
+  const wrap = (verdict, figure, sections) => `
+    <div class="tx-result crrt-result">
+      <h2 class="sr-only">CRRT result</h2>
+      <div class="tx-top">${verdict}${figure || ''}</div>
+      ${txNotesHTML(a.cautions)}
+      ${sections && sections.length ? `<div class="vx-evidence">${sections.join('')}</div>` : ''}
+    </div>`;
+  if (a.state === 'reference') {
+    const ml = a.effluentNow ? Math.round(a.effluentNow.mlPerH) : null;
+    return `<div class="crrt-reference"${ml ? ` data-effluent="${ml}"` : ''}>${crrtReferenceLeadHTML()}${setting}${rrtReferenceSlotHTML('crrt', 'trough', Number.isFinite(c.nowKg) ? String(c.nowKg) : '', null, ml)}</div>
+      <div class="vx-evidence">${course}</div>`;
+  }
+  if (a.state === 'refuse') return wrap(`
+    <section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(a.refuse.word)}</h3>
+      <p class="vx-hold">${a.refuse.html}</p>
+    </section>`, '', [course]);
+  const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k110">Copy summary</button><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
+  const basis = inp.vBasis === 'matzke3' ? 'Matzke 1984 group III 0.90' : 'Bauer 0.70';
+  const method = txEvHTML('crrt-method', 'How this works', 'Level-based, not a model', `
+    <p class="ev-note">Every level is read against the one before it: the elimination rate that carries the earlier level, plus every dose in between, onto the measured one, one-compartment with V = ${basis} L/kg × the weight now. An interval is used only when the circuit ran throughout it at one effluent rate and modality, and neither level was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end (Rybak 2020, Rec 8a: the post-distributional level is drawn 1 to 2 h after the infusion).</p>
+    <p class="ev-note">The projection holds only while the circuit still runs as it did when the decline was measured: a stop, a restart or a change of rate or modality since means a new level. No dose is scaled from the effluent rate, and no creatinine or population model is used.</p>
+    <p class="ev-note">A redose is sized by where it puts the next level you will draw, inside your goal: the step whose expected level lands closest to the goal's middle, ties to the smaller. With no time entered, the next level is judged ${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose (a preference you can change); Rybak 2020, Rec 16 asks for a first level within ${CRRT_FIRST_LEVEL_WITHIN_H} h.</p>`, false);
+  const t12 = (k) => halfLife(k).toFixed(0);
+  const decline = (a.intervals || []).length ? txEvHTML('crrt-decline', 'The decline', a.rate ? `${a.rate.n} interval${a.rate.n === 1 ? '' : 's'} used · half-life ${t12(a.rate.kMax)}–${t12(a.rate.kMin)} h` : 'no interval used', `
+    <table class="ev-table">
+      <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Half-life</th><th scope="col">Setting</th><th scope="col">Notes</th></tr></thead>
+      <tbody>${a.intervals.map(i => `<tr${i.used ? '' : ' class="pd-unused"'}>
+        <td>${i.fromConc.toFixed(1)} mg/L, ${when(i.fromH)}</td><td>${i.conc.toFixed(1)} mg/L, ${when(i.toH)}</td><td>${i.t12 ? `${i.t12.toFixed(0)} h` : '—'}</td>
+        <td>${i.setting ? `${escHtml(CRRT_MODALITY_LABEL[i.setting.modality] || '—')} · ${Math.round(i.setting.mlPerH)} mL/h` : 'not recorded'}</td><td>${escHtml(crrtFlagWords(i)) || '—'}</td></tr>`).join('')}</tbody>
+    </table>`, false) : '';
+  const drawNote = a.nextDrawDefault ? `${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose (default)` : 'as entered';
+  if (a.state === 'need-level') return wrap(`
+    <section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen vx-regimen-hd" id="tx-regimen">Draw a level</h3>
+      <p class="vx-hold">${escHtml(a.message)}</p>
+      ${setting}
+      <p class="vx-sub vx-muted">No dose is sized until a new level measures the decline as things stand now.</p>
+      ${actions}
+    </section>`, '', [decline, course, method].filter(Boolean));
+  // 'dose' or 'no-dose'
+  const pickRow = a.pick ? a.rows.find(r => r.mg === a.pick.mg) : a.rows[0];
+  const vs = (m) => m < goal.min ? 'below the goal' : m > goal.max ? 'above the goal' : 'within the goal';
+  const head = a.state === 'dose'
+    ? `Give <span class="rec-dose">${fmtDose(a.pick.mg)}</span> IV <span class="vx-freq">${a.giveIsNow ? 'now' : `at ${when(a.giveAtH)}`}</span>`
+    : 'No dose now';
+  const verdict = `
+    <section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">
+      <h3 class="vx-regimen${a.state === 'dose' ? '' : ' vx-regimen-hd'}" id="tx-regimen">${head}</h3>
+      ${a.state === 'dose' ? `<p class="vx-inf">Infuse over ${fmtHrs(autoTinf(a.pick.mg))}</p>` : ''}
+      <p class="vx-sub"><span class="vx-k">Expected</span> ${range(pickRow.atDraw)} at ${when(a.nextDrawH)} <span class="vx-muted">· goal ${goal.min}–${goal.max} mg/L</span></p>
+      ${a.pick && a.pick.closest ? `<p class="vx-sub tone-caution">No step reaches the goal by then; the closest is shown.</p>` : ''}
+      <p class="vx-sub vx-muted">From ${a.rate.n} interval${a.rate.n === 1 ? '' : 's'} of this patient's own levels on the circuit; the range is how much they disagree.</p>
+      ${setting}
+      <p class="vx-sub vx-muted">This holds only while the circuit runs at this rate and modality: after a stop or a change, draw a level.</p>
+      <p class="vx-next"><span class="vx-k">Draw the next level</span> ${when(a.nextDrawH)} <span class="vx-muted">${drawNote}</span></p>
+      ${actions}
+    </section>`;
+  const figure = `
+    <figure class="tx-curve pd-figure">
+      ${pdChartSVG(a, inp, nowH, 0, crrtSummaryText(a, inp))}
+      <figcaption class="tx-legend profile-legend">
+        <span class="legend-item"><i class="lg pd-lg-lv"></i>Measured level</span>
+        <span class="legend-item"><i class="lg pd-lg-band"></i>${a.pick ? (a.giveAtH > a.lastLevel.timeH ? `Projected: decline before the dose, then with ${fmtDose(a.pick.mg)}` : `Projected with ${fmtDose(a.pick.mg)}`) : 'Projected decline, no dose'}</span>
+        <span class="legend-item"><i class="lg pd-lg-goal"></i>Goal</span>
+      </figcaption>
+    </figure>`;
+  const options = txEvHTML('crrt-options', 'Options', `${a.rows.length} choices, each if given ${a.giveIsNow ? 'now' : when(a.giveAtH)}`, `
+    <table class="ev-table pd-opt-table">
+      <caption>The peak, and the level at ${when(a.nextDrawH)}, as a range from this patient's decline</caption>
+      <thead><tr><th scope="col">Dose</th><th scope="col">Peak</th><th scope="col">Level at ${when(a.nextDrawH)}</th><th scope="col">Against the goal</th></tr></thead>
+      <tbody>${a.rows.map(r => `<tr${(a.pick ? r.mg === a.pick.mg : r.mg === 0) ? ' class="is-rec"' : ''}>
+        <th scope="row">${r.mg ? fmtDose(r.mg) : 'No dose'}</th><td>${range(r.peak)}</td><td>${range(r.atDraw)}</td><td>${vs(r.mid)}</td></tr>`).join('')}
+      </tbody>
+    </table>`, true);
+  return wrap(verdict, figure, [options, decline, course, method].filter(Boolean));
+}
+// What was entered, on screen (closed) and on paper (print opens every section): modality and effluent as recorded.
+function crrtCourseSection(inp) {
+  const c = (inp && inp.course) || {}, when = (h) => escHtml(fmtClock(h));
+  const sorted = (xs) => (xs || []).slice().sort((x, y) => (x.timeH != null ? x.timeH - y.timeH : (x.fromH != null ? x.fromH - y.fromH : x.onH - y.onH)));
+  const doses = sorted(c.doses), levels = sorted(c.levels), circuit = sorted(inp.circuit), effluent = sorted(inp.effluent);
+  const mod = CRRT_MODALITY_LABEL[inp.modality] || 'not recorded';
+  const row = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  const basis = inp.vBasis === 'matzke3' ? '0.90 L/kg (Matzke 1984, group III)' : inp.vBasis === 'bauer' ? '0.70 L/kg (Bauer)' : 'not chosen';
+  return txEvHTML('crrt-course', 'Circuit and course', `${escHtml(mod)} · ${effluent.length} rate${effluent.length === 1 ? '' : 's'} · ${doses.length} dose${doses.length === 1 ? '' : 's'}, ${levels.length} level${levels.length === 1 ? '' : 's'}`, `
+    <dl class="ev-dl">
+      ${row('Modality', escHtml(mod))}
+      ${row('Effluent rate', effluent.length ? effluent.map(e => `${Math.round(e.mlPerH)} mL/h from ${when(e.fromH)}${e.modality ? ` (${escHtml(CRRT_MODALITY_LABEL[e.modality] || e.modality)})` : ''}`).join('<br>') : 'none recorded')}
+      ${row('Circuit', circuit.length ? circuit.map(r => `${when(r.onH)} – ${r.offH != null ? when(r.offH) : 'running'}`).join('<br>') : 'none recorded')}
+      ${row('Residual urine output', escHtml(URINE_BAND_LABEL[inp.urine] || '—'))}
+      ${row('Weight', Number.isFinite(c.nowKg) ? `${(+c.nowKg).toFixed(1)} kg now (actual body weight)` : '—')}
+      ${row('Volume', basis)}
+      ${row('Goal', inp.goal ? `${inp.goal.min}–${inp.goal.max} mg/L` : '—')}
+      ${row('Doses', doses.length ? doses.map(d => `${escHtml(fmtDose(d.mg))} over ${fmtHrs(d.tinfH)} at ${when(d.timeH)}`).join('<br>') : 'none')}
+      ${row('Levels', levels.length ? levels.map(l => `${l.conc.toFixed(1)} mg/L at ${when(l.timeH)}`).join('<br>') : 'none')}
+    </dl>`, false);
+}
+function renderCrrtResults(a, input, nowH) {
+  const rc = document.getElementById('results-content');
+  if (!rc) return;
+  rc.innerHTML = crrtResultsHTML(a, input, nowH);
+  state.crrtSummary = crrtSummaryText(a, input);
+  // The chart is PD's renderer (one chart, a label parameter); fitPdChart redraws whichever is on screen.
+  state.pdView = { a, input, nowH, label: state.crrtSummary };
+  fitPdChart();
 }
 
 // ── AKI Detection (RenalGuard) ──
@@ -7396,7 +7802,9 @@ function calculate() {
   // therapy, so every trough-based number would be wrong in kind, not degree. Refuse whatever
   // the calc mode says, and point to what there is.
   const rrt = currentRrt();
-  if (rrt === 'ihd' || rrt === 'crrt' || rrt === 'hybrid') {
+  // D28 (Task 27): CRRT has its own level-based answer (the guideline reference before any level).
+  if (rrt === 'crrt') { beginFormRun('trough'); runCrrt(); return; }
+  if (rrt === 'ihd' || rrt === 'hybrid') {
     beginFormRun('trough');   // shows the result area, hides the placeholder, clears stale
     const rc = typeof document !== 'undefined' ? document.getElementById('results-content') : null;
     if (rc) rc.innerHTML = rrtNoticeHTML(rrt, 'trough');
@@ -9090,7 +9498,10 @@ function clearWithUndo(mod) {
       setPatientSex(sex);
       toggleLevel(); toggleLD();
       refreshDtPairs();
-      try { pdSetGoal(`${(document.getElementById('pd-goal-min') || {}).value || ''}|${(document.getElementById('pd-goal-max') || {}).value || ''}`); pdToggleFields(); } catch (e) { /* display only */ }
+      try {
+        GOAL_CONTROL_MODES.forEach(m => setGoalControl(m, `${(document.getElementById(`${m}-goal-min`) || {}).value || ''}|${(document.getElementById(`${m}-goal-max`) || {}).value || ''}`));
+        pdToggleFields();
+      } catch (e) { /* display only */ }
       try { autoWeights(); updateCrCl(); checkAKI(); updateBayesCrCl(); } catch (e) { /* display only */ }
       focusStatusLine([document.getElementById('undo-trough')], 'Form restored.');
     });
@@ -9149,8 +9560,9 @@ function resetForm() {
   const ampCb = document.getElementById('amp-enabled');
   if (ampCb) ampCb.checked = false;
   ampToggleEnabled(ampCb);
-  // The PD form is this column's too (R22): every field and row, not only its number inputs.
+  // The PD form is this column's too (R22): every field and row, not only its number inputs. So is the CRRT form (D28).
   applyPdForm(null);
+  applyCrrtForm(null);
   setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
 }
 
@@ -10595,6 +11007,216 @@ function pdDrawCaution(schedule, drawH, cautions) {   // eslint-disable-line no-
   return pdSessions(schedule, drawH - 24, drawH + 1e-6).some(x => x.startH <= drawH && drawH < x.endH);
 }
 
+// ══════════════════════════════════════════
+//  CRRT — IV vancomycin by level (D28, v3.16.0)
+// ══════════════════════════════════════════
+// No population model, no creatinine and no effluent-based clearance (the user's ruling 5). The decline
+// between this patient's own levels, measured while the circuit ran at one rate and one modality, sizes the
+// next dose, and only while the circuit still runs as it did when that decline was measured. Anything that
+// changed since is "Draw a level". One interval solver (solveIntervalK), one goal pick (pickGoalStep) and
+// one set of volume bases with PD. No AUC is reported (controller ruling R61).
+
+// Rybak 2020 Rec 8a (A-II): the post-distributional peak is drawn "1 to 2 hours after infusion" ("after end
+// of infusion" in the guideline's text). A level drawn within this of an infusion's end is still distributing,
+// so the interval it bounds is flagged 'distribution' and not used for a rate (controller ruling R66). No
+// earlier constant held this boundary: the level-timing narrative's 0.5 h is a wording PREFERENCE.
+const POST_DISTRIBUTION_MIN_H = 1;
+// PREFERENCE (rule 8, controller ruling R65): with no next-draw time entered, the expected level is judged
+// this long after the dose is given. It orders the 250 mg steps (the pick is the step whose expected level at
+// that time lands nearest the goal's middle), so it can change the dose picked; the user can change it. It sits
+// beside Rybak 2020 Rec 16's first level "within the first 24 hours" (CRRT_FIRST_LEVEL_WITHIN_H) and is not
+// derived from it.
+const CRRT_NEXT_DRAW_DEFAULT_H = 24;
+const CRRT_MODALITY_LABEL = { cvvh: 'CVVH', cvvhd: 'CVVHD', cvvhdf: 'CVVHDF' };
+// The two volume bases PD offers, and only those (controller ruling R62: no CRRT-specific volume is sourced):
+// Bauer 0.70 L/kg (calcVd) and Matzke 1984 group III (MATZKE_VD_GROUP3). null otherwise: no basis, no answer.
+function volumeBasisPerKg(basis) {
+  return basis === 'bauer' ? calcVd('bauer', 0, 1, 0) : basis === 'matzke3' ? MATZKE_VD_GROUP3 : null;
+}
+// The circuit settings in force at t: the latest effluent row from at or before t, with its own modality or,
+// when the row names none, the modality recorded for the course. null before the first row (not known).
+function crrtSettingAt(effluent, modality, t) {
+  let s = null;
+  for (const e of effluent || []) if (e.fromH <= t && (!s || e.fromH >= s.fromH)) s = e;
+  return s ? { fromH: s.fromH, mlPerH: s.mlPerH, modality: s.modality || modality } : null;
+}
+// The first recorded change of setting in (fromH, toH] away from `ref` ({mlPerH, modality}), or null. A row
+// that repeats the setting in force is no change. kind: 'effluent' (the rate differs) or 'modality'.
+function crrtSettingChange(effluent, modality, ref, fromH, toH) {
+  const rows = (effluent || []).filter(e => e.fromH > fromH && e.fromH <= toH).sort((a, b) => a.fromH - b.fromH);
+  for (const e of rows) {
+    const s = crrtSettingAt(effluent, modality, e.fromH);
+    if (s.mlPerH !== ref.mlPerH) return { kind: 'effluent', atH: e.fromH, from: ref, to: s };
+    if (s.modality !== ref.modality) return { kind: 'modality', atH: e.fromH, from: ref, to: s };
+  }
+  return null;
+}
+// The circuit run covering [fromH, toH] whole (started at or before fromH, not stopped before toH), or null.
+function crrtRunCovering(circuit, fromH, toH) {
+  return (circuit || []).find(c => c.onH <= fromH && (c.offH == null || c.offH >= toH)) || null;
+}
+// The first stop in (fromH, toH], or null (a gap with no recorded stop is reported by the caller).
+function crrtStopBetween(circuit, fromH, toH) {
+  const stops = (circuit || []).map(c => c.offH).filter(h => h != null && h > fromH && h <= toH).sort((a, b) => a - b);
+  return stops.length ? stops[0] : null;
+}
+// Within POST_DISTRIBUTION_MIN_H after the end of any infusion.
+function crrtDistributing(t, doses) {
+  return (doses || []).some(d => t >= d.timeH + d.tinfH && t - (d.timeH + d.tinfH) < POST_DISTRIBUTION_MIN_H);
+}
+// The decline between consecutive measured levels (level to level only: there is no record here of drug
+// given before the first dose entered, so a first dose is never read as a start from zero). Flags, the first
+// four of which exclude the interval from the rate: 'circuit-off' (not on one circuit run throughout),
+// 'effluent-changed', 'modality-changed' (a recorded change inside it, or no rate recorded at its start),
+// 'distribution' (either level within POST_DISTRIBUTION_MIN_H of an infusion's end); then 'too-short' (under
+// PD_MIN_INTERVAL_H, flagged only), and the solver's 'unexplained-high' / 'unexplained-low'.
+function crrtIntervals(inp, vL) {
+  const c = inp.course || {};
+  const doses = (c.doses || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const levels = (c.levels || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const out = [];
+  for (let i = 1; i < levels.length; i++) {
+    const a = levels[i - 1], l = levels[i], flags = [];
+    const set = crrtSettingAt(inp.effluent, inp.modality, a.timeH);
+    if (!crrtRunCovering(inp.circuit, a.timeH, l.timeH)) flags.push('circuit-off');
+    if (!set) flags.push('effluent-changed');
+    else {
+      const rows = (inp.effluent || []).filter(e => e.fromH > a.timeH && e.fromH < l.timeH).map(e => crrtSettingAt(inp.effluent, inp.modality, e.fromH));
+      if (rows.some(s => s.mlPerH !== set.mlPerH)) flags.push('effluent-changed');
+      if (rows.some(s => s.modality !== set.modality)) flags.push('modality-changed');
+    }
+    if (crrtDistributing(a.timeH, doses) || crrtDistributing(l.timeH, doses)) flags.push('distribution');
+    const excluded = flags.length > 0;
+    if (l.timeH - a.timeH < PD_MIN_INTERVAL_H) flags.push('too-short');
+    const base = { fromH: a.timeH, toH: l.timeH, fromConc: a.conc, conc: l.conc, hours: l.timeH - a.timeH, setting: set, vL };
+    if (excluded) { out.push(Object.assign(base, { k: null, t12: null, flags, used: false })); continue; }
+    const why = {}, solved = solveIntervalK({ kind: 'level', timeH: a.timeH, conc: a.conc }, l, doses, vL, why);
+    if (!solved) { out.push(Object.assign(base, { k: null, t12: null, flags: flags.concat(why.flag), used: false })); continue; }
+    out.push(Object.assign(base, { k: solved.k, t12: solved.t12, flags, used: true }));
+  }
+  return out;
+}
+
+// The answer for the CRRT mode. input = { course {doses, levels, nowKg}, circuit [{onH, offH|null}], effluent
+// [{fromH, mlPerH, modality?}], modality 'cvvh'|'cvvhd'|'cvvhdf', urine, vBasis 'bauer'|'matzke3'|null, goal
+// {min,max}|null, giveAtH, nextDrawH, settings {maxDoseMg} }. Pure: the UI reads the form into it.
+// States: 'reference' (no level yet: the Rybak 2020 Rec 16 table), 'refuse', 'need-level' (no usable interval,
+// or the projection is not allowed, each with its message), 'dose', 'no-dose'.
+function crrtAnswer(input, nowH) {
+  const inp = input || {}, c = inp.course || {}, st = inp.settings || {}, goal = inp.goal;
+  const refuse = (word, html) => ({ state: 'refuse', refuse: { word, html } });
+  const doses = (c.doses || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const levels = (c.levels || []).slice().sort((a, b) => a.timeH - b.timeH);
+  const effluentNow = crrtSettingAt(inp.effluent, inp.modality, nowH);
+  // No level yet: the guideline's reference by weight (Task 25), never a level-based number.
+  if (!levels.length) return { state: 'reference', reference: rrtReferenceDoses('crrt', c.nowKg, st.maxDoseMg), effluentNow };
+  const w = checkValue(Number.isFinite(c.nowKg) ? c.nowKg : '', 'weight');
+  if (!w.ok) return refuse('Weight now missing', `${escHtml(w.message)} The volume is sized from the actual body weight now.`);
+  if (!goal || !(goal.min > 0) || !(goal.max > goal.min)) return refuse('Choose a goal range', 'Pick 10–15 or 15–20 mg/L, or enter a range with the lower number first. There is no answer without a goal.');
+  const perKg = volumeBasisPerKg(inp.vBasis);
+  if (perKg == null) return refuse('Choose a volume basis', 'Choose Bauer 0.70 L/kg or Matzke 1984 group III 0.90 L/kg, the two the peritoneal dialysis mode offers. No volume is chosen for you: none is sourced for CRRT.');
+  const circuit = (inp.circuit || []).slice().sort((a, b) => a.onH - b.onH);
+  if (!circuit.length || !circuit.every(r => Number.isFinite(r.onH))) return refuse('Circuit start missing', 'Enter when the circuit started (and when it stopped, if it has). The decline is read only while the circuit ran.');
+  if (!CRRT_MODALITY_LABEL[inp.modality]) return refuse('Modality missing', 'Choose the CRRT modality: CVVH, CVVHD or CVVHDF.');
+  if (!(inp.effluent || []).length) return refuse('Effluent rate missing', 'Enter the effluent rate and when it was set. It is compared between levels, never used to size a dose.');
+  for (const l of levels) for (const d of doses) {
+    if (l.timeH > d.timeH && l.timeH < d.timeH + d.tinfH)
+      return refuse('Level timing', escHtml(`The level at ${fmtClock(l.timeH)} was drawn during the infusion of ${fmtDose(d.mg)}. A level has to follow the end of the infusion.`));
+  }
+  const cautions = [];
+  // A local maximum below one dispensing step cannot be honoured: ignored, and said (PD's rule).
+  const localMax = st.maxDoseMg >= MATRIX_DOSE_STEP ? st.maxDoseMg : null;
+  if (st.maxDoseMg > 0 && !localMax) cautions.push({ tier: 'caution', word: 'Local maximum ignored', html: `Your maximum single dose (${st.maxDoseMg} mg) is below one ${MATRIX_DOSE_STEP} mg step, so it is ignored. Change it under Your settings.` });
+  const capRows = Math.min(DOSE_MAX_PER_DOSE_MG, localMax || Infinity);
+  // A dose is never placed before now (D20's rule for a chosen time).
+  let giveAt = inp.giveAtH != null ? inp.giveAtH : nowH;
+  if (giveAt < nowH - 1e-9) { cautions.push({ tier: 'info', word: 'Give-at time', html: `The time entered (${fmtClock(giveAt)}) has passed; the options are for now, not before now.` }); giveAt = nowH; }
+  const giveIsNow = Math.abs(giveAt - nowH) < 5 / 60;
+  const nextDrawDefault = inp.nextDrawH == null;
+  const draw = nextDrawDefault ? giveAt + CRRT_NEXT_DRAW_DEFAULT_H : inp.nextDrawH;
+  if (!(draw >= giveAt + autoTinf(capRows) + POST_DISTRIBUTION_MIN_H))
+    return refuse('Next level too soon', escHtml(`The next level (${fmtClock(draw)}) has to fall at least ${POST_DISTRIBUTION_MIN_H} h after the end of the largest option's infusion given at ${fmtClock(giveAt)}.`));
+  const vNow = perKg * c.nowKg;
+  const intervals = crrtIntervals(Object.assign({}, inp, { circuit }), vNow);
+  const used = intervals.filter(i => i.used);
+  const base = { intervals, cautions, giveAtH: giveAt, giveIsNow, nextDrawH: draw, nextDrawDefault, goal, vNowL: vNow, effluentNow };
+  const needLevel = (reason, message, extra) => Object.assign({ state: 'need-level', reason, message }, base, extra || {});
+  if (!used.length) {
+    const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags).filter(f => f !== 'too-short'))].map(f => CRRT_FLAG_WORDS[f] || f).join('; ') : '';
+    return needLevel('no-interval', levels.length === 1
+      ? 'Draw a level: one level measures no decline. A second level, drawn with the circuit running at the same rate, measures it.'
+      : `Draw a level: no interval between the levels can be used (${why}). The next level, drawn with the circuit running at the same rate as the level before it, measures the decline.`);
+  }
+  const kMin = Math.min(...used.map(i => i.k)), kMax = Math.max(...used.map(i => i.k));
+  const rate = { kMin, kMax, n: used.length };
+  // The projection starts at the newest level not drawn while an infusion was still distributing.
+  const startLevel = levels.slice().reverse().find(l => !crrtDistributing(l.timeH, doses));
+  const newest = levels[levels.length - 1];
+  if (startLevel !== newest) cautions.push({ tier: 'info', word: 'Newest level not the starting point', html: escHtml(`The level at ${fmtClock(newest.timeH)} was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end, so the projection starts at the level at ${fmtClock(startLevel.timeH)}.`) });
+  // Projection: only while one circuit run covers the whole span from the starting level to the next draw, and
+  // the setting in force over it is the one every used interval was measured at.
+  const ref = used[used.length - 1].setting;
+  const stopped = (atH) => atH <= nowH
+    ? `Draw a level: the circuit stopped at ${fmtClock(atH)} since the decline was measured.`
+    : `Draw a level: the circuit is recorded to stop at ${fmtClock(atH)}, before the next draw at ${fmtClock(draw)}; the decline was measured with it running.`;
+  if (!crrtRunCovering(circuit, startLevel.timeH, draw)) {
+    const stopH = crrtStopBetween(circuit, startLevel.timeH, draw);
+    return needLevel('circuit', stopH != null ? stopped(stopH)
+      : `Draw a level: the circuit was not running throughout from the level at ${fmtClock(startLevel.timeH)}.`, { rate });
+  }
+  const changeWords = (ch) => {
+    const verb = ch.atH <= nowH ? 'changed' : 'is recorded to change';
+    return ch.kind === 'effluent'
+      ? `Draw a level: the effluent rate ${verb} at ${fmtClock(ch.atH)} (${Math.round(ch.from.mlPerH)} → ${Math.round(ch.to.mlPerH)} mL/h) since the decline was measured.`
+      : `Draw a level: the modality ${verb} at ${fmtClock(ch.atH)} (${CRRT_MODALITY_LABEL[ch.from.modality] || '—'} → ${CRRT_MODALITY_LABEL[ch.to.modality] || '—'}) since the decline was measured.`;
+  };
+  // Every used interval at one setting (else the first change after the first of them); then no other setting
+  // recorded from the end of the last used interval to the draw. A change and a change back in that span is
+  // still a change: the decline was not measured across it.
+  const mixed = used.some(i => i.setting.mlPerH !== ref.mlPerH || i.setting.modality !== ref.modality);
+  const change = mixed ? crrtSettingChange(inp.effluent, inp.modality, used[0].setting, used[0].fromH, draw)
+    : crrtSettingChange(inp.effluent, inp.modality, ref, used[used.length - 1].toH - 1e-9, draw);
+  if (change) return needLevel(change.kind, changeWords(change), { rate });
+  const doseAfter = doses.filter(d => d.timeH >= startLevel.timeH);
+  const concAt = (t, k, extra) => startLevel.conc * Math.exp(-k * (t - startLevel.timeH)) + predictConc1comp(doseAfter.concat(extra || []).filter(d => d.timeH < t), t, k, vNow);
+  if (used.length === 1) cautions.push({ tier: 'info', word: 'One interval', html: 'The decline rests on one interval; the next level will tell how steady it is.' });
+  const rows = [];
+  for (let mg = 0; mg <= capRows; mg += MATRIX_DOSE_STEP) {
+    const dose = mg ? [{ mg, tinfH: autoTinf(mg), timeH: giveAt }] : [];
+    const tPeak = giveAt + (mg ? dose[0].tinfH : 0);
+    const atDraw = [concAt(draw, kMax, dose), concAt(draw, kMin, dose)];
+    rows.push({ mg, peak: [concAt(tPeak, kMax, dose), concAt(tPeak, kMin, dose)], atDraw, mid: (atDraw[0] + atDraw[1]) / 2 });
+  }
+  let state = 'no-dose', pick = null;
+  if (rows[0].mid < goal.min) {
+    // The step nearest the goal's middle, ties to the smaller (the shared pick).
+    const best = pickGoalStep(rows, goal);
+    if (best.mg) { state = 'dose'; pick = best; }
+    else cautions.push({ tier: 'caution', word: 'No step reaches the goal', html: `Every ${MATRIX_DOSE_STEP} mg step lands further from the goal than giving nothing; no dose is the closest. Recheck at the next draw.` });
+  }
+  const optMg = pick ? pick.mg : 0, optDose = optMg ? [{ mg: optMg, tinfH: autoTinf(optMg), timeH: giveAt }] : [];
+  const ts = [];
+  for (let i = 0; i <= 60; i++) ts.push(startLevel.timeH + (draw - startLevel.timeH) * i / 60);
+  if (optMg) ts.push(giveAt, giveAt + optDose[0].tinfH);
+  const curve = ts.filter(t => t >= startLevel.timeH && t <= draw).sort((x, y) => x - y)
+    .map(t => ({ t, lo: concAt(t, kMax, optDose), hi: concAt(t, kMin, optDose) }));
+  return Object.assign({ state, pick, rows, rate, lastLevel: startLevel, setting: ref, curve }, base);
+}
+// An interval's notes, in words (the flags above).
+const CRRT_FLAG_WORDS = {
+  'circuit-off': 'the circuit was not running throughout: not used',
+  'effluent-changed': 'the effluent rate changed inside it, or none was recorded at its start: not used',
+  'modality-changed': 'the modality changed inside it: not used',
+  'distribution': `a level within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end, still distributing: not used`,
+  'too-short': `under ${PD_MIN_INTERVAL_H} h between the levels: read with care`,
+  'unexplained-low': 'lower than any decline in range explains; check the times: not used',
+};
+function crrtFlagWords(i) {
+  return i.flags.map(f => f === 'unexplained-high'
+    ? `higher than the doses could make at V = ${i.vL.toFixed(0)} L: a smaller volume, drug given earlier, or a timing error; not used`
+    : CRRT_FLAG_WORDS[f] || f).join('; ');
+}
+
 // A 24-hour clock time, HH:MM, 00:00–23:59.
 function isClock24(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')); }
 
@@ -11416,11 +12038,13 @@ function rrtReferenceRefusalHTML(rawKg) {
 // The [data-rrt-reference] slot a refusal carries (Task 23 left it empty; ruling P1): the reference for the
 // column's own weight field, as typed, and the local maximum. data-kind and data-kg let a change of the local
 // maximum redraw it in place (refreshRrtReferences) without re-reading the form.
-function rrtReferenceSlotHTML(kind, module, rawKg, sessions) {
+// effluentMlH (Task 27): the CRRT effluent rate in force now, from the Trough CRRT form; the slot's wrapper carries it
+// as data-effluent so a redraw keeps the line.
+function rrtReferenceSlotHTML(kind, module, rawKg, sessions, effluentMlH) {
   const c = checkValue(rawKg, 'weight');
   const ref = c.ok ? rrtReferenceDoses(kind, c.value, rrtLocalSettings().maxDoseMg) : null;
   if (!ref) return `<div data-rrt-reference data-module="${module}">${rrtReferenceRefusalHTML(rawKg)}</div>`;
-  return `<div data-rrt-reference data-module="${module}" data-kind="${kind}" data-kg="${ref.abwKg}">${rrtReferenceHTML(ref, { effluentMlH: null, sessions: sessions || null })}</div>`;
+  return `<div data-rrt-reference data-module="${module}" data-kind="${kind}" data-kg="${ref.abwKg}">${rrtReferenceHTML(ref, { effluentMlH: effluentMlH || null, sessions: sessions || null })}</div>`;
 }
 // Every reference on screen, redrawn for the local maximum now stored (a save or a Clear).
 function refreshRrtReferences() {
@@ -11429,7 +12053,8 @@ function refreshRrtReferences() {
   Array.from(document.querySelectorAll('[data-rrt-reference][data-kind]') || []).forEach(slot => {
     const d = slot.dataset || {};
     const ref = rrtReferenceDoses(d.kind, Number(d.kg), max);
-    if (ref) slot.innerHTML = rrtReferenceHTML(ref, { effluentMlH: null,
+    const effEl = typeof slot.closest === 'function' ? slot.closest('[data-effluent]') : null;
+    if (ref) slot.innerHTML = rrtReferenceHTML(ref, { effluentMlH: effEl ? Number(effEl.dataset.effluent) : null,
       sessions: d.module === 'auc' && typeof bState !== 'undefined' && bState ? bState.hybridSessions : null });
   });
 }
@@ -17043,7 +17668,7 @@ function validProfile(p) {
   // What the load reads beyond those: optional (older versions lack them), but never the wrong type.
   if (!s.doses.every(isObj) || !s.levels.every(isObj)) return false;
   if (['scrRows', 'hdSessions'].some(k => s[k] != null && !(Array.isArray(s[k]) && s[k].every(isObj)))) return false;
-  if (['core', 'target', 'pd'].some(k => s[k] != null && !isObj(s[k]))) return false;
+  if (['core', 'target', 'pd', 'crrt'].some(k => s[k] != null && !isObj(s[k]))) return false;
   // D28: a stored renal-replacement kind must be one of the five; anything else is refused, never repaired.
   if (s.core && s.core.rrt !== undefined && RRT_KINDS.indexOf(s.core.rrt) < 0) return false;
   // D28: a stored session row's type is haemodialysis or hybrid, or absent (a row saved before D28).
@@ -17388,6 +18013,10 @@ function saveCurrentProfile() {
   const pdForm = snapshotPdForm();
   const pdLeftOut = source === 'auc' && !otherFilled && pdFormHasContent(pdForm);
   snapshot.pd = (source === 'auc' && !otherFilled) ? null : pdForm;
+  // The CRRT mode's fields (D28), by the same rule.
+  const crrtForm = snapshotCrrtForm();
+  const crrtLeftOut = source === 'auc' && !otherFilled && crrtFormHasContent(crrtForm);
+  snapshot.crrt = (source === 'auc' && !otherFilled) ? null : crrtForm;
   // "Is anything entered" must look at the CORE, not only the Bayesian form — a
   // profile saved from the Trough-Based module has no dose history and its
   // demographics live in the other set of inputs.
@@ -17413,6 +18042,7 @@ function saveCurrentProfile() {
     : `Saved "${label}".`)
     + (courseLeftOut ? ' AUC Precision course not saved: its patient fields are empty or incomplete, so it may belong to another patient.' : '')
     + (pdLeftOut ? ' Trough-Based PD form not saved: its patient fields are empty or incomplete, so it may belong to another patient.' : '')
+    + (crrtLeftOut ? ' Trough-Based CRRT form not saved: its patient fields are empty or incomplete, so it may belong to another patient.' : '')
     + (replacedKey ? ` The earlier saved profiles could not be read; their text is kept in this browser's storage under "${replacedKey}".` : ''));
 }
 // One polite line in each profile section (v3.13.0, D24). Any problem reading the store, as
@@ -17519,6 +18149,7 @@ function loadProfileIntoForm(id) {
   // fit and the Trough module opens its PD mode; a haemodialysis patient is refused anything but
   // Goti 2018 · HD (the reset above returned both to None).
   applyPdForm(s.pd || null);
+  applyCrrtForm(s.crrt || null);
   const rrt = rrtOf(s.core, s.demographics, s.pd);
   setRrt(rrt);
 
@@ -19267,6 +19898,9 @@ function syncCrclOverrideState() {
     } catch (e) {}
   }
 })();
+
+// The goal controls (D28): built last, once every constant they read is declared.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') mountGoalControls();
 
 </script>
 

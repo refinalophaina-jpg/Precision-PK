@@ -297,6 +297,21 @@ const MUTANTS = [
     find: 'let [lo, hi] = PD_K_SEARCH;', replace: 'let [hi, lo] = PD_K_SEARCH;' },
   { id: 'R3-26-3', what: 'the peak equation ignores its cap [46.42, 46.44]',
     find: 'return raw <= 0 ? 0 : Math.min(capMg,', replace: 'return raw <= 0 ? 0 : Math.max(capMg,' },
+  // Task 27: a level-based CRRT answer (D28).
+  { id: 'R3-27-1', what: 'the circuit-running check removed from the CRRT projection rule (Review Focus 3) [46.51, 46.53]',
+    find: 'if (!crrtRunCovering(circuit, startLevel.timeH, draw)) {', replace: 'if (false) {' },
+  { id: 'R3-27-2', what: 'an effluent-changed interval is flagged but still used for the rate [46.50]',
+    find: 'const excluded = flags.length > 0;', replace: "const excluded = flags.some(f => f !== 'effluent-changed');" },
+  { id: 'R3-27-3', what: 'CRRT_NEXT_DRAW_DEFAULT_H 24 → 12 (the default draw time, a PREFERENCE) [46.47]',
+    find: 'const CRRT_NEXT_DRAW_DEFAULT_H = 24;', replace: 'const CRRT_NEXT_DRAW_DEFAULT_H = 12;' },
+  { id: 'R3-27-4', what: 'POST_DISTRIBUTION_MIN_H 1 → 0.5 h (Rybak 2020 Rec 8a) [46.54]',
+    find: 'const POST_DISTRIBUTION_MIN_H = 1;', replace: 'const POST_DISTRIBUTION_MIN_H = 0.5;' },
+  { id: 'R3-27-5', what: 'a setting change since the last used interval does not end the CRRT projection [46.52]',
+    find: ': crrtSettingChange(inp.effluent, inp.modality, ref, used[used.length - 1].toH - 1e-9, draw);', replace: ': null;' },
+  { id: 'R3-27-6', what: 'a modality change inside an interval is not flagged [46.50]',
+    find: "if (rows.some(s => s.modality !== set.modality)) flags.push('modality-changed');", replace: '' },
+  { id: 'R3-27-7', what: 'the goal control writes every mode into the PD fields (P2: a goal held per mode) [46.59]',
+    find: 'document.getElementById(`${mode}-goal-min`)', replace: "document.getElementById('pd-goal-min')" },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

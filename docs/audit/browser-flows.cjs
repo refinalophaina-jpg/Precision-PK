@@ -1706,7 +1706,7 @@ async function enterCourse(page) {
     await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
     await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
     await typeInto(pd, '#pd-load-kg', '61');
-    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="10|15"]').click();
     const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
     const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
     await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
@@ -1743,7 +1743,7 @@ async function enterCourse(page) {
       await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
       await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
       await typeInto(pd, '#pd-load-kg', '61');
-      await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+      await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="10|15"]').click();
       await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
       await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
       await pdRun();
@@ -1800,7 +1800,7 @@ async function enterCourse(page) {
     const printed = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).innerHTML || ''; });
     ok('PD: the weight change is said; print carries the answer and its chart',
        /Weight changed since the load/.test(p1.notes) && /pd-verdict/.test(printed) && /pd-chart/.test(printed), p1.notes.slice(0, 200));
-    await pd.locator('[data-onclick="k85"][data-arg="15|20"]').click(); await pdRun();
+    await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="15|20"]').click(); await pdRun();
     const p2 = await pdRead();
     ok('PD: a 15–20 goal asks for more than 10–15', mgOf(p2.verdict) > mgOf(p1.verdict), `${mgOf(p1.verdict)} → ${mgOf(p2.verdict)}`);
     await pd.locator('#pd-ip').check(); await pdRun();
@@ -2410,7 +2410,7 @@ async function enterCourse(page) {
     await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
     await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
     await typeInto(pd, '#pd-load-kg', '61');
-    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="10|15"]').click();
     const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
     const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
     await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
@@ -3172,6 +3172,92 @@ async function enterCourse(page) {
     await gctx.close();
   }
   // ── end Release 3 Task 25
+  // ── Release 3 (v3.16.0, D28), Task 27: the level-based CRRT answer, by keyboard. A fictional 70 kg patient on CVVHDF at
+  // 2000 mL/h, a level of 10 mg/L at D-2 06:00, 750 mg over 1 h at D-2 12:00, 13.9 mg/L at D-1 06:00 (a 23 h half-life on
+  // the circuit), on a fixed clock (today 10:00).
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const c = await cctx.newPage();
+    const cProblems = watch(c, 'd28-crrt');
+    await c.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await c.goto(BASE + '?v=pwd28c-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.evaluate(() => { localStorage.removeItem('vanco.rrt.local'); });
+    const txt = (sel) => c.evaluate((sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim(), sel);
+    const press = async (sel) => { await c.locator(sel).focus(); await c.keyboard.press('Enter'); };
+    const run = async () => { await press('[data-onclick="k31"]'); await c.waitForTimeout(250); };
+    await c.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await c.locator('#t-rrt').selectOption('crrt');
+    const col = await c.evaluate(() => ({ crrt: getComputedStyle(document.getElementById('section-crrt')).display !== 'none',
+      renal: getComputedStyle(document.getElementById('section-renal')).display, shared: getComputedStyle(document.getElementById('section-trough-shared')).display,
+      tbw: !!document.getElementById('tbw').offsetParent, vd: document.getElementById('crrt-vd').value, goal: document.getElementById('crrt-goal-min').value }));
+    ok('D28: Trough-based · CRRT shows its own form; creatinine and the PK model hidden, weight kept; no volume basis and no goal preselected',
+       col.crrt && col.renal === 'none' && col.shared === 'none' && col.tbw && col.vd === '' && col.goal === '', JSON.stringify(col));
+    // The reference before any level, with the effluent rate entered.
+    await typeInto(c, '#tbw', '70');
+    await c.selectOption('#crrt-modality', 'cvvhdf');
+    await press('[data-onclick="k108"][data-arg="circ"]');
+    await c.locator('#crrt-circ-ondate-1').fill(day(-3)); await typeInto(c, '#crrt-circ-ontime-1', '0800');
+    await press('[data-onclick="k108"][data-arg="eff"]');
+    await typeInto(c, '#crrt-eff-ml-1', '2000'); await c.locator('#crrt-eff-date-1').fill(day(-3)); await typeInto(c, '#crrt-eff-time-1', '0800');
+    await c.selectOption('#crrt-urine', 'anuric');
+    await run();
+    const ref = await txt('#results-content');
+    ok('D28: CRRT before any level: the Rec 16 reference for the weight, the effluent line from the rate entered, modality and rate as recorded',
+       /^On CRRT — no creatinine-based regimen/.test(ref) && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(ref)
+       && /Effluent 2000 mL\/h is 28\.6 mL\/kg\/h at 70 kg/.test(ref) && /CVVHDF · effluent 2000 mL\/h, as recorded/.test(ref) && !/AUC₂₄|AUC24/.test(ref), ref.slice(0, 500));
+    // The course, by keyboard: basis, goal preset, two levels around a dose.
+    await c.selectOption('#crrt-vd', 'bauer');
+    await press('[data-goal-for="crrt"] [data-onclick="k85"][data-arg="15|20"]');
+    await press('[data-onclick="k108"][data-arg="lvl"]');
+    await typeInto(c, '#crrt-lvl-conc-1', '10'); await c.locator('#crrt-lvl-date-1').fill(day(-2)); await typeInto(c, '#crrt-lvl-time-1', '0600');
+    await press('[data-onclick="k108"][data-arg="dose"]');
+    await typeInto(c, '#crrt-dose-mg-1', '750'); await typeInto(c, '#crrt-dose-tinf-1', '1'); await c.locator('#crrt-dose-date-1').fill(day(-2)); await typeInto(c, '#crrt-dose-time-1', '1200');
+    await press('[data-onclick="k108"][data-arg="lvl"]');
+    await typeInto(c, '#crrt-lvl-conc-2', '13.9'); await c.locator('#crrt-lvl-date-2').fill(day(-1)); await typeInto(c, '#crrt-lvl-time-2', '0600');
+    await run();
+    const d = await c.evaluate(() => {
+      const t = (s) => ((document.querySelector(s) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const rec = document.querySelector('#results-content tr.is-rec th');
+      return { verdict: t('#results-content .crrt-verdict'), all: t('#results-content'), rec: rec ? rec.textContent.trim() : '', lv: document.querySelectorAll('#results-content svg .pd-lv').length,
+        said: (document.getElementById('sr-announce') || {}).textContent || '', pdGoal: document.getElementById('pd-goal-min').value,
+        pressed: document.querySelector('[data-goal-for="crrt"] [data-arg="15|20"]').getAttribute('aria-pressed'),
+        pdPressed: document.querySelector('[data-goal-for="pd"] [data-arg="15|20"]').getAttribute('aria-pressed') };
+    });
+    const drawWant = await c.evaluate(() => fmtClock(new Date(Date.now() + 24 * 3600000).getTime() / 3600000));
+    ok('D28: a full CRRT course by keyboard reaches a dose: the expected range at the default draw 24 h on, the pick marked in the options, the chart, modality and rate named, no AUC',
+       /^Give [\d.]+ (g|mg) IV now/.test(d.verdict) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(d.verdict) && d.verdict.includes(`Draw the next level ${drawWant}`) && /24 h after the dose \(default\)/.test(d.verdict)
+       && /CVVHDF · effluent 2000 mL\/h/.test(d.verdict) && d.rec && d.verdict.indexOf(d.rec) > 0 && d.lv === 2 && !/AUC/.test(d.all),
+       JSON.stringify(d).slice(0, 400));
+    ok('D28: the CRRT answer is announced; the goal preset is pressed in the CRRT control only, and the PD goal stays empty (one control, a value per mode)',
+       /^Result: CRRT, IV vancomycin/.test(d.said) && d.pressed === 'true' && d.pdPressed === 'false' && d.pdGoal === '', JSON.stringify({ said: d.said.slice(0, 120), pressed: d.pressed, pdPressed: d.pdPressed, pdGoal: d.pdGoal }));
+    // Review Focus 3: stop the circuit an hour ago; the answer becomes "Draw a level", with no options.
+    await c.locator('#crrt-circ-offdate-1').fill(day(0)); await typeInto(c, '#crrt-circ-offtime-1', '0900');
+    await run();
+    const stop = await c.evaluate(() => ({ v: ((document.querySelector('#results-content .crrt-verdict') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      options: !!document.getElementById('crrt-options'), rec: !!document.querySelector('#results-content .rec-dose') }));
+    const stopWant = await c.evaluate(() => fmtClock(new Date(Date.now() - 3600000).getTime() / 3600000));
+    ok('D28 (Review Focus 3): the circuit stopped an hour ago: "Draw a level", naming the stop, with no dose and no options',
+       /^Draw a level/.test(stop.v) && stop.v.includes(`the circuit stopped at ${stopWant} since the decline was measured`) && !stop.options && !stop.rec, JSON.stringify(stop).slice(0, 300));
+    const paper = await c.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const t = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      window.dispatchEvent(new Event('afterprint')); return t; });
+    ok('D28: the CRRT answer prints: "Draw a level", the modality and rate, closing with the disclaimer',
+       /Draw a level/.test(paper) && /CVVHDF/.test(paper) && /2000 mL\/h/.test(paper) && /not clinically validated/.test(paper) && !/AUC/.test(paper), paper.slice(0, 300));
+    // 375 px: the CRRT rows and the answer fit, with no horizontal scroll.
+    await c.setViewportSize({ width: 375, height: 812 });
+    await c.waitForTimeout(150);
+    const narrow = await c.evaluate(() => {
+      const rights = ['crrt-circ-offtime-1', 'crrt-eff-mod-1', 'crrt-eff-ml-1', 'crrt-lvl-time-2'].map(id => document.getElementById(id).getBoundingClientRect());
+      return { sw: document.documentElement.scrollWidth, iw: innerWidth, right: Math.max(...rights.map(r => r.right)), minH: Math.min(...rights.map(r => r.height)) };
+    });
+    ok('D28: at 375 px the CRRT rows fit the screen as 44 px targets, with no horizontal scroll', narrow.sw <= narrow.iw && narrow.right <= narrow.iw && narrow.minH >= 43.5, JSON.stringify(narrow));
+    await c.locator('#section-crrt').scrollIntoViewIfNeeded();
+    await c.screenshot({ path: path.join(OUT, 'd28-crrt-375.png') });
+    const cAttr = await attributeInjected(c, cProblems);
+    results.problems.push(...cAttr.kept);
+    await cctx.close();
+  }
+  // ── end Release 3 Task 27
   await browser.close();
 
   results.checks = checks;
