@@ -5842,7 +5842,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[345]\.0';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[3456]\.0';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6056,7 +6056,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[45]\.0';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[456]\.0';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -7953,7 +7953,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(pC.hold && pC.holdBasis !== 'measured' && /^Hold: next dose not before .*; the fitted level at /.test(fn44('holdSentence')(pC)), fn44('holdSentence')(pC));
   });
   test('44.28a U1: peaks, an augmented-clearance peak and a level during the infusion never hold', () => {
-    // The re-reviewer's peak cases (/private/tmp/vprobe/peak.cjs): 60 M, 80 kg, 178 cm, SCr 1.0; 1.25 g q12h x 4
+    // The re-reviewer's peak cases (a scratch probe, not committed): 60 M, 80 kg, 178 cm, SCr 1.0; 1.25 g q12h x 4
     // over 1.5 h, the last started 2.5 h ago; a trough 30 min before it and a peak 1 h after the infusion ended
     // (36 s ago, as the probe drew it). Buelga and Goti.
     for (const model of ['buelga', 'goti']) for (const [tr, pk] of [[12, 28], [14, 32], [15, 35], [10, 25], [17, 40]]) {
@@ -9414,9 +9414,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
     assert(/both fall below/.test(plain(fn45('holdHeadHTML')(p))), plain(fn45('holdHeadHTML')(p)));
   });
-  // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor.
+  // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
+  // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.15\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0');
+    assert(/const APP_VERSION = '3\.1[56]\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -11271,13 +11272,18 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     });
   });
 
+  // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
+  test('46.91 the version', () => {
+    assert(/const APP_VERSION = '3\.16\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.0');
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 711;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.90)
+const EXPECTED_TOTAL = 712;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
