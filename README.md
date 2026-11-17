@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v3.15.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
+**Status: Live · v3.16.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
 course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
@@ -47,8 +47,8 @@ git hash-object index.html   # must equal the deployed blob sha
 
 | Path | What it is |
 |---|---|
-| `index.html` | The application. ~18,600 lines: CSS to ~2,815, markup to ~4,073, one inline `<script>` after that |
-| `phase2d_validation.cjs` | Primary validation suite — 45 suites, traces, shrinkage, Monte Carlo, canvas rendering |
+| `index.html` | The application. ~20,300 lines: CSS to ~2,833, markup to ~4,269, one inline `<script>` after that |
+| `phase2d_validation.cjs` | Primary validation suite — 46 suites, traces, shrinkage, Monte Carlo, canvas rendering |
 | `phase3_simulation.cjs` | ~12,000 fits: per-model self-consistency, cross-model disagreement, stratified attainment |
 | `phase2d_comprehensive_validation.cjs` | 10,475 synthetic patients across 6 scenarios |
 | `Phase2_Plan.md` | The real architecture reference for the Bayesian engine |
@@ -62,9 +62,20 @@ public, and they are third-party copyrighted papers.
 
 ## Modules
 
-Two modules. **Trough-Based** — deterministic, five sub-modes: initial population dose (with loading
-dose), steady-state trough fit, two-level Sawchuk–Zaske, single random level, and IV vancomycin on
-peritoneal dialysis (level-based, not a model).
+Two modules. **Trough-Based** — deterministic, four creatinine-based sub-modes: initial population dose
+(with loading dose), steady-state trough fit, two-level Sawchuk–Zaske and single random level. Since
+v3.16.0 one **Renal replacement** selector, shared by both modules (None, intermittent haemodialysis,
+hybrid SLED / PIRRT, CRRT, peritoneal dialysis), routes a dialysis patient away from them:
+
+- **Peritoneal dialysis (IV):** level-based, not a model (D23).
+- **CRRT:** the Rybak 2020 Rec 16 reference by actual body weight, then a level-based answer from the decline
+  between the patient's own levels while the circuit ran at one rate and modality. No AUC, no creatinine, and
+  no dose scaled from the effluent rate (D28).
+- **Hybrid (SLED / PIRRT):** the Rybak 2020 Rec 15 reference only.
+- **Intermittent haemodialysis:** a pointer to Goti 2018 · HD in AUC Precision, and beside it a peak-equation
+  reading from four numbers you set in your browser; the app ships none of them (D28).
+
+None of the dialysis answers is clinically validated.
 
 **AUC Precision** — MAP Bayesian fitting against a Burton 1985 objective, with four
 population priors:
@@ -80,9 +91,10 @@ population priors:
 Cross-cutting: KDIGO AKI staging from serial creatinine, augmented-renal-clearance and
 very-low-CrCl advisories, `localStorage` profiles, and a print report.
 
-**Not implemented:** session-clearance HD modelling, intradialytic dosing recommendations, CRRT,
-SLED, intraperitoneal vancomycin dosing, AUC or Bayesian dosing for peritoneal dialysis, paediatrics,
-neonates, continuous infusion. Do not use this tool for those.
+**Not implemented:** session-clearance HD modelling, intradialytic dosing recommendations, a Bayesian
+CRRT model, AUC in CRRT, a level-based hybrid answer, SLED / PIRRT dosing beyond the guideline reference,
+continuous infusion, intraperitoneal dosing, AUC or Bayesian dosing for peritoneal dialysis, paediatrics,
+neonates. Do not use this tool for those.
 
 ## Validation
 
@@ -95,15 +107,15 @@ node phase2d_validation.cjs
 Each script extracts the math out of `index.html` in a Node `vm` sandbox, so it tests the
 shipped file rather than a copy.
 
-| Suite | Result (2026-11-15, v3.15.0) |
+| Suite | Result (2026-11-17, v3.16.0) |
 |---|---|
-| `phase2d_validation.cjs` | **621 / 621 pass**, also under `TZ=Pacific/Auckland`; the run fails if the count differs from `EXPECTED_TOTAL` |
+| `phase2d_validation.cjs` | **719 / 719 pass**, also under `TZ=Pacific/Auckland` and `TZ=UTC`; the run fails if the count differs from `EXPECTED_TOTAL` |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
-| `docs/audit/mutation.cjs` | **63 of 63 mutants killed**, exit 0 — each mutation of `index.html`, made in memory, must fail phase2d, phase3 or phase4. Part of the release gate for clinical releases |
-| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72 (D26); v3.15.0 against v3.14.0 (`b410477`) reads 23 (D27). Every one is a deliberate change listed in the decision record |
-| `docs/audit/browser-flows.cjs` | **221 / 221** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/mutation.cjs` | **127 of 127 mutants killed**, exit 0 — each mutation of `index.html`, made in memory, must fail phase2d, phase3 or phase4. Part of the release gate for clinical releases |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72 (D26); v3.15.0 against v3.14.0 (`b410477`) reads 23 (D27); v3.16.0 against v3.15.0 (`bcee5dd`) reads 0 (D28). Every one is a deliberate change listed in the decision record |
+| `docs/audit/browser-flows.cjs` | **266 / 266** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
@@ -185,4 +197,5 @@ the six releases after it; the table below reconstructs them from git (2026-10-0
 | 3.12.0 | 2026-11-09 | IV vancomycin for patients on peritoneal dialysis: a level-based Trough mode — what to give, whether today, when to draw next, from the patient's own levels and cycler schedule; AUC Precision refuses PD (D23) | `3997992` |
 | 3.13.0 | 2026-11-10 | The workstation: inputs scroll beside the answer with Run pinned; Print in the answer; Enter does the local job; Regimens closed, a pick says "trying"; the model mismatch in one line; long notes clamped; one date-and-time grammar; Clear with Undo; PD draw without cycler-end wording (D24) | `edc5b53` |
 | 3.14.0 | 2026-11-15 | Continue the current regimen: AUC Precision judges the regimen being given first and continues it while in range unless another puts 2 more of 20 plausible AUCs in range; a change never lowers attainment except for safety, and says why; the band is strictly 400–600 when choosing (D25). The 2026-11-13 review's fixes: a fitted pre-dose level of 20 mg/L or more holds the next dose; the Trough module obeys the same ceilings and withholds in severe renal impairment; only sourced loading numbers; future and late levels refused; Low confidence keeps an in-range regimen and asks for a level; "was due" is the current regimen's; every print says not clinically validated; profiles cannot mix two patients (D26) | `b410477` |
-| 3.15.0 | 2026-11-15 | Tests that can fail: a mutation gate (63 mutants) and CI on every push; Hughes constants parsed, counts pinned. Hughes and Goti fits also start on the peripheral volume, so Hughes reaches the lower minimum (and says when two fit); a Hughes patient outside the population the model was built in gets one caution line; a fit whose latest level is before steady state reads a wider, simulated uncertainty band, which the dots and the continue-or-change count use. The Hold: a held planned dose is never drawn as given; the horizon names its origin; on Goti a fitted-only reading, and in AUC Precision a level drawn within 12 h of the first dose and before the second, is a caution that asks for a level instead of a Hold (the user's rulings U5, U6a, U7); a fitted and a measured level both at 20 or more always hold. A resize or theme change repaints without rebuilding the result; focus, PD announcement and chart, notation, touch targets, Delete all profiles with Undo; code health (D27) | pending |
+| 3.15.0 | 2026-11-15 | Tests that can fail: a mutation gate (63 mutants) and CI on every push; Hughes constants parsed, counts pinned. Hughes and Goti fits also start on the peripheral volume, so Hughes reaches the lower minimum (and says when two fit); a Hughes patient outside the population the model was built in gets one caution line; a fit whose latest level is before steady state reads a wider, simulated uncertainty band, which the dots and the continue-or-change count use. The Hold: a held planned dose is never drawn as given; the horizon names its origin; on Goti a fitted-only reading, and in AUC Precision a level drawn within 12 h of the first dose and before the second, is a caution that asks for a level instead of a Hold (the user's rulings U5, U6a, U7); a fitted and a measured level both at 20 or more always hold. A resize or theme change repaints without rebuilding the result; focus, PD announcement and chart, notation, touch targets, Delete all profiles with Undo; code health (D27) | `bcee5dd` |
+| 3.16.0 | 2026-11-17 | Dialysis: one Renal replacement selector in both modules replaces the dialysis checkboxes, so a CRRT patient is no longer fitted silently as a non-dialysis patient; AUC Precision refuses CRRT and hybrid therapy and, on haemodialysis, every model but Goti 2018 · HD. Session rows are typed, hybrid sessions run to 24 h, and more than three sessions in seven days is a caution. Rybak 2020 references for CRRT (Rec 16) and hybrid therapy (Rec 15) by actual body weight, capped at the lower of 3 g and your local maximum, never scaled from the effluent rate. A level-based CRRT answer from the decline between the patient's own levels while the circuit ran unchanged, or "Draw a level" when it did not; no AUC. A peak-equation haemodialysis reading from four settings kept in your browser, beside Goti-HD; the app ships no value. PD's solver and goal pick are shared, PD unchanged; citations to Rec 14 (C-III) and Rec 1 (A-II). Not clinically validated (D28) | pending |

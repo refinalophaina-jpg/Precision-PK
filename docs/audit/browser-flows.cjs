@@ -643,7 +643,7 @@ async function enterCourse(page) {
   ok('Goti-HD with no level shows the empiric table, says doses were given, and fits 375 px',
      emp.visible && emp.given && emp.sw <= emp.iw, JSON.stringify(emp));
   await m.locator('[data-onclick="k1"]').tap();
-  await m.evaluate(() => { const c = document.getElementById('t-hd'); if (c && !c.checked) c.click(); });
+  await m.locator('#t-rrt').selectOption('ihd');   // D28: the renal-replacement selector replaced the #t-hd box
   await m.locator('[data-onclick="k31"]').tap(); await m.waitForTimeout(300);
   const guard = await m.evaluate(() => { const rc = document.getElementById('results-content'); const n = rc && rc.querySelector('.note');
     const b = rc && rc.querySelector('[data-onclick="k77"]');
@@ -958,7 +958,7 @@ async function enterCourse(page) {
     await typeInto(s, '#dose', '1500');
     await s.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
     await typeInto(s, '#level-val', '31');
-    await s.locator('#t-hd').check();   // patient D is on haemodialysis; patient C is not
+    await s.locator('#t-rrt').selectOption('ihd');   // patient D is on haemodialysis; patient C is not (D28: the selector replaced #t-hd)
     const advisories = () => s.evaluate(() => {
       const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none' && e.textContent.trim() !== ''; };
       return { cys: shown('cysc-result'), aki: shown('aki-banner') };
@@ -969,7 +969,7 @@ async function enterCourse(page) {
     const p2 = Object.assign(await s.evaluate(() => {
       const v = (id) => document.getElementById(id).value;
       return { cysc: v('cysc'), base: v('scr-baseline'), dose: v('dose'), level: v('level-val'), age: v('age'), bAge: v('b-age'), scr: v('scr'),
-        hasLevel: document.getElementById('has-level').checked, hd: document.getElementById('t-hd').checked };
+        hasLevel: document.getElementById('has-level').checked, hd: document.getElementById('t-rrt').value === 'ihd' };
     }), await advisories());
     ok('D26: a profile load clears the Trough column',
        p2Before.cys && p2Before.aki
@@ -1030,7 +1030,8 @@ async function enterCourse(page) {
     };
     const fx1 = await loadFix('Fixture 64F v3.13.0'), fx2 = await loadFix('Fixture 71M legacy');
     const fx3 = await loadFix('Fixture 58M Goti-HD');
-    const fx3hd = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked }));
+    // D28: the Trough flag is the selector reading haemodialysis; Goti's dialysis box is the Goti-HD tile.
+    const fx3hd = await s.evaluate(() => ({ tHd: document.getElementById('t-rrt').value === 'ihd', bDial: bState.tile === 'gotihd' }));
     await s.locator('[data-onclick="k1"]').click();
     await s.locator('[data-onclick="k31"]:visible').first().click(); await s.waitForTimeout(300);
     const fx3trough = await s.evaluate(() => ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' '));
@@ -1048,6 +1049,9 @@ async function enterCourse(page) {
     // save afterwards does not carry the previous patient's.
     await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
     await s.locator('[data-onclick="k1"]').click();
+    // D28 (Task 28, R73): the Goti-HD fixture above left haemodialysis selected, and the haemodialysis mode now hides the
+    // creatinine and amputation blocks; this patient is not on dialysis, so renal replacement is None first, as on the page.
+    await s.locator('#t-rrt').selectOption('none');
     await s.locator('[data-onclick="k15"]').click();
     await s.evaluate(() => { const c = document.getElementById('amp-enabled'); if (c && !c.checked) c.click(); });
     await s.locator('#jt-RL-knee').click();
@@ -1073,17 +1077,24 @@ async function enterCourse(page) {
     await s.locator('[data-onclick="k32"]:visible').first().click();
     await typeInto(s, '#age', '58'); await typeInto(s, '#tbw', '77'); await typeInto(s, '#height', '174'); await typeInto(s, '#scr', '6.8');
     await s.locator('[data-onclick="k9"]').click();
-    await s.locator('#t-hd').check();
+    // D28: haemodialysis on the selector (it replaced #t-hd), which also selects Goti-HD in AUC Precision; the AUC
+    // column is put back on its default Buelga by a click, as the R21 case has it.
+    await s.locator('#t-rrt').selectOption('ihd');
+    await s.locator('[data-onclick="k2"]').click(); await s.locator('#b-model-btn-buelga').click(); await s.locator('[data-onclick="k1"]').click();
     await save('Patient F HD');
     const pf = (await stored())[0];
-    await s.locator('#t-hd').uncheck();
+    await s.locator('#t-rrt').selectOption('none');
     await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Patient F HD' }).locator('.profile-item-btn.load').click();
     await s.waitForTimeout(300);
-    const r21 = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked,
-      dial: bState.dial, model: bState.model, wrap: getComputedStyle(document.getElementById('b-dial-wrap')).display }));
+    await s.locator('[data-onclick="k2"]').click(); await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(300);
+    const r21 = await s.evaluate(() => ({ tHd: document.getElementById('t-rrt').value === 'ihd', bDial: bState.tile === 'gotihd',
+      dial: bState.dial, model: bState.model, refusal: ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' ').slice(0, 200) }));
+    await s.locator('[data-onclick="k1"]').click();
+    // D28 (Review Focus 2) supersedes "AUC Precision not on dialysis": both modules read haemodialysis (bState.dial is
+    // derived from it), the Buelga tile stays, and AUC Precision refuses rather than fitting a patient off dialysis.
     ok('D26: a Trough-only haemodialysis profile loads with the Trough flag ticked and AUC Precision not on dialysis (R21)',
        !!pf && pf.snapshot.core.hd === true && pf.snapshot.demographics.dial === false && pf.snapshot.model === 'buelga'
-       && r21.tHd && !r21.bDial && r21.dial === false && r21.model === 'buelga' && r21.wrap === 'none',
+       && r21.tHd && !r21.bDial && r21.dial === true && r21.model === 'buelga' && /only Goti 2018 · HD carries dialysis/.test(r21.refusal),
        JSON.stringify({ stored: pf && { hd: pf.snapshot.core.hd, dial: pf.snapshot.demographics.dial, model: pf.snapshot.model }, r21 }));
 
     // R22: patient A's PD form; Trough "Clear all fields" empties all of it.
@@ -1698,7 +1709,7 @@ async function enterCourse(page) {
     await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
     await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
     await typeInto(pd, '#pd-load-kg', '61');
-    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="10|15"]').click();
     const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
     const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
     await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
@@ -1735,7 +1746,7 @@ async function enterCourse(page) {
       await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
       await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
       await typeInto(pd, '#pd-load-kg', '61');
-      await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+      await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="10|15"]').click();
       await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
       await pdDose(2, '500', '1', day(-2), '0900'); await pdLvl(2, '14.8', day(-1), '0715');
       await pdRun();
@@ -1792,7 +1803,7 @@ async function enterCourse(page) {
     const printed = await pd.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).innerHTML || ''; });
     ok('PD: the weight change is said; print carries the answer and its chart',
        /Weight changed since the load/.test(p1.notes) && /pd-verdict/.test(printed) && /pd-chart/.test(printed), p1.notes.slice(0, 200));
-    await pd.locator('[data-onclick="k85"][data-arg="15|20"]').click(); await pdRun();
+    await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="15|20"]').click(); await pdRun();
     const p2 = await pdRead();
     ok('PD: a 15–20 goal asks for more than 10–15', mgOf(p2.verdict) > mgOf(p1.verdict), `${mgOf(p1.verdict)} → ${mgOf(p2.verdict)}`);
     await pd.locator('#pd-ip').check(); await pdRun();
@@ -1803,7 +1814,7 @@ async function enterCourse(page) {
     ok('PD at 375 px: no horizontal overflow', pw.sw <= pw.iw, JSON.stringify(pw));
     await pd.setViewportSize({ width: 1280, height: 900 });
     await pd.locator('.module-tab', { hasText: 'AUC' }).first().click();
-    await pd.locator('#b-pd').check();
+    await pd.locator('#b-rrt').selectOption('pd');   // D28: the selector replaced the #b-pd box
     await pd.locator('[data-onclick="k47"]').click(); await pd.waitForTimeout(300);
     const refusal = await pd.evaluate(() => ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' '));
     await pd.locator('#b-results [data-onclick="k93"]').click(); await pd.waitForTimeout(200);
@@ -2272,6 +2283,7 @@ async function enterCourse(page) {
       if (mode === 'level') await m.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
       offenders.push(...await small('Trough ' + mode));
     }
+    await m.locator('#t-rrt').selectOption('none');   // D28: the creatinine modes are unavailable while the PD mode's renal replacement is set
     await m.locator('#mode-btn-initial').tap();
     await typeInto(m, '#age', '60'); await typeInto(m, '#tbw', '80'); await typeInto(m, '#height', '175'); await typeInto(m, '#scr', '1.0');
     await m.locator('[data-onclick="k9"]').first().tap();
@@ -2401,7 +2413,7 @@ async function enterCourse(page) {
     await typeInto(pd, '#pd-start', '2100'); await typeInto(pd, '#pd-hours', '9.5'); await typeInto(pd, '#pd-exchanges', '5'); await typeInto(pd, '#pd-fill', '2');
     await pd.selectOption('#pd-prior', 'no'); await pd.selectOption('#pd-urine', 'anuric');
     await typeInto(pd, '#pd-load-kg', '61');
-    await pd.locator('[data-onclick="k85"][data-arg="10|15"]').click();
+    await pd.locator('[data-goal-for="pd"] [data-onclick="k85"][data-arg="10|15"]').click();
     const pdDose = async (n, mg, tinf, d, t) => { await pd.locator('[data-onclick="k86"]').click(); await typeInto(pd, `#pd-dose-mg-${n}`, mg); await typeInto(pd, `#pd-dose-tinf-${n}`, tinf); await pd.locator(`#pd-dose-date-${n}`).fill(d); await typeInto(pd, `#pd-dose-time-${n}`, t); };
     const pdLvl = async (n, c, d, t) => { await pd.locator('[data-onclick="k88"]').click(); await typeInto(pd, `#pd-lvl-conc-${n}`, c); await pd.locator(`#pd-lvl-date-${n}`).fill(d); await typeInto(pd, `#pd-lvl-time-${n}`, t); };
     await pdDose(1, '1250', '1.5', day(-4), '0410'); await pdLvl(1, '12.4', day(-2), '0700');
@@ -2832,6 +2844,574 @@ async function enterCourse(page) {
     await fctx.close();
   }
   // ── end Task 21b
+  // ── Release 3 (v3.16.0, D28), Task 23: one renal-replacement selector, by real input under the CSP.
+  {
+    const rctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const r = await rctx.newPage();
+    const rProblems = watch(r, 'd28-rrt');
+    await r.goto(BASE + '?v=pwd28-' + Date.now(), { waitUntil: 'networkidle' });
+    const KINDS = ['ihd', 'hybrid', 'crrt', 'pd', 'none'];
+    const both = () => r.evaluate(() => ({ t: document.getElementById('t-rrt').value, b: document.getElementById('b-rrt').value,
+      st: state.rrt, bs: bState.rrt, dial: bState.dial, mode: state.calcMode, tile: bState.tile }));
+    // Each kind chosen in the Trough column: the AUC column follows, and the reverse.
+    const fromTrough = [], fromAuc = [];
+    await r.locator('[data-onclick="k1"]').click();
+    for (const k of KINDS) { await r.locator('#t-rrt').selectOption(k); fromTrough.push(Object.assign({ k }, await both())); }
+    await r.locator('[data-onclick="k2"]').click();
+    for (const k of KINDS) { await r.locator('#b-rrt').selectOption(k); fromAuc.push(Object.assign({ k }, await both())); }
+    const agree = (x) => x.t === x.k && x.b === x.k && x.st === x.k && x.bs === x.k && x.dial === (x.k === 'ihd') && x.mode === (x.k === 'none' ? 'initial' : x.k);
+    ok('D28: each renal-replacement kind chosen in the Trough column is the AUC column\'s, and the reverse; haemodialysis selects Goti 2018 · HD',
+       fromTrough.every(agree) && fromAuc.every(agree) && fromTrough[0].tile === 'gotihd' && fromTrough[4].tile === 'goti',
+       JSON.stringify({ fromTrough, fromAuc }).slice(0, 300));
+
+    // CRRT and hybrid, by real click, under every tile: refused before any fit, the reference slot, no regimen.
+    await typeInto(r, '#b-age', '60'); await typeInto(r, '#b-tbw', '80'); await typeInto(r, '#b-height', '178'); await typeInto(r, '#b-scr', '1.0');
+    await r.locator('[data-onclick="k39"]').click();
+    await r.locator('[data-onclick="k43"]').click();
+    await typeInto(r, '#b-dose-mg-1', '1000'); await typeInto(r, '#b-dose-tinf-1', '1');
+    await r.locator('#b-dose-date-1').fill(D2); await typeInto(r, '#b-dose-time-1', '08:00');
+    const refusals = [];
+    for (const kind of ['crrt', 'hybrid']) {
+      for (const tile of ['buelga', 'goti', 'hughes', 'gotihd']) {
+        await r.locator('#b-rrt').selectOption('none');
+        await r.locator(`#b-model-btn-${tile}`).click();
+        await r.locator('#b-rrt').selectOption(kind);
+        await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+        refusals.push(await r.evaluate(([kind, tile]) => { const el = document.getElementById('b-results');
+          return { kind, tile, at: bState.tile, text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120), shown: !!el.offsetParent,
+            slot: !!el.querySelector('[data-rrt-reference]'), regimen: !!el.querySelector('.rec-dose, #vx-regimen'), result: !!bState.result,
+            crrtBtn: !!el.querySelector('[data-onclick="k103"]') }; }, [kind, tile]));
+      }
+    }
+    ok('D28: CRRT and hybrid are refused by real click under every tile, with the reference slot and no regimen',
+       refusals.length === 8 && refusals.every(x => x.shown && x.slot && !x.regimen && !x.result
+         && (x.kind === 'crrt' ? /^On CRRT — no model here describes it/.test(x.text) && x.crrtBtn : /^On hybrid therapy \(SLED \/ PIRRT\) — no model or target here describes it/.test(x.text))),
+       JSON.stringify(refusals).slice(0, 300));
+    // The CRRT refusal's button opens Trough-based · CRRT.
+    await r.locator('#b-rrt').selectOption('crrt');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    await r.locator('#b-results [data-onclick="k103"]').click(); await r.waitForTimeout(200);
+    const crrtOpen = await r.evaluate(() => ({ trough: getComputedStyle(document.getElementById('app-shell-bayesian')).display === 'none', mode: state.calcMode, rrt: state.rrt }));
+    ok('D28: the CRRT refusal opens Trough-based · CRRT', crrtOpen.trough && crrtOpen.mode === 'crrt' && crrtOpen.rrt === 'crrt', JSON.stringify(crrtOpen));
+
+    // The creatinine-based modes are shown unavailable and say why; a click changes nothing.
+    const modes = await r.evaluate(() => ['initial', 'level', 'twolevels', 'randomlevel'].map(m => { const b = document.getElementById('mode-btn-' + m);
+      const d = document.getElementById(b.getAttribute('aria-describedby') || '-');
+      return { m, dis: b.getAttribute('aria-disabled'), desc: d ? d.textContent : '', shown: !!(d && d.offsetParent) }; }));
+    // Playwright itself reads aria-disabled as not enabled (it will not click it unforced): a forced click is a pointer press.
+    const enabled = await r.locator('#mode-btn-level').isEnabled();
+    await r.locator('#mode-btn-level').click({ force: true }); await r.waitForTimeout(100);
+    const stillCrrt = await r.evaluate(() => state.calcMode);
+    const snap = await r.locator('#mode-btn-initial').ariaSnapshot().catch(() => '');
+    ok('D28: on CRRT the four creatinine modes are aria-disabled, described by one visible line, and a click does not switch',
+       modes.every(x => x.dis === 'true' && x.shown && x.desc === 'Not used on CRRT. Set Renal replacement to None to use it.') && !enabled && stillCrrt === 'crrt' && /disabled/.test(snap),
+       JSON.stringify({ modes, enabled, stillCrrt, snap }).slice(0, 300));
+    await r.locator('[data-onclick="k31"]').click(); await r.waitForTimeout(200);
+    const tRef = await r.evaluate(() => ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D28: Trough-based on CRRT refuses a creatinine-based regimen', /^On CRRT — no creatinine-based regimen/.test(tRef) && !/IV q\d+h/.test(tRef), tRef.slice(0, 200));
+    await r.locator('#t-rrt').selectOption('none');
+    const back = await r.evaluate(() => ({ dis: document.getElementById('mode-btn-initial').getAttribute('aria-disabled'), note: document.getElementById('rrt-mode-note').hidden, mode: state.calcMode }));
+    ok('D28: renal replacement None makes the creatinine modes available again', back.dis === null && back.note && back.mode === 'initial', JSON.stringify(back));
+
+    // Review Focus 2: a v3.15.0 profile, Buelga with the Trough haemodialysis flag, loads to the refusal.
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'profile-fixtures-v3.13.0.json'), 'utf8')).profiles;
+    const bh = JSON.parse(JSON.stringify(fixture[0]));
+    bh.id = 'p_d28buelgahd'; bh.label = 'Buelga HD v3.15.0'; bh.snapshot.model = 'buelga'; bh.snapshot.core.hd = true; bh.snapshot.demographics.dial = false;
+    await r.evaluate(([k, list]) => { localStorage.setItem(k, JSON.stringify(list)); renderProfileList(); }, ['ainadara.profiles.v1', [bh]]);
+    await r.locator('[data-onclick="k2"]').click();
+    await r.locator('#app-shell-bayesian .profile-item', { hasText: 'Buelga HD v3.15.0' }).locator('.profile-item-btn.load').click();
+    await r.waitForTimeout(300);
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(300);
+    const rf2 = await r.evaluate(() => ({ b: document.getElementById('b-rrt').value, t: document.getElementById('t-rrt').value, tile: bState.tile,
+      active: (document.querySelector('#b-model-toggle .model-opt.active') || {}).id, result: !!bState.result,
+      text: ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200) }));
+    ok('D28: a saved Buelga profile on haemodialysis (v3.15.0) loads to the refusal naming Goti 2018 · HD (Review Focus 2)',
+       rf2.b === 'ihd' && rf2.t === 'ihd' && rf2.tile === 'buelga' && rf2.active === 'b-model-btn-buelga' && !rf2.result
+       && /^On haemodialysis — only Goti 2018 · HD carries dialysis/.test(rf2.text), JSON.stringify(rf2));
+    // Its button selects Goti 2018 · HD, which then runs.
+    await r.locator('#b-results [data-onclick="k77"]').click(); await r.waitForTimeout(200);
+    const toHd = await r.evaluate(() => ({ tile: bState.tile, rrt: bState.rrt, active: (document.querySelector('#b-model-toggle .model-opt.active') || {}).id }));
+    ok('D28: the refusal\'s button selects Goti 2018 · HD, still on haemodialysis', toHd.tile === 'gotihd' && toHd.rrt === 'ihd' && toHd.active === 'b-model-btn-gotihd', JSON.stringify(toHd));
+
+    // Review Focus 1: a refusal is about the renal replacement and tile it was given. Its own button (a tile change)
+    // and a selector change each take it off screen, and the placeholder returns.
+    const aucArea = () => r.evaluate(() => { const el = document.getElementById('b-results'), ph = document.getElementById('b-placeholder');
+      return { refusal: !!el.querySelector('[data-rrt-refusal]'), text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+        shown: getComputedStyle(el).display !== 'none', ph: getComputedStyle(ph).display !== 'none', sel: document.getElementById('b-rrt').value }; });
+    const afterButton = await aucArea();
+    await r.locator('#b-rrt').selectOption('crrt');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    const crrtShown = await aucArea();
+    await r.locator('#b-rrt').selectOption('none'); await r.waitForTimeout(100);
+    const afterNone = await aucArea();
+    await r.locator('#b-rrt').selectOption('hybrid');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    await r.locator('[data-onclick="k1"]').click(); await r.locator('#t-rrt').selectOption('pd'); await r.locator('[data-onclick="k2"]').click(); await r.waitForTimeout(100);
+    const afterTrough = await aucArea();
+    ok('D28: an AUC refusal goes when its tile (its own button) or the selector (either column) changes; the placeholder returns (Review Focus 1)',
+       !afterButton.refusal && afterButton.ph && crrtShown.refusal && /^On CRRT/.test(crrtShown.text)
+       && !afterNone.refusal && !afterNone.shown && afterNone.ph && afterNone.sel === 'none' && !afterTrough.refusal && afterTrough.ph && afterTrough.sel === 'pd',
+       JSON.stringify({ afterButton, crrtShown, afterNone, afterTrough }));
+    await r.locator('#b-rrt').selectOption('none');
+
+    // R74: an older profile with both a PD form and a haemodialysis flag is refused on load; the form and storage stay.
+    const bothP = JSON.parse(JSON.stringify(fixture[0]));
+    bothP.id = 'p_d28bothflags'; bothP.label = 'Both PD and HD'; bothP.snapshot.core.hd = true; bothP.snapshot.pd.modality = 'ccpd';
+    const bothRaw = JSON.stringify([bothP]);
+    await r.evaluate(([k, v]) => { localStorage.setItem(k, v); renderProfileList(); }, ['ainadara.profiles.v1', bothRaw]);
+    await typeInto(r, '#b-age', '77');
+    await r.locator('#app-shell-bayesian .profile-item', { hasText: 'Both PD and HD' }).locator('.profile-item-btn.load').click();
+    await r.waitForTimeout(300);
+    const r74 = await r.evaluate((raw) => ({ status: [...document.querySelectorAll('#app-shell-bayesian .profile-status')].map(p => p.textContent).join(''),
+      age: document.getElementById('b-age').value, rrt: state.rrt, same: localStorage.getItem('ainadara.profiles.v1') === raw }), bothRaw);
+    ok('D28: a profile recording both haemodialysis and peritoneal dialysis is refused on load, naming both; the form and storage are unchanged (R74)',
+       /records both haemodialysis and peritoneal dialysis/.test(r74.status) && /nothing was loaded/.test(r74.status) && r74.age === '77' && r74.rrt === 'none' && r74.same,
+       JSON.stringify(r74));
+
+    // 375 px: the selector, the unavailable modes and their line, and a refusal, with no horizontal scroll.
+    await r.setViewportSize({ width: 375, height: 812 });
+    await r.locator('#b-rrt').selectOption('hybrid');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    const narrowA = await r.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, h: document.getElementById('b-rrt').getBoundingClientRect().height }));
+    await r.locator('[data-onclick="k1"]').click(); await r.waitForTimeout(150);
+    const narrowT = await r.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, h: document.getElementById('t-rrt').getBoundingClientRect().height,
+      note: !!document.getElementById('rrt-mode-note').offsetParent }));
+    ok('D28: at 375 px the selector is a 44 px target and nothing scrolls sideways, in both modules',
+       narrowA.sw <= narrowA.iw && narrowT.sw <= narrowT.iw && narrowA.h >= 43.5 && narrowT.h >= 43.5 && narrowT.note, JSON.stringify({ narrowA, narrowT }));
+    await r.screenshot({ path: path.join(OUT, 'd28-rrt-375.png') });
+    const rAttr = await attributeInjected(r, rProblems);
+    results.problems.push(...rAttr.kept);
+    await rctx.close();
+  }
+  // ── end Release 3 Task 23
+  // ── Release 3 (v3.16.0, D28), Task 24: typed session rows, hybrid sessions to 24 h, the sessions-per-week caution.
+  {
+    const sctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const s = await sctx.newPage();
+    const sProblems = watch(s, 'd28-sessions');
+    await s.goto(BASE + '?v=pwd28s-' + Date.now(), { waitUntil: 'networkidle' });
+    await s.locator('[data-onclick="k2"]').click();
+    await typeInto(s, '#b-age', '64'); await typeInto(s, '#b-tbw', '78'); await typeInto(s, '#b-height', '172'); await typeInto(s, '#b-scr', '6.2');
+    await s.locator('[data-onclick="k39"]').click();
+    const area = () => s.evaluate(() => { const el = document.getElementById('b-results');
+      return { text: (el.textContent || '').replace(/\s+/g, ' ').trim(), refusal: !!el.querySelector('[data-rrt-refusal]'),
+        errors: [...el.querySelectorAll('.fe-list li')].map(li => li.textContent.replace(/\s+/g, ' ').trim()), result: !!bState.result }; });
+
+    // Hybrid: the section shows on any tile; a new row is typed hybrid and takes a 14 h length from the keyboard.
+    await s.locator('#b-model-btn-buelga').click();
+    await s.locator('#b-rrt').selectOption('hybrid');
+    const shown = await s.evaluate(() => !document.getElementById('b-hd-wrap').hidden);
+    await s.locator('[data-onclick="k74"]').click();
+    const hid = await s.evaluate(() => [...document.querySelectorAll('[id^="b-hd-row-"]')].pop().id.split('-').pop());
+    const typeDefault = await s.locator(`#b-hd-type-${hid}`).inputValue();
+    await s.locator(`#b-hd-date-${hid}`).fill(D1);
+    await typeInto(s, `#b-hd-time-${hid}`, '20:00');
+    await typeInto(s, `#b-hd-hours-${hid}`, '14');
+    await s.keyboard.press('Tab');
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(200);
+    const hyb = Object.assign(await area(), await s.evaluate((id) => ({ hs: (bState.hybridSessions || []).map(x => [x.n, x.hours, x.type, +(x.endH - x.startH).toFixed(2)]),
+      max: document.getElementById(`b-hd-hours-${id}`).max, val: document.getElementById(`b-hd-hours-${id}`).value }), hid));
+    ok('D28: under hybrid the session section shows, a new row is typed hybrid, and a 14 h length typed by keyboard is read; AUC Precision still refuses',
+       shown && typeDefault === 'hybrid' && hyb.max === '24' && hyb.val === '14' && hyb.refusal && !hyb.result && !hyb.errors.length
+       && /^On hybrid therapy \(SLED \/ PIRRT\)/.test(hyb.text) && JSON.stringify(hyb.hs) === JSON.stringify([[Number(hid), 14, 'hybrid', 14]]), JSON.stringify({ shown, typeDefault, hyb }));
+
+    // Haemodialysis: the hybrid row is refused naming the row (its type select marked); retyped as haemodialysis, 14 h is prolonged therapy.
+    await s.locator('#b-rrt').selectOption('ihd');
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(200);
+    const mism = Object.assign(await area(), await s.evaluate((id) => ({ inv: document.getElementById(`b-hd-type-${id}`).getAttribute('aria-invalid'), tile: bState.tile }), hid));
+    ok('D28: on haemodialysis a row typed hybrid is a blocking error naming the row, and the type is marked',
+       mism.tile === 'gotihd' && !mism.result && mism.errors.some(e => e === `HD session row ${hid} is typed hybrid while Renal replacement is intermittent haemodialysis.`) && mism.inv === 'true',
+       JSON.stringify(mism).slice(0, 300));
+    // A real change on the select (macOS Chromium opens a closed select's menu on an arrow key rather than changing it).
+    await s.locator(`#b-hd-type-${hid}`).selectOption('ihd');
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(200);
+    const pro = Object.assign(await area(), await s.evaluate((id) => ({ type: document.getElementById(`b-hd-type-${id}`).value, max: document.getElementById(`b-hd-hours-${id}`).max,
+      inv: document.getElementById(`b-hd-hours-${id}`).getAttribute('aria-invalid') }), hid));
+    ok('D28: on haemodialysis a 14 h session is refused as prolonged therapy, pointing to Hybrid; the length field is marked',
+       pro.type === 'ihd' && pro.max === '12' && !pro.result && pro.inv === 'true'
+       && pro.errors.some(e => e === `HD session row ${hid}: missing or invalid session length (a session longer than 12 h is prolonged therapy: set Renal replacement to Hybrid (SLED / PIRRT)).`),
+       JSON.stringify(pro).slice(0, 400));
+    await s.locator(`[data-onclick="k75"][data-arg="${hid}"]`).click();
+
+    // A daily schedule ("every 1 day"), seven sessions: the Goti-HD answer carries the caution, once, citing Rec 13 and Rec 14.
+    await s.locator('[data-onclick="k43"]').click();
+    const did = await s.evaluate(() => [...document.querySelectorAll('[id^="b-dose-row-"]')].pop().id.split('-').pop());
+    await typeInto(s, `#b-dose-mg-${did}`, '2000'); await typeInto(s, `#b-dose-tinf-${did}`, '2');
+    await s.locator(`#b-dose-date-${did}`).fill(day(-6)); await typeInto(s, `#b-dose-time-${did}`, '13:00');
+    await s.locator('[data-onclick="k46"]').click();
+    const lid = await s.evaluate(() => [...document.querySelectorAll('[id^="b-lvl-conc-"]')].pop().id.split('-').pop());
+    await typeInto(s, `#b-lvl-conc-${lid}`, '17.4'); await s.locator(`#b-lvl-date-${lid}`).fill(day(-1)); await typeInto(s, `#b-lvl-time-${lid}`, '07:30');
+    await s.evaluate(() => { const d = document.querySelector('.hd-sched'); if (d) d.open = true; });
+    await s.locator('#b-hds-pattern').selectOption('N');
+    await typeInto(s, '#b-hds-n', '1');
+    await s.locator('#b-hds-date').fill(day(-6)); await typeInto(s, '#b-hds-time', '08:00');
+    await typeInto(s, '#b-hds-hours', '4'); await typeInto(s, '#b-hds-count', '7');
+    await s.locator('[data-onclick="k76"]').click();
+    const gen = await s.evaluate(() => [...document.querySelectorAll('[id^="b-hd-type-"]')].map(t => t.value));
+    await s.locator('[data-onclick="k47"]').click();
+    await s.waitForSelector('#b-results #vx-regimen', { timeout: 20000 }); await s.waitForTimeout(300);
+    const cau = await s.evaluate(() => { const el = document.getElementById('b-results');
+      const notes = [...el.querySelectorAll('.vx-notes .note')].map(n => n.textContent.replace(/\s+/g, ' ').trim());
+      const all = [...el.querySelectorAll('#ev-notes .note')].map(n => n.textContent.replace(/\s+/g, ' ').trim());
+      return { result: !!bState.result, cautions: (bState.result && bState.result.cautions || []).length,
+        inline: notes.filter(t => /More than three sessions in seven days/.test(t)), all: all.filter(t => /More than three sessions in seven days/.test(t)).length }; });
+    ok('D28: a daily schedule generated "every 1 day" is typed haemodialysis, and the Goti-HD answer carries one caution citing Rybak 2020 Rec 13 and Rec 14',
+       gen.length === 7 && gen.every(t => t === 'ihd') && cau.result && cau.cautions === 1 && cau.inline.length === 1 && cau.all === 1
+       && /7 sessions start within seven days/.test(cau.inline[0]) && /Rybak 2020 Rec 13/.test(cau.inline[0]) && /Rec 14/.test(cau.inline[0]) && /changes no number/.test(cau.inline[0]),
+       JSON.stringify({ gen, cau }).slice(0, 400));
+
+    // The final review's I1 (R104), by real clicks: Clear all fields in the Trough column sets Renal replacement None in
+    // both columns and keeps the session rows; with the sex chosen again, Run is refused naming each row and the selector.
+    await s.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await s.locator('[data-onclick="k32"]').click();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k39"]').click();
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(250);
+    const off = Object.assign(await area(), await s.evaluate(() => ({ rrt: document.getElementById('b-rrt').value, tile: bState.tile,
+      rows: document.querySelectorAll('[id^="b-hd-row-"]').length, regimen: !!document.querySelector('#b-results #vx-regimen') })));
+    ok('D28 (final review I1, R104): after Clear all fields in the Trough column, AUC Precision on the Goti-HD course with seven sessions is refused, each row named against Renal replacement None, with no regimen',
+       off.rrt === 'none' && off.tile === 'goti' && off.rows === 7 && !off.result && !off.regimen
+       && off.errors.filter(e => /^HD session row \d+ is typed haemodialysis while Renal replacement is None\.$/.test(e)).length === 7, JSON.stringify(off).slice(0, 500));
+
+    // 375 px: a typed row's select and length field are 44 px targets and nothing scrolls sideways.
+    await s.setViewportSize({ width: 375, height: 812 });
+    await s.waitForTimeout(150);
+    const narrow = await s.evaluate(() => { const t = document.querySelector('[id^="b-hd-type-"]'), h = document.querySelector('[id^="b-hd-hours-"]');
+      return { sw: document.documentElement.scrollWidth, iw: innerWidth, th: t.getBoundingClientRect().height, hh: h.getBoundingClientRect().height,
+        tr: t.getBoundingClientRect().right, hr: h.getBoundingClientRect().right }; });
+    ok('D28: at 375 px a session row\'s type and length are 44 px targets inside the screen, with no horizontal scroll',
+       narrow.sw <= narrow.iw && narrow.th >= 43.5 && narrow.hh >= 43.5 && narrow.tr <= narrow.iw && narrow.hr <= narrow.iw, JSON.stringify(narrow));
+    await s.locator('[id^="b-hd-row-"]').first().scrollIntoViewIfNeeded();
+    await s.screenshot({ path: path.join(OUT, 'd28-sessions-375.png') });
+    const sAttr = await attributeInjected(s, sProblems);
+    results.problems.push(...sAttr.kept);
+    await sctx.close();
+  }
+  // ── end Release 3 Task 24
+  // ── Release 3 (v3.16.0, D28), Task 25: the CRRT and hybrid guideline references and the local maximum, by real input.
+  {
+    const gctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const g = await gctx.newPage();
+    const gProblems = watch(g, 'd28-reference');
+    await g.goto(BASE + '?v=pwd28g-' + Date.now(), { waitUntil: 'networkidle' });
+    await g.evaluate(() => { localStorage.removeItem('vanco.rrt.local'); localStorage.removeItem('vanco.pd.local'); });
+    const txt = (sel) => g.evaluate((sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim(), sel);
+    const BAND = /15\s*[–-]\s*20/;
+    const paper = () => g.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const t = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      window.dispatchEvent(new Event('afterprint')); return t; });
+
+    // Trough-based · CRRT: the Rec 16 table for the Trough weight, by real click; it prints, closing with the disclaimer.
+    await g.locator('[data-onclick="k1"]').click();
+    await typeInto(g, '#tbw', '70');
+    await g.locator('#t-rrt').selectOption('crrt');
+    await g.locator('[data-onclick="k31"]').click(); await g.waitForTimeout(200);
+    const tC = await txt('#results-content'), tCp = await paper();
+    ok('D28: Trough-based · CRRT shows the Rybak 2020 Rec 16 reference for the Trough weight, each cell with its mg/kg; it prints with the disclaimer',
+       /^On CRRT/.test(tC) && /Guideline reference · CRRT/.test(tC) && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(tC)
+       && ['1.5 g', '20 mg/kg', '1.75 g', '25 mg/kg', '500 mg', '7.5 mg/kg', '750 mg', '10 mg/kg'].every(x => tC.includes(x)) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(tC)
+       && /Guideline reference · CRRT/.test(tCp) && /not clinically validated/.test(tCp), JSON.stringify({ tC: tC.slice(0, 300), tCp: tCp.slice(-160) }));
+
+    // Trough-based · hybrid (R73): creatinine, loading dose, amputation and the trough target hidden; weight kept; no 15–20 anywhere.
+    await g.locator('#t-rrt').selectOption('hybrid');
+    await g.locator('[data-onclick="k31"]').click(); await g.waitForTimeout(200);
+    const tH = await txt('#results-content');
+    const col = await g.evaluate(() => ({ scr: !!document.getElementById('scr').offsetParent, ld: !!document.getElementById('section-ld').offsetParent,
+      amp: !!document.getElementById('amp-section').offsetParent, tbw: !!document.getElementById('tbw').offsetParent,
+      target: !!document.getElementById('trough-min').offsetParent, ref: !!document.getElementById('section-rrt').offsetParent, screen: document.body.innerText }));
+    const tHp = await paper();
+    ok('D28: Trough-based · hybrid hides creatinine, loading dose and the trough target (R73), keeps weight, shows the Rec 15 reference, and no 15–20 band is on screen or paper',
+       !col.scr && !col.ld && !col.amp && col.tbw && !col.target && col.ref && /Rybak 2020, Rec 15 \(B-III\)/.test(tH)
+       && /No pre-session target has been validated for hybrid therapy/.test(tH) && /within 2 h of its end reads falsely low/.test(tH)
+       && !BAND.test(col.screen) && /Guideline reference · hybrid/.test(tHp) && !BAND.test(tHp) && /not clinically validated/.test(tHp),
+       JSON.stringify({ col: Object.assign({}, col, { screen: (col.screen.match(/.{0,40}15\s*[–-]\s*20.{0,40}/) || [''])[0] }), tH: tH.slice(0, 200) }));
+
+    // AUC Precision on hybrid (the selector is one value): a session row speaks of hybrid; the reference names its end.
+    await g.locator('[data-onclick="k2"]').click();
+    await typeInto(g, '#b-tbw', '70');
+    await g.locator('[data-onclick="k74"]').click();
+    const hid = await g.evaluate(() => [...document.querySelectorAll('[id^="b-hd-row-"]')].pop().id.split('-').pop());
+    await g.locator(`#b-hd-date-${hid}`).fill(D2); await typeInto(g, `#b-hd-time-${hid}`, '08:00'); await typeInto(g, `#b-hd-hours-${hid}`, '8');
+    await g.keyboard.press('Tab');
+    const copy = { head: await txt('#b-hd-heading'), add: await txt('#b-hd-add'), hint: await txt('#b-hd-hint'), row: await txt(`#b-hd-n-${hid}`) };
+    await g.locator('[data-onclick="k47"]').click(); await g.waitForTimeout(200);
+    const aH = await txt('#b-results');
+    const endWant = await g.evaluate((d) => fmtClock(new Date(`${d}T08:00`).getTime() / 3600000 + 8), D2);
+    const aHp = await paper();
+    ok('D28: AUC Precision on hybrid: the refusal, then the Rec 15 reference for the AUC weight naming the logged session\'s end; the section says hybrid sessions; it prints',
+       copy.head === 'Hybrid sessions' && copy.add === '+ Add session' && copy.row === `Session ${hid}` && /Nothing is fitted/.test(copy.hint) && !/Goti-HD|pre-HD/.test(copy.hint)
+       && /^On hybrid therapy/.test(aH) && /for 70 kg actual body weight/.test(aH) && aH.includes(`Session ${hid} ends ${endWant}`) && !BAND.test(aH)
+       && /Guideline reference · hybrid/.test(aHp) && aHp.includes(`ends ${endWant}`) && /not clinically validated/.test(aHp) && !/Nothing to print yet/.test(aHp),
+       JSON.stringify({ copy, aH: aH.slice(0, 400), endWant, aHp: aHp.slice(0, 200) }));
+    await g.locator(`[data-onclick="k75"][data-arg="${hid}"]`).click();
+
+    // AUC Precision on CRRT at 140 kg: the 3 g cap marked; a local maximum typed by keyboard redraws it in place; Clear restores it.
+    await g.locator('#b-rrt').selectOption('crrt');
+    await typeInto(g, '#b-tbw', '140');
+    await g.locator('[data-onclick="k47"]').click(); await g.waitForTimeout(200);
+    const before = await txt('#b-results');
+    const aCp = await paper();
+    await g.locator('#b-rrt-settings summary').click();
+    await typeInto(g, '#b-rrt-set-max', '2000'); await g.keyboard.press('Tab'); await g.waitForTimeout(150);
+    const set = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')), other: await g.evaluate(() => document.getElementById('t-rrt-set-max').value) };
+    await g.locator('#b-rrt-settings [data-onclick="k106"]').click(); await g.waitForTimeout(150);
+    const cleared = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')),
+      field: await g.evaluate(() => document.getElementById('b-rrt-set-max').value), status: await txt('#b-rrt-set-status') };
+    ok('D28: AUC Precision on CRRT prints its reference; a local maximum typed by keyboard redraws the marked cells as "your setting"; Clear removes it and Rec 11 returns',
+       /^On CRRT/.test(before) && /3 g\*/.test(before) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(before) && /Guideline reference · CRRT/.test(aCp) && /not clinically validated/.test(aCp)
+       && /2 g\*/.test(set.text) && /at most 2 g \(your setting\)/.test(set.text) && !/at most 3 g/.test(set.text) && JSON.parse(set.ls || '{}').maxDoseMg === 2000 && set.other === '2000'
+       && /3 g\*/.test(cleared.text) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(cleared.text) && cleared.ls === null && cleared.field === '' && /^Cleared/.test(cleared.status),
+       JSON.stringify({ before: before.slice(-300), set: Object.assign({}, set, { text: set.text.slice(-300) }), cleared: Object.assign({}, cleared, { text: cleared.text.slice(-200) }) }));
+
+    // Task 29 (R84): a g-for-mg slip ("2") typed by keyboard is not a setting: nothing is stored, the line says so,
+    // and the reference keeps the Rec 11 cap, never "at most 2 mg".
+    await typeInto(g, '#b-rrt-set-max', '2'); await g.keyboard.press('Tab'); await g.waitForTimeout(150);
+    const slip = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')), status: await txt('#b-rrt-set-status') };
+    ok('D28: Task 29 (R84, R101): a local maximum of "2" (below one 250 mg step) is not stored, the line says so, and the CRRT reference keeps the Rec 11 cap',
+       slip.ls === null && /Maximum single dose of 2 mg is below 250 mg: a maximum must be at least 250 mg/.test(slip.status) && /not saved/.test(slip.status)
+       && /at most 3 g \(Rybak 2020, Rec 11\)/.test(slip.text) && !/2 mg/.test(slip.text),
+       JSON.stringify(Object.assign({}, slip, { text: slip.text.slice(-300) })));
+    await g.evaluate(() => { document.getElementById('b-rrt-set-max').value = ''; });
+
+    // The PD settings' Clear removes a stored PD maximum.
+    await g.locator('[data-onclick="k1"]').click();
+    await g.locator('#t-rrt').selectOption('pd');
+    await g.locator('#section-pd .pd-settings summary').click();
+    await typeInto(g, '#pd-set-max', '1500'); await g.keyboard.press('Tab'); await g.waitForTimeout(100);
+    const pdSet = await g.evaluate(() => localStorage.getItem('vanco.pd.local'));
+    await g.locator('[data-onclick="k107"]').click(); await g.waitForTimeout(100);
+    const pdClr = await g.evaluate(() => ({ ls: localStorage.getItem('vanco.pd.local'), field: document.getElementById('pd-set-max').value, st: document.getElementById('pd-set-status').textContent }));
+    ok('D28: the PD settings\' Clear removes the stored PD maximum (vanco.pd.local) and empties the field',
+       JSON.parse(pdSet || '{}').maxDoseMg === 1500 && pdClr.ls === null && pdClr.field === '' && /^Cleared/.test(pdClr.st), JSON.stringify({ pdSet, pdClr }));
+    // Task 29 (R84): the same slip in the PD settings is not stored either.
+    await typeInto(g, '#pd-set-max', '2'); await g.keyboard.press('Tab'); await g.waitForTimeout(100);
+    const pdSlip = await g.evaluate(() => ({ ls: localStorage.getItem('vanco.pd.local'), st: document.getElementById('pd-set-status').textContent }));
+    ok('D28: Task 29 (R84, R101): a PD maximum of "2" is not stored and the settings line says so',
+       JSON.parse(pdSlip.ls || '{}').maxDoseMg == null && /Maximum single dose of 2 mg is below 250 mg: a maximum must be at least 250 mg/.test(pdSlip.st) && /not saved/.test(pdSlip.st), JSON.stringify(pdSlip));
+    await g.evaluate(() => { document.getElementById('pd-set-max').value = ''; localStorage.removeItem('vanco.pd.local'); });
+
+    // 375 px: the hybrid reference and its settings, with no horizontal scroll.
+    await g.setViewportSize({ width: 375, height: 812 });
+    await g.locator('#t-rrt').selectOption('hybrid');
+    await g.locator('[data-onclick="k31"]').click(); await g.waitForTimeout(200);
+    const narrow = await g.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth,
+      table: (document.querySelector('#results-content .rrt-ref-table') || { getBoundingClientRect: () => ({ right: 9999 }) }).getBoundingClientRect().right }));
+    ok('D28: at 375 px the hybrid reference fits the screen, with no horizontal scroll', narrow.sw <= narrow.iw && narrow.table <= narrow.iw, JSON.stringify(narrow));
+    await g.locator('#results-content .rrt-ref').scrollIntoViewIfNeeded();
+    await g.screenshot({ path: path.join(OUT, 'd28-reference-375.png') });
+    const gAttr = await attributeInjected(g, gProblems);
+    results.problems.push(...gAttr.kept);
+    await gctx.close();
+  }
+  // ── end Release 3 Task 25
+  // ── Release 3 (v3.16.0, D28), Task 27: the level-based CRRT answer, by keyboard. A fictional 70 kg patient on CVVHDF at
+  // 2000 mL/h, a level of 10 mg/L at D-2 06:00, 750 mg over 1 h at D-2 12:00, 13.9 mg/L at D-1 06:00 (a 23 h half-life on
+  // the circuit), on a fixed clock (today 10:00).
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const c = await cctx.newPage();
+    const cProblems = watch(c, 'd28-crrt');
+    await c.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await c.goto(BASE + '?v=pwd28c-' + Date.now(), { waitUntil: 'networkidle' });
+    await c.evaluate(() => { localStorage.removeItem('vanco.rrt.local'); });
+    const txt = (sel) => c.evaluate((sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim(), sel);
+    const press = async (sel) => { await c.locator(sel).focus(); await c.keyboard.press('Enter'); };
+    const run = async () => { await press('[data-onclick="k31"]'); await c.waitForTimeout(250); };
+    await c.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await c.locator('#t-rrt').selectOption('crrt');
+    const col = await c.evaluate(() => ({ crrt: getComputedStyle(document.getElementById('section-crrt')).display !== 'none',
+      renal: getComputedStyle(document.getElementById('section-renal')).display, shared: getComputedStyle(document.getElementById('section-trough-shared')).display,
+      tbw: !!document.getElementById('tbw').offsetParent, vd: document.getElementById('crrt-vd').value, goal: document.getElementById('crrt-goal-min').value }));
+    ok('D28: Trough-based · CRRT shows its own form; creatinine and the PK model hidden, weight kept; no volume basis and no goal preselected',
+       col.crrt && col.renal === 'none' && col.shared === 'none' && col.tbw && col.vd === '' && col.goal === '', JSON.stringify(col));
+    // The final review's I3 (R106) and minor 3: the placeholder says what CRRT gives (no CrCl, no AUC₂₄ regimen); the course
+    // Modality select is described by a visible hint that a later change goes on an effluent rate row.
+    const ph = await c.evaluate(() => ({ text: (document.getElementById('results-placeholder').textContent || '').replace(/\s+/g, ' ').trim(),
+      hint: (document.getElementById('crrt-modality-hint') || {}).textContent || '', shown: !!(document.getElementById('crrt-modality-hint') || {}).offsetParent,
+      desc: document.getElementById('crrt-modality').getAttribute('aria-describedby') }));
+    ok('D28 (final review I3, R106): on CRRT the result placeholder names the reference, the decline and "Draw a level", and promises no CrCl and no AUC₂₄; the Modality select carries its hint',
+       /Rybak 2020's reference doses/.test(ph.text) && /Draw a level/.test(ph.text) && !/CrCl|AUC₂₄|400–600/.test(ph.text)
+       && ph.shown && ph.desc === 'crrt-modality-hint' && /effluent rate row/.test(ph.hint), JSON.stringify(ph));
+    // The reference before any level, with the effluent rate entered.
+    await typeInto(c, '#tbw', '70');
+    await c.selectOption('#crrt-modality', 'cvvhdf');
+    await press('[data-onclick="k108"][data-arg="circ"]');
+    await c.locator('#crrt-circ-ondate-1').fill(day(-3)); await typeInto(c, '#crrt-circ-ontime-1', '0800');
+    await press('[data-onclick="k108"][data-arg="eff"]');
+    await typeInto(c, '#crrt-eff-ml-1', '2000'); await c.locator('#crrt-eff-date-1').fill(day(-3)); await typeInto(c, '#crrt-eff-time-1', '0800');
+    await c.selectOption('#crrt-urine', 'anuric');
+    await run();
+    const ref = await txt('#results-content');
+    ok('D28: CRRT before any level: the Rec 16 reference for the weight, the effluent line from the rate entered, modality and rate as recorded',
+       /^On CRRT — no creatinine-based regimen/.test(ref) && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(ref)
+       && /Effluent 2000 mL\/h is 28\.6 mL\/kg\/h at 70 kg/.test(ref) && /CVVHDF · effluent 2000 mL\/h, as recorded/.test(ref) && !/AUC₂₄|AUC24/.test(ref), ref.slice(0, 500));
+    // The course, by keyboard: basis, goal preset, two levels around a dose.
+    await c.selectOption('#crrt-vd', 'bauer');
+    await press('[data-goal-for="crrt"] [data-onclick="k85"][data-arg="15|20"]');
+    await press('[data-onclick="k108"][data-arg="lvl"]');
+    await typeInto(c, '#crrt-lvl-conc-1', '10'); await c.locator('#crrt-lvl-date-1').fill(day(-2)); await typeInto(c, '#crrt-lvl-time-1', '0600');
+    // R107: one level measures no decline; "Draw a level", with the Rec 16 reference still shown under its lead.
+    await run();
+    const one = await txt('#results-content');
+    ok('D28 (R107): CRRT with one level: "Draw a level", and the Rybak 2020 Rec 16 reference for the weight under the lead "until two levels"',
+       /Draw a level: one level measures no decline/.test(one) && /Until two levels drawn with the circuit running/.test(one)
+       && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(one) && !/rec-dose/.test(one), one.slice(0, 600));
+    await press('[data-onclick="k108"][data-arg="dose"]');
+    await typeInto(c, '#crrt-dose-mg-1', '750'); await typeInto(c, '#crrt-dose-tinf-1', '1'); await c.locator('#crrt-dose-date-1').fill(day(-2)); await typeInto(c, '#crrt-dose-time-1', '1200');
+    await press('[data-onclick="k108"][data-arg="lvl"]');
+    await typeInto(c, '#crrt-lvl-conc-2', '13.9'); await c.locator('#crrt-lvl-date-2').fill(day(-1)); await typeInto(c, '#crrt-lvl-time-2', '0600');
+    await run();
+    const d = await c.evaluate(() => {
+      const t = (s) => ((document.querySelector(s) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+      const rec = document.querySelector('#results-content tr.is-rec th');
+      return { verdict: t('#results-content .crrt-verdict'), all: t('#results-content'), rec: rec ? rec.textContent.trim() : '', lv: document.querySelectorAll('#results-content svg .pd-lv').length,
+        said: (document.getElementById('sr-announce') || {}).textContent || '', pdGoal: document.getElementById('pd-goal-min').value,
+        pressed: document.querySelector('[data-goal-for="crrt"] [data-arg="15|20"]').getAttribute('aria-pressed'),
+        pdPressed: document.querySelector('[data-goal-for="pd"] [data-arg="15|20"]').getAttribute('aria-pressed') };
+    });
+    const drawWant = await c.evaluate(() => fmtClock(new Date(Date.now() + 24 * 3600000).getTime() / 3600000));
+    ok('D28: a full CRRT course by keyboard reaches a dose: the expected range at the default draw 24 h on, the pick marked in the options, the chart, modality and rate named, no AUC',
+       /^Give [\d.]+ (g|mg) IV now/.test(d.verdict) && /Expected [\d.]+–[\d.]+ mg\/L at/.test(d.verdict) && d.verdict.includes(`Draw the next level ${drawWant}`) && /24 h after the dose \(default\)/.test(d.verdict)
+       && /CVVHDF · effluent 2000 mL\/h/.test(d.verdict) && d.rec && d.verdict.indexOf(d.rec) > 0 && d.lv === 2 && !/AUC/.test(d.all),
+       JSON.stringify(d).slice(0, 400));
+    ok('D28: the CRRT answer is announced; the goal preset is pressed in the CRRT control only, and the PD goal stays empty (one control, a value per mode)',
+       /^Result: CRRT, IV vancomycin/.test(d.said) && d.pressed === 'true' && d.pdPressed === 'false' && d.pdGoal === '', JSON.stringify({ said: d.said.slice(0, 120), pressed: d.pressed, pdPressed: d.pdPressed, pdGoal: d.pdGoal }));
+    // The final review's C1 (R103): a recheck an hour after the second level (13.5 mg/L) is under 12 h after it, so it is
+    // not used for the rate and the dose picked is unchanged; the decline table says why.
+    await press('[data-onclick="k108"][data-arg="lvl"]');
+    await typeInto(c, '#crrt-lvl-conc-3', '13.5'); await c.locator('#crrt-lvl-date-3').fill(day(-1)); await typeInto(c, '#crrt-lvl-time-3', '0700');
+    await run();
+    const re = await c.evaluate(() => { const rec = document.querySelector('#results-content tr.is-rec th');
+      return { rec: rec ? rec.textContent.trim() : '', decline: ((document.getElementById('crrt-decline') || {}).textContent || '').replace(/\s+/g, ' ') }; });
+    ok('D28 (final review C1, R103): a level an hour after the second changes no dose; its interval reads "assay rounding, not a decline; not used"',
+       re.rec && re.rec === d.rec && /assay rounding, not a decline; not used/.test(re.decline) && /1 interval used/.test(re.decline), JSON.stringify(re).slice(0, 400));
+    // Review Focus 3: stop the circuit an hour ago; the answer becomes "Draw a level", with no options.
+    await c.locator('#crrt-circ-offdate-1').fill(day(0)); await typeInto(c, '#crrt-circ-offtime-1', '0900');
+    await run();
+    const stop = await c.evaluate(() => ({ v: ((document.querySelector('#results-content .crrt-verdict') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      options: !!document.getElementById('crrt-options'), rec: !!document.querySelector('#results-content .rec-dose') }));
+    const stopWant = await c.evaluate(() => fmtClock(new Date(Date.now() - 3600000).getTime() / 3600000));
+    ok('D28 (Review Focus 3): the circuit stopped an hour ago: "Draw a level", naming the stop, with no dose and no options',
+       /^Draw a level/.test(stop.v) && stop.v.includes(`the circuit stopped at ${stopWant} since the decline was measured`) && !stop.options && !stop.rec, JSON.stringify(stop).slice(0, 300));
+    const paper = await c.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const t = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      window.dispatchEvent(new Event('afterprint')); return t; });
+    ok('D28: the CRRT answer prints: "Draw a level", the modality and rate, closing with the disclaimer',
+       /Draw a level/.test(paper) && /CVVHDF/.test(paper) && /2000 mL\/h/.test(paper) && /not clinically validated/.test(paper) && !/AUC/.test(paper), paper.slice(0, 300));
+    // 375 px: the CRRT rows and the answer fit, with no horizontal scroll.
+    await c.setViewportSize({ width: 375, height: 812 });
+    await c.waitForTimeout(150);
+    const narrow = await c.evaluate(() => {
+      const rights = ['crrt-circ-offtime-1', 'crrt-eff-mod-1', 'crrt-eff-ml-1', 'crrt-lvl-time-2'].map(id => document.getElementById(id).getBoundingClientRect());
+      return { sw: document.documentElement.scrollWidth, iw: innerWidth, right: Math.max(...rights.map(r => r.right)), minH: Math.min(...rights.map(r => r.height)) };
+    });
+    ok('D28: at 375 px the CRRT rows fit the screen as 44 px targets, with no horizontal scroll', narrow.sw <= narrow.iw && narrow.right <= narrow.iw && narrow.minH >= 43.5, JSON.stringify(narrow));
+    await c.locator('#section-crrt').scrollIntoViewIfNeeded();
+    await c.screenshot({ path: path.join(OUT, 'd28-crrt-375.png') });
+    const cAttr = await attributeInjected(c, cProblems);
+    results.problems.push(...cAttr.kept);
+    await cctx.close();
+  }
+  // ── end Release 3 Task 27
+  // ── Release 3 (v3.16.0, D28), Task 28: the peak-equation haemodialysis reading from browser-only settings. A fictional
+  // 80 kg patient, a pre-dialysis level of 18 mg/L at 07:00 today, the session at 11:00, the previous one ended two days
+  // ago; the four settings are typed here as the user would (test values only; the app ships none), on a fixed clock.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const h = await hctx.newPage();
+    const hProblems = watch(h, 'd28-hd');
+    await h.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await h.goto(BASE + '?v=pwd28h-' + Date.now(), { waitUntil: 'networkidle' });
+    await h.evaluate(() => { localStorage.removeItem('vanco.hd.local'); localStorage.removeItem('vanco.rrt.local'); });
+    const txt = (sel) => h.evaluate((sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim(), sel);
+    const press = async (sel) => { await h.locator(sel).focus(); await h.keyboard.press('Enter'); };
+    const run = async () => { await press('[data-onclick="k31"]'); await h.waitForTimeout(250); };
+    const order = (t) => ({ notice: t.indexOf('On haemodialysis — use AUC Precision'), title: t.indexOf('Peak-equation reading (your settings)') });
+    await h.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await h.locator('#t-rrt').selectOption('ihd');
+    const col = await h.evaluate(() => ({ hd: getComputedStyle(document.getElementById('section-hd')).display !== 'none',
+      renal: getComputedStyle(document.getElementById('section-renal')).display, ld: getComputedStyle(document.getElementById('section-ld')).display,
+      shared: getComputedStyle(document.getElementById('section-trough-shared')).display, tbw: !!document.getElementById('tbw').offsetParent,
+      fields: ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold'].map(id => document.getElementById(id).value).join('|') }));
+    ok('D28: Trough-based on haemodialysis shows its own section; creatinine, the loading dose and the PK model hidden (R73), weight kept; no setting has a value',
+       col.hd && col.renal === 'none' && col.ld === 'none' && col.shared === 'none' && col.tbw && col.fields === '|||', JSON.stringify(col));
+    await typeInto(h, '#tbw', '80');
+    await typeInto(h, '#hd-pre', '18');
+    await h.locator('#hd-pre-date').fill(day(0)); await typeInto(h, '#hd-pre-time', '0700');
+    await h.locator('#hd-start-date').fill(day(0)); await typeInto(h, '#hd-start-time', '1100');
+    await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
+    await run();
+    const empty = await txt('#results-content'), eo = order(empty);
+    ok('D28: with storage empty the reading names all four settings and where to set them, below the Goti-HD pointer',
+       eo.notice === 0 && eo.title > 0 && /No reading/.test(empty) && /Not set: Fraction remaining after the session, Target peak, Volume of distribution, Hold level\./.test(empty)
+       && /Your settings \(this browser\)/.test(empty) && !/\d+ mg after the session/.test(empty), empty.slice(0, 600));
+    // The four settings, by keyboard: open the settings, type each and Tab on (each saves on change; the reading follows).
+    await press('#hd-settings > summary');
+    for (const [id, v] of [['#hd-set-frac', '0.65'], ['#hd-set-peak', '25'], ['#hd-set-vd', '0.7'], ['#hd-set-hold', '25']]) {
+      await h.locator(id).focus(); await h.keyboard.type(v); await h.keyboard.press('Tab');
+    }
+    await h.waitForTimeout(250);
+    const dose = await h.evaluate(() => ({ t: ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      stored: localStorage.getItem('vanco.hd.local'), state: (document.querySelector('[data-hd-reading]') || { dataset: {} }).dataset.hdReading,
+      rec: !!document.querySelector('#results-content .rec-dose') }));
+    const dor = order(dose.t);
+    ok('D28: the four settings typed by keyboard give a reading: 750 mg after the session, each setting marked "your setting", the pointer still first; stored in this browser only',
+       dose.state === 'dose' && dor.notice === 0 && dor.title > 0 && /750 mg after the session/.test(dose.t) && /0\.65 \(your setting\)/.test(dose.t)
+       && /0\.7 L\/kg \(your setting\)/.test(dose.t) && /25 mg\/L \(your setting\)/.test(dose.t) && /11\.7 mg\/L/.test(dose.t) && !dose.rec
+       && dose.stored === JSON.stringify({ fractionRemaining: 0.65, targetPeak: 25, vdPerKg: 0.7, holdPreMgL: 25 }), JSON.stringify({ state: dose.state, stored: dose.stored, t: dose.t.slice(0, 500) }));
+    const paper = await h.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const t = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      window.dispatchEvent(new Event('afterprint')); return t; });
+    ok('D28: the reading prints beneath the Goti-HD pointer, with its settings marked and the disclaimer',
+       /use AUC Precision/.test(paper) && /Peak-equation reading \(your settings\)/.test(paper) && /your setting\)/.test(paper) && /750 mg/.test(paper) && /not clinically validated/.test(paper), paper.slice(0, 400));
+    // A level drawn an hour after the previous session's end is refused, naming the 2 h rule; then Clear.
+    await h.locator('#hd-prev-date').fill(day(0)); await typeInto(h, '#hd-prev-time', '0600');
+    await run();
+    const soon = await txt('#results-content'), so = order(soon);
+    ok('D28: a pre-dialysis level drawn an hour after the previous session ended is refused, naming the 2 h rule; the pointer stays first',
+       so.notice === 0 && so.title > 0 && /Too soon after the previous session/.test(soon) && /within 2 h of the previous session's end/.test(soon) && !/mg after the session/.test(soon), soon.slice(0, 500));
+    await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
+    await run();
+    // Review: a malformed form shows its errors by real click, with the Goti 2018 · HD pointer still visible above them.
+    await typeInto(h, '#hd-pre', '200');
+    await h.locator('[data-onclick="k31"]:visible').first().click(); await h.waitForTimeout(250);
+    const malformed = await h.evaluate(() => {
+      const rc = document.getElementById('results-content'), n = rc && rc.querySelector('.note'), e = rc && rc.querySelector('li[id^="fe-trough-"]');
+      const b = rc && rc.querySelector('[data-onclick="k77"]');
+      return { note: n ? n.textContent.replace(/\s+/g, ' ').trim() : '', noteVis: !!(n && n.offsetParent), err: e ? e.textContent.trim() : '', errVis: !!(e && e.offsetParent),
+        above: !!(n && e && (n.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) && n.getBoundingClientRect().top < e.getBoundingClientRect().top),
+        button: !!(b && b.offsetParent), reading: !!rc.querySelector('[data-hd-reading]'), invalid: document.getElementById('hd-pre').getAttribute('aria-invalid') };
+    });
+    ok('D28: a malformed haemodialysis form (a pre-dialysis level of 200) shows its error by real click, with the Goti 2018 · HD pointer visible above it and no reading',
+       malformed.noteVis && /^On haemodialysis — use AUC Precision/.test(malformed.note) && malformed.button && malformed.errVis && /Pre-dialysis level: 0\.5–100 mg\/L\./.test(malformed.err)
+       && malformed.above && !malformed.reading, JSON.stringify(malformed));
+    await typeInto(h, '#hd-pre', '18');
+    await run();
+    await press('[data-onclick="k112"]');
+    await h.waitForTimeout(250);
+    const cleared = await h.evaluate(() => ({ t: ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      stored: localStorage.getItem('vanco.hd.local'), line: document.getElementById('hd-set-status').textContent,
+      fields: ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold'].map(id => document.getElementById(id).value).join('|') }));
+    const co = order(cleared.t);
+    ok('D28: Clear removes the settings and the reading returns to the refusal naming all four; the Goti-HD pointer stays above',
+       cleared.stored === null && cleared.fields === '|||' && /^Cleared/.test(cleared.line) && co.notice === 0 && co.title > 0 && /No reading/.test(cleared.t)
+       && /Not set: Fraction remaining after the session, Target peak, Volume of distribution, Hold level\./.test(cleared.t), JSON.stringify(cleared).slice(0, 500));
+    // 375 px: the section and the settings fit, with no horizontal scroll.
+    await h.setViewportSize({ width: 375, height: 812 });
+    await h.waitForTimeout(150);
+    const narrow = await h.evaluate(() => {
+      const rs = ['hd-pre-time', 'hd-start-time', 'hd-prev-time', 'hd-set-frac', 'hd-set-max'].map(id => document.getElementById(id).getBoundingClientRect());
+      return { sw: document.documentElement.scrollWidth, iw: innerWidth, right: Math.max(...rs.map(r => r.right)), minH: Math.min(...rs.map(r => r.height)) };
+    });
+    ok('D28: at 375 px the haemodialysis section and its settings fit the screen as 44 px targets, with no horizontal scroll',
+       narrow.sw <= narrow.iw && narrow.right <= narrow.iw && narrow.minH >= 43.5, JSON.stringify(narrow));
+    await h.locator('#section-hd').scrollIntoViewIfNeeded();
+    await h.screenshot({ path: path.join(OUT, 'd28-hd-375.png') });
+    const hAttr = await attributeInjected(h, hProblems);
+    results.problems.push(...hAttr.kept);
+    await hctx.close();
+  }
+  // ── end Release 3 Task 28
   await browser.close();
 
   results.checks = checks;

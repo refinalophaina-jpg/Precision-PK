@@ -139,7 +139,7 @@ function assertLess(a,b,label) {
 // test drive the real parseBayesCourse / readSerialScrChecked / bayesInputFingerprint /
 // snapshotBayesForm against form values, the way the page does. Fictional values only.
 // vals: { 'b-age': '60', ... } plus doses [[mg, tinf, date, time]], levels [[conc, date, time]],
-// scrRows [[val, date, time]]. Rows are numbered from 1, as the page numbers them.
+// scrRows [[val, date, time]], hdRows [[date, time, hours, type]]. Rows are numbered from 1, as the page numbers them.
 function bayesFormEnv(vals) {
   const els = {};
   const el = (id) => els[id] || (els[id] = { id, value: '', checked: false, textContent: '', innerHTML: '', style: {}, dataset: {},
@@ -158,7 +158,13 @@ function bayesFormEnv(vals) {
     const row = el(`b-scr-row-${i + 1}`), sub = { '.b-scr-val': { value: String(val) }, '.b-scr-date': { value: date }, '.b-scr-time': { value: time } };
     row.querySelector = (sel) => sub[sel] || null;
   });
-  ['doses', 'levels', 'scrRows'].forEach(k => delete v[k]);
+  // Session rows (D15; D28 typed them): [date, time, hours, type]; a row without a type has no type select.
+  (v.hdRows || []).forEach(([date, time, hours, type], i) => {
+    el(`b-hd-row-${i + 1}`); el(`b-hd-date-${i + 1}`).value = date; el(`b-hd-time-${i + 1}`).value = time;
+    el(`b-hd-hours-${i + 1}`).value = String(hours);
+    if (type !== undefined) el(`b-hd-type-${i + 1}`).value = type;
+  });
+  ['doses', 'levels', 'scrRows', 'hdRows'].forEach(k => delete v[k]);
   Object.keys(v).forEach(id => { el(id).value = String(v[id]); });
   const document = {
     getElementById: el, createElement: () => el('_new'), querySelector: () => null,
@@ -2206,7 +2212,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       const src = body.slice(body.indexOf('function ' + f + '('), body.indexOf('\nfunction ', body.indexOf('function ' + f + '(') + 10));
       assert(/new Date\([a-z0-9]+\.getFullYear\(\), [a-z0-9]+\.getMonth\(\), [a-z0-9]+\.getDate\(\) \+ [a-z0-9]+, hh, mm\)/.test(src), `${f} builds each instant from a calendar day and the clock`);
     }
-    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !recurring.test(t));
+    // D28 (Task 27): the CRRT give-at, next-draw and row times each sit beside their own date too.
+    const crrtPaired = /id="crrt-give-time"|id="crrt-draw-time"|id="\$\{id\(tf\)\}"/;
+    assert(/id="crrt-give-date"[\s\S]{0,400}id="crrt-give-time"/.test(body) && /id="crrt-draw-date"[\s\S]{0,400}id="crrt-draw-time"/.test(body), 'the CRRT give-at and next-draw times sit beside their dates');
+    assert(/id="\$\{id\(df\)\}"[^>]*>\s*<input[^>]*id="\$\{id\(tf\)\}"/.test(body), 'the CRRT row time is paired with its date');
+    // D28 (Task 28): the haemodialysis reading's level, session-start and previous-session times each sit beside their own date.
+    const hdPaired = /id="hd-(?:pre|start|prev)-time"/;
+    for (const k of ['pre', 'start', 'prev'])
+      assert(new RegExp(`id="hd-${k}-date"[^>]*>\\s*<div class="input-row"><input[^>]*id="hd-${k}-time"`).test(body), `hd-${k}: the time sits beside its date`);
+    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !crrtPaired.test(t) && !hdPaired.test(t) && !recurring.test(t));
     assert(orphans.length === 0,
       `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
   });
@@ -4245,7 +4259,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const staticBody = src.slice(src.indexOf('<body>'), src.indexOf('<script>'));
     assert(!/data-onclick="k0"/.test(staticBody), 'no print action outside a result');
     const prints = src.match(/<button type="button" class="vx-act" data-onclick="k0">[^<]*<\/button>/g) || [];
-    assert(prints.length === 3 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, AUC): ${prints.length}`);
+    // D28 (Task 27): the CRRT answer is a fourth answer with its own actions; (Task 28) the haemodialysis reading a fifth.
+    assert(prints.length === 5 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, CRRT, HD reading, AUC): ${prints.length}`);
     const act = rules.find(r => /\.vx-act\b/.test(r.sel) && /color/.test(r.body));
     assert(act && /terracotta-ink/.test(act.body) && !/background:\s*var\(--terracotta\)/.test(act.body), 'a text action, not a filled button');
     const prevGet = sandbox.document.getElementById;
@@ -4331,7 +4346,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       : /level-row/.test(sel) ? lvlRows.map((_, i) => ({ id: `b-level-row-${i}` }))
       : /hd-row/.test(sel) ? hdRows.map((_, i) => ({ id: `b-hd-row-${i}` })) : [];
     sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
-    try { return fn(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+    // These sessions are haemodialysis sessions, so the patient is on haemodialysis: since D28 (R104) a session row under
+    // Renal replacement None is a blocking error, where before it was read as haemodialysis by default.
+    const prevRrt = vm.runInContext('bState.rrt', sandbox);
+    vm.runInContext("bState.rrt = 'ihd';", sandbox);
+    try { return fn(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; vm.runInContext(`bState.rrt = ${JSON.stringify(prevRrt)};`, sandbox); }
   };
   const D = [['1500', '1.5', '2026-09-01', '09:18']];
 
@@ -4560,7 +4579,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/HD rule\./.test(rb), 'Show the math states the HD rule');
   });
   test('35.20 the Trough guard shows its notice (form run begun); a schedule start time must be a real clock time', () => {
-    const calc = bodyOf35('calculate'), g = calc.indexOf("document.getElementById('t-hd')");
+    const calc = bodyOf35('calculate'), g = calc.indexOf("rrt === 'ihd'");   // D28: the selector replaced #t-hd
     assert(/beginFormRun\('trough'\)/.test(calc.slice(g, g + 400)), 'the guard begins the form run, which shows the area');
     assert(sandbox.isClock24('13:00') && sandbox.isClock24('00:00') && !sandbox.isClock24('29:99') && !sandbox.isClock24('24:00'), 'clock');
   });
@@ -4581,7 +4600,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       'b-hd-date-3': '2026-09-03', 'b-hd-time-3': '13:00', 'b-hd-hours-3': '4' };
     sandbox.document.querySelectorAll = (sel) => /dose-row/.test(sel) ? [{ id: 'b-dose-row-1' }] : /hd-row/.test(sel) ? [{ id: 'b-hd-row-2' }, { id: 'b-hd-row-3' }] : [];
     sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
-    let r; try { r = sandbox.parseBayesCourse(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+    // On haemodialysis (D28, R104: a session row under Renal replacement None is a blocking error).
+    const prevRrt = vm.runInContext('bState.rrt', sandbox);
+    vm.runInContext("bState.rrt = 'ihd';", sandbox);
+    let r; try { r = sandbox.parseBayesCourse(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; vm.runInContext(`bState.rrt = ${JSON.stringify(prevRrt)};`, sandbox); }
     assert(r.sessions[0].label === '2026-09-03 13:00' && r.sessions[0].n === 3 && r.sessions[1].n === 2, JSON.stringify(r.sessions));
     const rb = sandbox.courseReadback([{ n: '1', date: '2026-09-01', time: '08:00', tinf: '1' }], [{ n: '1', date: '2026-09-04', time: '06:00' }], NaN,
       [{ n: '2', date: '2026-09-05', time: '13:00', hours: '4' }, { n: '3', date: '2026-09-03', time: '13:00', hours: '4' }]);
@@ -4597,9 +4619,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('35.11 the Trough module refuses an HD patient before any number is computed', () => {
     const calc = bodyOf35('calculate');
-    const guard = calc.indexOf("document.getElementById('t-hd')"), first = calc.indexOf('calcCrCl(');
+    const guard = calc.indexOf("rrt === 'ihd'"), first = calc.indexOf('calcCrCl(');   // D28: the selector replaced #t-hd
     assert(guard > 0 && guard < first, 'the HD guard runs before CrCl');
-    assert(/troughHdNoticeHTML\(\)/.test(calc) && /return;/.test(calc.slice(guard, guard + 400)), 'it renders the notice and returns');
+    assert(/rrtNoticeHTML\(rrt, 'trough'\)/.test(calc) && /if \(kind === 'ihd'\) \{\s*if \(!auc\) return troughHdNoticeHTML\(\);/.test(bodyOf35('rrtNoticeHTML'))
+      && /return;/.test(calc.slice(guard, guard + 400)), 'it renders the notice and returns');
     assert(/k77:[^\n]*switchModule\('auc'\)[^\n]*gotihd/.test(script35), 'one action moves the patient to Goti-HD');
     const note = sandbox.troughHdNoticeHTML();
     assert(/use AUC Precision/.test(note) && /data-onclick="k77"/.test(note) && !/mg IV q\d+h/.test(note), note.slice(0, 160));
@@ -5358,7 +5381,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(sandbox.getModelRecommendation(0, false, 130, 160, false).recommended === 'hughes', 'class 3 obesity');
     assert(/Buelga 1-comp is often the more reliable choice/.test(sandbox.getModelRecommendation(1, false, 80, 175, false).oneLevelGotiNote), 'the non-HD note unchanged');
     // Wiring: told about dialysis from the model or logged sessions; the banner compares against Goti-HD.
-    assert(/getModelRecommendation\(filteredLevels\.length, isICU, tbw, htCm, !!bState\.dial \|\| sessions\.length > 0\)/.test(bodyOf40('runBayesian')), 'runBayesian tells it');
+    assert(/getModelRecommendation\(filteredLevels\.length, isICU, tbw, htCm, rrt === 'ihd' \|\| sessions\.length > 0\)/.test(bodyOf40('runBayesian')), 'runBayesian tells it');   // D28: rrt replaced bState.dial here
     assert(/renderModelBanner\(p2c\.modelRec, isHD \? 'gotihd' : r\.model\)/.test(bodyOf40('renderBayesianResults')), 'the banner knows Goti-HD');
   });
 }
@@ -5509,13 +5532,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/mode-btn-pd'\)\.classList\.toggle\('active',\s*mode === 'pd'\)/.test(body('setCalcMode')) && /section-pd'\)\.style\.display\s*=\s*mode === 'pd'/.test(body('setCalcMode'))
       && /section-trough-shared'\)\.style\.display\s*=\s*mode === 'pd'\s*\?\s*'none'/.test(body('setCalcMode')), 'setCalcMode switches it, and hides the PK model and trough target');
     for (const k of ['k84', 'k85', 'k86', 'k87', 'k88', 'k89', 'k90', 'k91', 'k92', 'k94']) assert(new RegExp('\\n  ' + k + ': ').test(script), k);
-    assert(/id="pd-goal-min"[^>]*>/.test(src) && !/id="pd-goal-min"[^>]*value="\d/.test(src) && !/id="pd-goal-max"[^>]*value="\d/.test(src), 'its own goal fields, empty');
+    // D28 (Task 27, ruling P2): the goal fields are built by the one goal control, goalControlHTML('pd'), into the PD slot.
+    const pdGoal = sandbox.goalControlHTML('pd');
+    assert(/<div data-goal-control="pd"><\/div>/.test(src) && /id="pd-goal-min"[^>]*>/.test(pdGoal) && !/id="pd-goal-min"[^>]*value="\d/.test(pdGoal) && !/id="pd-goal-max"[^>]*value="\d/.test(pdGoal), 'its own goal fields, empty');
     assert(/data-onclick="k85" data-arg="10\|15"/.test(src) && /data-onclick="k85" data-arg="15\|20"/.test(src), 'the two presets');
     const ls = body('pdLocalSettings');
     assert(/try\s*\{[\s\S]*localStorage\.getItem\('vanco\.pd\.local'\)[\s\S]*\}\s*catch/.test(ls), 'local settings read inside try/catch');
     const calc = body('calculate');
     assert(calc.indexOf("state.calcMode === 'pd'") > 0 && calc.indexOf("state.calcMode === 'pd'") < calc.indexOf('validateFields('), 'the PD branch comes before the demographics are validated');
-    assert(/calcVd\('bauer', 0, 1, 0\)/.test(body('readPdForm')) && /MATZKE_VD_GROUP3/.test(body('readPdForm')), 'the volumes come from the existing sources');
+    // D28 (Task 27): through the one mapping CRRT shares, volumeBasisPerKg.
+    assert(/volumeBasisPerKg\(/.test(body('readPdForm')) && /calcVd\('bauer', 0, 1, 0\)/.test(body('volumeBasisPerKg')) && /MATZKE_VD_GROUP3/.test(body('volumeBasisPerKg')), 'the volumes come from the existing sources');
   });
   test('41.14 the answer on screen: verdict first, then the next draw, the options with the pick marked, the decline in words, context labelled; the chart in CSS classes only', () => {
     const b = ask(fict(), { goal: { min: 15, max: 20 }, settings: { maxDoseMg: null, targetPeak: null, amLabs: '07:00' } });
@@ -5545,15 +5571,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const src = fs.readFileSync(htmlPath, 'utf8');
     const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
     const body = (n) => { const c = script.slice(script.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
-    assert(/<input type="checkbox" id="b-pd"/.test(src), 'the box in the AUC renal area');
+    // D28: the AUC column's renal-replacement selector (option "Peritoneal dialysis") replaced the #b-pd box.
+    assert(/<select id="b-rrt"[^>]*>[\s\S]*?<option value="pd">Peritoneal dialysis<\/option>/.test(src), 'the box in the AUC renal area');
     const rb = body('runBayesian');
-    assert(rb.indexOf("getElementById('b-pd')") > 0 && rb.indexOf("getElementById('b-pd')") < rb.indexOf('parseBayesCourse()'), 'checked before anything is parsed or fitted');
+    assert(rb.indexOf("rrt === 'pd'") > 0 && rb.indexOf("rrt === 'pd'") < rb.indexOf('parseBayesCourse()'), 'checked before anything is parsed or fitted');
     assert(/data-onclick="k93"/.test(body('bayesPdNoticeHTML')) && /Trough-based · Peritoneal dialysis/.test(body('bayesPdNoticeHTML')), 'the refusal links to the PD mode');
     assert(/\n  k93: [^\n]*switchModule\('trough'\)[^\n]*setCalcMode\('pd'\)/.test(script), 'k93 opens it');
-    assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /for peritoneal dialysis use Trough-based · Peritoneal dialysis/.test(src), 'the advisory no longer sends PD to Goti');
+    // D28 (Task 29): the advisory's renal-replacement line points to the Renal replacement selector, which routes PD to the
+    // PD mode (SUITE 46 routing); it names no model for any modality, so it cannot send PD to Goti.
+    const srn = sandbox.severeRenalNote(5, '', 'auc', false).html;
+    assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /On renal replacement, set Renal replacement/.test(srn) && !/Goti/.test(srn), 'the advisory no longer sends PD to Goti');
     // v3.14.0 (D26, R22): read into pdForm, stored unless an AUC save's Trough column is another patient's.
     assert(/const pdForm = snapshotPdForm\(\);/.test(body('saveCurrentProfile')) && /snapshot\.pd = [^;]*\bpdForm;/.test(body('saveCurrentProfile')), 'saved');
-    assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /getElementById\('b-pd'\)/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');
+    assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /const rrt = rrtOf\(s\.core, s\.demographics, s\.pd\);\s*setRrt\(rrt\);/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');   // D28: the selector replaced #b-pd
     assert(/const PROFILE_SCHEMA\s+=\s+1;/.test(src), 'the profile schema is unchanged: older profiles load with no pd block');
   });
   // ── Final review (v3.12.0): each case below failed before its fix ──
@@ -5763,7 +5793,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('42.10 the PD mode shows only what it reads: no amputation, creatinine or loading-dose blocks; the HD box only if ticked', () => {
     for (const id of ['amp-section', 'section-renal', 'section-ld']) assert(new RegExp(`id="${id}"[^>]*class="[^"]*not-pd`).test(trough42), `${id} is marked not-pd`);
     assert(/\.panel-left\[data-mode="pd"\] \.not-pd\s*\{\s*display:\s*none/.test(css42), 'hidden in PD');
-    assert(/\.panel-left\[data-mode="pd"\] #section-renal:has\(#t-hd:checked\)/.test(css42), 'a ticked HD box stays visible, so the refusal it causes can be undone');
+    // D28: the HD box became the renal-replacement selector, in the Patient block, which no mode hides.
+    const patient42 = trough42.slice(trough42.indexOf('>Patient<'), trough42.indexOf('id="amp-section"'));
+    assert(/<select id="t-rrt"/.test(patient42) && !/not-pd/.test(patient42), 'a ticked HD box stays visible, so the refusal it causes can be undone');
     assert(/dataset\.mode = mode/.test(code42.slice(code42.indexOf('function setCalcMode('), code42.indexOf('function setCalcMode(') + 2500)), 'setCalcMode marks the panel');
   });
   test('42.11 every Trough time is one date and one 24-hour time with a read-back, composed into the one instant the engine reads', () => {
@@ -5817,7 +5849,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[345]\.0';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[3456]\.0';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6031,7 +6063,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[45]\.0';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[456]\.0';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -6311,12 +6343,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       // Choosing the sex refreshes the CrCl readout, which suggests an initial interval and
       // overwrites the one typed; the pharmacist's choice comes after it, as on the page.
       if (vals['init-interval'] != null) get('init-interval').value = String(vals['init-interval']);
+      // Renal replacement (D28) is chosen on the selector, as the page does; forceMode then forces a calc mode
+      // the selector would not allow (a forced call).
+      if (extra && extra.rrt) fn44('setRrt')(extra.rrt);
+      if (extra && extra.forceMode) vm.runInContext(`state.calcMode = ${JSON.stringify(extra.forceMode)};`, sandbox);
       fn44('calculate')();
       const h = get('results-content').innerHTML;
-      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent, hint: get('interval-hint').textContent };
+      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent, hint: get('interval-hint').textContent, get };
     } finally {
       sandbox.document = prevDoc; sandbox.setTimeout = prevST; sandbox.calculationNowH = prevNow;
-      vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null;`, sandbox);
+      vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null; state.rrt = 'none'; bState.rrt = 'none'; bState.dial = false;`, sandbox);
     }
   };
   const HOLD_H3 = /<h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">([^<]*)<\/h3>/;
@@ -6382,7 +6418,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert((script44.match(/Give a single weight-based loading dose/g) || []).length === 1, 'the advisory text exists once');
     assert(/severeRenalNote\(/.test(body44('renderBayesianResults')), 'AUC Precision reads the same advisory');
     // The HD box still gives the HD notice, never a number.
-    const hd = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 }, { checked: ['t-hd'] });
+    const hd = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 }, { rrt: 'ihd' });   // D28: the selector replaced #t-hd
     assert(/On haemodialysis — use AUC Precision/.test(hd.text) && !HOLD_H3.test(hd.h), hd.text.slice(0, 200));
     // Steady-state mode with no level entered is empiric too: withheld the same way.
     const ss = trough44('level', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, dose: 500, interval: 48, tinf: 1 });
@@ -7667,8 +7703,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       const prev = { cysc: '2.4', 'scr-baseline': '0.8', dose: '1500', 'level-val': '31', age: '82' };   // the previous patient
       const env = profEnv44({ [PROF_KEY44]: JSON.stringify(profFixture44) }, prev);
       Object.keys(prev).forEach(k => env.get(k));   // on screen before the load
-      env.get('t-hd').checked = true;   // the previous patient was on haemodialysis
       withProf44(env, ['resetForm', 'resetBayesian', 'addBayesDose', 'addBayesLevel', 'addBayesSession'], (calls) => {
+        sandbox.setRrt('ihd');   // the previous patient was on haemodialysis (D28: the selector replaced #t-hd)
         assert(sandbox.loadProfiles().length === profFixture44.length, 'every fixture is listed');
         let threw = null;
         try { sandbox.loadProfileIntoForm(p.id); } catch (e) { threw = e; }
@@ -7685,8 +7721,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
           && calls.addBayesSession === (p.snapshot.hdSessions || []).length, `${p.label}: rows ${JSON.stringify(calls)}`);
         // The Trough module's haemodialysis flag is the profile's (review item 1): a previous tick never
         // survives, and a dialysis profile ticks it, so the Trough module refuses a CrCl regimen (D16).
-        assert(env.els['t-hd'].checked === !!d.dial, `${p.label}: #t-hd ${env.els['t-hd'].checked}, dial ${d.dial}`);
-        assert(env.els['b-dial'].checked === !!d.dial, `${p.label}: #b-dial ${env.els['b-dial'].checked}`);
+        // D28: #t-hd is the Trough selector reading haemodialysis; #b-dial (Goti's dialysis box) is the Goti-HD tile.
+        assert((env.els['t-rrt'].value === 'ihd') === !!d.dial, `${p.label}: #t-rrt ${env.els['t-rrt'].value}, dial ${d.dial}`);
+        assert((vm.runInContext('bState.tile', sandbox) === 'gotihd') === !!d.dial, `${p.label}: tile ${vm.runInContext('bState.tile', sandbox)}`);
         // The previous patient's Trough-only fields are gone (engine report I5).
         ['cysc', 'scr-baseline', 'dose', 'level-val'].forEach(k => assert(env.els[k].value === '', `${p.label}: ${k} kept "${env.els[k].value}"`));
         // A loaded fit is never the result on screen: the profile re-fits.
@@ -7702,11 +7739,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     withProf44(env, [], () => {
       vm.runInContext("state.dosingWt = 'IBW'; ampState.RL = 'knee';", sandbox);
       env.get('amp-enabled').checked = true; env.get('dosing-wt').value = 'IBW';
-      env.get('t-hd').checked = true;   // the previous patient was on haemodialysis (review item 1)
+      sandbox.setRrt('ihd');   // the previous patient was on haemodialysis (review item 1; D28: the selector replaced #t-hd)
       sandbox.resetForm();
       assert(vm.runInContext('state.dosingWt', sandbox) === 'auto' && env.els['dosing-wt'].value === 'auto', `basis ${vm.runInContext('state.dosingWt', sandbox)}`);
       assert(vm.runInContext('Object.values(ampState).every(v => v === null)', sandbox) && env.els['amp-enabled'].checked === false, 'amputation kept');
-      assert(env.els['t-hd'] && env.els['t-hd'].checked === false, 'the haemodialysis flag kept');
+      assert(env.els['t-rrt'] && env.els['t-rrt'].value === 'none' && vm.runInContext('state.rrt', sandbox) === 'none', 'the haemodialysis flag kept');
       // A new patient typed into AUC Precision and saved.
       [['b-age', '50'], ['b-tbw', '72'], ['b-height', '170'], ['b-scr', '1.0']].forEach(([k, v]) => { env.get(k).value = v; });
       sandbox.setPatientSex('M');
@@ -7723,35 +7760,38 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const env = profEnv44({}, T);
     Object.keys(T).concat(['b-age', 'b-tbw', 'b-height', 'b-scr']).forEach(k => env.get(k));
     env.get('app-shell-bayesian').style.display = 'none';
-    env.get('t-hd').checked = true;
     withProf44(env, ['addBayesSession'], (calls) => {
-      vm.runInContext("bState.model = 'buelga'; bState.dial = false;", sandbox);
+      // D28: haemodialysis on the selector (it replaced #t-hd); the AUC column left on Buelga, as a click leaves it.
+      sandbox.setRrt('ihd');
+      sandbox.setBModel(env.get('b-model-btn-buelga'), 'buelga');
       sandbox.setPatientSex('M');
       env.labels[0].value = 'Patient HD';
       sandbox.saveCurrentProfile();
       const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
       assert(p && p.snapshot.model === 'buelga' && p.snapshot.core.hd === true && p.snapshot.demographics.dial === false,
         'stored: ' + JSON.stringify(p && { model: p.snapshot.model, hd: p.snapshot.core.hd, dial: p.snapshot.demographics.dial }));
-      env.get('t-hd').checked = false; env.get('b-dial').checked = true;   // a different screen before the load
+      sandbox.setRrt('crrt'); sandbox.setBModel(env.get('b-model-btn-hughes'), 'hughes');   // a different screen before the load
       sandbox.loadProfileIntoForm(p.id);
-      assert(env.els['t-hd'].checked === true, 'the Trough flag is not ticked');
-      assert(env.els['b-dial'].checked === false && vm.runInContext('bState.dial', sandbox) === false && vm.runInContext('bState.model', sandbox) === 'buelga',
-        `AUC: dial ${env.els['b-dial'].checked} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
+      assert(env.els['t-rrt'].value === 'ihd', 'the Trough flag is not ticked');
+      // D28 (Review Focus 2) supersedes "AUC Precision not on dialysis": the patient is on haemodialysis in both
+      // modules (bState.dial is derived from it), the Buelga tile stays, and AUC Precision refuses it (46.6).
+      assert(vm.runInContext('bState.tile', sandbox) === 'buelga' && vm.runInContext('bState.dial', sandbox) === true && vm.runInContext('bState.model', sandbox) === 'buelga',
+        `AUC: tile ${vm.runInContext('bState.tile', sandbox)} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
       // Defence in depth: a stored dial true with Buelga (or Hughes) loads with dial false; the Trough flag still ticks.
       for (const model of ['buelga', 'hughes']) {
         const crafted = JSON.parse(JSON.stringify(profFixture44[1]));
         crafted.id = 'p_crafted' + model; crafted.snapshot.model = model; crafted.snapshot.demographics.dial = true;
         env.localStorage.setItem(PROF_KEY44, JSON.stringify([crafted]));
         sandbox.loadProfileIntoForm(crafted.id);
-        assert(env.els['b-dial'].checked === false && vm.runInContext('bState.dial', sandbox) === false && vm.runInContext('bState.model', sandbox) === model,
-          `${model}: dial ${env.els['b-dial'].checked} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
-        assert(env.els['t-hd'].checked === true, `${model}: the Trough flag`);
+        assert(vm.runInContext('bState.tile', sandbox) === model && vm.runInContext('bState.model', sandbox) === model,
+          `${model}: tile ${vm.runInContext('bState.tile', sandbox)} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
+        assert(env.els['t-rrt'].value === 'ihd', `${model}: the Trough flag`);
       }
       // The Goti-HD fixture is unchanged: Goti, dialysis on, the Trough flag ticked.
       env.localStorage.setItem(PROF_KEY44, JSON.stringify(profFixture44));
       sandbox.loadProfileIntoForm(profFixture44[2].id);
       assert(vm.runInContext('bState.model', sandbox) === 'goti' && vm.runInContext('bState.dial', sandbox) === true
-        && env.els['b-dial'].checked === true && env.els['t-hd'].checked === true, 'the Goti-HD fixture changed');
+        && vm.runInContext('bState.tile', sandbox) === 'gotihd' && env.els['t-rrt'].value === 'ihd', 'the Goti-HD fixture changed');
     });
   });
 
@@ -7920,7 +7960,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(pC.hold && pC.holdBasis !== 'measured' && /^Hold: next dose not before .*; the fitted level at /.test(fn44('holdSentence')(pC)), fn44('holdSentence')(pC));
   });
   test('44.28a U1: peaks, an augmented-clearance peak and a level during the infusion never hold', () => {
-    // The re-reviewer's peak cases (/private/tmp/vprobe/peak.cjs): 60 M, 80 kg, 178 cm, SCr 1.0; 1.25 g q12h x 4
+    // The re-reviewer's peak cases (a scratch probe, not committed): 60 M, 80 kg, 178 cm, SCr 1.0; 1.25 g q12h x 4
     // over 1.5 h, the last started 2.5 h ago; a trough 30 min before it and a peak 1 h after the infusion ended
     // (36 s ago, as the probe drew it). Buelga and Goti.
     for (const model of ['buelga', 'goti']) for (const [tr, pk] of [[12, 28], [14, 32], [15, 35], [10, 25], [17, 40]]) {
@@ -9381,9 +9421,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     }
     assert(/both fall below/.test(plain(fn45('holdHeadHTML')(p))), plain(fn45('holdHeadHTML')(p)));
   });
-  // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor.
+  // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
+  // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.15\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0');
+    assert(/const APP_VERSION = '3\.1[56]\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -9530,10 +9571,1856 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 46 — Release 3 (v3.16.0, D28): dialysis
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 46 — Release 3 (v3.16.0, D28): dialysis');
+  console.log(`${'─'.repeat(60)}`);
+  const { profEnv44, withProf44, profFixture44, PROF_KEY44, trough44 } = __suiteShared;
+  const fn46 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const src46 = fs.readFileSync(htmlPath, 'utf8');
+  const KINDS46 = ['none', 'ihd', 'hybrid', 'crrt', 'pd'];
+  const TILES46 = ['buelga', 'goti', 'hughes', 'gotihd'];
+  const rrt46 = () => ({ t: vm.runInContext('state.rrt', sandbox), b: vm.runInContext('bState.rrt', sandbox), dial: vm.runInContext('bState.dial', sandbox),
+    tile: vm.runInContext('bState.tile', sandbox), model: vm.runInContext('bState.model', sandbox), mode: vm.runInContext('state.calcMode', sandbox) });
+  // Every SUITE 46 test leaves the shared sandbox off dialysis, on Buelga, in initial dosing.
+  const reset46 = () => vm.runInContext("state.rrt = 'none'; bState.rrt = 'none'; bState.dial = false; bState.model = 'buelga'; bState.tile = 'buelga'; state.calcMode = 'initial'; bState.result = null;", sandbox);
+  // The profile DOM (SUITE 44); a tile click is setBModel on its cell, as k33-k36 call it.
+  const env46 = (vals) => {
+    const env = profEnv44({}, vals || {});
+    Object.keys(vals || {}).forEach(k => env.get(k));
+    return env;
+  };
+  const tile46 = (env, t) => fn46('setBModel')(env.get('b-model-btn-' + t), t);
+
+  test('46.1 RRT_KINDS is parsed out of index.html by harness_constants.cjs: the five kinds, in order', () => {
+    const k = __extractConsts().RRT_KINDS;
+    assert(Array.isArray(k) && JSON.stringify(k) === JSON.stringify(KINDS46), JSON.stringify(k));
+  });
+
+  test('46.2 rrtOf maps a saved profile to one kind: PD modality, a haemodialysis flag in the core or the demographics, else none; a stored kind wins', () => {
+    const f = fn46('rrtOf'), of = (s) => f(s.core, s.demographics, s.pd);
+    assert(of({ pd: { modality: 'apd' } }) === 'pd', 'pd');
+    assert(of({ core: { hd: true } }) === 'ihd', 'core.hd');
+    assert(of({ demographics: { dial: true } }) === 'ihd', 'demographics.dial');
+    assert(of({}) === 'none', 'nothing');
+    assert(of({ core: { rrt: 'crrt', hd: true }, demographics: { dial: true } }) === 'crrt', 'core.rrt wins over core.hd');
+    assert(of({ core: { hd: false }, demographics: { dial: false }, pd: { modality: '' } }) === 'none', 'flags off');
+  });
+
+  test('46.3 CRRT and hybrid: AUC Precision refuses under each of the four tiles before anything is parsed or fitted, and writes no regimen', () => {
+    for (const kind of ['crrt', 'hybrid']) {
+      for (const t of TILES46) {
+        const env = env46({ 'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0' });
+        withProf44(env, ['parseBayesCourse'], (calls) => {
+          try {
+            tile46(env, t);
+            fn46('setRrt')(kind);
+            if (t !== 'gotihd') tile46(env, t);   // the tile the clinician left selected (Goti-HD itself moves the patient to haemodialysis)
+            vm.runInContext('bState.result = { rec: { dose: 1000, tau: 12 } };', sandbox);   // a previous answer in state
+            calls.parseBayesCourse = 0;
+            fn46('runBayesian')();
+            const html = env.els['b-results'] ? env.els['b-results'].innerHTML : '';
+            const word = kind === 'crrt' ? 'On CRRT — no model here describes it' : 'On hybrid therapy (SLED / PIRRT) — no model or target here describes it';
+            assert(calls.parseBayesCourse === 0, `${kind}/${t}: parseBayesCourse called ${calls.parseBayesCourse}`);
+            assert(html.indexOf(word) >= 0, `${kind}/${t}: ${html.slice(0, 300)}`);
+            assert(/<div data-rrt-reference data-module="auc" data-kind="[a-z]+" data-kg="80">[\s\S]*Guideline reference/.test(html), `${kind}/${t}: the reference, for the AUC weight (Task 25 fills the slot)`);
+            assert(kind !== 'crrt' || /data-onclick="k103"[^>]*>Open Trough-based · CRRT</.test(html), `${kind}/${t}: the CRRT button`);
+            assert(vm.runInContext('bState.result', sandbox) === null && !/rec-dose|vx-regimen/.test(html), `${kind}/${t}: a regimen was left or written`);
+          } finally { reset46(); }
+        });
+      }
+    }
+  });
+
+  test('46.4 intermittent haemodialysis: Buelga, Goti or Hughes refuses before parsing, naming Goti 2018 · HD with a button to it; the Goti-HD tile runs as today', () => {
+    for (const t of TILES46) {
+      const env = env46({});
+      withProf44(env, ['parseBayesCourse'], (calls) => {
+        try {
+          fn46('setRrt')('ihd');
+          tile46(env, t);
+          const s = rrt46();
+          assert(s.t === 'ihd' && s.b === 'ihd' && s.tile === t, `${t}: ${JSON.stringify(s)}`);
+          calls.parseBayesCourse = 0;
+          fn46('runBayesian')();
+          const html = env.els['b-results'] ? env.els['b-results'].innerHTML : '';
+          if (t === 'gotihd') {
+            assert(calls.parseBayesCourse === 1 && !/only Goti 2018 · HD carries dialysis/.test(html), `Goti-HD: parse ${calls.parseBayesCourse}, ${html.slice(0, 200)}`);
+            assert(s.model === 'goti' && s.dial === true, `Goti-HD runs as Goti with dialysis: ${JSON.stringify(s)}`);
+          } else {
+            assert(calls.parseBayesCourse === 0, `${t}: parseBayesCourse called`);
+            assert(/On haemodialysis — only Goti 2018 · HD carries dialysis/.test(html) && /data-onclick="k77"/.test(html), `${t}: ${html.slice(0, 300)}`);
+            assert(vm.runInContext('bState.result', sandbox) === null, `${t}: a result`);
+          }
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  test('46.5 Trough-Based: CRRT, hybrid and haemodialysis refuse even with initial dosing forced; the creatinine modes are unavailable and say why', () => {
+    const pt = { age: 60, tbw: 80, height: 178, scr: 1.0, 'init-interval': 12, 'init-tinf': 1 };
+    const words = { crrt: 'On CRRT', hybrid: 'On hybrid therapy (SLED / PIRRT)', ihd: 'On haemodialysis — use AUC Precision' };
+    for (const kind of ['crrt', 'hybrid', 'ihd']) {
+      const r = trough44('initial', 'M', pt, { rrt: kind, forceMode: 'initial' });
+      assert(r.text.indexOf(words[kind]) >= 0 && !/class="rec-dose"/.test(r.h) && !/IV q\d+h/.test(r.text), `${kind}: ${r.text.slice(0, 300)}`);
+      for (const m of ['initial', 'level', 'twolevels', 'randomlevel']) {
+        const b = r.get('mode-btn-' + m);
+        assert(b.getAttribute('aria-disabled') === 'true' && b.getAttribute('aria-describedby') === 'rrt-mode-note', `${kind}: ${m} ${JSON.stringify(b.attrs)}`);
+      }
+      assert(/^Not used on .+\. Set Renal replacement to None to use it\.$/.test(r.get('rrt-mode-note').textContent), `${kind}: ${r.get('rrt-mode-note').textContent}`);
+    }
+    // Off dialysis the same patient gets a regimen and every mode is available.
+    const none = trough44('initial', 'M', pt);
+    assert(/class="rec-dose"/.test(none.h) && none.get('mode-btn-initial').getAttribute('aria-disabled') !== 'true', none.text.slice(0, 200));
+  });
+
+  test('46.6 Review Focus 2: a v3.15.0 profile with core.hd under Buelga loads as haemodialysis on the Buelga tile, and AUC Precision refuses', () => {
+    const p = JSON.parse(JSON.stringify(profFixture44[0]));
+    p.id = 'p_rf2buelga'; p.label = 'Buelga HD'; p.snapshot.model = 'buelga';
+    p.snapshot.core.hd = true; p.snapshot.demographics.dial = false; delete p.snapshot.core.rrt;
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify([p]) }, {});
+    withProf44(env, ['parseBayesCourse'], (calls) => {
+      try {
+        fn46('loadProfileIntoForm')(p.id);
+        const s = rrt46();
+        assert(s.t === 'ihd' && s.b === 'ihd' && s.tile === 'buelga' && s.model === 'buelga' && s.dial === true, JSON.stringify(s));
+        assert(env.els['t-rrt'].value === 'ihd' && env.els['b-rrt'].value === 'ihd', `selects ${env.els['t-rrt'].value} / ${env.els['b-rrt'].value}`);
+        const parsedAtLoad = calls.parseBayesCourse;
+        fn46('runBayesian')();
+        const html = env.els['b-results'].innerHTML;
+        assert(calls.parseBayesCourse === parsedAtLoad && /only Goti 2018 · HD carries dialysis/.test(html) && vm.runInContext('bState.result', sandbox) === null, html.slice(0, 300));
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.7 validProfile refuses a stored renal-replacement kind it does not know (never repaired), and accepts the five and none at all', () => {
+    const base = JSON.parse(JSON.stringify(profFixture44[0]));
+    assert(fn46('validProfile')(base) === true, 'no core.rrt: valid');
+    for (const k of KINDS46) { const c = JSON.parse(JSON.stringify(base)); c.snapshot.core.rrt = k; assert(fn46('validProfile')(c) === true, k); }
+    for (const bad of ['sled', 'IHD', '', 3, null]) {
+      const c = JSON.parse(JSON.stringify(base)); c.snapshot.core.rrt = bad;
+      assert(fn46('validProfile')(c) === false, `core.rrt ${JSON.stringify(bad)} accepted`);
+    }
+    const sled = JSON.parse(JSON.stringify(base)); sled.id = 'p_sled1'; sled.snapshot.core.rrt = 'sled';
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify([sled]) }, {});
+    withProf44(env, [], () => {
+      assert(fn46('loadProfiles')().length === 0, 'listed');
+      const stored = JSON.parse(env.localStorage.getItem(PROF_KEY44));
+      assert(stored[0].snapshot.core.rrt === 'sled', 'repaired in storage');
+    });
+  });
+
+  test('46.8 save then load round-trips each of the five kinds (core.rrt, and core.hd for older readers)', () => {
+    for (const k of KINDS46) {
+      const vals = { age: '60', tbw: '80', height: '178', scr: '1.0', 'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0', mic: '1', 'b-mic': '1', 'b-auc-target': '450' };
+      const env = env46(vals);
+      withProf44(env, [], () => {
+        try {
+          fn46('setPatientSex')('M');
+          fn46('setRrt')(k);
+          env.labels[1].value = 'Round trip ' + k;
+          fn46('saveCurrentProfile')();
+          const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+          assert(p && p.snapshot.core.rrt === k && p.snapshot.core.hd === (k === 'ihd'), `${k}: stored ${JSON.stringify(p && p.snapshot.core)}`);
+          fn46('setRrt')(k === 'none' ? 'crrt' : 'none');
+          fn46('loadProfileIntoForm')(p.id);
+          const s = rrt46();
+          assert(s.t === k && s.b === k && env.els['t-rrt'].value === k && env.els['b-rrt'].value === k, `${k}: loaded ${JSON.stringify(s)}`);
+          assert(s.mode === (k === 'none' ? 'initial' : k), `${k}: Trough mode ${s.mode}`);
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  test('46.9 bState.dial is derived: it equals (rrt is haemodialysis) after every setRrt and every tile click; the tile follows the selector', () => {
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        const check = (what) => {
+          const s = rrt46();
+          assert(s.dial === (s.b === 'ihd') && s.t === s.b, `${what}: ${JSON.stringify(s)}`);
+          assert(env.els['t-rrt'].value === s.t && env.els['b-rrt'].value === s.t, `${what}: selects ${env.els['t-rrt'].value} / ${env.els['b-rrt'].value}`);
+        };
+        for (const from of KINDS46) for (const to of KINDS46) {
+          fn46('setRrt')(from); check(`setRrt ${from}`);
+          for (const t of TILES46) { tile46(env, t); check(`${from}, tile ${t}`); fn46('setRrt')(from); check(`${from} again after tile ${t}`); }
+          fn46('setRrt')(to); check(`${from} -> ${to}`);
+        }
+        fn46('setRrt')('none'); tile46(env, 'gotihd');
+        assert(rrt46().b === 'ihd' && rrt46().tile === 'gotihd', 'the Goti-HD tile sets haemodialysis');
+        fn46('setRrt')('none');
+        assert(rrt46().tile === 'goti' && rrt46().model === 'goti' && rrt46().dial === false, `haemodialysis to none moves Goti-HD to Goti: ${JSON.stringify(rrt46())}`);
+        tile46(env, 'buelga'); fn46('setRrt')('ihd');
+        assert(rrt46().tile === 'gotihd', 'choosing haemodialysis selects Goti 2018 · HD');
+        assert(fn46('setRrt')('sled') === false && rrt46().b === 'ihd', 'an unknown kind changes nothing');
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.10 the three dialysis checkboxes are gone: no #t-hd, #b-dial or #b-pd, in the markup or the script; one labelled selector in each column', () => {
+    for (const id of ['t-hd', 'b-dial', 'b-pd', 'b-dial-wrap']) {
+      assert(src46.indexOf(`id="${id}"`) < 0, `id="${id}" is still in index.html`);
+      assert(src46.indexOf(`getElementById('${id}')`) < 0 && src46.indexOf(`#${id}:`) < 0, `${id} is still read`);
+    }
+    assert(/<select id="t-rrt"[^>]*data-onchange="k102"/.test(src46) && /<select id="b-rrt"[^>]*data-onchange="k102"/.test(src46), 'one selector in each column');
+    for (const id of ['t-rrt', 'b-rrt']) {
+      const at = src46.indexOf(`<select id="${id}"`);
+      const sel = src46.slice(at, src46.indexOf('</select>', at));
+      const opts = [...sel.matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)].map(m => `${m[1]}=${m[2]}`);
+      assert(JSON.stringify(opts) === JSON.stringify(['none=None', 'ihd=Intermittent haemodialysis', 'hybrid=Hybrid (SLED / PIRRT)', 'crrt=CRRT', 'pd=Peritoneal dialysis']), `${id}: ${JSON.stringify(opts)}`);
+      assert(new RegExp(`<label class="field-label" for="${id}">Renal replacement</label>`).test(src46), `${id}: labelled`);
+    }
+    // In each column's patient section, after sex and before creatinine.
+    const tPanel = src46.slice(src46.indexOf('id="sex-label"'), src46.indexOf('id="scr"'));
+    const bPanel = src46.slice(src46.indexOf('id="b-sex-label"'), src46.indexOf('id="b-scr"'));
+    assert(tPanel.indexOf('id="t-rrt"') > 0 && bPanel.indexOf('id="b-rrt"') > 0, 'placement');
+  });
+
+  test('46.11 Clear in either column (resetForm, resetBayesian) leaves renal replacement None in both states', () => {
+    for (const [fnName, kind] of [['resetBayesian', 'pd'], ['resetForm', 'crrt'], ['resetBayesian', 'ihd'], ['resetForm', 'pd']]) {
+      const env = env46({});
+      withProf44(env, [], () => {
+        try {
+          fn46('setRrt')(kind);
+          fn46(fnName)();
+          const s = rrt46();
+          assert(s.t === 'none' && s.b === 'none' && s.dial === false && env.els['t-rrt'].value === 'none' && env.els['b-rrt'].value === 'none', `${fnName} after ${kind}: ${JSON.stringify(s)}`);
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  test('46.12 changing renal replacement after a run: the AUC result is marked stale, the Trough result is cleared', () => {
+    const env = env46({ 'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0' });
+    withProf44(env, [], () => {
+      try {
+        // An AUC result on screen, fitted off dialysis.
+        const res = env.get('b-results'); res.style.display = 'block'; res.innerHTML = '<h3 id="vx-regimen">1 g IV q12h</h3>';
+        const fp = fn46('bayesInputFingerprint')();
+        assert(typeof fp === 'string' && fp.length > 0, 'fingerprint');
+        vm.runInContext(`bState.result = { rec: { dose: 1000, tau: 12 } }; bState.resultFingerprint = ${JSON.stringify(fp)};`, sandbox);
+        assert(fn46('refreshStaleResult')('auc') === false, 'fresh before the change');
+        // A Trough result on screen.
+        const tr = env.get('results-content'); tr.style.display = 'flex'; tr.innerHTML = '<h3 id="tx-regimen">1 g IV q12h</h3>';
+        fn46('setRrt')('crrt');
+        assert(vm.runInContext('formRuns.auc.stale', sandbox) === true && res.classList.contains('is-stale') && /Inputs changed since this result/.test(res.innerHTML), `AUC: ${res.innerHTML.slice(0, 200)}`);
+        assert(tr.innerHTML === '' && tr.style.display === 'none', `Trough: ${tr.innerHTML.slice(0, 200)}`);
+        // Back to none: the fingerprint matches again.
+        fn46('setRrt')('none');
+        assert(vm.runInContext('formRuns.auc.stale', sandbox) === false, 'restoring the inputs clears the stale mark');
+      } finally { reset46(); }
+    });
+  });
+
+  // Review of Task 23, Important 1 (Review Focus 1): a refusal is not a result, so the stale mark never reached it.
+  test('46.13 an AUC renal-replacement refusal goes when the selector or the tile changes: the placeholder returns, never a refusal for the old modality', () => {
+    const shown = (env) => /data-rrt-refusal/.test(env.els['b-results'] ? env.els['b-results'].innerHTML : '');
+    const gone = (env) => !shown(env) && env.els['b-results'].innerHTML === '' && env.els['b-results'].style.display === 'none'
+      && env.els['b-placeholder'] && env.els['b-placeholder'].style.display === 'flex';
+    // The selector: each refused kind, run, then None.
+    for (const [kind, tile] of [['crrt', 'buelga'], ['hybrid', 'goti'], ['pd', 'hughes'], ['ihd', 'buelga']]) {
+      const env = env46({});
+      withProf44(env, [], () => {
+        try {
+          fn46('setRrt')(kind); tile46(env, tile);
+          fn46('runBayesian')();
+          assert(shown(env), `${kind}: no refusal to begin with: ${(env.els['b-results'] || {}).innerHTML}`);
+          fn46('setRrt')('none');
+          assert(gone(env), `${kind} → none: ${env.els['b-results'].innerHTML.slice(0, 160)} / ${env.els['b-results'].style.display}`);
+        } finally { reset46(); }
+      });
+    }
+    // The tile: the haemodialysis refusal, then its own button's action (the Goti-HD tile); and a tile change under CRRT.
+    for (const [kind, from, to] of [['ihd', 'goti', 'gotihd'], ['crrt', 'buelga', 'hughes']]) {
+      const env = env46({});
+      withProf44(env, [], () => {
+        try {
+          fn46('setRrt')(kind); tile46(env, from);
+          fn46('runBayesian')();
+          assert(shown(env), `${kind}/${from}: no refusal to begin with`);
+          tile46(env, to);
+          assert(gone(env), `${kind}: ${from} → ${to}: ${env.els['b-results'].innerHTML.slice(0, 160)}`);
+          assert(rrt46().b === kind, `${kind}: the tile changed renal replacement: ${JSON.stringify(rrt46())}`);
+        } finally { reset46(); }
+      });
+    }
+    // Unchanged selector and tile: the refusal stays (nothing about the patient moved).
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        fn46('setRrt')('crrt'); tile46(env, 'goti'); fn46('runBayesian')();
+        fn46('setRrt')('crrt'); tile46(env, 'goti');
+        assert(shown(env), 'the same kind and tile cleared the refusal');
+      } finally { reset46(); }
+    });
+  });
+
+  // Controller ruling R74: v3.15.0 gave such a profile no answer in either module; mapping it to PD now would give a dose.
+  test('46.14 a legacy profile with both a PD form and a haemodialysis flag is refused on load, naming both; nothing loads and storage is unchanged', () => {
+    const mk = (id, f) => { const p = JSON.parse(JSON.stringify(profFixture44[0])); p.id = id; p.label = id; delete p.snapshot.core.rrt; f(p.snapshot); return p; };
+    const both = [
+      mk('p_bothcore', s => { s.pd.modality = 'ccpd'; s.core.hd = true; }),
+      mk('p_bothdemo', s => { s.pd.modality = 'apd'; s.demographics.dial = true; s.model = 'goti'; }),
+    ];
+    for (const p of both) {
+      const raw = JSON.stringify([p]);
+      const env = profEnv44({ [PROF_KEY44]: raw }, { age: '82', 'b-age': '82' });
+      ['age', 'b-age'].forEach(k => env.get(k));
+      withProf44(env, ['resetForm', 'resetBayesian', 'applyPdForm', 'setRrt'], (calls) => {
+        try {
+          vm.runInContext("state.rrt = 'crrt'; bState.rrt = 'crrt';", sandbox);   // the screen before the load
+          fn46('loadProfileIntoForm')(p.id);
+          const status = env.status.map(x => x.textContent).join(' | ');
+          assert(/records both haemodialysis and peritoneal dialysis/.test(status) && /nothing was loaded/.test(status), `${p.id}: ${status}`);
+          assert(calls.resetForm === 0 && calls.resetBayesian === 0 && calls.applyPdForm === 0 && calls.setRrt === 0, `${p.id}: loaded ${JSON.stringify(calls)}`);
+          assert(env.els.age.value === '82' && env.els['b-age'].value === '82' && vm.runInContext('state.rrt', sandbox) === 'crrt', `${p.id}: the form changed`);
+          assert(env.localStorage.getItem(PROF_KEY44) === raw, `${p.id}: storage changed`);
+        } finally { reset46(); }
+      });
+    }
+    // One flag only loads as before (46.2's mappings), and a stored kind decides even beside both flags.
+    for (const [p, want] of [
+      [mk('p_pdonly', s => { s.pd.modality = 'ccpd'; s.core.hd = false; s.demographics.dial = false; }), 'pd'],
+      [mk('p_hdonly', s => { s.pd.modality = ''; s.core.hd = true; }), 'ihd'],
+      [mk('p_bothrrt', s => { s.pd.modality = 'ccpd'; s.core.hd = true; s.core.rrt = 'pd'; }), 'pd'],
+    ]) {
+      const env = profEnv44({ [PROF_KEY44]: JSON.stringify([p]) }, {});
+      withProf44(env, [], () => {
+        try {
+          fn46('loadProfileIntoForm')(p.id);
+          assert(rrt46().t === want && rrt46().b === want, `${p.id}: ${JSON.stringify(rrt46())}`);
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  // ── Task 24: typed session rows, hybrid sessions to 24 h, the sessions-per-week caution (D28) ──
+  // The plan's 46.13–46.20 are 46.15–46.22 here (controller ruling R76); 46.23 is the syncHdSection fix
+  // (Task 23 review minor) and 46.24 the hybrid refusal reading its sessions (ruling R75).
+  const hdH46 = (date, time) => new Date(`${date}T${time}`).getTime() / 3600000;
+  // The real parseBayesCourse on a small form, with renal replacement set as given.
+  const sess46 = (rrt, hdRows, fn) => withBayesForm({ doses: [[1000, 1, '2026-11-16', '13:00']], hdRows }, (env) => {
+    vm.runInContext(`bState.rrt = ${JSON.stringify(rrt)};`, sandbox);
+    return fn ? fn(env) : fn46('parseBayesCourse')();
+  });
+  // A fictional Goti-HD course run through runBayesian and the render, the clock frozen so two runs compare.
+  const NOW46 = new Date('2026-11-21T12:00').getTime();
+  const hdRun46 = (hdRows, stub, rrt) => withBayesForm({
+    'b-age': '64', 'b-tbw': '78', 'b-height': '172', 'b-scr': '6.2', 'b-auc-target': '450', 'b-mic': '1',
+    doses: [[2000, 2, '2026-11-16', '13:00'], [750, 1, '2026-11-18', '13:00'], [750, 1, '2026-11-20', '13:00']],
+    levels: [[17.4, '2026-11-20', '07:30']], hdRows }, (env) => {
+    const names = ['setTimeout', 'announceResult'].concat(Object.keys(stub || {}));
+    const keep = {}; names.forEach(n => { keep[n] = sandbox[n]; });
+    const realNow = Date.now;
+    sandbox.setTimeout = () => 0; sandbox.announceResult = () => {};
+    Object.assign(sandbox, stub || {});
+    Date.now = () => NOW46;
+    env.document.body = env.el('body');   // a page: the error summary is written
+    vm.runInContext(`bState.model = 'goti'; bState.tile = 'gotihd'; bState.rrt = ${JSON.stringify(rrt || 'ihd')}; bState.dial = bState.rrt === 'ihd'; bState.sex = 'M';`, sandbox);
+    try {
+      fn46('runBayesian')();
+      const r = vm.runInContext('bState.result', sandbox);
+      const html = (env.els['b-results'] || {}).innerHTML || '';
+      return { r, html, text: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ') };
+    } finally { Date.now = realNow; names.forEach(n => { sandbox[n] = keep[n]; }); }
+  });
+  const WORD46 = 'More than three sessions in seven days';
+
+  test('46.15 under hybrid a 14 h row parses; under haemodialysis a 14 h row is refused as prolonged therapy, naming the row', () => {
+    const ok = sess46('hybrid', [['2026-11-16', '20:00', '14', 'hybrid']]);
+    assert(!ok.errors.length, ok.errors.join('; '));
+    const s = ok.sessions[0];
+    assert(ok.sessions.length === 1 && s.type === 'hybrid' && s.hours === 14 && s.n === 1 && s.label === '2026-11-16 20:00', JSON.stringify(ok.sessions));
+    assertClose(s.endH - s.startH, 14, 1e-9, 'end = start + length, across midnight by arithmetic');
+    const hd = sess46('ihd', [['2026-11-16', '20:00', '14', 'ihd']]);
+    assert(hd.sessions.length === 0 && hd.errors.length === 1
+      && /^HD session row 1: .*a session longer than 12 h is prolonged therapy: set Renal replacement to Hybrid/.test(hd.errors[0]), hd.errors.join('; '));
+    const twelve = sess46('ihd', [['2026-11-16', '20:00', '12', 'ihd']]);
+    assert(!twelve.errors.length && twelve.sessions[0].type === 'ihd' && twelve.sessions[0].hours === 12, twelve.errors.join('; '));
+  });
+
+  test('46.16 INPUT_LIMITS.hybridHours is 0.5–24 h beside hdHours (0.5–12, unchanged): a 24 h hybrid row parses; 24.25 h is refused through checkValue', () => {
+    const lim = vm.runInContext('JSON.stringify([INPUT_LIMITS.hybridHours, INPUT_LIMITS.hdHours])', sandbox);
+    assert(lim === JSON.stringify([{ min: 0.5, max: 24, label: 'Session length', unit: 'h' }, { min: 0.5, max: 12, label: 'Session length', unit: 'h' }]), lim);
+    const p24 = sess46('hybrid', [['2026-11-16', '08:00', '24', 'hybrid']]);
+    assert(!p24.errors.length && p24.sessions[0].hours === 24, p24.errors.join('; '));
+    const c = fn46('checkValue')('24.25', 'hybridHours');
+    assert(!c.ok && c.message === 'Session length must be between 0.5 and 24 h. Got 24.25.', JSON.stringify(c));
+    const p = sess46('hybrid', [['2026-11-16', '08:00', '24.25', 'hybrid']]);
+    assert(p.sessions.length === 0 && p.errors.length === 1 && p.errors[0] === `Session row 1: missing or invalid session length (${c.message}).`, p.errors.join('; '));   // Task 25: a hybrid row is named as it is labelled
+  });
+
+  test('46.17 a row typed for the other kind is a blocking error naming the row; Goti-HD fits nothing with it', () => {
+    const toIhd = sess46('ihd', [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '10', 'hybrid']]);
+    assert(toIhd.errors.indexOf('HD session row 2 is typed hybrid while Renal replacement is intermittent haemodialysis.') >= 0 && toIhd.sessions.length === 0, toIhd.errors.join('; '));
+    const toHyb = sess46('hybrid', [['2026-11-16', '08:00', '10', 'hybrid'], ['2026-11-18', '08:00', '4', 'ihd']]);
+    assert(toHyb.errors.indexOf('Session row 2 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, toHyb.errors.join('; '));   // Task 25: named as labelled
+    // parseBayesSessions returns the errors alone (ruling R75's shape), and the message points at the row's type.
+    const only = sess46('hybrid', [['2026-11-18', '08:00', '4', 'ihd']], (env) => {
+      env.document.body = env.el('body');
+      const r = fn46('parseBayesSessions')('hybrid');
+      return { r, target: fn46('courseErrorTarget')(r.errors && r.errors[0]) };
+    });
+    assert(!('sessions' in only.r) && only.r.errors.length === 1 && JSON.stringify(only.target) === '["b-hd-type-1"]', JSON.stringify(only));
+    // Blocking: Goti-HD shows the error and keeps no result.
+    const run = hdRun46([['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '4', 'hybrid']]);
+    assert(run.r === null && run.text.indexOf('HD session row 2 is typed hybrid while Renal replacement is intermittent haemodialysis.') >= 0 && !/rec-dose/.test(run.html), run.text.slice(0, 300));
+  });
+
+  test('46.18 the overlap check still fires across a 20 h hybrid row crossing midnight', () => {
+    const ovl = sess46('hybrid', [['2026-11-16', '20:00', '20', 'hybrid'], ['2026-11-17', '08:00', '4', 'hybrid']]);
+    assert(ovl.errors.some(e => e === 'The session at 2026-11-17 08:00 starts before the 2026-11-16 20:00 session ends — check the times.'), ovl.errors.join('; '));   // Task 25: no HD copy under hybrid
+    const after = sess46('hybrid', [['2026-11-16', '20:00', '20', 'hybrid'], ['2026-11-17', '16:00', '4', 'hybrid']]);
+    assert(!after.errors.length && after.sessions.length === 2, after.errors.join('; '));
+  });
+
+  test('46.19 sessionsPerWeekMax counts the most session starts in any seven calendar days', () => {
+    const f = fn46('sessionsPerWeekMax');
+    const at = (list) => list.map(([d, t], i) => ({ n: i + 1, startH: hdH46(d, t || '08:00') }));
+    assert(__extractConsts().HD_SESSIONS_PER_WEEK_CAUTION === 3, 'HD_SESSIONS_PER_WEEK_CAUTION parsed');
+    assert(f(at([['2026-11-16'], ['2026-11-18'], ['2026-11-20']])) === 3, 'Mon/Wed/Fri');
+    assert(f(at([['2026-11-16'], ['2026-11-17'], ['2026-11-18'], ['2026-11-20']])) === 4, 'Mon/Tue/Wed/Fri');
+    assert(f(at([['2026-11-16'], ['2026-11-18'], ['2026-11-21'], ['2026-11-23']])) === 3, 'four over 8 days, no 7-day window of four');
+    assert(f(at([['2026-11-23'], ['2026-11-16'], ['2026-11-20'], ['2026-11-18']])) === 3, 'order does not matter');
+    assert(f(at([['2026-11-16'], ['2026-11-18'], ['2026-11-20'], ['2026-11-23'], ['2026-11-25'], ['2026-11-27']])) === 3, 'two weeks of MWF');
+    assert(f(at(['16', '17', '18', '19', '20', '21', '22'].map(d => [`2026-11-${d}`]))) === 7, 'daily');
+    assert(f([]) === 0 && f(null) === 0, 'none');
+    // Calendar days: a thrice-weekly schedule whose times move is still thrice weekly (154 h apart, a new week).
+    assert(f(at([['2026-11-16', '20:00'], ['2026-11-18'], ['2026-11-20'], ['2026-11-23', '06:00']])) === 3, 'Mon 20:00 … next Mon 06:00');
+    // And across each 2026 clock change (US 8 Mar, Europe 29 Mar, New Zealand 27 Sep): a 167 h week is still a week.
+    for (const w of [['02', '04', '06', '09'], ['23', '25', '27', '30']]) assert(f(at(w.map(d => [`2026-03-${d}`]))) === 3, `March ${w}`);
+    assert(f(at([['2026-09-21'], ['2026-09-23'], ['2026-09-25'], ['2026-09-28']])) === 3, 'September (NZ)');
+  });
+
+  test('46.20 on Goti-HD four sessions in seven days carry one caution line citing Rec 13 and Rec 14, and change no number', () => {
+    const rows = [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-17', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '4', 'ihd'], ['2026-11-20', '08:00', '4', 'ihd']];
+    const on = hdRun46(rows);
+    assert(on.r && on.r.model === 'goti' && on.r.dial === true, `the fit ran: ${on.text.slice(0, 300)}`);
+    assert(Array.isArray(on.r.cautions) && on.r.cautions.length === 1 && on.r.cautions[0].word === WORD46, JSON.stringify(on.r.cautions));
+    // One note: once in the answer's notes, once in "All notes" (which lists every note, by design).
+    const ev = on.html.indexOf('id="ev-notes"'), count = (h) => h.split(WORD46).length - 1;
+    assert(ev > 0 && count(on.html.slice(0, ev)) === 1 && count(on.html.slice(ev)) === 1, `the caution appears ${count(on.html)} times (All notes at ${ev})`);
+    const line = on.r.cautions[0].html;
+    assert(/Rybak 2020 Rec 13/.test(line) && /thrice-weekly/.test(line) && /Rec 14/.test(line) && /4 sessions/.test(line) && /changes no number/.test(line), line);
+    const off = hdRun46(rows, { sessionsPerWeekCautions: () => [] });
+    assert(off.r && off.r.cautions.length === 0 && off.html.indexOf(WORD46) < 0, 'suppressed');
+    // Every number in the result object (the render hangs a self-referencing regimen on it: cycles are named, not followed).
+    const minus = (r) => { const seen = new WeakSet();
+      return JSON.stringify(Object.assign({}, r, { cautions: undefined }), (k, v) => {
+        if (v && typeof v === 'object') { if (seen.has(v)) return '[seen]'; seen.add(v); }
+        return v; }); };
+    assert(minus(on.r) === minus(off.r), 'the result object differs beyond its cautions');
+    const verdict = (h) => (h.match(/<section class="vx-verdict"[\s\S]*?<\/section>/) || [''])[0];
+    assert(verdict(on.html) && verdict(on.html) === verdict(off.html), 'the verdict differs');
+  });
+
+  test('46.21 three sessions in seven days (two weeks of Mon/Wed/Fri): no caution', () => {
+    const rows = ['16', '18', '20', '23', '25', '27'].map(d => [`2026-11-${d}`, '08:00', '4', 'ihd']);
+    const r = hdRun46(rows);
+    assert(r.r && Array.isArray(r.r.cautions) && r.r.cautions.length === 0 && r.html.indexOf(WORD46) < 0, JSON.stringify(r.r && r.r.cautions));
+  });
+
+  test('46.22 a saved session row keeps its type; a v3.15.0 row without one loads as haemodialysis; an unknown type is refused', () => {
+    const snap = withBayesForm({ hdRows: [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '20:00', '14', 'hybrid']] }, () => fn46('snapshotBayesForm')());
+    assert(JSON.stringify(snap.hdSessions) === JSON.stringify([{ date: '2026-11-16', time: '08:00', hours: '4', type: 'ihd' },
+      { date: '2026-11-18', time: '20:00', hours: '14', type: 'hybrid' }]), JSON.stringify(snap.hdSessions));
+    const loaded = withBayesForm({}, (env) => {
+      // Rows the page would append: register each <tr> under its id so the row selector finds it.
+      env.document.createElement = () => ({ id: '', className: '', innerHTML: '', remove() {} });
+      env.el('b-hd-tbody').appendChild = (tr) => { env.els[tr.id] = tr; };
+      vm.runInContext("bState.rrt = 'hybrid';", sandbox);   // a new row would default to hybrid
+      fn46('applyHdSessionRows')(snap.hdSessions.concat([{ date: '2026-11-20', time: '08:00', hours: '4' }]));
+      return env.document.querySelectorAll('[id^="b-hd-row-"]').map(row => {
+        const n = row.id.replace('b-hd-row-', '');
+        return ['date', 'time', 'hours', 'type'].map(k => env.el(`b-hd-${k}-${n}`).value).join(' ');
+      });
+    });
+    assert(JSON.stringify(loaded) === JSON.stringify(['2026-11-16 08:00 4 ihd', '2026-11-18 20:00 14 hybrid', '2026-11-20 08:00 4 ihd']), JSON.stringify(loaded));
+    const base = JSON.parse(JSON.stringify(profFixture44[0]));
+    const withRow = (row) => { const c = JSON.parse(JSON.stringify(base)); c.snapshot.hdSessions = [row]; return fn46('validProfile')(c); };
+    assert(withRow({ date: '2026-11-16', time: '08:00', hours: '4' }) === true && withRow({ date: '2026-11-16', time: '08:00', hours: '4', type: 'hybrid' }) === true, 'valid rows');
+    for (const bad of ['sled', 'crrt', '', null, 3]) assert(withRow({ date: '2026-11-16', time: '08:00', hours: '4', type: bad }) === false, `type ${JSON.stringify(bad)} accepted`);
+  });
+
+  test('46.23 the session section shows on Goti-HD under haemodialysis, on any tile under hybrid, and whenever a row exists; not on plain Goti under haemodialysis', () => {
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        const shown = () => env.els['b-hd-wrap'].hidden === false;
+        env.get('b-hd-wrap');
+        fn46('setRrt')('ihd'); assert(rrt46().tile === 'gotihd' && shown(), 'Goti-HD on haemodialysis');
+        tile46(env, 'goti'); assert(rrt46().b === 'ihd' && !shown(), 'plain Goti on haemodialysis (the refused tile)');
+        fn46('setRrt')('hybrid'); tile46(env, 'buelga'); assert(shown(), 'hybrid, Buelga');
+        tile46(env, 'hughes'); assert(shown(), 'hybrid, Hughes');
+        fn46('setRrt')('none'); assert(!shown(), 'none');
+        fn46('setRrt')('crrt'); assert(!shown(), 'CRRT');
+        env.document.querySelector = (sel) => (/b-hd-row-/.test(sel) ? env.get('b-hd-row-1') : null);
+        fn46('syncHdSection')(); assert(shown(), 'a row exists');
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.24 hybrid in AUC Precision (R75): the session rows are read for the reference, an error shows beside the refusal, nothing is fitted; CRRT reads nothing', () => {
+    const spy = (env, kind, fn) => {
+      const real = { c: sandbox.parseBayesCourse, s: sandbox.parseBayesSessions }, calls = { c: 0, s: 0 };
+      sandbox.parseBayesCourse = function () { calls.c++; return real.c.apply(this, arguments); };
+      sandbox.parseBayesSessions = function () { calls.s++; return real.s.apply(this, arguments); };
+      const keep = { setTimeout: sandbox.setTimeout, announceResult: sandbox.announceResult };
+      sandbox.setTimeout = () => 0; sandbox.announceResult = () => {};
+      env.document.body = env.el('body');
+      vm.runInContext(`bState.rrt = ${JSON.stringify(kind)}; bState.dial = false; bState.model = 'goti'; bState.tile = 'goti'; bState.result = { rec: { dose: 1000, tau: 12 } }; bState.hybridSessions = 'stale';`, sandbox);
+      try { fn46('runBayesian')(); return fn(calls, (env.els['b-results'] || {}).innerHTML || ''); }
+      finally { sandbox.parseBayesCourse = real.c; sandbox.parseBayesSessions = real.s; Object.assign(sandbox, keep); }
+    };
+    const D = [[1000, 1, '2026-11-16', '13:00']];
+    withBayesForm({ doses: D, hdRows: [['2026-11-17', '20:00', '14', 'hybrid'], ['2026-11-16', '08:00', '8', 'hybrid']] }, (env) => spy(env, 'hybrid', (calls, html) => {
+      const hs = vm.runInContext('bState.hybridSessions', sandbox);
+      assert(calls.c === 0 && calls.s === 1, JSON.stringify(calls));
+      assert(/On hybrid therapy \(SLED \/ PIRRT\)/.test(html) && /data-rrt-refusal/.test(html) && vm.runInContext('bState.result', sandbox) === null, html.slice(0, 300));
+      assert(Array.isArray(hs) && hs.length === 2 && hs[0].n === 2 && hs[1].type === 'hybrid' && hs[1].label === '2026-11-17 20:00', JSON.stringify(hs));
+      assertClose(hs[1].endH, hdH46('2026-11-17', '20:00') + 14, 1e-9, 'the end Task 25 names');
+    }));
+    withBayesForm({ doses: D, hdRows: [['2026-11-16', '08:00', '4', 'ihd']] }, (env) => spy(env, 'hybrid', (calls, html) => {
+      assert(calls.c === 0 && /On hybrid therapy/.test(html) && html.indexOf('Session row 1 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, html.slice(0, 600));   // Task 25: named as labelled
+      assert(vm.runInContext('bState.hybridSessions', sandbox) === null && vm.runInContext('bState.result', sandbox) === null, 'sessions or a result kept');
+    }));
+    withBayesForm({ doses: D, hdRows: [['2026-11-16', '08:00', '4', 'hybrid']] }, (env) => spy(env, 'crrt', (calls, html) => {
+      assert(calls.c === 0 && calls.s === 0 && /On CRRT/.test(html), JSON.stringify(calls));
+    }));
+  });
+
+  // ── Task 25: the guideline references for CRRT and hybrid, and the local maximum (D28) ──
+  // The plan's 46.21–46.32 are 46.25–46.36 here; 46.37 is the session copy under hybrid (Task 24 review, must
+  // fix) and 46.38 the hybrid Trough column (ruling R73). Fictional patients, 70 kg unless stated.
+  const ref46 = (kind, kg, max) => fn46('rrtReferenceDoses')(kind, kg, max == null ? null : max);
+  const refHtml46 = (ref, opts) => fn46('rrtReferenceHTML')(ref, opts || {});
+  const cells46 = (r) => JSON.stringify({ load: r.load.map(c => [c.mgPerKg, c.raw, c.mg, c.capped]), maint: r.maint.map(c => [c.mgPerKg, c.raw, c.mg, c.capped]) });
+  const text46 = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const BAND46 = /15\s*[–-]\s*20 mg\/L/;
+  // runBayesian on a small AUC form, renal replacement as given; the tile left on plain Goti.
+  const aucRun46 = (env, kind) => {
+    const keep = { setTimeout: sandbox.setTimeout, announceResult: sandbox.announceResult };
+    sandbox.setTimeout = () => 0; sandbox.announceResult = () => {};
+    env.document.body = env.el('body');
+    vm.runInContext(`bState.rrt = ${JSON.stringify(kind)}; bState.dial = false; bState.model = 'goti'; bState.tile = 'goti'; bState.result = null;`, sandbox);
+    try { fn46('runBayesian')(); return (env.els['b-results'] || {}).innerHTML || ''; }
+    finally { Object.assign(sandbox, keep); }
+  };
+
+  test('46.25 every Task 25 constant is parsed out of index.html by harness_constants.cjs with the verified table\'s value, and names Rybak 2020 (and its grade) on its line', () => {
+    const K = __extractConsts();
+    const want = { CRRT_LOAD_MG_PER_KG_MIN: 20, CRRT_LOAD_MG_PER_KG_MAX: 25, CRRT_MAINT_MG_PER_KG_MIN: 7.5, CRRT_MAINT_MG_PER_KG_MAX: 10,
+      CRRT_MAINT_INTERVAL_H: 12, CRRT_EFFLUENT_MIN_ML_KG_H: 20, CRRT_EFFLUENT_MAX_ML_KG_H: 25, CRRT_FIRST_LEVEL_WITHIN_H: 24,
+      HYBRID_LOAD_MG_PER_KG_MIN: 20, HYBRID_LOAD_MG_PER_KG_MAX: 25, HYBRID_MAINT_MG_PER_KG: 15, RRT_NO_SAMPLE_AFTER_SESSION_H: 2 };
+    for (const [k, v] of Object.entries(want)) assert(K[k] === v, `${k}: ${K[k]}`);
+    const graded = ['CRRT_LOAD_MG_PER_KG_MIN', 'CRRT_LOAD_MG_PER_KG_MAX', 'CRRT_MAINT_MG_PER_KG_MIN', 'CRRT_MAINT_MG_PER_KG_MAX', 'CRRT_MAINT_INTERVAL_H',
+      'CRRT_EFFLUENT_MIN_ML_KG_H', 'CRRT_EFFLUENT_MAX_ML_KG_H', 'HYBRID_LOAD_MG_PER_KG_MIN', 'HYBRID_LOAD_MG_PER_KG_MAX', 'HYBRID_MAINT_MG_PER_KG'];
+    for (const k of Object.keys(want)) {
+      const line = (src46.match(new RegExp(`^const ${k} = [^\\n]*`, 'm')) || [''])[0];
+      assert(/Rybak 2020/.test(line) && /Rec 1[56]/.test(line), `${k}: ${line}`);
+      if (graded.indexOf(k) >= 0) assert(/Rec 16 \(B-II\)/.test(line) || /Rec 15 \(B-III\)/.test(line), `${k} has no grade: ${line}`);
+    }
+  });
+
+  test('46.26 CRRT at 70 kg: loads 1.5 g (20 mg/kg, raw 1,400) and 1.75 g (25); maintenance 500 mg (7.5, raw 525) and 750 mg (10, raw 700) q12h; the guideline cap', () => {
+    const r = ref46('crrt', 70, null);
+    assert(r && r.kind === 'crrt' && r.abwKg === 70 && r.intervalH === 12, JSON.stringify(r));
+    assert(cells46(r) === JSON.stringify({ load: [[20, 1400, 1500, false], [25, 1750, 1750, false]], maint: [[7.5, 525, 500, false], [10, 700, 750, false]] }), cells46(r));
+    assert(r.cap && r.cap.mg === 3000 && r.cap.by === 'guideline', JSON.stringify(r.cap));
+  });
+
+  test('46.27 hybrid at 70 kg: loads 1.5 g / 1.75 g; maintenance 1 g (15 mg/kg, raw 1,050); no interval', () => {
+    const r = ref46('hybrid', 70, null);
+    assert(r && r.kind === 'hybrid' && r.abwKg === 70 && r.intervalH === null && r.cap.by === 'guideline' && r.cap.mg === 3000, JSON.stringify(r));
+    assert(cells46(r) === JSON.stringify({ load: [[20, 1400, 1500, false], [25, 1750, 1750, false]], maint: [[15, 1050, 1000, false]] }), cells46(r));
+  });
+
+  test('46.28 CRRT at 140 kg: the 25 mg/kg load (raw 3,500) is capped at 3 g and marked; the footer names Rybak 2020 Rec 11', () => {
+    const r = ref46('crrt', 140, null);
+    assert(cells46(r) === JSON.stringify({ load: [[20, 2800, 2750, false], [25, 3500, 3000, true]], maint: [[7.5, 1050, 1000, false], [10, 1400, 1500, false]] }), cells46(r));
+    const h = refHtml46(r), t = text46(h);
+    assert(h.indexOf('3 g*') >= 0 && h.indexOf('2.75 g*') < 0, 'the capped cell is marked, and only it');
+    assert(/at most 3 g \(Rybak 2020, Rec 11\)/.test(t) && /\* capped/.test(t), t);
+  });
+
+  test('46.29 a local maximum lower than 3 g caps load and maintenance and says "your setting"; a higher one leaves the guideline cap, named; PD\'s load reads the same cap rule, unchanged', () => {
+    const r = ref46('crrt', 140, 2000);
+    assert(r.cap.mg === 2000 && r.cap.by === 'local', JSON.stringify(r.cap));
+    assert(r.load.every(c => c.mg === 2000 && c.capped) && r.maint[0].mg === 1000 && !r.maint[0].capped && r.maint[1].mg === 1500 && !r.maint[1].capped, cells46(r));
+    const t = text46(refHtml46(r));
+    assert(/at most 2 g \(your setting\)/.test(t) && !/at most 3 g/.test(t), t);
+    const g = ref46('crrt', 140, 4000);
+    assert(g.cap.mg === 3000 && g.cap.by === 'guideline' && g.load[1].mg === 3000 && g.load[1].capped, JSON.stringify(g.cap));
+    const tg = text46(refHtml46(g));
+    assert(/at most 3 g \(Rybak 2020, Rec 11\)/.test(tg) && !/your setting/.test(tg), tg);
+    const hy = ref46('hybrid', 150, 2000);
+    assert(hy.maint[0].raw === 2250 && hy.maint[0].mg === 2000 && hy.maint[0].capped && hy.cap.by === 'local', cells46(hy));
+    // pdLoadingDose: the same output as v3.15.0, through the shared rule.
+    const pj = (kg, m) => JSON.stringify(fn46('pdLoadingDose')(kg, m));
+    assert(pj(70) === JSON.stringify({ mg: 1500, mgPerKg: 1500 / 70, capped: false, cap: 3000 }), pj(70));
+    assert(pj(160, 2000) === JSON.stringify({ mg: 2000, mgPerKg: 2000 / 160, capped: true, cap: 2000 }), pj(160, 2000));
+    assert(pj(160, 4000) === JSON.stringify({ mg: 3000, mgPerKg: 3000 / 160, capped: true, cap: 3000 }), pj(160, 4000));
+    assert(pj(160) === JSON.stringify({ mg: 3000, mgPerKg: 3000 / 160, capped: true, cap: 3000 }), pj(160));
+    const pdSrc = fn46('pdLoadingDose').toString();
+    assert(/doseCapOf\(/.test(pdSrc) && /cappedWeightDose\(/.test(pdSrc), 'pdLoadingDose reads the shared cap rule');
+  });
+
+  test('46.30 an effluent rate only states the per-kg rate and whether it is inside 20–25 mL/kg/h: the dose cells never change (no scaling)', () => {
+    const r = ref46('crrt', 70, null), before = JSON.stringify(r);
+    const table = (h) => (h.match(/<table[\s\S]*?<\/table>/) || [''])[0];
+    const h0 = refHtml46(r, { effluentMlH: null }), h1 = refHtml46(r, { effluentMlH: 1500 }), h2 = refHtml46(r, { effluentMlH: 2000 });
+    const t0 = text46(h0), t1 = text46(h1), t2 = text46(h2);
+    assert(/21\.4 mL\/kg\/h/.test(t1) && /\binside\b/.test(t1) && !/\boutside\b/.test(t1) && !/no figure/.test(t1), t1);
+    assert(/28\.6 mL\/kg\/h/.test(t2) && /\boutside\b/.test(t2) && /the guideline gives no figure for this rate; the dose is not scaled/.test(t2), t2);
+    assert(!/\binside\b|\boutside\b/.test(t0), t0);
+    assert(table(h0) && table(h1) === table(h0) && table(h2) === table(h0), 'the dose cells changed with the effluent');
+    assert(JSON.stringify(r) === before, 'the reference object changed');
+    assert(/\binside\b/.test(text46(refHtml46(r, { effluentMlH: 1750 }))) && /\binside\b/.test(text46(refHtml46(r, { effluentMlH: 1400 }))), 'the bounds are inside');
+    assert(/\boutside\b/.test(text46(refHtml46(r, { effluentMlH: 1000 }))), 'below the range is outside');
+  });
+
+  test('46.31 weight missing, 0 or outside INPUT_LIMITS: no reference, and the screen refuses naming weight in both modules; never NaN', () => {
+    for (const kg of [undefined, null, NaN, '', 0, -5, 19.9, 400.1, 1000, Infinity]) {
+      assert(ref46('crrt', kg, null) === null && ref46('hybrid', kg, null) === null, `weight ${kg}`);
+    }
+    assert(ref46('crrt', 20, null) && ref46('hybrid', 400, null), 'the limits themselves');
+    assert(ref46('pd', 70, null) === null && ref46('ihd', 70, null) === null && ref46('none', 70, null) === null, 'only CRRT and hybrid');
+    assert(fn46('rrtReferenceHTML')(null, {}) === '', 'no reference, no markup');
+    for (const [tbw, want] of [['', /Weight is required/], ['0', /Weight must be between 20 and 400 kg/], ['401', /Weight must be between 20 and 400 kg/]]) {
+      for (const kind of ['crrt', 'hybrid']) {
+        const r = trough44('initial', 'M', { tbw }, { rrt: kind });
+        assert(want.test(r.text) && /No guideline reference without a weight/.test(r.text) && !/NaN|undefined|Infinity/.test(r.h) && !/mg\/kg/.test(r.text), `Trough ${kind}, weight "${tbw}": ${r.text.slice(0, 400)}`);
+      }
+    }
+    for (const kind of ['crrt', 'hybrid']) {
+      const html = withBayesForm({ 'b-tbw': '0', doses: [[1000, 1, '2026-11-16', '13:00']] }, (env) => aucRun46(env, kind));
+      const t = text46(html);
+      assert(/data-rrt-refusal/.test(html) && /No guideline reference without a weight/.test(t) && /Weight must be between 20 and 400 kg/.test(t) && !/NaN|undefined|Infinity/.test(html), `AUC ${kind}: ${t.slice(0, 400)}`);
+    }
+  });
+
+  test('46.32 the hybrid reference: B-III, the load without waiting, maintenance after each session, the 2 h sampling sentence, "No pre-session target", and no 15–20 mg/L', () => {
+    const r = ref46('hybrid', 70, null);
+    const s1 = hdH46('2026-11-16', '08:00'), s2 = hdH46('2026-11-17', '20:00');
+    const S = [{ n: 1, startH: s1, endH: s1 + 8, hours: 8, label: '2026-11-16 08:00', type: 'hybrid' }, { n: 3, startH: s2, endH: s2 + 14, hours: 14, label: '2026-11-17 20:00', type: 'hybrid' }];
+    for (const opts of [{}, { sessions: S }, { sessions: [] }]) {
+      const h = refHtml46(r, opts), t = text46(h);
+      assert(/Rybak 2020, Rec 15 \(B-III\)/.test(t) && !/Rec 16|B-II\b/.test(t), t);
+      assert(t.indexOf('Give the load without waiting for the session to end') >= 0, t);
+      assert(t.indexOf('after each session ends, or in its final 60–90 min') >= 0, t);
+      assert(t.indexOf('Levels guide every later dose. A level drawn during a session or within 2 h of its end reads falsely low') >= 0, t);
+      assert(t.indexOf('No pre-session target has been validated for hybrid therapy') >= 0, t);
+      assert(['20 mg/kg', '25 mg/kg', '15 mg/kg', '1.5 g', '1.75 g', '1 g'].every(x => t.indexOf(x) >= 0), t);
+      assert(!BAND46.test(h) && !BAND46.test(t), 'a 15–20 mg/L band on a hybrid screen');
+    }
+    // One line per logged session, naming its end as when the maintenance dose is due.
+    const h = refHtml46(r, { sessions: S }), clk = fn46('fmtClock');
+    const lines = (h.match(/<li class="rrt-session">[\s\S]*?<\/li>/g) || []).map(text46);
+    assert(lines.length === 2, JSON.stringify(lines));
+    assert(/^Session 1\b/.test(lines[0]) && lines[0].indexOf(`ends ${clk(s1 + 8)}`) >= 0 && /maintenance dose/.test(lines[0]), lines[0]);
+    assert(/^Session 3\b/.test(lines[1]) && lines[1].indexOf(`ends ${clk(s2 + 14)}`) >= 0, lines[1]);
+    assert(!/rrt-session/.test(refHtml46(r, {})), 'no session lines without sessions');
+  });
+
+  test('46.33 the CRRT reference names Rybak 2020, Rec 16 (B-II), shows every cell\'s mg/kg, the 20–25 mL/kg/h it applies at, the first level and the AUC-era footer', () => {
+    const t = text46(refHtml46(ref46('crrt', 70, null)));
+    assert(/Rybak 2020, Rec 16 \(B-II\)/.test(t) && !/Rec 15|B-III/.test(t), t);
+    for (const x of ['1.5 g', '20 mg/kg', '1.75 g', '25 mg/kg', '500 mg', '7.5 mg/kg', '750 mg', '10 mg/kg', 'q12h', '20–25 mL/kg/h', 'for 70 kg actual body weight']) assert(t.indexOf(x) >= 0, `${x}: ${t}`);
+    assert(t.indexOf('First level within 24 h; later doses and the interval follow levels.') >= 0, t);
+    assert(t.indexOf('AUC-targeted work since 2020 supports lower daily maintenance than this table; later doses follow levels.') >= 0, t);
+    assert(/Rounded to 250 mg/.test(t) && !/rrt-session/.test(refHtml46(ref46('crrt', 70, null), { sessions: [{ n: 1, startH: 0, endH: 4, hours: 4, label: 'x', type: 'hybrid' }] })), 'no session lines on CRRT');
+  });
+
+  test('46.34 rrtLocalSettings on vanco.rrt.local: empty is no maximum; a blank or invalid entry keeps a stored one and says so; Clear removes the key; PD\'s key untouched', () => {
+    const LS = 'vanco.rrt.local', PDV = JSON.stringify({ maxDoseMg: 1500 });
+    const store = { 'vanco.pd.local': PDV };
+    const env = profEnv44(store, {});
+    ['t-rrt-set-max', 'b-rrt-set-max', 't-rrt-set-status', 'b-rrt-set-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      const get = () => fn46('rrtLocalSettings')();
+      assert(get().maxDoseMg === null, 'empty storage');
+      env.els['t-rrt-set-max'].value = '2000'; fn46('saveRrtLocalSettings')('t');
+      assert(JSON.parse(store[LS]).maxDoseMg === 2000 && get().maxDoseMg === 2000 && env.els['t-rrt-set-status'].textContent === '', store[LS]);
+      assert(env.els['b-rrt-set-max'].value === '2000', 'the other column shows the saved value');
+      for (const bad of ['', '0', '-1', 'abc']) {
+        env.els['b-rrt-set-max'].value = bad; fn46('saveRrtLocalSettings')('b');
+        assert(JSON.parse(store[LS]).maxDoseMg === 2000 && env.els['b-rrt-set-max'].value === '2000', `"${bad}" overwrote the stored maximum: ${store[LS]}`);
+        assert(/Maximum single dose/.test(env.els['b-rrt-set-status'].textContent) && /2000 mg/.test(env.els['b-rrt-set-status'].textContent) && /kept/.test(env.els['b-rrt-set-status'].textContent), env.els['b-rrt-set-status'].textContent);
+      }
+      fn46('clearRrtLocalSettings')();
+      assert(!(LS in store) && get().maxDoseMg === null && env.els['t-rrt-set-max'].value === '' && env.els['b-rrt-set-max'].value === '', `cleared: ${JSON.stringify(store)}`);
+      assert(/Cleared/.test(env.els['t-rrt-set-status'].textContent), env.els['t-rrt-set-status'].textContent);
+      assert(store['vanco.pd.local'] === PDV, 'PD settings changed');
+      env.els['t-rrt-set-max'].value = ''; fn46('saveRrtLocalSettings')('t');
+      assert(get().maxDoseMg === null && env.els['t-rrt-set-status'].textContent === '', 'blank with nothing stored is simply no setting');
+      store[LS] = '{not json'; assert(get().maxDoseMg === null, 'unreadable storage is no setting');
+    });
+    // The controls: save on change and Clear, in both columns, through __ACT (no inline handler).
+    for (const c of ['t', 'b']) {
+      assert(new RegExp(`<input type="number" id="${c}-rrt-set-max"[^>]*data-onchange="k105" data-arg="${c}"`).test(src46), `${c}: save on change`);
+      assert(new RegExp(`id="${c}-rrt-set-status"`).test(src46), `${c}: a status line`);
+    }
+    // Task 28: the Trough haemodialysis settings show the same maximum a third time (column 'h', hd-set-max), with its Clear.
+    assert(/<input type="number" id="hd-set-max"[^>]*data-onchange="k105" data-arg="h"/.test(src46) && /id="hd-set-max-status"/.test(src46), 'h: save on change, a status line');
+    assert((src46.match(/data-onclick="k106"/g) || []).length === 3, 'a Clear in each column, and in the haemodialysis settings');
+    assert(vm.runInContext("typeof __ACT.k105 === 'function' && typeof __ACT.k106 === 'function'", sandbox), '__ACT entries');
+  });
+
+  test('46.35 PD settings gain Clear: it removes vanco.pd.local and pdLocalSettings() returns its defaults; the CRRT/hybrid key untouched', () => {
+    const RV = JSON.stringify({ maxDoseMg: 2000 });
+    const store = { 'vanco.pd.local': JSON.stringify({ maxDoseMg: 1500, targetPeak: 30, amLabs: '05:30' }), 'vanco.rrt.local': RV };
+    const env = profEnv44(store, { 'pd-set-max': '1500', 'pd-set-peak': '30', 'pd-set-amlabs': '05:30' });
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      assert(sandbox.pdLocalSettings().maxDoseMg === 1500, 'fixture');
+      fn46('clearPdLocalSettings')();
+      assert(!('vanco.pd.local' in store), JSON.stringify(store));
+      assert(JSON.stringify(sandbox.pdLocalSettings()) === JSON.stringify({ maxDoseMg: null, targetPeak: null, amLabs: '06:00', amLabsSet: false }), JSON.stringify(sandbox.pdLocalSettings()));
+      assert(['pd-set-max', 'pd-set-peak', 'pd-set-amlabs'].every(k => env.els[k].value === ''), 'the fields still show the cleared values');
+      assert(/Cleared/.test(env.els['pd-set-status'].textContent) && store['vanco.rrt.local'] === RV, env.els['pd-set-status'].textContent);
+    });
+    const pdSettings = (src46.match(/<details class="pd-settings">[\s\S]*?<\/details>\s*<\/div><!-- \/section-pd -->/) || [''])[0];
+    assert(/data-onclick="k107"/.test(pdSettings), 'a Clear control in the PD settings');
+    assert(vm.runInContext("typeof __ACT.k107 === 'function'", sandbox), '__ACT entry');
+  });
+
+  test('46.36 the references on screen: AUC Precision under its CRRT and hybrid refusals, for the AUC column\'s weight, hybrid naming each logged session\'s end; the Trough CRRT and hybrid modes for the Trough weight', () => {
+    const D = [[1000, 1, '2026-11-16', '13:00']], clk = fn46('fmtClock');
+    const rows = [['2026-11-16', '08:00', '8', 'hybrid'], ['2026-11-17', '20:00', '14', 'hybrid']];
+    const hyb = withBayesForm({ 'b-tbw': '70', tbw: '95', doses: D, hdRows: rows }, (env) => aucRun46(env, 'hybrid'));
+    const th = text46(hyb);
+    assert(/data-rrt-refusal/.test(hyb) && hyb.indexOf('On hybrid therapy') < hyb.indexOf('data-rrt-reference'), hyb.slice(0, 300));
+    assert(/<div data-rrt-reference data-module="auc" data-kind="hybrid" data-kg="70">/.test(hyb), 'the slot names its kind and weight');
+    assert(/for 70 kg actual body weight/.test(th) && !/95 kg/.test(th) && /Rybak 2020, Rec 15 \(B-III\)/.test(th) && !BAND46.test(hyb), th.slice(0, 600));
+    const lines = (hyb.match(/<li class="rrt-session">[\s\S]*?<\/li>/g) || []).map(text46);
+    assert(lines.length === 2 && lines[0].indexOf(`ends ${clk(hdH46('2026-11-16', '08:00') + 8)}`) >= 0 && lines[1].indexOf(`ends ${clk(hdH46('2026-11-17', '20:00') + 14)}`) >= 0, JSON.stringify(lines));
+    const crrt = withBayesForm({ 'b-tbw': '70', tbw: '95', doses: D }, (env) => aucRun46(env, 'crrt'));
+    const tc = text46(crrt);
+    assert(/On CRRT — no model here describes it/.test(tc) && /data-onclick="k103"/.test(crrt) && /<div data-rrt-reference data-module="auc" data-kind="crrt" data-kg="70">/.test(crrt), crrt.slice(0, 300));
+    assert(/Rybak 2020, Rec 16 \(B-II\)/.test(tc) && /for 70 kg actual body weight/.test(tc) && ['1.5 g', '1.75 g', '500 mg', '750 mg'].every(x => tc.indexOf(x) >= 0) && !/rrt-session/.test(crrt), tc.slice(0, 600));
+    for (const kind of ['crrt', 'hybrid']) {
+      const r = trough44('initial', 'M', { tbw: '90' }, { rrt: kind });
+      assert(r.text.indexOf(kind === 'crrt' ? 'On CRRT' : 'On hybrid therapy') === 0 && /for 90 kg actual body weight/.test(r.text)
+        && new RegExp(`<div data-rrt-reference data-module="trough" data-kind="${kind}" data-kg="90">`).test(r.h), `Trough ${kind}: ${r.text.slice(0, 400)}`);
+      assert(kind === 'crrt' ? /Rec 16 \(B-II\)/.test(r.text) : /Rec 15 \(B-III\)/.test(r.text) && !BAND46.test(r.h), `Trough ${kind}: ${r.text.slice(0, 400)}`);
+      assert(/data-onclick="k0"/.test(r.h) && !/class="rec-dose"/.test(r.h), `Trough ${kind}: print, and nothing reads as a recommendation`);
+    }
+  });
+
+  test('46.37 the session section speaks of the renal replacement: under hybrid "Hybrid sessions", "+ Add session", rows "Session N", a hint that says nothing is fitted, and row errors named as the rows are; haemodialysis copy unchanged', () => {
+    const IHD_HINT = 'Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.';
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        ['b-hd-wrap', 'b-hd-heading', 'b-hd-add', 'b-hd-hint', 'b-hd-tbody'].forEach(k => env.get(k));
+        fn46('setRrt')('hybrid');
+        const h = { head: env.els['b-hd-heading'].textContent, add: env.els['b-hd-add'].textContent, hint: env.els['b-hd-hint'].textContent };
+        assert(h.head === 'Hybrid sessions' && h.add === '+ Add session', JSON.stringify(h));
+        assert(/recorded/.test(h.hint) && /maintenance dose is due/.test(h.hint) && /[Nn]othing is fitted/.test(h.hint)
+          && !/Goti-HD|pre-HD|mark the chart|haemodialysis|\bHD\b|dialysis/.test(h.hint), h.hint);
+        fn46('addBayesSession')();
+        const tr = env.els['b-hd-tbody'].children.slice(-1)[0];
+        assert(tr && /<span class="course-n" id="b-hd-n-\d+">Session \d+<\/span>/.test(tr.innerHTML) && !/HD session|>HD \d/.test(tr.innerHTML), tr && tr.innerHTML.slice(0, 500));
+        fn46('setRrt')('ihd');
+        assert(env.els['b-hd-heading'].textContent === 'Haemodialysis sessions' && env.els['b-hd-add'].textContent === '+ Add HD session' && env.els['b-hd-hint'].textContent === IHD_HINT,
+          JSON.stringify([env.els['b-hd-heading'].textContent, env.els['b-hd-add'].textContent, env.els['b-hd-hint'].textContent]));
+      } finally { reset46(); }
+    });
+    // Existing rows are relabelled when the renal replacement changes.
+    const labels = withBayesForm({ hdRows: [['2026-11-16', '08:00', '8', 'hybrid'], ['2026-11-18', '08:00', '8', 'hybrid']] }, (env) => {
+      vm.runInContext("bState.rrt = 'hybrid';", sandbox); fn46('syncHdSection')();
+      const hyb = [1, 2].map(n => env.el(`b-hd-n-${n}`).textContent);
+      vm.runInContext("bState.rrt = 'ihd';", sandbox); fn46('syncHdSection')();
+      return { hyb, ihd: [1, 2].map(n => env.el(`b-hd-n-${n}`).textContent) };
+    });
+    assert(JSON.stringify(labels) === JSON.stringify({ hyb: ['Session 1', 'Session 2'], ihd: ['HD 1', 'HD 2'] }), JSON.stringify(labels));
+    // A hybrid row's error names it as it is labelled, and still marks its field.
+    const bad = sess46('hybrid', [['2026-11-16', '08:00', '', 'hybrid']], (env) => {
+      env.document.body = env.el('body');
+      const p = fn46('parseBayesSessions')('hybrid');
+      return { p, target: fn46('courseErrorTarget')(p.errors && p.errors[0]) };
+    });
+    assert(bad.p.errors[0] === 'Session row 1: missing or invalid session length.' && JSON.stringify(bad.target) === '["b-hd-hours-1"]', JSON.stringify(bad));
+    // The markup: the static copy is haemodialysis's (the default type), and the comment no longer says Goti-HD only.
+    assert(/<h3 class="form-h3" id="b-hd-heading">Haemodialysis sessions<\/h3>/.test(src46) && /id="b-hd-add"[^>]*>\+ Add HD session</.test(src46)
+      && new RegExp(`id="b-hd-hint"[^>]*>${IHD_HINT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</p>`).test(src46), 'the static markup');
+    assert(!/<!-- Haemodialysis sessions \(D15\): shown for Goti-HD, or whenever a session row exists -->/.test(src46), 'the old markup comment');
+  });
+
+  test('46.38 the Trough hybrid mode (R73): the creatinine and loading-dose blocks are hidden as on PD, weight stays, the trough target goes (no 15–20 band), the reference section shows', () => {
+    assert(/\.panel-left\[data-mode="hybrid"\] \.not-pd\s*\{\s*display:\s*none;\s*\}/.test(src46), 'the hide rule');
+    const at = (s) => src46.indexOf(s);
+    assert(at('id="tbw"') > 0 && at('id="tbw"') < at('<div id="amp-section" class="not-pd">'), 'weight sits before the hidden blocks, in the patient section');
+    assert(/<div id="section-renal" class="not-pd">/.test(src46) && /<div id="section-ld" class="not-pd">/.test(src46), 'the creatinine and loading-dose blocks are .not-pd');
+    const env = env46({});
+    const panel = { dataset: {} };
+    env.document.querySelector = (sel) => (sel === '.app-shell:not(#app-shell-bayesian) > .panel-left' ? panel : null);
+    withProf44(env, [], () => {
+      try {
+        const disp = (id) => env.get(id).style.display;
+        fn46('setRrt')('hybrid');
+        assert(panel.dataset.mode === 'hybrid' && disp('section-trough-shared') === 'none' && disp('section-rrt') === '' && disp('section-pd') === 'none',
+          JSON.stringify([panel.dataset.mode, disp('section-trough-shared'), disp('section-rrt'), disp('section-pd')]));
+        fn46('setRrt')('crrt');
+        assert(panel.dataset.mode === 'crrt' && disp('section-rrt') === '', JSON.stringify([panel.dataset.mode, disp('section-rrt')]));
+        fn46('setRrt')('none');
+        assert(panel.dataset.mode === 'initial' && disp('section-rrt') === 'none' && disp('section-trough-shared') === '', JSON.stringify([panel.dataset.mode, disp('section-rrt'), disp('section-trough-shared')]));
+      } finally { reset46(); }
+    });
+  });
+  // ── Task 26: one level-interval solver, one goal pick, one peak equation (PD unchanged) ──
+  test('46.39 solveIntervalK recovers the elimination rate across a dose: k 0.05 h⁻¹ (V 49 L, 1,000 mg over 1 h at 0 h and 24 h, levels at 12 h and 36 h) to 1e-4, the second level rebuilt to 0.05 mg/L; from a first dose it starts at zero', () => {
+    const solve = fn46('solveIntervalK'), k = 0.05, V = 49;
+    const doses = [{ mg: 1000, tinfH: 1, timeH: 0 }, { mg: 1000, tinfH: 1, timeH: 24 }];
+    const c1 = sandbox.predictConc1comp(doses, 12, k, V), c2 = sandbox.predictConc1comp(doses, 36, k, V);
+    const r = solve({ conc: c1, timeH: 12 }, { conc: c2, timeH: 36 }, doses, V);
+    assert(r && Math.abs(r.k - k) < 1e-4 && r.t12 === sandbox.halfLife(r.k), JSON.stringify(r));
+    const rebuilt = c1 * Math.exp(-r.k * 24) + sandbox.predictConc1comp([doses[1]], 36, r.k, V);
+    assert(Math.abs(rebuilt - c2) < 0.05, JSON.stringify({ rebuilt, c2 }));
+    // An interval anchored at the first dose: the anchor is 0 mg/L at the dose's start, and the dose itself is counted.
+    const f = solve({ conc: 0, timeH: 0 }, { conc: c1, timeH: 12 }, doses, V);
+    assert(f && Math.abs(f.k - k) < 1e-4, JSON.stringify(f));
+  });
+
+  test('46.40 solveIntervalK with no dose between the levels is ln(C1/C2)/Δt to 1e-6; doses before the anchor or at the level\'s minute are not counted; a level it cannot explain is null, with the reason', () => {
+    const solve = fn46('solveIntervalK');
+    const outside = [{ mg: 1000, tinfH: 1, timeH: -12 }, { mg: 1000, tinfH: 1, timeH: 20 }];
+    for (const doses of [[], outside]) {
+      const r = solve({ conc: 20, timeH: 0 }, { conc: 10, timeH: 20 }, doses, 49);
+      assert(r && Math.abs(r.k - Math.log(20 / 10) / 20) < 1e-6, JSON.stringify([doses.length, r]));
+    }
+    const why = (a, l, d, v) => { const w = {}; const r = solve(a, l, d, v, w); return [r, w.flag]; };
+    const hi = why({ conc: 10, timeH: 0 }, { conc: 30, timeH: 24 }, [], 49);
+    const lo = why({ conc: 20, timeH: 0 }, { conc: 0.001, timeH: 24 }, [], 49);
+    const noV = why({ conc: 20, timeH: 0 }, { conc: 10, timeH: 20 }, [], 0);
+    assert(hi[0] === null && hi[1] === 'unexplained-high' && lo[0] === null && lo[1] === 'unexplained-low' && noV[0] === null && noV[1] === 'unexplained-high',
+      JSON.stringify([hi, lo, noV]));
+  });
+
+  test('46.41 pickGoalStep is PD\'s rule: only below the goal; the in-goal step nearest its middle, ties to the smaller; none in goal, the nearest of all, closest; nothing nearer than no dose gives 0', () => {
+    const pick = fn46('pickGoalStep'), g = { min: 10, max: 20 };
+    const tie = pick([{ mg: 0, mid: 5 }, { mg: 250, mid: 14 }, { mg: 500, mid: 16 }, { mg: 750, mid: 25 }], g);
+    assert(JSON.stringify(tie) === '{"mg":250,"closest":false}', 'an in-goal tie picks the smaller: ' + JSON.stringify(tie));
+    const near = pick([{ mg: 0, mid: 5 }, { mg: 250, mid: 8 }, { mg: 500, mid: 22 }], g);
+    assert(JSON.stringify(near) === '{"mg":250,"closest":true}', 'nothing in goal: the nearest, ties to the smaller, closest: ' + JSON.stringify(near));
+    const none = pick([{ mg: 0, mid: 9.5 }, { mg: 250, mid: 30 }], g);
+    assert(JSON.stringify(none) === '{"mg":0,"closest":true}', 'no step nearer than nothing: ' + JSON.stringify(none));
+    const zeroInGoal = pick([{ mg: 0, mid: 9 }, { mg: 250, mid: 19.9 }, { mg: 500, mid: 26 }], g);
+    assert(JSON.stringify(zeroInGoal) === '{"mg":250,"closest":false}', 'any in-goal step beats a nearer out-of-goal one: ' + JSON.stringify(zeroInGoal));
+    for (const mid0 of [25, 15, 10]) {
+      const r = pick([{ mg: 0, mid: mid0 }, { mg: 250, mid: mid0 + 5 }], g);
+      assert(r === null, `rows[0].mid ${mid0} is not below the goal: ${JSON.stringify(r)}`);
+    }
+  });
+
+  test('46.42 peakEquationDose is V × (target peak − level) to the nearest 250 mg: 56 L, 25, 11.7 → 750; at or above the target 0 (no 250 mg floor); at most the cap', () => {
+    const p = fn46('peakEquationDose');
+    const got = [p(56, 25, 11.7, 2000), p(56, 25, 25, 2000), p(56, 25, 30, 2000), p(56, 12, 11.7, 2000), p(56, 80, 10, 2000), p(56, 80, 10, 1500), p(56, 25, 3.25, 2000)];
+    assert(JSON.stringify(got) === JSON.stringify([750, 0, 0, 0, 2000, 1500, 1250]), JSON.stringify(got));
+  });
+
+  test('46.43 one copy (ruling P5): the pick comparison occurs once, in pickGoalStep, and not in pdAnswer or crrtAnswer; PD_K_SEARCH is read, outside its declaration, only in solveIntervalK; PD calls the shared three', () => {
+    const text = (n) => fn46(n).toString();
+    const PICK = /\w+\([^()]*\)\s*<\s*\w+\([^()]*\)\s*-\s*1e-9/g;
+    const count = (s, re) => (s.match(re) || []).length;
+    assert(count(text('pickGoalStep'), PICK) === 1, 'pickGoalStep holds the comparison once');
+    assert(count(text('pdAnswer'), PICK) === 0, 'pdAnswer holds no second copy');
+    assert(count(text('crrtAnswer'), PICK) === 0, 'crrtAnswer holds no second copy');
+    const solveSrc = text('solveIntervalK'), at = src46.indexOf(solveSrc);
+    assert(at > 0 && src46.indexOf(solveSrc, at + 1) === -1, 'solveIntervalK found once in index.html');
+    const declAt = src46.indexOf('\nconst PD_K_SEARCH = [') + 7;
+    const uses = [...src46.matchAll(/\bPD_K_SEARCH\b/g)].map(m => m.index).filter(i => i !== declAt);
+    assert(declAt > 7 && uses.length === 1 && uses[0] > at && uses[0] < at + solveSrc.length, 'PD_K_SEARCH outside its declaration: ' + JSON.stringify(uses.map(i => src46.slice(i - 40, i + 20))));
+    assert(count(solveSrc, /for \(let i = 0; i < \d+; i\+\+\)/g) === 1, 'one bisection');
+    const pdI = text('pdInterval'), pdA = text('pdAnswer');
+    assert(/solveIntervalK\(/.test(pdI) && !/\bfor \(/.test(pdI) && !/predictConc1comp/.test(pdI), 'pdInterval solves through solveIntervalK');
+    assert(/pickGoalStep\(rows, goal\)/.test(pdA) && /peakEquationDose\(/.test(pdA) && !/Math\.round\([^;]*\/ MATRIX_DOSE_STEP\)/.test(pdA), 'pdAnswer picks and reads the target peak through the shared functions');
+  });
+
+  // The parity guard (ruling P4). It passes before and after the extraction by design: it is not TDD evidence.
+  // The fixtures are every pdAnswer and pdIntervals call SUITE 41 makes (recorded from a run of SUITE 41, in order),
+  // plus three for paths SUITE 41 never reaches; an instant is "@<day>|HH:MM", SUITE 41's own H(day, 'HH:MM'). Each
+  // expected entry is [a readable summary, the first 16 hex of SHA-256 over the output's JSON with every number to 9
+  // significant digits (ruling R87: 1e-7 mg/L on a level, so a last-bit difference between Node versions cannot move
+  // a digest)], generated by replaying these fixtures against the v3.15.0 release file (bcee5dd). The scripts that
+  // generate and replay them are docs/audit/pd-parity/ (README there); fixtures58.json is this array. The time zone is pinned to America/Chicago (where they were
+  // generated) for the replay only: SUITE 41 builds its instants on the local wall clock, so the absolute hours in an
+  // output differ by zone, and a digest cannot absorb that. Digests, not 230 KB of output: a mismatch names the call.
+  const PD_PARITY_FIXTURES46 = [
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":750,"tinfH":1,"timeH":"@0|09:00"}],"levels":[{"conc":11,"timeH":"@0|06:00"},{"conc":13,"timeH":"@1|08:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"unknown","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"yes","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":500,"tinfH":1,"timeH":"@2|09:00"},{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":15.5,"timeH":"@3|07:30"},{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13.5,"timeH":"@2|02:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":["2026-06-11"],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":30,"timeH":"@0|04:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":30,"timeH":"@1|08:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":13,"timeH":"@2|07:30"},{"conc":16,"timeH":"@4|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":"@2|12:00"}}]],
+    ["pdAnswer",[{"course":{"doses":[],"levels":[],"loadKg":57,"nowKg":57,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@0|03:30","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@0|03:00"]],
+    ["pdAnswer",[{"course":{"doses":[],"levels":[],"loadKg":57,"nowKg":57,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"gt500","ipToo":false,"hd":false,"giveAtH":"@0|03:30","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@0|03:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":null,"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":10},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":true,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":true,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":0,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":30,"timeH":"@0|05:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"yes","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":9,"max":14},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":5,"max":8},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":60,"max":70},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":1000,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|07:15","settings":{"maxDoseMg":null,"targetPeak":25,"amLabs":"06:00"}},"@3|07:15"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"capd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|08:00"}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":4,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"07:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"05:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":null,"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1500,"tinfH":1.5,"timeH":"@0|04:00"},{"mg":750,"tinfH":1,"timeH":"@2|07:00"}],"levels":[{"conc":13,"timeH":"@2|07:00"}],"loadKg":70,"nowKg":70,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|08:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1500,"tinfH":1.5,"timeH":"@0|04:00"},{"mg":750,"tinfH":1,"timeH":"@2|07:01"}],"levels":[{"conc":13,"timeH":"@2|07:00"}],"loadKg":70,"nowKg":70,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|08:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":2000,"tinfH":2,"timeH":"@0|04:00"}],"levels":[{"conc":40,"timeH":"@1|07:00"},{"conc":30,"timeH":"@2|07:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":250,"tinfH":0.5,"timeH":"@2|08:00"}],"levels":[{"conc":5,"timeH":"@2|06:00"}],"loadKg":63,"nowKg":63,"vdPerKg":0.7,"prior":"unknown","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@2|09:00"]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"},{"conc":13,"timeH":"@2|07:30"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdIntervals",[{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":13,"timeH":"@2|07:30"},{"conc":12.9,"timeH":"@2|08:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|04:00","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|12:00","settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":20},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"05:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":28.6,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@3|07:15","settings":{"maxDoseMg":null,"targetPeak":25,"amLabs":"06:00"}},"@3|07:15"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":200,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[],"levels":[],"loadKg":57,"nowKg":57,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":"@0|03:30","settings":{"maxDoseMg":200,"targetPeak":null,"amLabs":"06:00"}},"@0|03:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1000,"tinfH":1,"timeH":"@0|04:00"}],"levels":[],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@5|10:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":15,"max":16.5},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|12:00"}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|13:00"]],
+    ["pdIntervals",[{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"},{"conc":13.5,"timeH":"@4|07:00"},{"conc":12,"timeH":"@5|07:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|12:00"}}]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"},{"conc":13.5,"timeH":"@4|07:00"},{"conc":12,"timeH":"@5|07:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":"@3|12:00"}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@5|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":["2026-06-13"],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|07:15"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":["2026-06-11"],"stoppedAtH":null,"exchanges":5,"fillL":2}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":1250,"tinfH":1.5,"timeH":"@0|04:10"},{"mg":500,"tinfH":1,"timeH":"@2|09:00"}],"levels":[{"conc":12.4,"timeH":"@2|07:00"},{"conc":14.8,"timeH":"@3|05:00"}],"loadKg":61,"nowKg":63,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":9.5,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    // Three more, beyond SUITE 41, for the paths this task moves that SUITE 41 never reaches: an interval faster than the
+    // search ceiling (unexplained-low), no 250 mg step nearer the goal than nothing, and the target-peak reading at a local maximum.
+    ["pdIntervals",[{"doses":[],"levels":[{"conc":20,"timeH":"@0|08:00"},{"conc":0.001,"timeH":"@1|08:00"}],"loadKg":60,"nowKg":60,"vdPerKg":0.7,"prior":"unknown","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}}]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":500,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":12,"timeH":"@2|06:00"},{"conc":10,"timeH":"@3|06:00"}],"loadKg":20,"nowKg":20,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":9.6,"max":10.2},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":null,"targetPeak":null,"amLabs":"06:00"}},"@3|09:00"]],
+    ["pdAnswer",[{"course":{"doses":[{"mg":500,"tinfH":1,"timeH":"@0|03:30"}],"levels":[{"conc":12,"timeH":"@2|06:00"},{"conc":10,"timeH":"@3|06:00"}],"loadKg":20,"nowKg":20,"vdPerKg":0.7,"prior":"no","schedule":{"modality":"ccpd","startClock":"21:00","hours":10,"heldDates":[],"stoppedAtH":null}},"goal":{"min":10,"max":15},"urine":"anuric","ipToo":false,"hd":false,"giveAtH":null,"settings":{"maxDoseMg":500,"targetPeak":80,"amLabs":"06:00"}},"@3|09:00"]],
+  ];
+  const PD_PARITY_EXPECTED46 = [
+    ["intervals:k","a55f728b539445e0"],
+    ["intervals:k","4ce6b2c0418aa8cb"],
+    ["intervals:prior-drug","387cca95a034ffde"],
+    ["intervals:k,k","7bfdf71d132cdc27"],
+    ["intervals:k","4c7826e81b0831b1"],
+    ["intervals:k","2641aaba8ca9bda4"],
+    ["threw","2e03b98d1e6ca876"],
+    ["intervals:unexplained-high","98a5f390333c84c8"],
+    ["intervals:k,k","22b7669d371983fc"],
+    ["load","c59586800994fc23"],
+    ["load","09381052a6aa5722"],
+    ["refuse","210344b4169858da"],
+    ["refuse","210344b4169858da"],
+    ["refuse","df98635799e844e7"],
+    ["refuse","da7e5e1433a6ca72"],
+    ["refuse","53417fbebcb259c3"],
+    ["refuse","ce5a39f2c6259ef2"],
+    ["need-level","346548c5192f3a78"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:250","8bf88d3faf3e324f"],
+    ["no-dose","453c587e2c20c9f8"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:500","926e6edc675c3d3a"],
+    ["no-dose","3e0cb82949397955"],
+    ["dose:2000","0fd770369823bd74"],
+    ["dose:250","764be68bda8567d4"],
+    ["dose:250","6c4c744543f25fe8"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:250","729e644b3e3449fc"],
+    ["dose:250","b9c192ccd6666d61"],
+    ["dose:250","7f7fb258ad7a1927"],
+    ["dose:250","440812afa61f94b7"],
+    ["dose:500","bc16e3f90958cb5f"],
+    ["dose:250","f72e1ebe775bb23d"],
+    ["refuse","210344b4169858da"],
+    ["no-dose","88f919428b06d328"],
+    ["no-dose","b49586cb3a7e0c12"],
+    ["no-dose","c78db1d05d0e2640"],
+    ["need-level","2a3064844aabb7f4"],
+    ["intervals:k,too-short","4ab52a946f03fec2"],
+    ["intervals:k,too-short","b17db4696e5a0834"],
+    ["dose:250","687a451ad5613809"],
+    ["dose:500","daa249bc595b3fb5"],
+    ["dose:500","1d7a7c5b37f40fc4"],
+    ["no-dose","da5214e62adc0358"],
+    ["dose:250","b3643fd44b591e35"],
+    ["load","ac82e99b6176a8ec"],
+    ["first-level","d69f6daeea5ae1a2"],
+    ["dose:500","f7890e6401ee6109"],
+    ["dose:250","09a873954c2a6c07"],
+    ["intervals:k,k,k,k","3a8b4f02f751a495"],
+    ["no-dose","d7ef33d0489aa7de"],
+    ["dose:250","147341da9c5e28ac"],
+    ["dose:250","f0d19b4e9fcdc6db"],
+    ["dose:250","8fc268d4b5d1cc98"],
+    // the three added fixtures
+    ["intervals:unexplained-low","5af6db2d60cf05a1"],
+    ["no-dose","e0dd456c8be284b6"],
+    ["no-dose","ae82005bb2bbe8aa"],
+  ];
+  test('46.44 parity guard (P4): every SUITE 41 pdAnswer and pdIntervals output, and three more, is the one v3.15.0 (bcee5dd) gave', () => {
+    const crypto = require('crypto');
+    // The zone is restored by assignment (ruling R87): deleting TZ does not reliably reset Node's cached zone. With
+    // no TZ set, the zone in force is read first and assigned back by name.
+    const prevTZ = process.env.TZ !== undefined ? process.env.TZ : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    process.env.TZ = 'America/Chicago';
+    try {
+      const H = (d, hm) => { const [h, m] = hm.split(':').map(Number); return new Date(2026, 5, 10 + d, h, m).getTime() / 3600000; };
+      const dec = (v) => Array.isArray(v) ? v.map(dec) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, dec(x)]))
+        : typeof v === 'string' && /^@-?\d+\|\d\d:\d\d$/.test(v) ? H(+v.slice(1, v.indexOf('|')), v.slice(v.indexOf('|') + 1)) : v;
+      const norm = (v) => Array.isArray(v) ? v.map(norm) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
+        : typeof v === 'number' ? Number(v.toPrecision(9)) : v;
+      const digest = (r) => crypto.createHash('sha256').update(JSON.stringify(norm(JSON.parse(JSON.stringify(r))))).digest('hex').slice(0, 16);
+      const sum = (fn, out, threw) => threw ? 'threw' : fn === 'pdIntervals' ? 'intervals:' + out.map(i => i.used ? 'k' : (i.flags || []).join('+')).join(',')
+        : out.state + (out.pick ? ':' + out.pick.mg : '');
+      assert(PD_PARITY_FIXTURES46.length === 58 && PD_PARITY_EXPECTED46.length === 58, 'fixture count');
+      const bad = [];
+      PD_PARITY_FIXTURES46.forEach(([fn, args], i) => {
+        let out, threw = null;
+        try { out = sandbox[fn](...dec(args)); } catch (e) { threw = String(e.message); }
+        const got = [sum(fn, out, threw), digest(threw ? { threw } : out)];
+        if (JSON.stringify(got) !== JSON.stringify(PD_PARITY_EXPECTED46[i])) bad.push(`#${i} ${fn}: ${JSON.stringify(got)}, v3.15.0 ${JSON.stringify(PD_PARITY_EXPECTED46[i])}`);
+      });
+      assert(!bad.length, `${bad.length} differ: ` + bad.slice(0, 6).join('; '));
+    } finally { process.env.TZ = prevTZ; }
+  });
+
+  // ── Task 27: a level-based CRRT answer (Trough-based · CRRT). The plan's 46.39–46.52 are 46.45–46.58 here (the next
+  // free numbers, in the plan's order); 46.59–46.60 are the CRRT column (R73, R62, P2) and the form. Fictional: 70 kg,
+  // Bauer 0.70 L/kg (V 49 L), goal 15–20 mg/L, on CVVHDF at 2000 mL/h, a true half-life of 23 h (k 0.03 h⁻¹).
+  const B47 = new Date(2026, 5, 10, 0, 0).getTime() / 3600000, K47 = 0.03, V47 = 49;
+  // An independent one-compartment infusion (not predictConc1comp): mg over tinf h from start, read at t.
+  const inf47 = (mg, tinf, start, t, k, V) => t <= start ? 0
+    : t <= start + tinf ? mg / tinf / (k * V) * (1 - Math.exp(-k * (t - start)))
+    : mg / tinf / (k * V) * (1 - Math.exp(-k * tinf)) * Math.exp(-k * (t - start - tinf));
+  const D1_47 = { mg: 750, tinfH: 1, timeH: B47 + 24 }, D2_47 = { mg: 750, tinfH: 1, timeH: B47 + 48 };
+  const c2_47 = 10 * Math.exp(-K47 * 24) + inf47(750, 1, B47 + 24, B47 + 36, K47, V47);
+  const c3_47 = c2_47 * Math.exp(-K47 * 24) + inf47(750, 1, B47 + 48, B47 + 60, K47, V47);
+  const L47 = [{ conc: 10, timeH: B47 + 12 }, { conc: c2_47, timeH: B47 + 36 }], L3_47 = L47.concat([{ conc: c3_47, timeH: B47 + 60 }]);
+  const inp47 = (o) => Object.assign({
+    course: { doses: [D1_47], levels: L47, nowKg: 70 },
+    circuit: [{ onH: B47 - 24, offH: null }], effluent: [{ fromH: B47 - 24, mlPerH: 2000 }], modality: 'cvvhdf',
+    urine: 'anuric', vBasis: 'bauer', goal: { min: 15, max: 20 }, giveAtH: null, nextDrawH: null, settings: { maxDoseMg: null },
+  }, o || {});
+  const three47 = (o) => inp47(Object.assign({ course: { doses: [D1_47, D2_47], levels: L3_47, nowKg: 70 } }, o || {}));
+  const crrt47 = (inp, nowH) => fn46('crrtAnswer')(inp, nowH);
+  const clk47 = (h) => fn46('fmtClock')(h);
+
+  test('46.45 CRRT refusals with levels entered: no goal → "Choose a goal range"; no volume basis → refused naming both bases; no weight → refused naming the weight; no circuit start → refused', () => {
+    const now = B47 + 37;
+    const g = crrt47(inp47({ goal: null }), now);
+    assert(g.state === 'refuse' && g.refuse.word === 'Choose a goal range' && !g.rows, JSON.stringify(g).slice(0, 300));
+    const v = crrt47(inp47({ vBasis: null }), now);
+    assert(v.state === 'refuse' && /volume/i.test(v.refuse.word) && /Bauer 0\.70 L\/kg/.test(v.refuse.html) && /Matzke/.test(v.refuse.html) && !v.rows, JSON.stringify(v).slice(0, 300));
+    for (const kg of [0, NaN, 401]) {
+      const w = crrt47(inp47({ course: { doses: [D1_47], levels: L47, nowKg: kg } }), now);
+      assert(w.state === 'refuse' && /weight/i.test(w.refuse.word) && !w.rows, `${kg}: ${JSON.stringify(w).slice(0, 300)}`);
+    }
+    for (const circuit of [[], [{ onH: NaN, offH: null }]]) {
+      const c = crrt47(inp47({ circuit }), now);
+      assert(c.state === 'refuse' && /circuit/i.test(c.refuse.word) && !c.rows, JSON.stringify(c).slice(0, 300));
+    }
+  });
+
+  test('46.46 CRRT with no level yet: the reference state, carrying the Task 25 CRRT table for the weight now and the local maximum; the screen passes the effluent now to it', () => {
+    const inp = inp47({ course: { doses: [], levels: [], nowKg: 70 } });
+    const a = crrt47(inp, B47);
+    assert(a.state === 'reference' && JSON.stringify(a.reference) === JSON.stringify(fn46('rrtReferenceDoses')('crrt', 70, null)) && !a.rows, JSON.stringify(a).slice(0, 300));
+    const capped = crrt47(inp47({ course: { doses: [], levels: [], nowKg: 70 }, settings: { maxDoseMg: 1500 } }), B47);
+    assert(JSON.stringify(capped.reference) === JSON.stringify(fn46('rrtReferenceDoses')('crrt', 70, 1500)), 'the local maximum reaches the table');
+    const t = text46(fn46('crrtResultsHTML')(a, inp, B47));
+    assert(/Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(t) && /Effluent 2000 mL\/h is 28\.6 mL\/kg\/h at 70 kg: outside 20–25 mL\/kg\/h/.test(t), t.slice(0, 900));
+  });
+
+  test('46.47 two clean levels around one dose, the circuit running throughout: a dose; every row\'s middle is the hand computation from the solved k (to 0.05 mg/L) at the default draw, 24 h after the dose; the pick is pickGoalStep\'s', () => {
+    const now = B47 + 37, a = crrt47(inp47(), now);
+    assert(a.state === 'dose' && a.rate.n === 1 && Math.abs(a.rate.kMin - K47) < 1e-4 && a.rate.kMin === a.rate.kMax, JSON.stringify({ state: a.state, rate: a.rate }));
+    const K = __extractConsts();
+    assert(K.CRRT_NEXT_DRAW_DEFAULT_H === 24 && a.giveAtH === now && a.nextDrawH === now + 24 && a.nextDrawDefault === true, JSON.stringify({ giveAtH: a.giveAtH - B47, nextDrawH: a.nextDrawH - B47 }));
+    assert(a.rows.length === 9 && a.rows.every((r, i) => r.mg === i * 250), JSON.stringify(a.rows.map(r => r.mg)));
+    const k = a.rate.kMin, T = a.nextDrawH;
+    for (const r of a.rows) {
+      const hand = c2_47 * Math.exp(-k * (T - (B47 + 36))) + (r.mg ? inf47(r.mg, sandbox.autoTinf(r.mg), now, T, k, V47) : 0);
+      assert(Math.abs(r.mid - hand) < 0.05, `${r.mg} mg: ${r.mid} vs ${hand}`);
+    }
+    assert(JSON.stringify(a.pick) === JSON.stringify(fn46('pickGoalStep')(a.rows, a.goal)) && a.pick.mg === 1000, JSON.stringify(a.pick));
+    // A next draw the user entered is the one judged at.
+    const b = crrt47(inp47({ nextDrawH: now + 12 }), now);
+    assert(b.nextDrawH === now + 12 && b.nextDrawDefault === false, String(b.nextDrawH - now));
+  });
+
+  test('46.48 a circuit stop inside the only interval: flagged circuit-off, excluded, "Draw a level" (need-level, no rows)', () => {
+    const a = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] }), B47 + 37);
+    assert(a.state === 'need-level' && !a.rows && a.intervals.length === 1 && a.intervals[0].flags.indexOf('circuit-off') >= 0 && a.intervals[0].used === false,
+      JSON.stringify({ state: a.state, i: a.intervals }));
+    // A circuit started after the first level: the interval was not on the circuit throughout either.
+    const late = crrt47(inp47({ circuit: [{ onH: B47 + 14, offH: null }] }), B47 + 37);
+    assert(late.state === 'need-level' && late.intervals[0].flags.indexOf('circuit-off') >= 0, JSON.stringify(late.intervals));
+  });
+
+  test('46.49 two intervals, one clean and one circuit-off: the rate comes from the clean one only (rate.n 1, its k)', () => {
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] }), B47 + 61);
+    assert(a.rate && a.rate.n === 1 && a.intervals[0].used === false && a.intervals[0].flags.indexOf('circuit-off') >= 0 && a.intervals[1].used === true
+      && Math.abs(a.rate.kMin - K47) < 1e-4 && (a.state === 'dose' || a.state === 'no-dose') && a.rows.length === 9, JSON.stringify({ state: a.state, rate: a.rate, i: a.intervals.map(i => i.flags) }));
+  });
+
+  test('46.50 the effluent rate or the modality changed inside an interval: flagged and excluded; a row repeating the setting in force is no change', () => {
+    const now = B47 + 37;
+    const e = crrt47(inp47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 20, mlPerH: 2500 }] }), now);
+    assert(e.state === 'need-level' && e.intervals[0].flags.indexOf('effluent-changed') >= 0 && e.intervals[0].used === false && !e.rows, JSON.stringify(e.intervals));
+    const m = crrt47(inp47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 20, mlPerH: 2000, modality: 'cvvh' }] }), now);
+    assert(m.state === 'need-level' && m.intervals[0].flags.indexOf('modality-changed') >= 0 && m.intervals[0].flags.indexOf('effluent-changed') < 0 && m.intervals[0].used === false, JSON.stringify(m.intervals));
+    const same = crrt47(inp47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 20, mlPerH: 2000, modality: 'cvvhdf' }] }), now);
+    assert(same.state === 'dose' && same.intervals[0].used === true && same.intervals[0].flags.length === 0, JSON.stringify(same.intervals));
+    // No rate recorded at the interval's start: the rate is not known to have held, so it is not used.
+    const unknown = crrt47(inp47({ effluent: [{ fromH: B47 + 20, mlPerH: 2000 }] }), now);
+    assert(unknown.intervals[0].flags.indexOf('effluent-changed') >= 0 && unknown.intervals[0].used === false, JSON.stringify(unknown.intervals));
+  });
+
+  test('46.51 Review Focus 3: the circuit stopped at now − 1 h after two clean intervals: no projection and no dose table, "Draw a level", naming the stop', () => {
+    const now = B47 + 62;
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now - 1 }] }), now);
+    assert(a.state === 'need-level' && !a.rows && !a.pick && a.intervals.length === 2 && a.intervals.every(i => i.used), JSON.stringify({ state: a.state, i: a.intervals.map(i => i.flags) }));
+    assert(a.message.indexOf(`Draw a level: the circuit stopped at ${clk47(now - 1)} since the decline was measured.`) === 0, a.message);
+    // Restarted since: the projection from the last level would still cross the stop.
+    const re = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now - 1.5 }, { onH: now - 0.5, offH: null }] }), now);
+    assert(re.state === 'need-level' && !re.rows && /the circuit stopped at/.test(re.message), re.message);
+    // Running: an answer (the control).
+    const run = crrt47(three47(), now);
+    assert((run.state === 'dose' || run.state === 'no-dose') && run.rate.n === 2, run.state);
+  });
+
+  test('46.52 the effluent rate or the modality now differs from the measured intervals: "Draw a level", naming the change', () => {
+    const now = B47 + 62;
+    const a = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: now - 1, mlPerH: 3000 }] }), now);
+    assert(a.state === 'need-level' && !a.rows && a.message.indexOf(`Draw a level: the effluent rate changed at ${clk47(now - 1)}`) === 0 && /2000 → 3000 mL\/h/.test(a.message) && /since the decline was measured/.test(a.message), a.message);
+    const m = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: now - 1, mlPerH: 2000, modality: 'cvvhd' }] }), now);
+    assert(m.state === 'need-level' && !m.rows && m.message.indexOf(`Draw a level: the modality changed at ${clk47(now - 1)}`) === 0 && /CVVHDF → CVVHD/.test(m.message), m.message);
+    // A change recorded ahead, before the next draw, also ends the projection.
+    const ahead = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: now + 6, mlPerH: 3000 }] }), now);
+    assert(ahead.state === 'need-level' && !ahead.rows && /effluent rate/.test(ahead.message), ahead.message);
+  });
+
+  test('46.53 a next draw beyond a recorded stop: "Draw a level"; a draw before it is answered', () => {
+    const now = B47 + 62;
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now + 8 }], nextDrawH: now + 24 }), now);
+    assert(a.state === 'need-level' && !a.rows && /circuit/.test(a.message) && a.message.indexOf(clk47(now + 8)) > 0, a.message);
+    const d = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 55 }] }), B47 + 37);   // the default draw, 24 h on (B+61), passes the stop at B+55
+    assert(d.state === 'need-level' && !d.rows && d.message.indexOf(`is recorded to stop at ${clk47(B47 + 55)}`) > 0, d.state + ' ' + d.message);
+    const b = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: now + 8 }], nextDrawH: now + 7 }), now);
+    assert((b.state === 'dose' || b.state === 'no-dose') && b.nextDrawH === now + 7, b.state + ' ' + (b.message || ''));
+  });
+
+  // R103 (final review C1) reversed this test's last clause: under PD_MIN_INTERVAL_H apart was "flagged too-short and still
+  // used" (Task 27's "flag only"); a recheck within assay imprecision then doubled a dose. It is now excluded, as PD excludes it.
+  test('46.54 a level 0.5 h after an infusion ends: flagged distribution (Rybak 2020 Rec 2a, POST_DISTRIBUTION_MIN_H 1 h) and excluded; at 1 h it is used; a level inside an infusion is refused; under 12 h apart is flagged too-short and not used (R103)', () => {
+    assert(__extractConsts().POST_DISTRIBUTION_MIN_H === 1, 'the constant');
+    const lvl = (t) => [{ conc: 10, timeH: B47 + 12 }, { conc: 10 * Math.exp(-K47 * (t - 12)) + inf47(750, 1, B47 + 24, B47 + t, K47, V47), timeH: B47 + t }];
+    const early = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(25.5), nowKg: 70 } }), B47 + 27);
+    assert(early.state === 'need-level' && early.intervals[0].flags.indexOf('distribution') >= 0 && early.intervals[0].used === false && !early.rows, JSON.stringify(early.intervals));
+    const atOne = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(26), nowKg: 70 } }), B47 + 27);
+    assert(atOne.intervals[0].flags.indexOf('distribution') < 0 && atOne.intervals[0].used === true, JSON.stringify(atOne.intervals));
+    const inside = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(24.5), nowKg: 70 } }), B47 + 27);
+    assert(inside.state === 'refuse' && /infusion/.test(inside.refuse.html), JSON.stringify(inside).slice(0, 300));
+    const short = crrt47(inp47({ course: { doses: [], levels: [{ conc: 20, timeH: B47 + 12 }, { conc: 20 * Math.exp(-K47 * 8), timeH: B47 + 20 }], nowKg: 70 } }), B47 + 21);
+    assert(JSON.stringify(short.intervals[0].flags) === '["too-short"]' && short.intervals[0].used === false && short.state === 'need-level' && !short.rows
+      && short.message.indexOf('under 12 h after the level before it: assay rounding, not a decline; not used') > 0, JSON.stringify({ i: short.intervals, m: short.message }));
+  });
+
+  test('46.55 the next level above the goal with no dose: no-dose, the rows still listed, no pick', () => {
+    const a = crrt47(inp47({ course: { doses: [], levels: [{ conc: 40, timeH: B47 + 12 }, { conc: 30, timeH: B47 + 36 }], nowKg: 70 } }), B47 + 37);
+    assert(a.state === 'no-dose' && a.pick === null && a.rows.length === 9 && a.rows[0].mid > 20, JSON.stringify({ state: a.state, pick: a.pick, mid: a.rows && a.rows[0].mid }));
+  });
+
+  test('46.56 the rows stop at the local maximum when one is set (1,500 mg) and at the 2,000 mg per-dose ceiling otherwise', () => {
+    const now = B47 + 37, top = (m) => { const a = crrt47(inp47({ settings: { maxDoseMg: m } }), now); return [a.rows.length, a.rows[a.rows.length - 1].mg]; };
+    assert(JSON.stringify([top(1500), top(null), top(2500)]) === JSON.stringify([[7, 1500], [9, 2000], [9, 2000]]), JSON.stringify([top(1500), top(null), top(2500)]));
+  });
+
+  test('46.57 the answer names the modality and the effluent as recorded and says nothing of AUC; crrtAnswer reads no creatinine, no CrCl, no model and scales nothing from effluent', () => {
+    const now = B47 + 37, inp = inp47();
+    for (const a of [crrt47(inp, now), crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] }), now),
+      crrt47(inp47({ course: { doses: [], levels: [{ conc: 40, timeH: B47 + 12 }, { conc: 30, timeH: B47 + 36 }], nowKg: 70 } }), now)]) {
+      const h = fn46('crrtResultsHTML')(a, inp, now), t = text46(h);
+      assert(!/AUC/.test(h) && /CVVHDF/.test(t) && /2000 mL\/h/.test(t), `${a.state}: ${t.slice(0, 500)}`);
+    }
+    const src = fn46('crrtAnswer').toString(), iv = fn46('crrtIntervals').toString();
+    for (const [n, t] of [['crrtAnswer', src], ['crrtIntervals', iv]]) {
+      assert(!/\bscr\b|SCr|calcCrCl|CrCl|crcl|gotiPopPK|buelga|hughes|mapFit|MODEL_|POP_|prior/i.test(t), `${n} reads creatinine or a model`);
+      assert(!/mlPerH\s*[*\/]|[*\/]\s*[\w.]*mlPerH/.test(t), `${n} scales something from effluent`);
+    }
+    assert(/crrtIntervals\(/.test(src) && /solveIntervalK\(/.test(iv) && /pickGoalStep\(rows, goal\)/.test(src), 'one solver and one pick');
+  });
+
+  test('46.58 profiles: snapshot.crrt round-trips the CRRT form (rows included); a profile with rrt crrt loads into the CRRT mode with its form', () => {
+    const vals = { 'crrt-modality': 'cvvhdf', 'crrt-urine': 'lt100', 'crrt-vd': 'matzke3', 'crrt-goal-min': '15', 'crrt-goal-max': '20',
+      'crrt-give-date': '2026-06-12', 'crrt-give-time': '14:00', 'crrt-draw-date': '2026-06-13', 'crrt-draw-time': '06:00' };
+    const mk = (v) => {
+      const env = env46(v), base = env.document.querySelectorAll;
+      env.document.querySelectorAll = (sel) => { const m = /^#(crrt-\w+-tbody) tr\[data-n\]$/.exec(sel); return m ? env.get(m[1]).children : base(sel); };
+      return env;
+    };
+    const want = { modality: 'cvvhdf', urine: 'lt100', vd: 'matzke3', goalMin: '15', goalMax: '20', giveDate: '2026-06-12', giveTime: '14:00', drawDate: '2026-06-13', drawTime: '06:00',
+      circuit: [{ ondate: '2026-06-10', ontime: '08:00', offdate: '', offtime: '' }], effluent: [{ date: '2026-06-10', time: '08:00', ml: '2000', mod: '' }, { date: '2026-06-11', time: '20:00', ml: '2500', mod: 'cvvh' }],
+      doses: [{ mg: '750', tinf: '1', date: '2026-06-11', time: '00:00' }], levels: [{ conc: '10', date: '2026-06-10', time: '12:00' }, { conc: '15.7', date: '2026-06-11', time: '12:00' }] };
+    const env = mk({});
+    let snap = null;
+    withProf44(env, [], () => { fn46('applyCrrtForm')(want); snap = fn46('snapshotCrrtForm')(); });
+    assert(JSON.stringify(snap) === JSON.stringify(want), JSON.stringify(snap));
+    // Saved with a profile and loaded into a fresh form: the CRRT mode, the form as saved.
+    const T = { age: '58', tbw: '70', height: '174', scr: '1', mic: '1', 'b-mic': '1', 'b-auc-target': '450' };
+    const env2 = mk(Object.assign({}, T, vals));
+    Object.keys(T).concat(['b-age', 'b-tbw', 'b-height', 'b-scr']).forEach(k => env2.get(k));
+    env2.get('app-shell-bayesian').style.display = 'none';
+    let p = null;
+    withProf44(env2, [], () => {
+      try {
+        fn46('applyCrrtForm')(want); sandbox.setRrt('crrt'); sandbox.setPatientSex('M');
+        env2.labels[0].value = 'Patient CRRT';
+        sandbox.saveCurrentProfile();
+        p = JSON.parse(env2.localStorage.getItem(PROF_KEY44) || '[]')[0];
+      } finally { reset46(); }
+    });
+    assert(p && p.snapshot.core.rrt === 'crrt' && JSON.stringify(p.snapshot.crrt) === JSON.stringify(want), 'stored: ' + JSON.stringify(p && p.snapshot.crrt));
+    assert(sandbox.validProfile(p) === true && sandbox.validProfile(Object.assign({}, p, { snapshot: Object.assign({}, p.snapshot, { crrt: 'x' }) })) === false, 'validProfile reads crrt as an object');
+    const env3 = mk({});
+    env3.localStorage.setItem(PROF_KEY44, JSON.stringify([p]));
+    withProf44(env3, [], () => {
+      try {
+        sandbox.loadProfileIntoForm(p.id);
+        assert(vm.runInContext('state.rrt', sandbox) === 'crrt' && vm.runInContext('state.calcMode', sandbox) === 'crrt', JSON.stringify(rrt46()));
+        assert(JSON.stringify(fn46('snapshotCrrtForm')()) === JSON.stringify(want), JSON.stringify(fn46('snapshotCrrtForm')()));
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.59 the Trough CRRT column (R73, R62, P2): creatinine, loading and PK-model blocks hidden, weight kept; no volume basis preselected; one goal control, its value held per mode', () => {
+    assert(/\.panel-left\[data-mode="crrt"\] \.not-pd\s*\{\s*display:\s*none;\s*\}/.test(src46), 'the hide rule');
+    const sec = (src46.match(/<div id="section-crrt" style="display:none">[\s\S]*?<\/div><!-- \/section-crrt -->/) || [''])[0];
+    assert(sec && /<select id="crrt-vd"[^>]*>\s*<option value="">Choose…<\/option>\s*<option value="bauer">0\.70 L\/kg \(Bauer\)<\/option>\s*<option value="matzke3">0\.90 L\/kg \(Matzke 1984, CrCl &lt; 10\)<\/option>\s*<\/select>/.test(sec)
+      && !/selected/.test(sec), 'the two PD bases, nothing preselected');
+    assert(/<div data-goal-control="crrt"><\/div>/.test(sec) && /<div data-goal-control="pd"><\/div>/.test(src46), 'both modes mount the one goal control');
+    const pdG = fn46('goalControlHTML')('pd'), crG = fn46('goalControlHTML')('crrt');
+    assert(/id="crrt-goal-min"/.test(crG) && /id="pd-goal-min"/.test(pdG) && crG.replace(/crrt/g, 'pd') === pdG, 'one builder, parameterised by mode');
+    const env = env46({});
+    const panel = { dataset: {} };
+    env.document.querySelector = (sel) => (sel === '.app-shell:not(#app-shell-bayesian) > .panel-left' ? panel : null);
+    withProf44(env, [], () => {
+      try {
+        const disp = (id) => env.get(id).style.display;
+        fn46('setRrt')('crrt');
+        assert(panel.dataset.mode === 'crrt' && disp('section-crrt') === '' && disp('section-trough-shared') === 'none' && disp('section-pd') === 'none' && disp('section-rrt') === '',
+          JSON.stringify([panel.dataset.mode, disp('section-crrt'), disp('section-trough-shared'), disp('section-pd')]));
+        fn46('setGoalControl')('pd', '10|15');
+        assert(env.get('pd-goal-min').value === '10' && env.get('crrt-goal-min').value === '' && env.get('crrt-goal-max').value === '', 'a PD goal never becomes the CRRT goal');
+        fn46('setGoalControl')('crrt', '15|20');
+        assert(env.get('crrt-goal-min').value === '15' && env.get('pd-goal-max').value === '15', 'and the reverse');
+        fn46('setRrt')('none');
+        assert(disp('section-crrt') === 'none' && disp('section-trough-shared') === '', 'None restores the shared block');
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.60 readCrrtForm: the form into crrtAnswer\'s input; blank next draw and give-at are null (the engine defaults them), no basis is null, a row without a modality names none; a half-typed row is refused, never guessed', () => {
+    const h = (d, t) => new Date(`${d}T${t}`).getTime() / 3600000;
+    const vals = { tbw: '70', 'crrt-modality': 'cvvhdf', 'crrt-urine': 'anuric', 'crrt-vd': '',
+      'crrt-circ-ondate-1': '2026-06-10', 'crrt-circ-ontime-1': '08:00', 'crrt-circ-offdate-1': '', 'crrt-circ-offtime-1': '',
+      'crrt-eff-date-1': '2026-06-10', 'crrt-eff-time-1': '08:00', 'crrt-eff-ml-1': '2000', 'crrt-eff-mod-1': '',
+      'crrt-dose-mg-1': '750', 'crrt-dose-tinf-1': '1', 'crrt-dose-date-1': '2026-06-11', 'crrt-dose-time-1': '00:00',
+      'crrt-lvl-conc-1': '10', 'crrt-lvl-date-1': '2026-06-10', 'crrt-lvl-time-1': '12:00' };
+    const run = (v) => {
+      const env = env46(v);
+      ['circ', 'eff', 'dose', 'lvl'].forEach(k => { env.get(`crrt-${k}-tbody`).children.push({ dataset: { n: '1' } }); });
+      env.document.querySelectorAll = (sel) => { const m = /^#(crrt-\w+-tbody) tr\[data-n\]$/.exec(sel); return m ? env.get(m[1]).children : []; };
+      return withProf44(env, [], () => fn46('readCrrtForm')());
+    };
+    const r = run(vals);
+    assert(r.input, JSON.stringify(r));
+    const i = r.input;
+    assert(i.vBasis === null && i.goal === null && i.giveAtH === null && i.nextDrawH === null && i.modality === 'cvvhdf' && i.urine === 'anuric' && i.course.nowKg === 70, JSON.stringify(i).slice(0, 400));
+    assert(JSON.stringify(i.circuit) === JSON.stringify([{ onH: h('2026-06-10', '08:00'), offH: null }]) && JSON.stringify(i.effluent) === JSON.stringify([{ fromH: h('2026-06-10', '08:00'), mlPerH: 2000, modality: null }]), JSON.stringify([i.circuit, i.effluent]));
+    assert(JSON.stringify(i.course.doses) === JSON.stringify([{ mg: 750, tinfH: 1, timeH: h('2026-06-11', '00:00') }]) && JSON.stringify(i.course.levels) === JSON.stringify([{ conc: 10, timeH: h('2026-06-10', '12:00') }]), JSON.stringify(i.course));
+    assert(JSON.stringify(Object.keys(i.settings)) === '["maxDoseMg"]', JSON.stringify(i.settings));
+    const half = run(Object.assign({}, vals, { 'crrt-circ-offdate-1': '2026-06-11' }));
+    assert(half.errors && half.ids.indexOf('crrt-circ-offdate-1') >= 0, JSON.stringify(half));
+    const noMl = run(Object.assign({}, vals, { 'crrt-eff-ml-1': '' }));
+    assert(noMl.errors && noMl.ids.indexOf('crrt-eff-ml-1') >= 0, JSON.stringify(noMl));
+  });
+
+  // ── Task 27 review fixes (controller rulings R93, R91 revised, R94; review I4) ──
+  test('46.61 R93: circuit runs that contradict each other are refused by name, never projected: a second run starting while the first has no stop, or before its stop', () => {
+    const now = B47 + 63;
+    const open = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: null }, { onH: B47 + 62, offH: null }] }), now);
+    assert(open.state === 'refuse' && open.refuse.word === 'Circuit runs overlap' && /enter the stop time of run 1/i.test(open.refuse.html) && !open.rows,
+      JSON.stringify(open).slice(0, 400));
+    const over = crrt47(three47({ circuit: [{ onH: B47, offH: B47 + 80 }, { onH: B47 + 60, offH: null }] }), now);
+    assert(over.state === 'refuse' && over.refuse.word === 'Circuit runs overlap' && over.refuse.html.indexOf(clk47(B47 + 80)) >= 0 && over.refuse.html.indexOf(clk47(B47 + 60)) >= 0 && !over.rows,
+      JSON.stringify(over).slice(0, 400));
+    // A restart at or after the previous stop is two runs, not an overlap (46.49's record, and a restart at the stop minute).
+    const back = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 20, offH: null }] }), B47 + 61);
+    assert(back.state !== 'refuse', JSON.stringify(back).slice(0, 300));
+  });
+
+  test('46.62 R91 (revised): one recorded run must cover from the end of the last used interval to the next draw: a stop and restart inside a later, excluded interval is "Draw a level" naming the stop, as an effluent change there is', () => {
+    const now = B47 + 61;
+    const a = crrt47(three47({ circuit: [{ onH: B47 - 24, offH: B47 + 40 }, { onH: B47 + 42, offH: null }] }), now);
+    assert(a.intervals[0].used === true && a.intervals[1].flags.indexOf('circuit-off') >= 0, JSON.stringify(a.intervals && a.intervals.map(i => i.flags)));
+    assert(a.state === 'need-level' && a.reason === 'circuit' && !a.rows && a.rate && a.rate.n === 1
+      && a.message.indexOf(`Draw a level: the circuit stopped at ${clk47(B47 + 40)} since the decline was measured.`) === 0, JSON.stringify({ state: a.state, reason: a.reason, m: a.message }));
+    const e = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 40, mlPerH: 3000 }] }), now);
+    assert(e.state === 'need-level' && e.reason === 'effluent' && !e.rows, JSON.stringify({ state: e.state, reason: e.reason }));
+  });
+
+  test('46.63 R94: a level dated after now (beyond one minute) is refused by name, as AUC Precision words it; within the minute it is read', () => {
+    const now = B47 + 28;   // 8 h before the second level
+    const a = crrt47(inp47(), now);
+    assert(a.state === 'refuse' && a.refuse.word === 'A level is dated in the future' && !a.rows
+      && a.refuse.html.indexOf(`The level at ${fn46('fmtDT')(B47 + 36, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`) >= 0,
+      JSON.stringify(a).slice(0, 400));
+    const tol = crrt47(inp47(), B47 + 36 - 0.5 / 60);
+    assert(tol.state !== 'refuse', JSON.stringify(tol).slice(0, 300));
+  });
+
+  test('46.64 review I4: two used intervals measured at different settings (a change exactly at a level\'s time) are never fitted together: "Draw a level" naming the change, effluent and modality', () => {
+    const now = B47 + 61;
+    const e = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 36, mlPerH: 2500 }] }), now);
+    assert(e.intervals.every(i => i.used) && e.intervals[0].setting.mlPerH === 2000 && e.intervals[1].setting.mlPerH === 2500, JSON.stringify(e.intervals.map(i => [i.used, i.setting])));
+    assert(e.state === 'need-level' && e.reason === 'effluent' && !e.rows && e.message.indexOf(`the effluent rate changed at ${clk47(B47 + 36)} (2000 → 2500 mL/h)`) > 0, JSON.stringify({ state: e.state, m: e.message }));
+    const m = crrt47(three47({ effluent: [{ fromH: B47 - 24, mlPerH: 2000 }, { fromH: B47 + 36, mlPerH: 2000, modality: 'cvvh' }] }), now);
+    assert(m.intervals.every(i => i.used) && m.state === 'need-level' && m.reason === 'modality' && !m.rows && /CVVHDF → CVVH\)/.test(m.message), JSON.stringify({ state: m.state, m: m.message }));
+  });
+
+  // ── Task 28: a peak-equation haemodialysis reading from browser-only settings (Trough-based · HD). The plan's
+  // 46.53–46.62 are 46.65–46.74 here (the next free numbers, in the plan's order); 46.75–46.77 are R96 (a level dated
+  // after now), R73 (the column) and the settings' save and Clear. The four settings are the user's own: the values below
+  // are TEST FIXTURES, defined only in this file (the repository ships no value for any of them, 46.73). Fictional 80 kg.
+  const S48 = { fractionRemaining: 0.65, targetPeak: 25, vdPerKg: 0.7, holdPreMgL: 25 };
+  const KEYS48 = ['fractionRemaining', 'targetPeak', 'vdPerKg', 'holdPreMgL'];
+  const B48 = new Date(2026, 5, 15, 0, 0).getTime() / 3600000;   // 15 Jun 2026 00:00, local
+  const inp48 = (o) => Object.assign({ kg: 80, pre: 18, preAtH: B48 + 7, sessionStartH: B48 + 8, prevSessionEndH: B48 - 40,
+    settings: S48, localMaxMg: null, nowH: B48 + 7.5 }, o || {});
+  const hd48 = (o) => fn46('hdReading')(inp48(o));
+  const near48 = (a, b) => Math.abs(a - b) < 1e-9;
+  const text48 = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const ls48 = (d) => ({ _d: d || {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+    setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } });
+  const withLs48 = (store, fn) => {
+    const prev = sandbox.localStorage; sandbox.localStorage = ls48(store);
+    try { return fn(sandbox.localStorage); } finally { sandbox.localStorage = prev; }
+  };
+  const { RRT_NO_SAMPLE_AFTER_SESSION_H: GAP48, DOSE_MAX_PER_DOSE_MG: CEIL48 } = __extractConsts();
+
+  test('46.65 Review Focus 4: empty storage → no reading, naming all four settings and where to set them; three set → no reading, naming the fourth', () => {
+    const empty = withLs48({}, () => fn46('hdLocalSettings')());
+    const r = hd48({ settings: empty });
+    assert(r.state === 'no-settings' && JSON.stringify(r.missing) === JSON.stringify(KEYS48) && r.mg == null, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/Peak-equation reading \(your settings\)/.test(t) && /not a model's answer/.test(t) && /Goti 2018 · HD/.test(t) && /Your settings \(this browser\)/.test(t), t.slice(0, 500));
+    const labels = ['Fraction remaining after the session', 'Target peak', 'Volume of distribution', 'Hold level'];
+    assert(labels.every(l => t.indexOf(l) >= 0), t.slice(0, 600));
+    KEYS48.forEach((k, i) => {
+      const three = Object.assign({}, S48); delete three[k];
+      const st = withLs48({ 'vanco.hd.local': JSON.stringify(three) }, () => fn46('hdLocalSettings')());
+      assert(st[k] === null && KEYS48.filter(x => x !== k).every(x => st[x] === S48[x]), `${k}: ${JSON.stringify(st)}`);
+      const r3 = hd48({ settings: st });
+      assert(r3.state === 'no-settings' && JSON.stringify(r3.missing) === JSON.stringify([k]), `${k}: ${JSON.stringify(r3)}`);
+      const t3 = text48(fn46('hdReadingHTML')(r3));
+      assert(t3.indexOf(labels[i]) >= 0 && labels.filter((l, j) => j !== i).every(l => t3.indexOf(`Not set: ${l}`) < 0), `${k}: ${t3.slice(0, 500)}`);
+    });
+  });
+
+  test('46.66 pre-dialysis 18 mg/L → post-session 11.7 mg/L, V 56 L, 750 mg; every setting shows "your setting"', () => {
+    const r = hd48();
+    assert(r.state === 'dose' && near48(r.post, 11.7) && near48(r.vL, 56) && r.mg === 750 && r.capped === false, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/0\.65 \(your setting\)/.test(t) && /25 mg\/L \(your setting\)/.test(t) && /0\.7 L\/kg \(your setting\)/.test(t)
+      && (t.match(/your setting/g) || []).length >= 5 && /750 mg/.test(t) && /11\.7 mg\/L/.test(t) && /56(\.0)? L/.test(t), t.slice(0, 900));
+  });
+
+  test('46.67 pre-dialysis 5 mg/L → post-session 3.25 mg/L → 1,250 mg', () => {
+    const r = hd48({ pre: 5 });
+    assert(r.state === 'dose' && near48(r.post, 3.25) && r.mg === 1250 && r.capped === false, JSON.stringify(r));
+  });
+
+  test('46.68 a pre-dialysis level at or above the hold level (your setting) is a hold: 26 and exactly 25; 24.9 is a dose', () => {
+    const r = hd48({ pre: 26 });
+    assert(r.state === 'hold' && r.pre === 26 && r.hold === 25 && r.mg == null, JSON.stringify(r));
+    const eq = hd48({ pre: 25 });
+    assert(eq.state === 'hold' && eq.hold === 25, JSON.stringify(eq));
+    assert(hd48({ pre: 24.9 }).state === 'dose', 'just below the hold level');
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/26(\.0)? mg\/L/.test(t) && /25 mg\/L \(your setting\)/.test(t), t.slice(0, 500));
+  });
+
+  test('46.69 120 kg and a target peak of 40: capped at the 2 g per-dose ceiling; a local maximum of 1,500 caps at 1,500 (your setting)', () => {
+    const big = Object.assign({}, S48, { targetPeak: 40 });
+    const r = hd48({ kg: 120, settings: big });
+    assert(r.state === 'dose' && r.mg === CEIL48 && r.capped === true && r.capBy === 'ceiling', JSON.stringify(r));
+    const l = hd48({ kg: 120, settings: big, localMaxMg: 1500 });
+    assert(l.state === 'dose' && l.mg === 1500 && l.capped === true && l.capBy === 'local', JSON.stringify(l));
+    assert(/1,?500 mg \(your setting\)|1\.5 g \(your setting\)/.test(text48(fn46('hdReadingHTML')(l))), text48(fn46('hdReadingHTML')(l)).slice(0, 900));
+    const hi = hd48({ kg: 120, settings: big, localMaxMg: 3000 });
+    assert(hi.mg === CEIL48 && hi.capBy === 'ceiling', 'a local maximum above the ceiling leaves the ceiling: ' + JSON.stringify(hi));
+    const under = hd48({ localMaxMg: 1500 });
+    assert(under.mg === 750 && under.capped === false, 'below the cap, uncapped: ' + JSON.stringify(under));
+  });
+
+  test(`46.70 sampling: a level drawn at or after the session start is refused ("drawn during the session"); within ${GAP48} h of the previous session's end is refused; 3 h after (and exactly ${GAP48} h) is read`, () => {
+    for (const at of [B48 + 8, B48 + 8.5]) {
+      const r = hd48({ preAtH: at, nowH: B48 + 9 });
+      assert(r.state === 'refuse' && /during the session/i.test(r.word) && r.mg == null, `${at - B48}: ${JSON.stringify(r)}`);
+    }
+    const soon = hd48({ prevSessionEndH: B48 + 6 });
+    assert(soon.state === 'refuse' && /previous session/i.test(soon.word) && soon.html.indexOf(`within ${GAP48} h`) >= 0 && soon.mg == null, JSON.stringify(soon));
+    const before = hd48({ prevSessionEndH: B48 + 7.5, sessionStartH: B48 + 9, nowH: B48 + 8 });
+    assert(before.state === 'refuse' && /previous session/i.test(before.word), JSON.stringify(before));
+    const ok3 = hd48({ prevSessionEndH: B48 + 4 });
+    assert(ok3.state === 'dose' && ok3.mg === 750 && !(ok3.cautions || []).length, JSON.stringify(ok3));
+    const edge = hd48({ prevSessionEndH: B48 + 7 - GAP48 });
+    assert(edge.state === 'dose', 'exactly at the boundary: ' + JSON.stringify(edge));
+    const order = hd48({ prevSessionEndH: B48 + 8.5, preAtH: B48 + 7, sessionStartH: B48 + 8 });
+    assert(order.state === 'refuse', 'a previous session ending after this one starts: ' + JSON.stringify(order));
+  });
+
+  test(`46.71 no previous session entered → a dose, with a caution that the ${GAP48} h check could not be made`, () => {
+    const r = hd48({ prevSessionEndH: null });
+    assert(r.state === 'dose' && r.mg === 750 && (r.cautions || []).length === 1, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/could not be (made|checked)/.test(t) && t.indexOf(`${GAP48} h`) >= 0, t.slice(0, 900));
+  });
+
+  test('46.72 a fraction of 1.2 or 0 is not stored, the line says so, and the reading stays no-settings; a stored 1.2 is never read', () => {
+    for (const bad of ['1.2', '0']) {
+      const env = env46({ 'hd-set-frac': bad, 'hd-set-peak': '25', 'hd-set-vd': '0.7', 'hd-set-hold': '25' });
+      const st = withProf44(env, [], () => { fn46('saveHdLocalSettings')(); return fn46('hdLocalSettings')(); });
+      assert(st.fractionRemaining === null && st.targetPeak === 25 && st.vdPerKg === 0.7 && st.holdPreMgL === 25, `${bad}: ${JSON.stringify(st)}`);
+      const saved = JSON.parse(env.localStorage.getItem('vanco.hd.local') || '{}');
+      assert(!('fractionRemaining' in saved) || saved.fractionRemaining == null, `${bad}: stored ${JSON.stringify(saved)}`);
+      assert(/Fraction remaining after the session/.test(env.get('hd-set-status').textContent) && env.get('hd-set-frac').value === '', `${bad}: ${env.get('hd-set-status').textContent}`);
+      const r = hd48({ settings: st });
+      assert(r.state === 'no-settings' && JSON.stringify(r.missing) === '["fractionRemaining"]', `${bad}: ${JSON.stringify(r)}`);
+    }
+    for (const v of [1.2, 0, 1, -0.5, '0.65']) {
+      const st = withLs48({ 'vanco.hd.local': JSON.stringify(Object.assign({}, S48, { fractionRemaining: v })) }, () => fn46('hdLocalSettings')());
+      assert(st.fractionRemaining === null, `${JSON.stringify(v)} read as ${st.fractionRemaining}`);
+    }
+    for (const k of ['targetPeak', 'vdPerKg', 'holdPreMgL']) {
+      const st = withLs48({ 'vanco.hd.local': JSON.stringify(Object.assign({}, S48, { [k]: 0 })) }, () => fn46('hdLocalSettings')());
+      assert(st[k] === null, `${k} 0 read as ${st[k]}`);
+    }
+    // A stored value out of range in the input itself is never used either (defence in depth).
+    assert(hd48({ settings: Object.assign({}, S48, { fractionRemaining: 1.2 }) }).state === 'no-settings', 'hdReading used a fraction of 1.2');
+  });
+
+  test('46.73 the repository ships no value: with empty storage every setting is null, the source of hdLocalSettings and hdReading holds no number but 0 and 1, and the setting fields carry no value', () => {
+    const empty = withLs48({}, () => fn46('hdLocalSettings')());
+    assert(KEYS48.every(k => empty[k] === null) && Object.keys(empty).length === 4, JSON.stringify(empty));
+    const none = fn46('hdLocalSettings')();   // no localStorage at all in the bare sandbox
+    assert(KEYS48.every(k => none[k] === null), JSON.stringify(none));
+    for (const f of ['hdLocalSettings', 'hdReading']) {
+      const nums = (fn46(f).toString().replace(/[A-Za-z_$][\w$]*/g, ' ').match(/\d+(?:\.\d+)?/g) || []).filter(n => n !== '0' && n !== '1');
+      assert(!nums.length, `${f} holds ${nums.join(', ')}`);
+    }
+    for (const id of ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold']) {
+      const tag = (src46.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`)) || [''])[0];
+      assert(tag && !/\d/.test(tag.replace(/data-onchange="k\d+"/, '')), `${id}: ${tag}`);
+    }
+  });
+
+  test('46.74 the Trough haemodialysis screen shows the Goti-HD pointer first, then the reading, in every state', () => {
+    const NOTICE = 'On haemodialysis — use AUC Precision', TITLE = 'Peak-equation reading (your settings)';
+    const form = { tbw: 80, 'hd-pre': 18, 'hd-pre-date': '2026-06-15', 'hd-pre-time': '07:00', 'hd-start-date': '2026-06-15', 'hd-start-time': '08:00',
+      'hd-prev-date': '2026-06-13', 'hd-prev-time': '08:00' };
+    const run = (store, vals) => {
+      const prevNow = sandbox.calculationNowH; sandbox.calculationNowH = () => B48 + 7.5;
+      try { return withLs48(store, () => trough44('initial', 'M', Object.assign({}, form, vals || {}), { rrt: 'ihd' })); }
+      finally { sandbox.calculationNowH = prevNow; reset46(); }
+    };
+    const full = { 'vanco.hd.local': JSON.stringify(S48) };
+    const cases = { 'no-settings': run({}), refuse: run(full, { 'hd-prev-date': '2026-06-15', 'hd-prev-time': '06:00' }), hold: run(full, { 'hd-pre': 26 }), dose: run(full) };
+    for (const [st, r] of Object.entries(cases)) {
+      const n = r.h.indexOf(NOTICE), t = r.h.indexOf(TITLE);
+      assert(n >= 0 && t > n && new RegExp(`data-hd-reading="${st}"`).test(r.h), `${st}: notice ${n}, title ${t}: ${r.text.slice(0, 300)}`);
+    }
+    assert(/750 mg/.test(cases.dose.text) && /^Result: /.test(cases.dose.said), cases.dose.text.slice(0, 400));
+    const bad = run(full, { 'hd-pre-time': '' });
+    assert(bad.h.indexOf(NOTICE) >= 0 && bad.h.indexOf(TITLE) < 0, 'a malformed form: the pointer stays, no reading: ' + bad.text.slice(0, 300));
+  });
+
+  test('46.75 R96: a pre-dialysis level dated after now (beyond one minute) is refused by name; within the minute it is read', () => {
+    const r = hd48({ preAtH: B48 + 7.5, nowH: B48 + 7 });
+    assert(r.state === 'refuse' && /future/i.test(r.word) && r.mg == null, JSON.stringify(r));
+    const tol = hd48({ preAtH: B48 + 7 + 0.5 / 60, nowH: B48 + 7 });
+    assert(tol.state === 'dose', JSON.stringify(tol));
+  });
+
+  test('46.76 R73: the haemodialysis mode hides creatinine, the loading dose, the PK model and the trough target; keeps weight; shows its own section', () => {
+    assert(/\.panel-left\[data-mode="ihd"\] \.not-pd \{ display: none; \}/.test(src46), 'the CSS rule hides the .not-pd blocks in ihd');
+    assert(/<div id="section-renal" class="not-pd">/.test(src46) && /<div id="section-ld" class="not-pd">/.test(src46), 'creatinine and loading-dose blocks are .not-pd');
+    assert(!/class="[^"]*not-pd[^"]*"[^>]*>[\s\S]{0,400}id="tbw"/.test(src46.slice(src46.indexOf('id="tbw"') - 420, src46.indexOf('id="tbw"') + 10)), 'weight is not in a .not-pd block');
+    const env = env46({});
+    withProf44(env, [], () => { fn46('setRrt')('ihd'); });
+    try {
+      assert(env.get('section-trough-shared').style.display === 'none' && env.get('section-hd').style.display === '' && env.get('section-rrt').style.display === 'none',
+        JSON.stringify({ shared: env.get('section-trough-shared').style.display, hd: env.get('section-hd').style.display, rrt: env.get('section-rrt').style.display }));
+    } finally { withProf44(env, [], () => { fn46('setRrt')('none'); }); reset46(); }
+    assert(env.get('section-hd').style.display === 'none', 'leaving haemodialysis hides the section');
+  });
+
+  test('46.77 the settings: saved as numbers; a blank field keeps its stored value and shows it again; Clear removes the key, empties the fields and says so', () => {
+    const env = env46({ 'hd-set-frac': '0.65', 'hd-set-peak': '25', 'hd-set-vd': '0.7', 'hd-set-hold': '25' });
+    withProf44(env, [], () => fn46('saveHdLocalSettings')());
+    assert(JSON.stringify(JSON.parse(env.localStorage.getItem('vanco.hd.local'))) === JSON.stringify(S48), env.localStorage.getItem('vanco.hd.local'));
+    env.get('hd-set-frac').value = ''; env.get('hd-set-peak').value = '30';
+    const st = withProf44(env, [], () => { fn46('saveHdLocalSettings')(); return fn46('hdLocalSettings')(); });
+    assert(st.fractionRemaining === 0.65 && st.targetPeak === 30 && env.get('hd-set-frac').value === '0.65', JSON.stringify(st));
+    const after = withProf44(env, [], () => { fn46('clearHdLocalSettings')(); return fn46('hdLocalSettings')(); });
+    assert(env.localStorage.getItem('vanco.hd.local') === null && KEYS48.every(k => after[k] === null)
+      && ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold'].every(id => env.get(id).value === '') && /^Cleared/.test(env.get('hd-set-status').textContent),
+      JSON.stringify({ after, status: env.get('hd-set-status').textContent }));
+    assert(hd48({ settings: after }).state === 'no-settings', 'Clear returns the reading to the refusal');
+  });
+
+  // Task 28 review I1: no dose is worded by its cause. peakEquationDose gives 0 when the level is at or above the target
+  // peak, and also when the top-up rounds to no 250 mg step (under 125 mg); the sentence must say which.
+  test('46.78 review I1: a top-up under half a step (pre 37, hold 40: post 24.05, 56 × 0.95 = 53 mg) is "no dose", worded as rounding, never as at or above the peak', () => {
+    const r = hd48({ pre: 37, settings: Object.assign({}, S48, { holdPreMgL: 40 }) });
+    assert(r.state === 'dose' && r.mg === 0 && near48(r.post, 24.05) && r.post < S48.targetPeak, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/No dose by your settings/.test(t) && t.indexOf('The top-up to your target peak is under 125 mg, which rounds to no dose.') >= 0
+      && t.indexOf('at or above your target peak') < 0, t.slice(0, 600));
+  });
+
+  test('46.79 review I1: a post-session estimate at or above the target peak (pre 39, hold 40: post 25.35) is "no dose", worded as at or above the peak', () => {
+    const r = hd48({ pre: 39, settings: Object.assign({}, S48, { holdPreMgL: 40 }) });
+    assert(r.state === 'dose' && r.mg === 0 && r.post >= S48.targetPeak, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(t.indexOf('The post-session estimate is at or above your target peak.') >= 0 && t.indexOf('rounds to no dose') < 0, t.slice(0, 600));
+  });
+
+  // ── Task 29: citations, notes and the not-implemented lists (D28), with the carried rulings R80, R83, R84, R95 ──
+  // The comment lines directly above a top-level `const NAME`, joined (the source comment that cites it).
+  const commentAbove49 = (name) => {
+    const lines = src46.split('\n'), i = lines.findIndex(l => l.startsWith(`const ${name} `));
+    if (i < 0) throw new Error(`const ${name} not found`);
+    const out = []; for (let j = i - 1; j >= 0 && /^\/\//.test(lines[j]); j--) out.unshift(lines[j]);
+    return out.join('\n');
+  };
+  const constLine49 = (name) => (src46.match(new RegExp(`^const ${name} = [^\\n]*`, 'm')) || [''])[0];
+
+  test('46.80 the haemodialysis pre-dialysis target cites Rybak 2020 Rec 14 (C-III) as its source; Hui 2019 is further context only', () => {
+    const c = commentAbove49('HD_PREDIALYSIS_MIN');
+    assert(/Rybak 2020 Rec 14 \(C-III\)/.test(c), c);
+    const src = c.slice(0, c.indexOf('Further context'));
+    assert(c.indexOf('Further context') > 0 && !/Hui/.test(src), `Hui must not be named before "Further context": ${c}`);
+    assert(c.indexOf('Hui') < 0 || c.indexOf('Hui') > c.indexOf('Further context'), c);
+  });
+
+  // R105 (final review I2): "Rec 9" was Table 2's item number; the section summary numbers it Rec 1 (A-II, second sentence).
+  test('46.81 the weight-based guideline comparison cites Rybak 2020 Rec 1 (A-II) for 15 mg/kg; its cap and CrCl cut-points stay PREFERENCE (rule 8)', () => {
+    const at = src46.indexOf('// ─── Weight-based guideline dose');
+    const block = src46.slice(at, src46.indexOf('function computeGuidelineDose(', at));
+    assert(at > 0 && /Rec 1 \(A-II\)/.test(block) && /15 mg\/kg/.test(block), block.slice(0, 800));
+    assert((block.match(/PREFERENCE \(rule 8\)/g) || []).length === 2, 'the cap and the cut-points each say PREFERENCE (rule 8)');
+    assert(/Rec 1, A-II/.test(fn46('computeGuidelineDose').toString()), 'the 15 mg/kg line names its source');
+  });
+
+  test('46.82 the severe-renal note no longer says CRRT is not modelled; one line points to the Renal replacement selector', () => {
+    const n = fn46('severeRenalNote')(5, '', 'auc', false), n2 = fn46('severeRenalNote')(5, '', 'trough', true);
+    for (const x of [n, n2]) {
+      assert(x.html.indexOf('CRRT is not modelled') < 0 && !/Goti 2018 · HD/.test(x.html), x.html);
+      const lis = x.html.match(/<li>[^<]*On renal replacement[^<]*<\/li>/g) || [];
+      assert(lis.length === 1 && /^<li>On renal replacement, set Renal replacement/.test(lis[0]), x.html);
+    }
+    assert(src46.indexOf('CRRT is not modelled') < 0, 'gone from the source');
+  });
+
+  test('46.83 README.md and CLAUDE.md list the same "Not implemented" set, the release\'s eleven items', () => {
+    const want = ['session-clearance HD modelling', 'intradialytic dosing recommendations', 'a Bayesian CRRT model', 'AUC in CRRT',
+      'a level-based hybrid answer', 'SLED / PIRRT dosing beyond the guideline reference', 'continuous infusion', 'intraperitoneal dosing',
+      'AUC or Bayesian dosing for peritoneal dialysis', 'paediatrics', 'neonates'];
+    const listOf = (file) => {
+      const t = fs.readFileSync(path.join(__dirname, file), 'utf8').replace(/\s+/g, ' ');
+      const m = t.match(/\*\*Not implemented[^*]*:\*\* ([^.]*)\./);
+      assert(m, `${file}: no "Not implemented" list`);
+      return m[1].split(', ').map(s => s.trim());
+    };
+    const r = listOf('README.md'), c = listOf('CLAUDE.md');
+    assert(JSON.stringify(r.slice().sort()) === JSON.stringify(want.slice().sort()), `README: ${JSON.stringify(r)}`);
+    assert(JSON.stringify(c.slice().sort()) === JSON.stringify(r.slice().sort()), `CLAUDE.md: ${JSON.stringify(c)}`);
+  });
+
+  test('46.84 R80: the sessions-per-week caution grades what it cites: Rec 13 B-II, and Rec 14\'s "levels drive dosing" B-II (C-III is the target only)', () => {
+    const c = commentAbove49('HD_SESSIONS_PER_WEEK_CAUTION');
+    assert(/Rec 13 is B-II/.test(c) && /Rec 14's[^.]*drive subsequent dosing[^.]*is B-II/.test(c), c);
+    assert(!/Rec 14 is C-III/.test(c) && (c.indexOf('C-III') < 0 || /C-III[^.]*15–20 mg\/L|15–20 mg\/L[^.]*C-III/.test(c)), `C-III only beside the target: ${c}`);
+  });
+
+  test('46.85 R83: the CRRT first-level window and the after-session sampling window carry no grade: "guideline text, not separately graded"', () => {
+    for (const k of ['CRRT_FIRST_LEVEL_WITHIN_H', 'RRT_NO_SAMPLE_AFTER_SESSION_H']) {
+      const line = constLine49(k);
+      assert(/guideline text, not separately graded/.test(line) && !/\b[A-C]-(I{1,3})\b/.test(line), `${k}: ${line}`);
+    }
+  });
+
+  // R84: a g-for-mg slip ("2") must not cap every cell at 2 mg. The local maximum is a dose: INPUT_LIMITS.dose bounds it.
+  // R101 (after R84): the floor is also one dispensing step (MATRIX_DOSE_STEP), so a maximum lies in step..INPUT_LIMITS.dose.max.
+  // The words the status line gives for a refused number: below the floor, or above the dose fields' maximum.
+  const why49 = (v) => {
+    const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), lo = Math.max(L.min, __extractConsts().MATRIX_DOSE_STEP);
+    return v < lo ? `below ${lo} mg` : `above the ${L.max} mg`;
+  };
+  test('46.86 R84: the CRRT/hybrid/HD local maximum lies within INPUT_LIMITS.dose; outside it, or 0 or negative, nothing is stored and the status line says so', () => {
+    const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), LS = 'vanco.rrt.local';
+    assert(L.min === 100 && L.max === 4000, JSON.stringify(L));
+    const store = {}, env = profEnv44(store, {});
+    ['t-rrt-set-max', 'b-rrt-set-max', 'hd-set-max', 't-rrt-set-status', 'b-rrt-set-status', 'hd-set-max-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      const st = { t: 't-rrt-set-status', b: 'b-rrt-set-status', h: 'hd-set-max-status' }, fld = { t: 't-rrt-set-max', b: 'b-rrt-set-max', h: 'hd-set-max' };
+      for (const col of ['t', 'b', 'h']) for (const bad of ['2', '99', '4001', '0', '-5']) {
+        delete store[LS];
+        env.els[fld[col]].value = bad; fn46('saveRrtLocalSettings')(col);
+        const said = env.els[st[col]].textContent;
+        assert(!(LS in store) && fn46('rrtLocalSettings')().maxDoseMg === null, `${col} "${bad}" was stored: ${store[LS]}`);
+        assert(/Maximum single dose/.test(said) && said.indexOf(why49(+bad)) >= 0 && /not saved/.test(said), `${col} "${bad}": ${said}`);
+      }
+      for (const ok of ['250', '4000', '1500']) {   // R101: the floor is one 250 mg step (46.90), no longer 100
+        env.els['t-rrt-set-max'].value = ok; fn46('saveRrtLocalSettings')('t');
+        assert(JSON.parse(store[LS]).maxDoseMg === +ok && env.els['t-rrt-set-status'].textContent === '', `${ok}: ${store[LS]}`);
+      }
+      env.els['b-rrt-set-max'].value = '2'; fn46('saveRrtLocalSettings')('b');
+      const said = env.els['b-rrt-set-status'].textContent;
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && /1500 mg is kept/.test(said) && said.indexOf(why49(2)) >= 0, `stored kept: ${store[LS]} / ${said}`);
+    });
+  });
+
+  test('46.87 R84: the PD local maximum lies within INPUT_LIMITS.dose; outside it, or 0 or negative, nothing is stored and the status line says so', () => {
+    const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), LS = 'vanco.pd.local';
+    const store = {}, env = profEnv44(store, {});
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      for (const bad of ['2', '99', '4001', '0', '-5']) {
+        delete store[LS];
+        env.els['pd-set-max'].value = bad; env.els['pd-set-peak'].value = '30'; sandbox.savePdLocalSettings();
+        const said = env.els['pd-set-status'].textContent, o = JSON.parse(store[LS] || '{}');
+        assert(o.maxDoseMg == null && sandbox.pdLocalSettings().maxDoseMg === null && o.targetPeak === 30, `"${bad}": ${store[LS]}`);
+        assert(/Maximum single dose/.test(said) && said.indexOf(why49(+bad)) >= 0 && /not saved/.test(said), `"${bad}": ${said}`);
+      }
+      env.els['pd-set-max'].value = '1500'; sandbox.savePdLocalSettings();
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && env.els['pd-set-status'].textContent === '', store[LS]);
+      env.els['pd-set-max'].value = '2'; sandbox.savePdLocalSettings();
+      const said = env.els['pd-set-status'].textContent;
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && /1500 mg is kept/.test(said) && String(env.els['pd-set-max'].value) === '1500', `${store[LS]} / ${said}`);
+    });
+  });
+
+  test('46.88 R95a: one named future-level tolerance (one minute, D26), parsed by harness_constants and read by AUC Precision, CRRT and the haemodialysis reading; no inline 1 / 60 for it remains', () => {
+    const K = __extractConsts();
+    assert(K.FUTURE_LEVEL_TOLERANCE_H === 1 / 60, String(K.FUTURE_LEVEL_TOLERANCE_H));
+    assert(/D26/.test(commentAbove49('FUTURE_LEVEL_TOLERANCE_H') + constLine49('FUTURE_LEVEL_TOLERANCE_H')), 'its source comment names D26');
+    assert(/nowH \+ FUTURE_LEVEL_TOLERANCE_H/.test(fn46('levelAfterNow').toString()), fn46('levelAfterNow').toString());
+    assert(/levels\.filter\(l => levelAfterNow\(l\.timeH, fitNowH\)\)/.test(fn46('runBayesian').toString()), 'AUC Precision reads it');
+    assert(/levels\.filter\(l => levelAfterNow\(l\.timeH, nowH\)\)/.test(fn46('crrtAnswer').toString()), 'CRRT reads it');
+    assert(/levelAfterNow\(inp\.preAtH, inp\.nowH\)/.test(fn46('hdReading').toString()), 'the haemodialysis reading reads it');
+    assert(!/[Nn]owH \+ 1 \/ 60/.test(src46), 'an inline one-minute tolerance remains');
+    assert(fn46('levelAfterNow')(10 + 0.5 / 60, 10) === false && fn46('levelAfterNow')(10 + 1.5 / 60, 10) === true, 'one minute either side');
+  });
+
+  test('46.89 R95b: a CRRT circuit run whose stop is at or before its own start is refused by name', () => {
+    const now = B47 + 37;
+    const a = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 - 30 }] }), now);
+    assert(a.state === 'refuse' && a.refuse.word === 'Circuit run stops before it starts' && a.refuse.html.indexOf('Circuit run 1 stops before it starts') === 0 && !a.rows, JSON.stringify(a).slice(0, 400));
+    const eq = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 - 24 }] }), now);
+    assert(eq.state === 'refuse' && eq.refuse.html.indexOf('Circuit run 1 stops when it starts') === 0, JSON.stringify(eq).slice(0, 400));
+    const two = crrt47(inp47({ circuit: [{ onH: B47 - 30, offH: B47 - 26 }, { onH: B47 - 24, offH: B47 - 25 }] }), now);
+    assert(two.state === 'refuse' && two.refuse.html.indexOf('Circuit run 2 stops before it starts') === 0, JSON.stringify(two).slice(0, 400));
+  });
+
+  test('46.90 R101: a local maximum below one dispensing step (MATRIX_DOSE_STEP) is refused for each store: 150 and 249 mg are not stored and the line says a maximum must be at least 250 mg; 250 is stored', () => {
+    const step = __extractConsts().MATRIX_DOSE_STEP;
+    assert(step === 250, String(step));
+    // CRRT, hybrid and haemodialysis (vanco.rrt.local), from each of its three fields.
+    const rs = {}, re = profEnv44(rs, {});
+    ['t-rrt-set-max', 'b-rrt-set-max', 'hd-set-max', 't-rrt-set-status', 'b-rrt-set-status', 'hd-set-max-status'].forEach(k => re.get(k));
+    withProf44(re, [], () => {
+      const fld = { t: 't-rrt-set-max', b: 'b-rrt-set-max', h: 'hd-set-max' }, st = { t: 't-rrt-set-status', b: 'b-rrt-set-status', h: 'hd-set-max-status' };
+      for (const col of ['t', 'b', 'h']) for (const low of ['150', '249']) {
+        delete rs['vanco.rrt.local'];
+        re.els[fld[col]].value = low; fn46('saveRrtLocalSettings')(col);
+        const said = re.els[st[col]].textContent;
+        assert(!('vanco.rrt.local' in rs) && fn46('rrtLocalSettings')().maxDoseMg === null, `${col} ${low} stored: ${rs['vanco.rrt.local']}`);
+        assert(said.indexOf(`a maximum must be at least ${step} mg`) >= 0 && /not saved/.test(said), `${col} ${low}: ${said}`);
+      }
+      re.els['t-rrt-set-max'].value = String(step); fn46('saveRrtLocalSettings')('t');
+      assert(JSON.parse(rs['vanco.rrt.local']).maxDoseMg === step, rs['vanco.rrt.local']);
+    });
+    // Peritoneal dialysis (vanco.pd.local).
+    const ps = {}, pe = profEnv44(ps, {});
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status'].forEach(k => pe.get(k));
+    withProf44(pe, [], () => {
+      for (const low of ['150', '249']) {
+        delete ps['vanco.pd.local'];
+        pe.els['pd-set-max'].value = low; sandbox.savePdLocalSettings();
+        const said = pe.els['pd-set-status'].textContent;
+        assert(JSON.parse(ps['vanco.pd.local'] || '{}').maxDoseMg == null && sandbox.pdLocalSettings().maxDoseMg === null, `${low} stored: ${ps['vanco.pd.local']}`);
+        assert(said.indexOf(`a maximum must be at least ${step} mg`) >= 0 && /not saved/.test(said), `${low}: ${said}`);
+      }
+      pe.els['pd-set-max'].value = String(step); sandbox.savePdLocalSettings();
+      assert(JSON.parse(ps['vanco.pd.local']).maxDoseMg === step, ps['vanco.pd.local']);
+    });
+  });
+
+  // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
+  test('46.91 the version', () => {
+    assert(/const APP_VERSION = '3\.16\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.0');
+  });
+
+  // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
+  // The reviewer's CRRT case (C1): 70 kg, Bauer, goal 15–20, CVVHDF at 2000 mL/h throughout; 1.5 g given 40 h ago;
+  // levels 22 mg/L 30 h ago and 14 mg/L 6 h ago.
+  const NOWF = B47 + 100;
+  const crrtF = (levels) => crrt47(inp47({ course: { doses: [{ mg: 1500, tinfH: sandbox.autoTinf(1500), timeH: NOWF - 40 }], levels, nowKg: 70 },
+    circuit: [{ onH: NOWF - 72, offH: null }], effluent: [{ fromH: NOWF - 72, mlPerH: 2000 }] }), NOWF);
+  const LF = [{ conc: 22, timeH: NOWF - 30 }, { conc: 14, timeH: NOWF - 6 }];
+  const SHORT_WORDS = 'under 12 h after the level before it: assay rounding, not a decline; not used';
+
+  test('46.92 R103 (final review C1): a CRRT level repeated within PD_MIN_INTERVAL_H changes nothing: an extra 12.9 mg/L 1 h or 13.6 mg/L 30 min after the 14 gives the no-extra-level pick (750 mg), its interval flagged too-short and not used; the 14 entered twice at the same minute, or two values at one minute, is refused by name', () => {
+    assert(__extractConsts().PD_MIN_INTERVAL_H === 12, 'the one constant, PD\'s');
+    const base = crrtF(LF);
+    assert(base.state === 'dose' && base.pick.mg === 750 && base.rate.n === 1, JSON.stringify({ state: base.state, pick: base.pick, rate: base.rate }));
+    for (const extra of [{ conc: 12.9, timeH: NOWF - 5 }, { conc: 13.6, timeH: NOWF - 5.5 }]) {
+      const a = crrtF(LF.concat([extra]));
+      const last = a.intervals[a.intervals.length - 1];
+      assert(a.state === base.state && a.pick && a.pick.mg === base.pick.mg && a.rate.n === 1 && a.rate.kMin === base.rate.kMin,
+        `${extra.conc}: ${JSON.stringify({ state: a.state, pick: a.pick, rate: a.rate })}`);
+      assert(JSON.stringify(last.flags) === '["too-short"]' && last.used === false && last.k === null && fn46('crrtFlagWords')(last) === SHORT_WORDS,
+        `${extra.conc}: ${JSON.stringify(last)}`);
+    }
+    const when = fn46('fmtDT')(NOWF - 6, true);
+    for (const dup of [{ conc: 14, timeH: NOWF - 6 }, { conc: 15.2, timeH: NOWF - 6 }]) {
+      const d = crrtF(LF.concat([dup]));
+      assert(d.state === 'refuse' && d.refuse.word === 'Two levels at the same time' && d.refuse.html.indexOf(when) >= 0 && !d.rows && !d.pick,
+        `${dup.conc}: ${JSON.stringify(d).slice(0, 400)}`);
+    }
+  });
+
+  test('46.93 R104 (final review I1): a haemodialysis-typed session row under Renal replacement None is a blocking error naming the row and the selector; after a Clear in the Trough column (Renal replacement → None) AUC Precision on the Goti-HD course with two sessions is refused, with no regimen', () => {
+    const W = 'HD session row 1 is typed haemodialysis while Renal replacement is None.';
+    for (const row of [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-16', '08:00', '4']]) {
+      const r = sess46('none', [row]);
+      assert(r.errors.indexOf(W) >= 0 && r.sessions.length === 0, `${JSON.stringify(row)}: ${r.errors.join('; ')}`);
+    }
+    // The reviewer's path, through the real Clear: Goti-HD answers; Clear all fields in the Trough column; Run again.
+    const rows = [['2026-11-18', '08:00', '4', 'ihd'], ['2026-11-20', '08:00', '4', 'ihd']];
+    const out = withBayesForm({ 'b-age': '64', 'b-tbw': '78', 'b-height': '172', 'b-scr': '6.2', 'b-auc-target': '450', 'b-mic': '1',
+      doses: [[2000, 2, '2026-11-16', '13:00'], [750, 1, '2026-11-18', '13:00'], [750, 1, '2026-11-20', '13:00']],
+      levels: [[17.4, '2026-11-20', '07:30']], hdRows: rows }, (env) => {
+      const keep = { setTimeout: sandbox.setTimeout, announceResult: sandbox.announceResult }, realNow = Date.now;
+      sandbox.setTimeout = () => 0; sandbox.announceResult = () => {}; Date.now = () => NOW46;
+      env.document.body = env.el('body');
+      // The page's element methods that a Clear and a stale-result mark reach (the form stub has only a field's).
+      const getEl = env.document.getElementById;
+      env.document.getElementById = (id) => Object.assign(getEl(id), { closest: () => null, focus() {}, getClientRects: () => [],
+        insertAdjacentHTML(pos, h) { this.innerHTML += h; } });
+      const html = () => (env.els['b-results'] || {}).innerHTML || '';
+      try {
+        vm.runInContext("bState.model = 'goti'; bState.tile = 'gotihd'; bState.sex = 'M';", sandbox);
+        fn46('setRrt')('ihd');
+        fn46('runBayesian')();
+        const before = { r: !!vm.runInContext('bState.result', sandbox), rrt: rrt46() };
+        fn46('clearWithUndo')('trough');
+        fn46('setPatientSex')('M');   // a Clear unsets the sex in both modules; the reviewer chose it again before Run
+        const cleared = rrt46();
+        fn46('runBayesian')();
+        const h = html();
+        return { before, cleared, after: vm.runInContext('bState.result', sandbox), text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '), h };
+      } finally { Date.now = realNow; Object.assign(sandbox, keep); reset46(); }
+    });
+    assert(out.before.r && out.before.rrt.b === 'ihd' && out.before.rrt.tile === 'gotihd', `the control: ${JSON.stringify(out.before)}`);
+    assert(out.cleared.t === 'none' && out.cleared.b === 'none' && out.cleared.tile === 'goti', `the Clear: ${JSON.stringify(out.cleared)}`);
+    assert(out.after === null && out.text.indexOf(W) >= 0 && out.text.indexOf('HD session row 2 is typed haemodialysis while Renal replacement is None.') >= 0
+      && !/rec-dose|vx-regimen/.test(out.h), out.text.slice(0, 500));
+  });
+
+  test('46.94 R105 (final review I2): POST_DISTRIBUTION_MIN_H and the CRRT "How this works" cite Rybak 2020 Rec 2a (A-II); the guideline comparison cites Rec 1 (A-II); no "Rec 8a" or "Rec 9" (Table 2 item numbers) is left in the app or its records', () => {
+    const at = src46.indexOf('const POST_DISTRIBUTION_MIN_H');
+    assert(/Rybak 2020 Rec 2a \(A-II[;)]/.test(src46.slice(at - 700, at)), src46.slice(at - 700, at));
+    const now = B47 + 37, t = text46(fn46('crrtResultsHTML')(crrt47(inp47(), now), inp47(), now));
+    assert(/Rybak 2020, Rec 2a: the post-distributional level is drawn 1 to 2 h after the infusion/.test(t), t.slice(t.indexOf('How this works'), t.indexOf('How this works') + 700));
+    const files = ['index.html', 'CLAUDE.md', 'README.md', 'docs/v3-decisions.md', 'harness_constants.cjs'].map(f => [f, fs.readFileSync(path.join(__dirname, f), 'utf8')]);
+    for (const [f, txt] of files) {
+      const hits = txt.match(/Rec(?:s|\.)? (?:8a|9)\b/g);
+      assert(!hits, `${f}: ${hits && hits.join(', ')}`);
+    }
+  });
+
+  test('46.95 R106 (final review I3): the Trough result placeholder says what each renal-replacement mode gives, with no CrCl and no AUC₂₄ promise; under None it is the markup as shipped', () => {
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        const read = () => [env.get('rp-lead').innerHTML, env.get('rp-items').innerHTML].join(' ');
+        const words = { pd: /cycler/, crrt: /Rybak 2020's reference doses[\s\S]*Draw a level/, ihd: /peak-equation reading[\s\S]*Goti 2018 · HD/, hybrid: /Rybak 2020's reference doses[\s\S]*Nothing is fitted/ };
+        for (const kind of ['pd', 'crrt', 'ihd', 'hybrid']) {
+          fn46('setRrt')(kind);
+          const h = read();
+          assert(words[kind].test(h) && !/CrCl|AUC₂₄|400–600|Population PK|steady-state/.test(h), `${kind}: ${h}`);
+        }
+        fn46('setRrt')('none');
+        const norm = (x) => String(x).replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
+        const lead = (src46.match(/<p id="rp-lead">([\s\S]*?)<\/p>/) || [])[1], items = (src46.match(/<ul class="rp-list" id="rp-items">([\s\S]*?)<\/ul>/) || [])[1];
+        assert(lead && items && norm(env.get('rp-lead').innerHTML) === norm(lead) && norm(env.get('rp-items').innerHTML) === norm(items)
+          && /CrCl/.test(items) && /400–600/.test(items), `None: ${env.get('rp-lead').innerHTML} | ${env.get('rp-items').innerHTML}`);
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.96 the CRRT "Draw a level" sentence names every excluded interval in words, never a raw flag id: two levels the doses cannot explain read "higher than the doses could make"; CRRT_FLAG_WORDS covers every flag crrtIntervals can set', () => {
+    const a = crrt47(inp47({ course: { doses: [], levels: [{ conc: 10, timeH: B47 + 12 }, { conc: 15, timeH: B47 + 36 }], nowKg: 70 } }), B47 + 37);
+    assert(a.state === 'need-level' && a.intervals[0].flags.indexOf('unexplained-high') >= 0 && /higher than the doses could make/.test(a.message), a.message);
+    const ids = ['circuit-off', 'effluent-changed', 'modality-changed', 'distribution', 'too-short', 'unexplained-high', 'unexplained-low'];
+    for (const id of ids) assert(a.message.indexOf(`${id}`) < 0 || id === 'distribution', `raw id ${id}: ${a.message}`);
+    assert(!/[(;] ?[a-z]+-[a-z]+[;)]/.test(a.message), a.message);
+    const keys = JSON.parse(vm.runInContext('JSON.stringify(Object.keys(CRRT_FLAG_WORDS))', sandbox));
+    assert(ids.every(k => keys.indexOf(k) >= 0), JSON.stringify(keys));
+  });
+
+  test('46.97 R107: the CRRT one-level "Draw a level" state shows the Rybak 2020 Rec 16 reference for the weight under the lead "until two levels … the guideline\'s reference follows"; a two-level "Draw a level" does not', () => {
+    const inp = inp47({ course: { doses: [D1_47], levels: [L47[0]], nowKg: 70 } }), now = B47 + 13;
+    const one = crrt47(inp, now), t = text46(fn46('crrtResultsHTML')(one, inp, now));
+    assert(one.state === 'need-level' && one.reason === 'no-interval' && /^Draw a level: one level measures no decline/.test(one.message), JSON.stringify(one).slice(0, 300));
+    assert(/Draw a level/.test(t) && /On CRRT — no creatinine-based regimen/.test(t) && /Until two levels drawn with the circuit running/.test(t)
+      && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(t), t.slice(0, 900));
+    const inp2 = inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] });
+    const two = crrt47(inp2, B47 + 37), t2 = text46(fn46('crrtResultsHTML')(two, inp2, B47 + 37));
+    assert(two.state === 'need-level' && !/Rec 16 \(B-II\), for/.test(t2), t2.slice(0, 600));
+  });
+
+  test('46.98 the CRRT course Modality select says that a later change of modality goes on an effluent rate row with its time (it rewrites every interval)', () => {
+    assert(/<select id="crrt-modality" aria-describedby="crrt-modality-hint">/.test(src46), 'the select is described by the hint');
+    const hint = (src46.match(/<p class="field-hint" id="crrt-modality-hint">([\s\S]*?)<\/p>/) || [])[1] || '';
+    assert(/effluent rate row/.test(hint) && /with the time/.test(hint) && /every interval/.test(hint), hint);
+  });
+
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 621;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw)
+const EXPECTED_TOTAL = 719;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

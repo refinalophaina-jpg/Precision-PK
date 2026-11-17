@@ -154,10 +154,12 @@ function extract() {
     // v3.12.0 — IV vancomycin on peritoneal dialysis (D23)
     PD_LOAD_MG_PER_KG:      num(src, 'PD_LOAD_MG_PER_KG'),
     PD_EARLY_LEVEL_H:       num(src, 'PD_EARLY_LEVEL_H'),
+    PD_MIN_INTERVAL_H:      num(src, 'PD_MIN_INTERVAL_H'),   // D28 (R103): CRRT excludes a shorter interval too
     PD_APD_T12_ON_H:        num(src, 'PD_APD_T12_ON_H'),
     PD_APD_T12_OFF_H:       num(src, 'PD_APD_T12_OFF_H'),
     PD_CAPD_T12_MIN_H:      num(src, 'PD_CAPD_T12_MIN_H'),
     PD_CAPD_T12_MAX_H:      num(src, 'PD_CAPD_T12_MAX_H'),
+    PD_K_FLOOR:             num(src, 'PD_K_FLOOR'),   // D28: the interval solver's lower bound, numerical not clinical
     MATZKE_VD_GROUP3:       num(src, 'MATZKE_VD_GROUP3'),
 
     // v3.14.0 — continue the current regimen (D25)
@@ -176,6 +178,30 @@ function extract() {
     FIRST_INTERVAL_CAUTION_H: num(src, 'FIRST_INTERVAL_CAUTION_H'),
     // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state
     CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
+    // v3.16.0 (D28) — the renal-replacement kinds the one selector offers
+    RRT_KINDS:              arrayLiteral(src, 'RRT_KINDS'),
+    // v3.16.0 (D28, Task 24) — more sessions than this in seven days is a caution (Rybak 2020 Rec 13, 14)
+    HD_SESSIONS_PER_WEEK_CAUTION: num(src, 'HD_SESSIONS_PER_WEEK_CAUTION'),
+    // v3.16.0 (D28, Task 25) — the CRRT (Rybak 2020 Rec 16, B-II) and hybrid (Rec 15, B-III) references
+    CRRT_LOAD_MG_PER_KG_MIN:   num(src, 'CRRT_LOAD_MG_PER_KG_MIN'),
+    CRRT_LOAD_MG_PER_KG_MAX:   num(src, 'CRRT_LOAD_MG_PER_KG_MAX'),
+    CRRT_MAINT_MG_PER_KG_MIN:  num(src, 'CRRT_MAINT_MG_PER_KG_MIN'),
+    CRRT_MAINT_MG_PER_KG_MAX:  num(src, 'CRRT_MAINT_MG_PER_KG_MAX'),
+    CRRT_MAINT_INTERVAL_H:     num(src, 'CRRT_MAINT_INTERVAL_H'),
+    CRRT_EFFLUENT_MIN_ML_KG_H: num(src, 'CRRT_EFFLUENT_MIN_ML_KG_H'),
+    CRRT_EFFLUENT_MAX_ML_KG_H: num(src, 'CRRT_EFFLUENT_MAX_ML_KG_H'),
+    CRRT_FIRST_LEVEL_WITHIN_H: num(src, 'CRRT_FIRST_LEVEL_WITHIN_H'),
+    HYBRID_LOAD_MG_PER_KG_MIN: num(src, 'HYBRID_LOAD_MG_PER_KG_MIN'),
+    HYBRID_LOAD_MG_PER_KG_MAX: num(src, 'HYBRID_LOAD_MG_PER_KG_MAX'),
+    HYBRID_MAINT_MG_PER_KG:    num(src, 'HYBRID_MAINT_MG_PER_KG'),
+    RRT_NO_SAMPLE_AFTER_SESSION_H: num(src, 'RRT_NO_SAMPLE_AFTER_SESSION_H'),
+    // v3.16.0 (D28, Task 27) — the level-based CRRT answer: the post-distribution boundary (Rybak 2020 Rec 2a, A-II; R105)
+    // and the default next-draw time, a PREFERENCE (rule 8, controller ruling R65)
+    POST_DISTRIBUTION_MIN_H:   num(src, 'POST_DISTRIBUTION_MIN_H'),
+    CRRT_NEXT_DRAW_DEFAULT_H:  num(src, 'CRRT_NEXT_DRAW_DEFAULT_H'),
+    // v3.16.0 (D28, Task 29, ruling R95a) — the one future-level tolerance (one minute, D26), read by AUC Precision,
+    // CRRT and the haemodialysis reading through levelAfterNow
+    FUTURE_LEVEL_TOLERANCE_H:  num(src, 'FUTURE_LEVEL_TOLERANCE_H'),
   };
 }
 
