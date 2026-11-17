@@ -198,6 +198,9 @@ function extract() {
     // and the default next-draw time, a PREFERENCE (rule 8, controller ruling R65)
     POST_DISTRIBUTION_MIN_H:   num(src, 'POST_DISTRIBUTION_MIN_H'),
     CRRT_NEXT_DRAW_DEFAULT_H:  num(src, 'CRRT_NEXT_DRAW_DEFAULT_H'),
+    // v3.16.0 (D28, Task 29, ruling R95a) — the one future-level tolerance (one minute, D26), read by AUC Precision,
+    // CRRT and the haemodialysis reading through levelAfterNow
+    FUTURE_LEVEL_TOLERANCE_H:  num(src, 'FUTURE_LEVEL_TOLERANCE_H'),
   };
 }
 

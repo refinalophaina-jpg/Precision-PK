@@ -301,8 +301,9 @@ logic, the engine moves.
   early row gets ruling 3's protection.
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
-intradialytic dosing recommendations, CRRT, SLED, intraperitoneal vancomycin dosing, AUC or Bayesian
-dosing for peritoneal dialysis, paediatrics, neonates, continuous infusion.
+intradialytic dosing recommendations, a Bayesian CRRT model, AUC in CRRT, a level-based hybrid answer,
+SLED / PIRRT dosing beyond the guideline reference, continuous infusion, intraperitoneal dosing, AUC or
+Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
 
 ## Rules that are not negotiable
 

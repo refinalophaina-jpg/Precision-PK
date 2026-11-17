@@ -5036,22 +5036,46 @@ function pdLocalSettings() {
   return { maxDoseMg: o.maxDoseMg > 0 ? +o.maxDoseMg : null, targetPeak: o.targetPeak > 0 ? +o.targetPeak : null,
     amLabs: isClock24(o.amLabs) ? o.amLabs : '06:00', amLabsSet: isClock24(o.amLabs) };
 }
+// Controller ruling R84 (D28): a local maximum single dose is a dose, so it lies within INPUT_LIMITS.dose, the one
+// table every dose field reads. Outside it, or 0 or negative, it is not a setting and is never stored: a g-for-mg
+// slip ("2") would otherwise cap every dose at 2 mg. One reader for the PD maximum and the shared CRRT, hybrid and
+// haemodialysis maximum (rule 2). { mg } when it is a setting; otherwise { mg: null, why } for the status line.
+function readLocalMaxDose(x) {
+  const L = INPUT_LIMITS.dose, v = x === '' ? NaN : Number(x);
+  if (Number.isFinite(v) && v >= L.min && v <= L.max) return { mg: v, why: '' };
+  return { mg: null, why: x === '' ? 'was blank' : !Number.isFinite(v) ? 'was not a number'
+    : `of ${v} mg is outside the ${L.min}–${L.max} mg a dose field accepts` };
+}
+// The status line's words when the maximum typed is not a setting: the stored one stays (R23), or nothing is
+// stored (R84). '' for a blank with nothing stored: simply no setting.
+function localMaxDoseSaid(x, why, stored) {
+  if (stored != null) return `Maximum single dose ${why}, so the saved ${stored} mg is kept.`;
+  return x === '' ? '' : `Maximum single dose ${why}, so it is not saved.`;
+}
 // A blank or invalid maximum dose or target peak is refused: the stored value stays, the field
 // shows it again and the line below the settings says so (R23). A blank maximum read as "no cap".
+// The maximum must also lie within INPUT_LIMITS.dose (R84, readLocalMaxDose).
 function savePdLocalSettings() {
   const raw = (id) => String((document.getElementById(id) || {}).value || '').trim();
   const stored = pdLocalSettings(), refused = [];
+  const keep = (id, was) => { const e = document.getElementById(id); if (e) e.value = was; return was; };
   const num = (id, label, unit, was) => {
     const x = raw(id), v = x === '' ? NaN : Number(x);
     if (isFinite(v) && v > 0) return v;
     if (was != null) {
       refused.push(`${label} was ${x === '' ? 'blank' : 'not a positive number'}, so the saved ${was} ${unit} is kept.`);
-      const e = document.getElementById(id); if (e) e.value = was;
-      return was;
+      return keep(id, was);
     }
     return null;
   };
-  const o = { maxDoseMg: num('pd-set-max', 'Maximum single dose', 'mg', stored.maxDoseMg), targetPeak: num('pd-set-peak', 'Target peak', 'mg/L', stored.targetPeak),
+  const maxDose = () => {
+    const x = raw('pd-set-max'), r = readLocalMaxDose(x);
+    if (r.mg != null) return r.mg;
+    const said = localMaxDoseSaid(x, r.why, stored.maxDoseMg);
+    if (said) refused.push(said);
+    return stored.maxDoseMg != null ? keep('pd-set-max', stored.maxDoseMg) : null;
+  };
+  const o = { maxDoseMg: maxDose(), targetPeak: num('pd-set-peak', 'Target peak', 'mg/L', stored.targetPeak),
     amLabs: raw('pd-set-amlabs') };
   if (o.amLabs !== '' && !isClock24(o.amLabs)) { refused.push('AM labs time was not a 24-hour time, so it is not saved.'); o.amLabs = stored.amLabsSet ? stored.amLabs : ''; }
   const line = document.getElementById('pd-set-status'); if (line) line.textContent = refused.join(' ');
@@ -5086,10 +5110,10 @@ function rrtLocalSettings() {
 function saveRrtLocalSettings(col) {
   const c = col === 'b' || col === 'h' ? col : 't';
   const x = String((document.getElementById(RRT_MAX_FIELD[c]) || {}).value || '').trim();
-  const v = x === '' ? NaN : Number(x), stored = rrtLocalSettings().maxDoseMg;
+  const r = readLocalMaxDose(x), stored = rrtLocalSettings().maxDoseMg;   // R84: within INPUT_LIMITS.dose, or not a setting
   let said = '', mg = null;
-  if (Number.isFinite(v) && v > 0) mg = v;
-  else if (stored != null) { mg = stored; said = `Maximum single dose was ${x === '' ? 'blank' : 'not a positive number'}, so the saved ${stored} mg is kept.`; }
+  if (r.mg != null) mg = r.mg;
+  else { said = localMaxDoseSaid(x, r.why, stored); if (stored != null) mg = stored; }
   if (mg != null) { try { localStorage.setItem(RRT_LOCAL_KEY, JSON.stringify({ maxDoseMg: mg })); } catch (e) { /* private window: this visit only */ } }
   fillRrtLocalSettings();
   Object.keys(RRT_MAX_STATUS).forEach(k => { const s = document.getElementById(RRT_MAX_STATUS[k]); if (s) s.textContent = k === c ? said : ''; });
@@ -9940,7 +9964,7 @@ function severeRenalNote(crclTrue, modelNote, module, dosed) {
         <li>Avoid empiric maintenance dosing</li>
         <li>Watch closely for further nephrotoxicity, drug accumulation, and red-man / hypersensitivity reactions</li>
         <li>Consider an ID consult and discuss alternative agents (linezolid, daptomycin, ceftaroline) per organism + source</li>
-        <li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>; for peritoneal dialysis use Trough-based · Peritoneal dialysis. CRRT is not modelled here.</li>
+        <li>On renal replacement, set Renal replacement to the modality: this note is for a patient off dialysis.</li>
       </ul>` };
 }
 // What to do if clearance is truly augmented: one list for both modules (D26, rule 2).
@@ -10414,12 +10438,14 @@ function parseBayesSessions(rrt) {
 // cannot see, and read the fitted curve at the start of the next session.
 // Levels are never altered: no rebound factor, no back-calculation.
 //
-// Pre-dialysis range: 15–20 mg/L. Hui K et al., J Antimicrob Chemother
-// 2019;74:130, Introduction ("target pre-haemodialysis concentrations often
-// between 15 and 20 mg/L", its refs 9–11); and this project's clinical source,
+// Pre-dialysis range: 15–20 mg/L. Source: Rybak 2020 Rec 14 (C-III): pre-dialysis concentrations of
+// 15–20 mg/L are likely to achieve an AUC of 400–600 mg·h/L over the previous 24 hours. (Rec 14's
+// other sentence, that pre-dialysis monitoring should drive subsequent dosing, is B-II.)
+// Further context, not the source: Hui K et al., J Antimicrob Chemother 2019;74:130, Introduction
+// (pre-haemodialysis targets often 15–20 mg/L, its refs 9–11); this project's clinical source,
 // Vancomycin_TDM_Software_Instructions.md §4.4.
-const HD_PREDIALYSIS_MIN = 15;  // mg/L
-const HD_PREDIALYSIS_MAX = 20;  // mg/L
+const HD_PREDIALYSIS_MIN = 15;  // mg/L, Rybak 2020 Rec 14 (C-III)
+const HD_PREDIALYSIS_MAX = 20;  // mg/L, Rybak 2020 Rec 14 (C-III)
 // PREFERENCE (rule 8) — label and caution windows; never a fit. Since D17 the
 // "pre-HD" label also gates the one-time hold (pre-HD > 20: no dose, recheck)
 // and the scheduled caution: 23 mg/L drawn 11.9 h before a session holds, 12.1 h
@@ -10555,7 +10581,8 @@ const HD_EMPIRIC_MG_PER_KG = {
 // HD_LOADING_MAX_MG (Rec 11, 3,000 mg) is defined with its source above the severe-renal advisory.
 
 // Rybak 2020 Rec 13: maintenance doses are for thrice-weekly administration; more often, dose from levels (Rec 14). A caution only (the user's ruling U8); changes no number.
-// Rec 13 is B-II (its maintenance doses are footnoted "thrice-weekly dose administration"); Rec 14 is C-III.
+// Rec 13 is B-II (its maintenance doses are footnoted "thrice-weekly dose administration"); Rec 14's sentence cited
+// here, that pre-dialysis monitoring should drive subsequent dosing, is B-II (Rec 14's C-III is the 15–20 mg/L target).
 const HD_SESSIONS_PER_WEEK_CAUTION = 3;
 // The most sessions whose start falls in any seven consecutive calendar days. Calendar days, not
 // 168 h: a thrice-weekly schedule whose start times move (Mon 20:00 … next Mon 06:00), or a week
@@ -10607,11 +10634,11 @@ const CRRT_MAINT_MG_PER_KG_MAX = 10;     // Rybak 2020 Rec 16 (B-II)
 const CRRT_MAINT_INTERVAL_H = 12;        // Rybak 2020 Rec 16 (B-II): maintenance "every 12 hours"
 const CRRT_EFFLUENT_MIN_ML_KG_H = 20;    // Rybak 2020 Rec 16 (B-II): the KDIGO-recommended effluent rates (20–25 mL/kg/h) its doses assume
 const CRRT_EFFLUENT_MAX_ML_KG_H = 25;    // Rybak 2020 Rec 16 (B-II)
-const CRRT_FIRST_LEVEL_WITHIN_H = 24;    // Rybak 2020 Rec 16 text: a level "within the first 24 hours"
+const CRRT_FIRST_LEVEL_WITHIN_H = 24;    // Rybak 2020 Rec 16 text: a level "within the first 24 hours" (guideline text, not separately graded)
 const HYBRID_LOAD_MG_PER_KG_MIN = 20;    // Rybak 2020 Rec 15 (B-III): hybrid (SLED / PIRRT) loading 20–25 mg/kg actual body weight
 const HYBRID_LOAD_MG_PER_KG_MAX = 25;    // Rybak 2020 Rec 15 (B-III)
 const HYBRID_MAINT_MG_PER_KG = 15;       // Rybak 2020 Rec 15 (B-III): 15 mg/kg after the session ends, or in its final 60–90 min
-const RRT_NO_SAMPLE_AFTER_SESSION_H = 2; // Rybak 2020 hybrid text (Rec 15): a level during or within 2 h of a session's end "will be artificially low"
+const RRT_NO_SAMPLE_AFTER_SESSION_H = 2; // Rybak 2020 hybrid text (Rec 15): a level during or within 2 h of a session's end "will be artificially low" (guideline text, not separately graded)
 
 // One cap rule for every weight-based dose here (the user's ruling U10; PD's load since D23): the lower of the
 // Rybak 2020 Rec 11 loading maximum (HD_LOADING_MAX_MG) and the user's local maximum, when one is set. `by`
@@ -11279,6 +11306,13 @@ function crrtAnswer(input, nowH) {
   if (perKg == null) return refuse('Choose a volume basis', 'Choose Bauer 0.70 L/kg or Matzke 1984 group III 0.90 L/kg, the two the peritoneal dialysis mode offers. No volume is chosen for you: none is sourced for CRRT.');
   const circuit = (inp.circuit || []).slice().sort((a, b) => a.onH - b.onH);
   if (!circuit.length || !circuit.every(r => Number.isFinite(r.onH))) return refuse('Circuit start missing', 'Enter when the circuit started (and when it stopped, if it has). The decline is read only while the circuit ran.');
+  // Controller ruling R95b: a run whose stop is at or before its own start ran for no time, or the stop is mistyped;
+  // refused by name (runs numbered in order of start, as below), never read as a run.
+  const backwards = circuit.findIndex(r => r.offH != null && !(r.offH > r.onH));
+  if (backwards >= 0) {
+    const r = circuit[backwards], how = r.offH < r.onH ? 'before' : 'when';
+    return refuse('Circuit run stops before it starts', escHtml(`Circuit run ${backwards + 1} stops ${how} it starts: started ${fmtDT(r.onH, true)}, stopped ${fmtDT(r.offH, true)} (runs in order of start). Correct its stop time, or leave it blank while the circuit runs.`));
+  }
   // Controller ruling R93: runs, in order of start, never overlap. A run starting while the one before it has no stop,
   // or before that stop, means a stop happened at a time nobody entered: refused by name, never projected across.
   for (let i = 1; i < circuit.length; i++) {
@@ -11293,8 +11327,8 @@ function crrtAnswer(input, nowH) {
       return refuse('Level timing', escHtml(`The level at ${fmtClock(l.timeH)} was drawn during the infusion of ${fmtDose(d.mg)}. A level has to follow the end of the infusion.`));
   }
   // Controller ruling R94: a level dated after now can only be a wrong date. Refused as AUC Precision refuses it (D26,
-  // review I3): one minute of tolerance covers a level typed to the minute.
-  const future = levels.filter(l => l.timeH > nowH + 1 / 60);
+  // review I3), through the one helper and its one tolerance (levelAfterNow, FUTURE_LEVEL_TOLERANCE_H; R95).
+  const future = levels.filter(l => levelAfterNow(l.timeH, nowH));
   if (future.length) return refuse('A level is dated in the future', future.map(l => escHtml(`The level at ${fmtDT(l.timeH, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`)).join(' '));
   const cautions = [];
   // A local maximum below one dispensing step cannot be honoured: ignored, and said (PD's rule).
@@ -11443,10 +11477,13 @@ function troughHdNoticeHTML() {
      intermittent haemodialysis. Use AUC Precision with Goti 2018 · HD: log the sessions, and dose after each one
      from the pre-HD level. <button type="button" class="vx-act" data-onclick="k77">Open AUC Precision · Goti-HD</button>` });
 }
-// A level dated after now can only be a wrong date (D26; CRRT R94; the haemodialysis reading R96). One minute of
-// tolerance covers a level typed to the minute. This is the third spelling of that tolerance: Task 29 (R95) folds it,
-// AUC Precision's and CRRT's into one named constant.
-function levelAfterNow(timeH, nowH) { return timeH > nowH + 1 / 60; }
+// A level dated after now can only be a wrong date (D26, the 2026-11-13 review's I3: a level after the time of the
+// analysis is refused; CRRT R94; the haemodialysis reading R96). The tolerance is one minute, in hours (1/60 h, written
+// as its decimal so harness_constants can read it): it covers a level typed to the minute. A refusal rule, not a clinical
+// number (docs/v3-decisions.md D26). One constant and one helper, read by AUC Precision (runBayesian), CRRT (crrtAnswer)
+// and the haemodialysis reading (hdReading) (controller ruling R95a, rule 2).
+const FUTURE_LEVEL_TOLERANCE_H = 0.016666666666666666;   // one minute (D26)
+function levelAfterNow(timeH, nowH) { return timeH > nowH + FUTURE_LEVEL_TOLERANCE_H; }
 // The Trough haemodialysis reading (D28, plan Task 28; the user's rulings 7 and U11): a peak equation from the user's own
 // four settings, beside Goti 2018 · HD and never instead of it. Pure. input = { kg, pre, preAtH, sessionStartH,
 // prevSessionEndH|null, settings (hdLocalSettings()), localMaxMg|null, nowH }.
@@ -14995,6 +15032,8 @@ function markSuggestedModel() {
 // ─── Weight-based guideline dose (ASHP/IDSA 2020) ───
 // Display only: the comparison line in Show the math (renderBayesianResults, "Weight-based guideline
 // comparison"). It never sets, orders or changes the regimen offered; that is regimenDecision's.
+// Its 15 mg/kg actual body weight is the lower end of Rybak 2020 Rec 9 (A-II): 15–20 mg/kg actual body
+// weight every 8–12 h for most patients with normal renal function, assuming an MIC of 1 mg/L.
 // Its cap and its CrCl cut-points have no source. Searched 2026-11-15 (Task 21, D27; ruling R34):
 // this repository's docs, Vancomycin_TDM_Software_Instructions.md and the literature register. None
 // states them; §3.2 of the instructions reads differently (CrCl > 90, 60-90, 30-59, 10-29, < 10;
@@ -15009,7 +15048,7 @@ const GUIDELINE_DOSE_CAP_MG = 2500;
 const GUIDELINE_INTERVAL_BY_CRCL = [[90, 8], [50, 12], [30, 24], [15, 36]];
 const GUIDELINE_INTERVAL_LAST_H  = 48;
 function computeGuidelineDose(tbw, crcl) {
-  const rawDose = 15 * tbw;   // 15 mg/kg TBW
+  const rawDose = 15 * tbw;   // 15 mg/kg actual body weight (Rybak 2020 Rec 9, A-II)
   const rounded = Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
   const dose    = Math.min(GUIDELINE_DOSE_CAP_MG, rounded);
   const band    = GUIDELINE_INTERVAL_BY_CRCL.find(([cut]) => crcl > cut);
@@ -15062,9 +15101,10 @@ function runBayesian() {
   // I3 (2026-11-13 review). A level cannot be drawn after the time of this analysis (the same "now"
   // the fit is stamped with, fitNowH): it can only be a wrong date, and fitting it turned an in-range
   // regimen into a safety change. Refuse it, naming the row. One minute of tolerance covers a level
-  // typed to the minute. A dose dated ahead is a planned dose and stays allowed.
+  // typed to the minute (FUTURE_LEVEL_TOLERANCE_H, through levelAfterNow, shared with CRRT and the haemodialysis
+  // reading; R95). A dose dated ahead is a planned dose and stays allowed.
   const fitNowH = Date.now() / 3600000;
-  const futureLevels = levels.filter(l => l.timeH > fitNowH + 1 / 60);
+  const futureLevels = levels.filter(l => levelAfterNow(l.timeH, fitNowH));
   if (futureLevels.length) {
     const msgs = futureLevels.map(l => `Level row ${l.row}: dated ${fmtDT(l.timeH, true)}, after the time of this analysis. A level cannot be drawn in the future; check the date and time.`);
     showFormErrors('auc', msgs, msgs.map(m => courseErrorTarget(m)), {

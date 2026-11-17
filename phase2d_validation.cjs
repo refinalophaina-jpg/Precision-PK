@@ -5570,7 +5570,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(rb.indexOf("rrt === 'pd'") > 0 && rb.indexOf("rrt === 'pd'") < rb.indexOf('parseBayesCourse()'), 'checked before anything is parsed or fitted');
     assert(/data-onclick="k93"/.test(body('bayesPdNoticeHTML')) && /Trough-based · Peritoneal dialysis/.test(body('bayesPdNoticeHTML')), 'the refusal links to the PD mode');
     assert(/\n  k93: [^\n]*switchModule\('trough'\)[^\n]*setCalcMode\('pd'\)/.test(script), 'k93 opens it');
-    assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /for peritoneal dialysis use Trough-based · Peritoneal dialysis/.test(src), 'the advisory no longer sends PD to Goti');
+    // D28 (Task 29): the advisory's renal-replacement line points to the Renal replacement selector, which routes PD to the
+    // PD mode (SUITE 46 routing); it names no model for any modality, so it cannot send PD to Goti.
+    const srn = sandbox.severeRenalNote(5, '', 'auc', false).html;
+    assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /On renal replacement, set Renal replacement/.test(srn) && !/Goti/.test(srn), 'the advisory no longer sends PD to Goti');
     // v3.14.0 (D26, R22): read into pdForm, stored unless an AUC save's Trough column is another patient's.
     assert(/const pdForm = snapshotPdForm\(\);/.test(body('saveCurrentProfile')) && /snapshot\.pd = [^;]*\bpdForm;/.test(body('saveCurrentProfile')), 'saved');
     assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /const rrt = rrtOf\(s\.core, s\.demographics, s\.pd\);\s*setRrt\(rrt\);/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');   // D28: the selector replaced #b-pd
@@ -11097,13 +11100,144 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(t.indexOf('The post-session estimate is at or above your target peak.') >= 0 && t.indexOf('rounds to no dose') < 0, t.slice(0, 600));
   });
 
+  // ── Task 29: citations, notes and the not-implemented lists (D28), with the carried rulings R80, R83, R84, R95 ──
+  // The comment lines directly above a top-level `const NAME`, joined (the source comment that cites it).
+  const commentAbove49 = (name) => {
+    const lines = src46.split('\n'), i = lines.findIndex(l => l.startsWith(`const ${name} `));
+    if (i < 0) throw new Error(`const ${name} not found`);
+    const out = []; for (let j = i - 1; j >= 0 && /^\/\//.test(lines[j]); j--) out.unshift(lines[j]);
+    return out.join('\n');
+  };
+  const constLine49 = (name) => (src46.match(new RegExp(`^const ${name} = [^\\n]*`, 'm')) || [''])[0];
+
+  test('46.80 the haemodialysis pre-dialysis target cites Rybak 2020 Rec 14 (C-III) as its source; Hui 2019 is further context only', () => {
+    const c = commentAbove49('HD_PREDIALYSIS_MIN');
+    assert(/Rybak 2020 Rec 14 \(C-III\)/.test(c), c);
+    const src = c.slice(0, c.indexOf('Further context'));
+    assert(c.indexOf('Further context') > 0 && !/Hui/.test(src), `Hui must not be named before "Further context": ${c}`);
+    assert(c.indexOf('Hui') < 0 || c.indexOf('Hui') > c.indexOf('Further context'), c);
+  });
+
+  test('46.81 the weight-based guideline comparison cites Rybak 2020 Rec 9 (A-II) for 15 mg/kg; its cap and CrCl cut-points stay PREFERENCE (rule 8)', () => {
+    const at = src46.indexOf('// ─── Weight-based guideline dose');
+    const block = src46.slice(at, src46.indexOf('function computeGuidelineDose(', at));
+    assert(at > 0 && /Rec 9 \(A-II\)/.test(block) && /15 mg\/kg/.test(block), block.slice(0, 800));
+    assert((block.match(/PREFERENCE \(rule 8\)/g) || []).length === 2, 'the cap and the cut-points each say PREFERENCE (rule 8)');
+    assert(/Rec 9, A-II/.test(fn46('computeGuidelineDose').toString()), 'the 15 mg/kg line names its source');
+  });
+
+  test('46.82 the severe-renal note no longer says CRRT is not modelled; one line points to the Renal replacement selector', () => {
+    const n = fn46('severeRenalNote')(5, '', 'auc', false), n2 = fn46('severeRenalNote')(5, '', 'trough', true);
+    for (const x of [n, n2]) {
+      assert(x.html.indexOf('CRRT is not modelled') < 0 && !/Goti 2018 · HD/.test(x.html), x.html);
+      const lis = x.html.match(/<li>[^<]*On renal replacement[^<]*<\/li>/g) || [];
+      assert(lis.length === 1 && /^<li>On renal replacement, set Renal replacement/.test(lis[0]), x.html);
+    }
+    assert(src46.indexOf('CRRT is not modelled') < 0, 'gone from the source');
+  });
+
+  test('46.83 README.md and CLAUDE.md list the same "Not implemented" set, the release\'s eleven items', () => {
+    const want = ['session-clearance HD modelling', 'intradialytic dosing recommendations', 'a Bayesian CRRT model', 'AUC in CRRT',
+      'a level-based hybrid answer', 'SLED / PIRRT dosing beyond the guideline reference', 'continuous infusion', 'intraperitoneal dosing',
+      'AUC or Bayesian dosing for peritoneal dialysis', 'paediatrics', 'neonates'];
+    const listOf = (file) => {
+      const t = fs.readFileSync(path.join(__dirname, file), 'utf8').replace(/\s+/g, ' ');
+      const m = t.match(/\*\*Not implemented[^*]*:\*\* ([^.]*)\./);
+      assert(m, `${file}: no "Not implemented" list`);
+      return m[1].split(', ').map(s => s.trim());
+    };
+    const r = listOf('README.md'), c = listOf('CLAUDE.md');
+    assert(JSON.stringify(r.slice().sort()) === JSON.stringify(want.slice().sort()), `README: ${JSON.stringify(r)}`);
+    assert(JSON.stringify(c.slice().sort()) === JSON.stringify(r.slice().sort()), `CLAUDE.md: ${JSON.stringify(c)}`);
+  });
+
+  test('46.84 R80: the sessions-per-week caution grades what it cites: Rec 13 B-II, and Rec 14\'s "levels drive dosing" B-II (C-III is the target only)', () => {
+    const c = commentAbove49('HD_SESSIONS_PER_WEEK_CAUTION');
+    assert(/Rec 13 is B-II/.test(c) && /Rec 14's[^.]*drive subsequent dosing[^.]*is B-II/.test(c), c);
+    assert(!/Rec 14 is C-III/.test(c) && (c.indexOf('C-III') < 0 || /C-III[^.]*15–20 mg\/L|15–20 mg\/L[^.]*C-III/.test(c)), `C-III only beside the target: ${c}`);
+  });
+
+  test('46.85 R83: the CRRT first-level window and the after-session sampling window carry no grade: "guideline text, not separately graded"', () => {
+    for (const k of ['CRRT_FIRST_LEVEL_WITHIN_H', 'RRT_NO_SAMPLE_AFTER_SESSION_H']) {
+      const line = constLine49(k);
+      assert(/guideline text, not separately graded/.test(line) && !/\b[A-C]-(I{1,3})\b/.test(line), `${k}: ${line}`);
+    }
+  });
+
+  // R84: a g-for-mg slip ("2") must not cap every cell at 2 mg. The local maximum is a dose: INPUT_LIMITS.dose bounds it.
+  test('46.86 R84: the CRRT/hybrid/HD local maximum lies within INPUT_LIMITS.dose; outside it, or 0 or negative, nothing is stored and the status line says so', () => {
+    const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), LS = 'vanco.rrt.local';
+    assert(L.min === 100 && L.max === 4000, JSON.stringify(L));
+    const store = {}, env = profEnv44(store, {});
+    ['t-rrt-set-max', 'b-rrt-set-max', 'hd-set-max', 't-rrt-set-status', 'b-rrt-set-status', 'hd-set-max-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      const st = { t: 't-rrt-set-status', b: 'b-rrt-set-status', h: 'hd-set-max-status' }, fld = { t: 't-rrt-set-max', b: 'b-rrt-set-max', h: 'hd-set-max' };
+      for (const col of ['t', 'b', 'h']) for (const bad of ['2', '99', '4001', '0', '-5']) {
+        delete store[LS];
+        env.els[fld[col]].value = bad; fn46('saveRrtLocalSettings')(col);
+        const said = env.els[st[col]].textContent;
+        assert(!(LS in store) && fn46('rrtLocalSettings')().maxDoseMg === null, `${col} "${bad}" was stored: ${store[LS]}`);
+        assert(/Maximum single dose/.test(said) && said.indexOf(`${L.min}–${L.max} mg`) >= 0 && /not saved/.test(said), `${col} "${bad}": ${said}`);
+      }
+      for (const ok of ['100', '4000', '1500']) {
+        env.els['t-rrt-set-max'].value = ok; fn46('saveRrtLocalSettings')('t');
+        assert(JSON.parse(store[LS]).maxDoseMg === +ok && env.els['t-rrt-set-status'].textContent === '', `${ok}: ${store[LS]}`);
+      }
+      env.els['b-rrt-set-max'].value = '2'; fn46('saveRrtLocalSettings')('b');
+      const said = env.els['b-rrt-set-status'].textContent;
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && /1500 mg is kept/.test(said) && said.indexOf(`${L.min}–${L.max} mg`) >= 0, `stored kept: ${store[LS]} / ${said}`);
+    });
+  });
+
+  test('46.87 R84: the PD local maximum lies within INPUT_LIMITS.dose; outside it, or 0 or negative, nothing is stored and the status line says so', () => {
+    const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), LS = 'vanco.pd.local';
+    const store = {}, env = profEnv44(store, {});
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      for (const bad of ['2', '99', '4001', '0', '-5']) {
+        delete store[LS];
+        env.els['pd-set-max'].value = bad; env.els['pd-set-peak'].value = '30'; sandbox.savePdLocalSettings();
+        const said = env.els['pd-set-status'].textContent, o = JSON.parse(store[LS] || '{}');
+        assert(o.maxDoseMg == null && sandbox.pdLocalSettings().maxDoseMg === null && o.targetPeak === 30, `"${bad}": ${store[LS]}`);
+        assert(/Maximum single dose/.test(said) && said.indexOf(`${L.min}–${L.max} mg`) >= 0 && /not saved/.test(said), `"${bad}": ${said}`);
+      }
+      env.els['pd-set-max'].value = '1500'; sandbox.savePdLocalSettings();
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && env.els['pd-set-status'].textContent === '', store[LS]);
+      env.els['pd-set-max'].value = '2'; sandbox.savePdLocalSettings();
+      const said = env.els['pd-set-status'].textContent;
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && /1500 mg is kept/.test(said) && String(env.els['pd-set-max'].value) === '1500', `${store[LS]} / ${said}`);
+    });
+  });
+
+  test('46.88 R95a: one named future-level tolerance (one minute, D26), parsed by harness_constants and read by AUC Precision, CRRT and the haemodialysis reading; no inline 1 / 60 for it remains', () => {
+    const K = __extractConsts();
+    assert(K.FUTURE_LEVEL_TOLERANCE_H === 1 / 60, String(K.FUTURE_LEVEL_TOLERANCE_H));
+    assert(/D26/.test(commentAbove49('FUTURE_LEVEL_TOLERANCE_H') + constLine49('FUTURE_LEVEL_TOLERANCE_H')), 'its source comment names D26');
+    assert(/nowH \+ FUTURE_LEVEL_TOLERANCE_H/.test(fn46('levelAfterNow').toString()), fn46('levelAfterNow').toString());
+    assert(/levels\.filter\(l => levelAfterNow\(l\.timeH, fitNowH\)\)/.test(fn46('runBayesian').toString()), 'AUC Precision reads it');
+    assert(/levels\.filter\(l => levelAfterNow\(l\.timeH, nowH\)\)/.test(fn46('crrtAnswer').toString()), 'CRRT reads it');
+    assert(/levelAfterNow\(inp\.preAtH, inp\.nowH\)/.test(fn46('hdReading').toString()), 'the haemodialysis reading reads it');
+    assert(!/[Nn]owH \+ 1 \/ 60/.test(src46), 'an inline one-minute tolerance remains');
+    assert(fn46('levelAfterNow')(10 + 0.5 / 60, 10) === false && fn46('levelAfterNow')(10 + 1.5 / 60, 10) === true, 'one minute either side');
+  });
+
+  test('46.89 R95b: a CRRT circuit run whose stop is at or before its own start is refused by name', () => {
+    const now = B47 + 37;
+    const a = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 - 30 }] }), now);
+    assert(a.state === 'refuse' && a.refuse.word === 'Circuit run stops before it starts' && a.refuse.html.indexOf('Circuit run 1 stops before it starts') === 0 && !a.rows, JSON.stringify(a).slice(0, 400));
+    const eq = crrt47(inp47({ circuit: [{ onH: B47 - 24, offH: B47 - 24 }] }), now);
+    assert(eq.state === 'refuse' && eq.refuse.html.indexOf('Circuit run 1 stops when it starts') === 0, JSON.stringify(eq).slice(0, 400));
+    const two = crrt47(inp47({ circuit: [{ onH: B47 - 30, offH: B47 - 26 }, { onH: B47 - 24, offH: B47 - 25 }] }), now);
+    assert(two.state === 'refuse' && two.refuse.html.indexOf('Circuit run 2 stops before it starts') === 0, JSON.stringify(two).slice(0, 400));
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 700;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.79)
+const EXPECTED_TOTAL = 710;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.89)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

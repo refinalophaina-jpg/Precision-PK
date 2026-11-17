@@ -3150,6 +3150,16 @@ async function enterCourse(page) {
        && /3 g\*/.test(cleared.text) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(cleared.text) && cleared.ls === null && cleared.field === '' && /^Cleared/.test(cleared.status),
        JSON.stringify({ before: before.slice(-300), set: Object.assign({}, set, { text: set.text.slice(-300) }), cleared: Object.assign({}, cleared, { text: cleared.text.slice(-200) }) }));
 
+    // Task 29 (R84): a g-for-mg slip ("2") typed by keyboard is not a setting: nothing is stored, the line says so,
+    // and the reference keeps the Rec 11 cap, never "at most 2 mg".
+    await typeInto(g, '#b-rrt-set-max', '2'); await g.keyboard.press('Tab'); await g.waitForTimeout(150);
+    const slip = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')), status: await txt('#b-rrt-set-status') };
+    ok('D28: Task 29 (R84): a local maximum of "2" (outside 100–4000 mg) is not stored, the line says so, and the CRRT reference keeps the Rec 11 cap',
+       slip.ls === null && /Maximum single dose of 2 mg is outside the 100–4000 mg/.test(slip.status) && /not saved/.test(slip.status)
+       && /at most 3 g \(Rybak 2020, Rec 11\)/.test(slip.text) && !/2 mg/.test(slip.text),
+       JSON.stringify(Object.assign({}, slip, { text: slip.text.slice(-300) })));
+    await g.evaluate(() => { document.getElementById('b-rrt-set-max').value = ''; });
+
     // The PD settings' Clear removes a stored PD maximum.
     await g.locator('[data-onclick="k1"]').click();
     await g.locator('#t-rrt').selectOption('pd');
@@ -3160,6 +3170,12 @@ async function enterCourse(page) {
     const pdClr = await g.evaluate(() => ({ ls: localStorage.getItem('vanco.pd.local'), field: document.getElementById('pd-set-max').value, st: document.getElementById('pd-set-status').textContent }));
     ok('D28: the PD settings\' Clear removes the stored PD maximum (vanco.pd.local) and empties the field',
        JSON.parse(pdSet || '{}').maxDoseMg === 1500 && pdClr.ls === null && pdClr.field === '' && /^Cleared/.test(pdClr.st), JSON.stringify({ pdSet, pdClr }));
+    // Task 29 (R84): the same slip in the PD settings is not stored either.
+    await typeInto(g, '#pd-set-max', '2'); await g.keyboard.press('Tab'); await g.waitForTimeout(100);
+    const pdSlip = await g.evaluate(() => ({ ls: localStorage.getItem('vanco.pd.local'), st: document.getElementById('pd-set-status').textContent }));
+    ok('D28: Task 29 (R84): a PD maximum of "2" is not stored and the settings line says so',
+       JSON.parse(pdSlip.ls || '{}').maxDoseMg == null && /Maximum single dose of 2 mg is outside the 100–4000 mg/.test(pdSlip.st) && /not saved/.test(pdSlip.st), JSON.stringify(pdSlip));
+    await g.evaluate(() => { document.getElementById('pd-set-max').value = ''; localStorage.removeItem('vanco.pd.local'); });
 
     // 375 px: the hybrid reference and its settings, with no horizontal scroll.
     await g.setViewportSize({ width: 375, height: 812 });

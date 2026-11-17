@@ -283,7 +283,8 @@ const MUTANTS = [
   { id: 'R3-25-8', what: 'the PD Clear leaves vanco.pd.local in storage [46.35]',
     find: "  try { localStorage.removeItem('vanco.pd.local'); }", replace: '  try { /* kept */ }' },
   { id: 'R3-25-9', what: 'a blank local maximum silently drops the stored one (R23 undone) [46.34]',
-    find: '  else if (stored != null) { mg = stored;', replace: '  else if (false) { mg = stored;' },
+    // retargeted, Task 29 (R84: one reader, readLocalMaxDose / localMaxDoseSaid): the branch that keeps and says so, gone
+    find: '  else { said = localMaxDoseSaid(x, r.why, stored); if (stored != null) mg = stored; }', replace: '  else { }' },
   { id: 'R3-25-10', what: 'the session section keeps its haemodialysis copy under hybrid (Task 24 review, must fix) [46.37]',
     find: 'function hdSessionCopy() { return HD_SESSION_COPY[hdSessionDefaultType()]; }', replace: 'function hdSessionCopy() { return HD_SESSION_COPY.ihd; }' },
   { id: 'R3-25-11', what: 'the Trough hybrid mode shows the creatinine and loading-dose blocks again (R73) [46.38]',
@@ -318,7 +319,7 @@ const MUTANTS = [
   { id: 'R3-27-9', what: 'the circuit must cover only from the starting level, not from the end of the last used interval (R91 revised) [46.62]',
     find: 'coverFrom = used[used.length - 1].toH;', replace: 'coverFrom = startLevel.timeH;' },
   { id: 'R3-27-10', what: 'a level dated after now is projected, not refused (R94) [46.63]',
-    find: 'levels.filter(l => l.timeH > nowH + 1 / 60)', replace: 'levels.filter(l => false)' },
+    find: 'levels.filter(l => levelAfterNow(l.timeH, nowH))', replace: 'levels.filter(l => false)' },   // retargeted, Task 29 (R95a: one helper)
   { id: 'R3-27-11', what: 'used intervals at different settings are fitted together (the mixed guard forced false) [46.64]',
     find: 'const mixed = used.some(i => i.setting.mlPerH !== ref.mlPerH || i.setting.modality !== ref.modality);', replace: 'const mixed = false;' },
   // Task 28: a peak-equation haemodialysis reading from browser-only settings (D28; U11, R67, R96).
@@ -341,6 +342,23 @@ const MUTANTS = [
   // Task 28 review I1: no dose is worded by its cause.
   { id: 'R3-28-9', what: 'the two no-dose sentences swapped (at or above the peak / rounds to no dose) [46.78, 46.79]',
     find: "${r.post >= st.targetPeak ? 'The post-session estimate is at or above your target peak.'", replace: "${r.post < st.targetPeak ? 'The post-session estimate is at or above your target peak.'" },
+  // Task 29: citations, notes and the carried rulings R80, R84, R95 (D28).
+  { id: 'R3-29-1', what: 'the local maximum accepts any positive number again: a g-for-mg "2" caps every cell at 2 mg (R84) [46.86, 46.87]',
+    find: '  if (Number.isFinite(v) && v >= L.min && v <= L.max) return { mg: v, why: \'\' };', replace: '  if (Number.isFinite(v) && v > 0) return { mg: v, why: \'\' };' },
+  { id: 'R3-29-2', what: 'an out-of-range local maximum with nothing stored is refused silently (R84: the status line says so) [46.86, 46.87]',
+    find: "  return x === '' ? '' : `Maximum single dose ${why}, so it is not saved.`;", replace: "  return '';" },
+  { id: 'R3-29-3', what: 'a CRRT circuit run whose stop is at or before its start is not refused (R95b) [46.89]',
+    find: 'const backwards = circuit.findIndex(r => r.offH != null && !(r.offH > r.onH));', replace: 'const backwards = -1;' },
+  { id: 'R3-29-4', what: 'the future-level tolerance dropped to 0: a level typed to the minute is refused (R95a, D26) [44.10, 46.63, 46.75, 46.88]',
+    find: 'const FUTURE_LEVEL_TOLERANCE_H = 0.016666666666666666;', replace: 'const FUTURE_LEVEL_TOLERANCE_H = 0;' },
+  { id: 'R3-29-5', what: 'the future-level tolerance widened to an hour: a pre-dialysis level 30 min ahead is read (R95a, D26) [46.75, 46.88]',
+    find: 'const FUTURE_LEVEL_TOLERANCE_H = 0.016666666666666666;', replace: 'const FUTURE_LEVEL_TOLERANCE_H = 1;' },
+  { id: 'R3-29-6', what: 'AUC Precision fits a level dated after now (its copy no longer reads levelAfterNow) [44.10, 46.88]',
+    find: 'const futureLevels = levels.filter(l => levelAfterNow(l.timeH, fitNowH));', replace: 'const futureLevels = levels.filter(l => false);' },
+  { id: 'R3-29-7', what: 'the sessions-per-week caution grades Rec 14 C-III again for the sentence it cites (R80) [46.84]',
+    find: "Rec 14's sentence cited\n// here, that pre-dialysis monitoring should drive subsequent dosing, is B-II (Rec 14's C-III is the 15–20 mg/L target).", replace: 'Rec 14 is C-III.' },
+  { id: 'R3-29-8', what: 'the severe-renal note says CRRT is not modelled again, without the selector line [46.82, 41.15]',
+    find: '<li>On renal replacement, set Renal replacement to the modality: this note is for a patient off dialysis.</li>', replace: '<li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>. CRRT is not modelled here.</li>' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

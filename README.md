@@ -80,9 +80,10 @@ population priors:
 Cross-cutting: KDIGO AKI staging from serial creatinine, augmented-renal-clearance and
 very-low-CrCl advisories, `localStorage` profiles, and a print report.
 
-**Not implemented:** session-clearance HD modelling, intradialytic dosing recommendations, CRRT,
-SLED, intraperitoneal vancomycin dosing, AUC or Bayesian dosing for peritoneal dialysis, paediatrics,
-neonates, continuous infusion. Do not use this tool for those.
+**Not implemented:** session-clearance HD modelling, intradialytic dosing recommendations, a Bayesian
+CRRT model, AUC in CRRT, a level-based hybrid answer, SLED / PIRRT dosing beyond the guideline reference,
+continuous infusion, intraperitoneal dosing, AUC or Bayesian dosing for peritoneal dialysis, paediatrics,
+neonates. Do not use this tool for those.
 
 ## Validation
 
