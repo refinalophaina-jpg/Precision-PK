@@ -5040,11 +5040,14 @@ function pdLocalSettings() {
 // table every dose field reads. Outside it, or 0 or negative, it is not a setting and is never stored: a g-for-mg
 // slip ("2") would otherwise cap every dose at 2 mg. One reader for the PD maximum and the shared CRRT, hybrid and
 // haemodialysis maximum (rule 2). { mg } when it is a setting; otherwise { mg: null, why } for the status line.
+// Controller ruling R101: it is also at least one dispensing step (MATRIX_DOSE_STEP). A cap under one step cannot be
+// honoured by a 250 mg table (doseCapOf would cap a reference cell at, say, 150 mg), so it is never stored either.
 function readLocalMaxDose(x) {
-  const L = INPUT_LIMITS.dose, v = x === '' ? NaN : Number(x);
-  if (Number.isFinite(v) && v >= L.min && v <= L.max) return { mg: v, why: '' };
+  const L = INPUT_LIMITS.dose, lo = Math.max(L.min, MATRIX_DOSE_STEP), v = x === '' ? NaN : Number(x);
+  if (Number.isFinite(v) && v >= lo && v <= L.max) return { mg: v, why: '' };
   return { mg: null, why: x === '' ? 'was blank' : !Number.isFinite(v) ? 'was not a number'
-    : `of ${v} mg is outside the ${L.min}–${L.max} mg a dose field accepts` };
+    : v < lo ? `of ${v} mg is below ${lo} mg: a maximum must be at least ${lo} mg (one ${MATRIX_DOSE_STEP} mg dispensing step)`
+    : `of ${v} mg is above the ${L.max} mg a dose field accepts` };
 }
 // The status line's words when the maximum typed is not a setting: the stored one stays (R23), or nothing is
 // stored (R84). '' for a blank with nothing stored: simply no setting.

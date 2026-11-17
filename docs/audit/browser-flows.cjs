@@ -3154,8 +3154,8 @@ async function enterCourse(page) {
     // and the reference keeps the Rec 11 cap, never "at most 2 mg".
     await typeInto(g, '#b-rrt-set-max', '2'); await g.keyboard.press('Tab'); await g.waitForTimeout(150);
     const slip = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')), status: await txt('#b-rrt-set-status') };
-    ok('D28: Task 29 (R84): a local maximum of "2" (outside 100–4000 mg) is not stored, the line says so, and the CRRT reference keeps the Rec 11 cap',
-       slip.ls === null && /Maximum single dose of 2 mg is outside the 100–4000 mg/.test(slip.status) && /not saved/.test(slip.status)
+    ok('D28: Task 29 (R84, R101): a local maximum of "2" (below one 250 mg step) is not stored, the line says so, and the CRRT reference keeps the Rec 11 cap',
+       slip.ls === null && /Maximum single dose of 2 mg is below 250 mg: a maximum must be at least 250 mg/.test(slip.status) && /not saved/.test(slip.status)
        && /at most 3 g \(Rybak 2020, Rec 11\)/.test(slip.text) && !/2 mg/.test(slip.text),
        JSON.stringify(Object.assign({}, slip, { text: slip.text.slice(-300) })));
     await g.evaluate(() => { document.getElementById('b-rrt-set-max').value = ''; });
@@ -3173,8 +3173,8 @@ async function enterCourse(page) {
     // Task 29 (R84): the same slip in the PD settings is not stored either.
     await typeInto(g, '#pd-set-max', '2'); await g.keyboard.press('Tab'); await g.waitForTimeout(100);
     const pdSlip = await g.evaluate(() => ({ ls: localStorage.getItem('vanco.pd.local'), st: document.getElementById('pd-set-status').textContent }));
-    ok('D28: Task 29 (R84): a PD maximum of "2" is not stored and the settings line says so',
-       JSON.parse(pdSlip.ls || '{}').maxDoseMg == null && /Maximum single dose of 2 mg is outside the 100–4000 mg/.test(pdSlip.st) && /not saved/.test(pdSlip.st), JSON.stringify(pdSlip));
+    ok('D28: Task 29 (R84, R101): a PD maximum of "2" is not stored and the settings line says so',
+       JSON.parse(pdSlip.ls || '{}').maxDoseMg == null && /Maximum single dose of 2 mg is below 250 mg: a maximum must be at least 250 mg/.test(pdSlip.st) && /not saved/.test(pdSlip.st), JSON.stringify(pdSlip));
     await g.evaluate(() => { document.getElementById('pd-set-max').value = ''; localStorage.removeItem('vanco.pd.local'); });
 
     // 375 px: the hybrid reference and its settings, with no horizontal scroll.

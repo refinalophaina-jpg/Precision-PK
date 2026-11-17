@@ -11165,6 +11165,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   // R84: a g-for-mg slip ("2") must not cap every cell at 2 mg. The local maximum is a dose: INPUT_LIMITS.dose bounds it.
+  // R101 (after R84): the floor is also one dispensing step (MATRIX_DOSE_STEP), so a maximum lies in step..INPUT_LIMITS.dose.max.
+  // The words the status line gives for a refused number: below the floor, or above the dose fields' maximum.
+  const why49 = (v) => {
+    const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), lo = Math.max(L.min, __extractConsts().MATRIX_DOSE_STEP);
+    return v < lo ? `below ${lo} mg` : `above the ${L.max} mg`;
+  };
   test('46.86 R84: the CRRT/hybrid/HD local maximum lies within INPUT_LIMITS.dose; outside it, or 0 or negative, nothing is stored and the status line says so', () => {
     const L = vm.runInContext('INPUT_LIMITS.dose', sandbox), LS = 'vanco.rrt.local';
     assert(L.min === 100 && L.max === 4000, JSON.stringify(L));
@@ -11177,15 +11183,15 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         env.els[fld[col]].value = bad; fn46('saveRrtLocalSettings')(col);
         const said = env.els[st[col]].textContent;
         assert(!(LS in store) && fn46('rrtLocalSettings')().maxDoseMg === null, `${col} "${bad}" was stored: ${store[LS]}`);
-        assert(/Maximum single dose/.test(said) && said.indexOf(`${L.min}–${L.max} mg`) >= 0 && /not saved/.test(said), `${col} "${bad}": ${said}`);
+        assert(/Maximum single dose/.test(said) && said.indexOf(why49(+bad)) >= 0 && /not saved/.test(said), `${col} "${bad}": ${said}`);
       }
-      for (const ok of ['100', '4000', '1500']) {
+      for (const ok of ['250', '4000', '1500']) {   // R101: the floor is one 250 mg step (46.90), no longer 100
         env.els['t-rrt-set-max'].value = ok; fn46('saveRrtLocalSettings')('t');
         assert(JSON.parse(store[LS]).maxDoseMg === +ok && env.els['t-rrt-set-status'].textContent === '', `${ok}: ${store[LS]}`);
       }
       env.els['b-rrt-set-max'].value = '2'; fn46('saveRrtLocalSettings')('b');
       const said = env.els['b-rrt-set-status'].textContent;
-      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && /1500 mg is kept/.test(said) && said.indexOf(`${L.min}–${L.max} mg`) >= 0, `stored kept: ${store[LS]} / ${said}`);
+      assert(JSON.parse(store[LS]).maxDoseMg === 1500 && /1500 mg is kept/.test(said) && said.indexOf(why49(2)) >= 0, `stored kept: ${store[LS]} / ${said}`);
     });
   });
 
@@ -11199,7 +11205,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
         env.els['pd-set-max'].value = bad; env.els['pd-set-peak'].value = '30'; sandbox.savePdLocalSettings();
         const said = env.els['pd-set-status'].textContent, o = JSON.parse(store[LS] || '{}');
         assert(o.maxDoseMg == null && sandbox.pdLocalSettings().maxDoseMg === null && o.targetPeak === 30, `"${bad}": ${store[LS]}`);
-        assert(/Maximum single dose/.test(said) && said.indexOf(`${L.min}–${L.max} mg`) >= 0 && /not saved/.test(said), `"${bad}": ${said}`);
+        assert(/Maximum single dose/.test(said) && said.indexOf(why49(+bad)) >= 0 && /not saved/.test(said), `"${bad}": ${said}`);
       }
       env.els['pd-set-max'].value = '1500'; sandbox.savePdLocalSettings();
       assert(JSON.parse(store[LS]).maxDoseMg === 1500 && env.els['pd-set-status'].textContent === '', store[LS]);
@@ -11231,13 +11237,47 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(two.state === 'refuse' && two.refuse.html.indexOf('Circuit run 2 stops before it starts') === 0, JSON.stringify(two).slice(0, 400));
   });
 
+  test('46.90 R101: a local maximum below one dispensing step (MATRIX_DOSE_STEP) is refused for each store: 150 and 249 mg are not stored and the line says a maximum must be at least 250 mg; 250 is stored', () => {
+    const step = __extractConsts().MATRIX_DOSE_STEP;
+    assert(step === 250, String(step));
+    // CRRT, hybrid and haemodialysis (vanco.rrt.local), from each of its three fields.
+    const rs = {}, re = profEnv44(rs, {});
+    ['t-rrt-set-max', 'b-rrt-set-max', 'hd-set-max', 't-rrt-set-status', 'b-rrt-set-status', 'hd-set-max-status'].forEach(k => re.get(k));
+    withProf44(re, [], () => {
+      const fld = { t: 't-rrt-set-max', b: 'b-rrt-set-max', h: 'hd-set-max' }, st = { t: 't-rrt-set-status', b: 'b-rrt-set-status', h: 'hd-set-max-status' };
+      for (const col of ['t', 'b', 'h']) for (const low of ['150', '249']) {
+        delete rs['vanco.rrt.local'];
+        re.els[fld[col]].value = low; fn46('saveRrtLocalSettings')(col);
+        const said = re.els[st[col]].textContent;
+        assert(!('vanco.rrt.local' in rs) && fn46('rrtLocalSettings')().maxDoseMg === null, `${col} ${low} stored: ${rs['vanco.rrt.local']}`);
+        assert(said.indexOf(`a maximum must be at least ${step} mg`) >= 0 && /not saved/.test(said), `${col} ${low}: ${said}`);
+      }
+      re.els['t-rrt-set-max'].value = String(step); fn46('saveRrtLocalSettings')('t');
+      assert(JSON.parse(rs['vanco.rrt.local']).maxDoseMg === step, rs['vanco.rrt.local']);
+    });
+    // Peritoneal dialysis (vanco.pd.local).
+    const ps = {}, pe = profEnv44(ps, {});
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status'].forEach(k => pe.get(k));
+    withProf44(pe, [], () => {
+      for (const low of ['150', '249']) {
+        delete ps['vanco.pd.local'];
+        pe.els['pd-set-max'].value = low; sandbox.savePdLocalSettings();
+        const said = pe.els['pd-set-status'].textContent;
+        assert(JSON.parse(ps['vanco.pd.local'] || '{}').maxDoseMg == null && sandbox.pdLocalSettings().maxDoseMg === null, `${low} stored: ${ps['vanco.pd.local']}`);
+        assert(said.indexOf(`a maximum must be at least ${step} mg`) >= 0 && /not saved/.test(said), `${low}: ${said}`);
+      }
+      pe.els['pd-set-max'].value = String(step); sandbox.savePdLocalSettings();
+      assert(JSON.parse(ps['vanco.pd.local']).maxDoseMg === step, ps['vanco.pd.local']);
+    });
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 710;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.89)
+const EXPECTED_TOTAL = 711;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.90)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

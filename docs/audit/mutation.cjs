@@ -344,7 +344,7 @@ const MUTANTS = [
     find: "${r.post >= st.targetPeak ? 'The post-session estimate is at or above your target peak.'", replace: "${r.post < st.targetPeak ? 'The post-session estimate is at or above your target peak.'" },
   // Task 29: citations, notes and the carried rulings R80, R84, R95 (D28).
   { id: 'R3-29-1', what: 'the local maximum accepts any positive number again: a g-for-mg "2" caps every cell at 2 mg (R84) [46.86, 46.87]',
-    find: '  if (Number.isFinite(v) && v >= L.min && v <= L.max) return { mg: v, why: \'\' };', replace: '  if (Number.isFinite(v) && v > 0) return { mg: v, why: \'\' };' },
+    find: '  if (Number.isFinite(v) && v >= lo && v <= L.max) return { mg: v, why: \'\' };', replace: '  if (Number.isFinite(v) && v > 0) return { mg: v, why: \'\' };' },
   { id: 'R3-29-2', what: 'an out-of-range local maximum with nothing stored is refused silently (R84: the status line says so) [46.86, 46.87]',
     find: "  return x === '' ? '' : `Maximum single dose ${why}, so it is not saved.`;", replace: "  return '';" },
   { id: 'R3-29-3', what: 'a CRRT circuit run whose stop is at or before its start is not refused (R95b) [46.89]',
@@ -357,6 +357,8 @@ const MUTANTS = [
     find: 'const futureLevels = levels.filter(l => levelAfterNow(l.timeH, fitNowH));', replace: 'const futureLevels = levels.filter(l => false);' },
   { id: 'R3-29-7', what: 'the sessions-per-week caution grades Rec 14 C-III again for the sentence it cites (R80) [46.84]',
     find: "Rec 14's sentence cited\n// here, that pre-dialysis monitoring should drive subsequent dosing, is B-II (Rec 14's C-III is the 15–20 mg/L target).", replace: 'Rec 14 is C-III.' },
+  { id: 'R3-29-9', what: 'the local maximum floor is INPUT_LIMITS.dose.min again, not one dispensing step: 150 mg is stored (R101) [46.90]',
+    find: 'lo = Math.max(L.min, MATRIX_DOSE_STEP)', replace: 'lo = L.min' },
   { id: 'R3-29-8', what: 'the severe-renal note says CRRT is not modelled again, without the selector line [46.82, 41.15]',
     find: '<li>On renal replacement, set Renal replacement to the modality: this note is for a patient off dialysis.</li>', replace: '<li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>. CRRT is not modelled here.</li>' },
 ];
