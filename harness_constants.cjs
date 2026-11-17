@@ -180,6 +180,19 @@ function extract() {
     RRT_KINDS:              arrayLiteral(src, 'RRT_KINDS'),
     // v3.16.0 (D28, Task 24) — more sessions than this in seven days is a caution (Rybak 2020 Rec 13, 14)
     HD_SESSIONS_PER_WEEK_CAUTION: num(src, 'HD_SESSIONS_PER_WEEK_CAUTION'),
+    // v3.16.0 (D28, Task 25) — the CRRT (Rybak 2020 Rec 16, B-II) and hybrid (Rec 15, B-III) references
+    CRRT_LOAD_MG_PER_KG_MIN:   num(src, 'CRRT_LOAD_MG_PER_KG_MIN'),
+    CRRT_LOAD_MG_PER_KG_MAX:   num(src, 'CRRT_LOAD_MG_PER_KG_MAX'),
+    CRRT_MAINT_MG_PER_KG_MIN:  num(src, 'CRRT_MAINT_MG_PER_KG_MIN'),
+    CRRT_MAINT_MG_PER_KG_MAX:  num(src, 'CRRT_MAINT_MG_PER_KG_MAX'),
+    CRRT_MAINT_INTERVAL_H:     num(src, 'CRRT_MAINT_INTERVAL_H'),
+    CRRT_EFFLUENT_MIN_ML_KG_H: num(src, 'CRRT_EFFLUENT_MIN_ML_KG_H'),
+    CRRT_EFFLUENT_MAX_ML_KG_H: num(src, 'CRRT_EFFLUENT_MAX_ML_KG_H'),
+    CRRT_FIRST_LEVEL_WITHIN_H: num(src, 'CRRT_FIRST_LEVEL_WITHIN_H'),
+    HYBRID_LOAD_MG_PER_KG_MIN: num(src, 'HYBRID_LOAD_MG_PER_KG_MIN'),
+    HYBRID_LOAD_MG_PER_KG_MAX: num(src, 'HYBRID_LOAD_MG_PER_KG_MAX'),
+    HYBRID_MAINT_MG_PER_KG:    num(src, 'HYBRID_MAINT_MG_PER_KG'),
+    RRT_NO_SAMPLE_AFTER_SESSION_H: num(src, 'RRT_NO_SAMPLE_AFTER_SESSION_H'),
   };
 }
 

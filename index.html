@@ -2230,6 +2230,13 @@
   .lg-hd   { height: 10px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
   .hd-dose { white-space: nowrap; }
   .hd-perkg { display: block; font-size: var(--fs-xs); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  /* The CRRT and hybrid guideline reference (D28): a reference, not a recommendation — ink, never terracotta. */
+  .rrt-ref { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rule); }
+  .rrt-ref-title { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-lg); color: var(--ink); margin: 0 0 4px; }
+  .rrt-ref-line { font-size: var(--fs-sm); line-height: 1.5; margin: 6px 0; }
+  .rrt-ref-table td { font-variant-numeric: tabular-nums; }
+  .rrt-when { display: block; font-size: var(--fs-xs); color: var(--ink-soft); }
+  .rrt-sessions { margin: 6px 0; padding-left: 1.2em; font-size: var(--fs-sm); line-height: 1.5; font-variant-numeric: tabular-nums; }
   .hd-gap-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
   .hd-gap.toggle-group { display: inline-flex; }
   .hd-gap .toggle-opt { min-height: 44px; min-width: 56px; font-variant-numeric: tabular-nums; }
@@ -2594,9 +2601,10 @@
   .dt-pair .course-readback { flex: 1 0 100%; font-size: var(--fs-xs); min-height: 1.2em; }
   .form-grid-2 > .field-group:has(.dt-pair) { grid-column: 1 / -1; }
   /* The PD mode reads levels, the schedule and weight (D23): no amputation, creatinine or
-     loading-dose blocks (D24). The renal-replacement selector (D28) sits in the patient section,
+     loading-dose blocks (D24); nor does the hybrid mode's reference (D28, ruling R73). The renal-replacement selector (D28) sits in the patient section,
      which no mode hides, so whatever it sets can be undone where it was set. */
   .panel-left[data-mode="pd"] .not-pd { display: none; }
+  .panel-left[data-mode="hybrid"] .not-pd { display: none; }
   /* A creatinine-based mode while renal replacement is not None (D28): shown, not offered. */
   .calc-mode-btn[aria-disabled="true"] { color: var(--ink-muted); cursor: not-allowed; }
   .calc-mode-btn[aria-disabled="true"]:hover { transform: none; }
@@ -3668,10 +3676,27 @@
           <div class="field-group"><label class="field-label" for="pd-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="pd-set-max" placeholder="none" data-onchange="k92"><span class="unit-badge">mg</span></div></div>
           <div class="field-group"><label class="field-label" for="pd-set-peak">Target peak, to compare</label><div class="input-row"><input type="number" id="pd-set-peak" min="10" max="50" step="1" placeholder="none" data-onchange="k92"><span class="unit-badge">mg/L</span></div></div>
           <div class="field-group"><label class="field-label" for="pd-set-amlabs">AM labs drawn at (06:00 if blank)</label><div class="input-row"><input type="text" id="pd-set-amlabs" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" data-onchange="k92"><span class="unit-badge">24 h</span></div></div>
+          <div><button type="button" class="text-action" data-onclick="k107">Clear your settings</button></div>
           <p class="field-hint" id="pd-set-status" role="status"></p>
         </div>
       </details>
     </div><!-- /section-pd -->
+
+    <!-- CRRT and hybrid (D28): the guideline reference for the weight above, and its local maximum -->
+    <div id="section-rrt" style="display:none">
+      <hr class="section-divider">
+      <h2 class="form-h2">Guideline reference</h2>
+      <p class="field-hint">Calculate shows Rybak 2020's reference doses for the weight above (actual body weight). Nothing is fitted; levels decide later doses.</p>
+      <details class="pd-settings" id="t-rrt-settings">
+        <summary>Your settings (this browser)</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <p class="field-hint">Kept in this browser only, never part of the app. The CRRT and hybrid guideline references cap each dose at the lower of this and the guideline loading maximum (Rybak 2020, Rec 11).</p>
+          <div class="field-group"><label class="field-label" for="t-rrt-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="t-rrt-set-max" placeholder="none" data-onchange="k105" data-arg="t"><span class="unit-badge">mg</span></div></div>
+          <div><button type="button" class="text-action" data-onclick="k106">Clear your settings</button></div>
+          <p class="field-hint" id="t-rrt-set-status" role="status"></p>
+        </div>
+      </details>
+    </div><!-- /section-rrt -->
 
     <!-- The PK model and the trough target belong to the other four modes. -->
     <div id="section-trough-shared">
@@ -3851,6 +3876,16 @@
             <option value="pd">Peritoneal dialysis</option>
           </select>
         </div>
+        <!-- CRRT and hybrid (D28): the local maximum for the guideline reference under the refusal -->
+        <details class="pd-settings" id="b-rrt-settings" hidden>
+        <summary>Your settings (this browser)</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <p class="field-hint">Kept in this browser only, never part of the app. The CRRT and hybrid guideline references cap each dose at the lower of this and the guideline loading maximum (Rybak 2020, Rec 11).</p>
+          <div class="field-group"><label class="field-label" for="b-rrt-set-max">Maximum single dose</label><div class="input-row"><input type="number" id="b-rrt-set-max" placeholder="none" data-onchange="k105" data-arg="b"><span class="unit-badge">mg</span></div></div>
+          <div><button type="button" class="text-action" data-onclick="k106">Clear your settings</button></div>
+          <p class="field-hint" id="b-rrt-set-status" role="status"></p>
+        </div>
+      </details>
       </div>
     </div>
 
@@ -3990,17 +4025,19 @@
         <p class="field-hint" style="margin-top:6px">Levels can be drawn at any time point (not restricted to trough). More levels → narrower AUC uncertainty.</p>
       </div>
 
-      <!-- Haemodialysis sessions (D15): shown for Goti-HD, or whenever a session row exists -->
+      <!-- Sessions (D15; typed D28): shown for Goti-HD on haemodialysis, on any tile under hybrid, or whenever a row
+           exists. The copy follows the renal replacement (syncHdSection, HD_SESSION_COPY): haemodialysis rows are
+           placed against the fit; hybrid rows are only recorded, for the reference's dose times. -->
       <div id="b-hd-wrap" hidden>
-        <h3 class="form-h3">Haemodialysis sessions</h3>
+        <h3 class="form-h3" id="b-hd-heading">Haemodialysis sessions</h3>
         <div class="course-table-wrap">
           <table class="course-table">
             <tbody id="b-hd-tbody">
-              <tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>
+              <tr><td colspan="4" class="course-empty-msg" id="b-hd-empty">No sessions — press + Add HD session</td></tr>
             </tbody>
           </table>
         </div>
-        <button class="course-add-btn" data-onclick="k74">+ Add HD session</button>
+        <button class="course-add-btn" id="b-hd-add" data-onclick="k74">+ Add HD session</button>
         <details class="hd-sched">
           <summary>Add a recurring schedule</summary>
           <div class="hd-sched-row">
@@ -4014,7 +4051,7 @@
           <button type="button" class="course-add-btn" data-onclick="k76">Add sessions</button>
           <p class="field-hint" id="b-hds-msg" aria-live="polite"></p>
         </details>
-        <p class="field-hint" style="margin-top:6px">Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.</p>
+        <p class="field-hint" id="b-hd-hint" style="margin-top:6px">Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.</p>
       </div>
     </div>
 
@@ -4220,6 +4257,9 @@ const __ACT = {
   k102: (el, ev, arg) => { setRrt(el.value); },   /* the renal-replacement selector, either column (D28) */
   k103: (el, ev, arg) => { switchModule('trough'); setRrt('crrt'); },   /* AUC Precision CRRT refusal → Trough-based · CRRT (D28) */
   k104: (el, ev, arg) => { syncHdRowType(arg); },   /* a session row's type: its length field's limit (D28) */
+  k105: (el, ev, arg) => { saveRrtLocalSettings(arg); },   /* the CRRT/hybrid reference's maximum dose, either column (D28) */
+  k106: (el, ev, arg) => { clearRrtLocalSettings(); },   /* Clear the CRRT/hybrid settings (D28) */
+  k107: (el, ev, arg) => { clearPdLocalSettings(); },   /* Clear the PD settings (D28) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4447,6 +4487,10 @@ function setRrt(kind) {
   }
   const dom = typeof document !== 'undefined' && document && typeof document.getElementById === 'function';
   if (dom) ['t-rrt', 'b-rrt'].forEach(id => { const el = document.getElementById(id); if (el && el.value !== kind) el.value = kind; });
+  // The AUC column's settings for the guideline reference (Task 25): shown on CRRT and hybrid only.
+  const bSet = dom ? document.getElementById('b-rrt-settings') : null;
+  if (bSet) bSet.hidden = !(kind === 'crrt' || kind === 'hybrid');
+  if (dom && (kind === 'crrt' || kind === 'hybrid')) fillRrtLocalSettings();
   // The tile: choosing haemodialysis selects Goti 2018 · HD, the one model that carries dialysis;
   // leaving it moves that tile to plain Goti, so Goti-HD is never shown for a patient not on HD.
   const tile = bayesTile();
@@ -4482,9 +4526,15 @@ function syncRrtModeButtons() {
 
 // The refusal a module shows for a kind it does not dose. module: 'auc' | 'trough'. '' when the
 // module has an answer for the kind (None anywhere, PD in the Trough module, Goti-HD on HD).
-// The empty [data-rrt-reference] slot is where the guideline's reference table goes (Task 25).
+// CRRT and hybrid carry the [data-rrt-reference] slot, filled with the guideline reference for the module's
+// own weight field (Task 25, ruling P1; rrtReferenceSlotHTML); in AUC Precision the hybrid reference also names
+// the sessions runBayesian has just read (bState.hybridSessions).
 function rrtNoticeHTML(kind, module) {
   const auc = module === 'auc';
+  const ref = (kind === 'crrt' || kind === 'hybrid') ? rrtReferenceSlotHTML(kind, auc ? 'auc' : 'trough',
+    typeof document !== 'undefined' && document && typeof document.getElementById === 'function'
+      ? (document.getElementById(auc ? 'b-tbw' : 'tbw') || {}).value : undefined,
+    auc && kind === 'hybrid' && typeof bState !== 'undefined' && bState ? bState.hybridSessions : null) : '';
   if (kind === 'pd') return auc ? bayesPdNoticeHTML() : '';
   if (kind === 'ihd') {
     if (!auc) return troughHdNoticeHTML();
@@ -4498,18 +4548,18 @@ function rrtNoticeHTML(kind, module) {
   if (kind === 'crrt') {
     if (!auc) return noteHTML({ tier: 'caution', word: 'On CRRT — no creatinine-based regimen', html:
       `Trough-based dosing estimates clearance from creatinine, which does not describe vancomycin clearance on
-       continuous renal replacement therapy, so no regimen is calculated here.` });
+       continuous renal replacement therapy, so no regimen is calculated here.` }) + ref;
     return noteHTML({ tier: 'caution', word: 'On CRRT — no model here describes it', html:
       `None of the models here was developed in continuous renal replacement therapy, and creatinine does not
        describe vancomycin clearance on it, so nothing was parsed or fitted.
        <button type="button" class="vx-act" data-onclick="k103">Open Trough-based · CRRT</button>` })
-      + '<div data-rrt-reference></div>';
+      + ref;
   }
   if (kind === 'hybrid') {
     return noteHTML({ tier: 'caution', word: 'On hybrid therapy (SLED / PIRRT) — no model or target here describes it', html:
       `None of the models here was developed in hybrid therapy, creatinine does not describe vancomycin clearance on
        it, and no level target here is set for it, so no regimen is ${auc ? 'fitted' : 'calculated'}.` })
-      + '<div data-rrt-reference></div>';
+      + ref;
   }
   return '';
 }
@@ -4702,7 +4752,7 @@ function setCalcMode(mode) {
   if (CREATININE_MODES.indexOf(mode) >= 0 && currentRrt() !== 'none') { syncRrtModeButtons(); return false; }
   state.calcMode = mode;
   // The panel shows only what the mode reads (D24): PD hides amputation, creatinine and
-  // the loading-dose blocks (.not-pd in CSS).
+  // the loading-dose blocks (.not-pd in CSS); so does hybrid (D28, ruling R73), keeping weight.
   const pl = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left');
   if (pl && pl.dataset) pl.dataset.mode = mode;
   document.getElementById('mode-btn-initial').classList.toggle('active',      mode === 'initial');
@@ -4717,6 +4767,11 @@ function setCalcMode(mode) {
   document.getElementById('section-randomlevel').style.display      = mode === 'randomlevel'  ? '' : 'none';
   document.getElementById('section-pd').style.display               = mode === 'pd'           ? '' : 'none';
   document.getElementById('section-trough-shared').style.display    = mode === 'pd'           ? 'none' : '';
+  // Hybrid hides the PK model and the trough target too (D28): nothing there is used, and a hybrid screen shows
+  // no 15–20 band (no pre-session target is validated for hybrid therapy). CRRT and hybrid show the reference section.
+  if (mode === 'hybrid') document.getElementById('section-trough-shared').style.display = 'none';
+  const rrtSec = document.getElementById('section-rrt');
+  if (rrtSec) rrtSec.style.display = mode === 'crrt' || mode === 'hybrid' ? '' : 'none';
   const hints = {
     initial:      'Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady-state trough</strong> once a steady-state level is available.',
     level:        'Enter the current dose, interval, and a measured steady-state level to fit individual PK and adjust the regimen.',
@@ -4729,6 +4784,7 @@ function setCalcMode(mode) {
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
   if (mode === 'pd') { fillPdLocalSettings(); pdToggleFields(); }
+  if (mode === 'crrt' || mode === 'hybrid') fillRrtLocalSettings();
   syncRrtModeButtons();
   document.getElementById('results-placeholder').style.display = 'flex';
   document.getElementById('results-content').style.display = 'none';
@@ -4813,6 +4869,51 @@ function savePdLocalSettings() {
 function fillPdLocalSettings() {
   const st = pdLocalSettings(), set = (id, v) => { const e = document.getElementById(id); if (e && v != null) e.value = v; };
   set('pd-set-max', st.maxDoseMg); set('pd-set-peak', st.targetPeak); if (st.amLabsSet) set('pd-set-amlabs', st.amLabs);
+}
+// Clear (D28; the deferred Release 1 item: no control removed a stored PD cap). The key goes, so every
+// setting returns to its default; the fields empty and the line says what now applies.
+function clearPdLocalSettings() {
+  try { localStorage.removeItem('vanco.pd.local'); } catch (e) { /* private window: nothing was stored */ }
+  ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  const line = document.getElementById('pd-set-status');
+  if (line) line.textContent = `Cleared. No maximum of your own (the ${fmtDose(HD_LOADING_MAX_MG)} guideline loading maximum applies), no target peak, AM labs at 06:00.`;
+}
+
+// CRRT and hybrid (D28, ruling R63): the user's maximum single dose for the guideline references, in this
+// browser only, under its own key (PD keeps vanco.pd.local). The PD pattern (R23): a blank or invalid entry
+// never overwrites a stored value, and the line under the field says so. Each column has its own field
+// (t-rrt-set-max, b-rrt-set-max) for the one value.
+const RRT_LOCAL_KEY = 'vanco.rrt.local';
+function rrtLocalSettings() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(RRT_LOCAL_KEY) || '{}') || {}; } catch (e) { o = {}; }
+  return { maxDoseMg: o.maxDoseMg > 0 ? +o.maxDoseMg : null };
+}
+function saveRrtLocalSettings(col) {
+  const c = col === 'b' ? 'b' : 't';
+  const x = String((document.getElementById(`${c}-rrt-set-max`) || {}).value || '').trim();
+  const v = x === '' ? NaN : Number(x), stored = rrtLocalSettings().maxDoseMg;
+  let said = '', mg = null;
+  if (Number.isFinite(v) && v > 0) mg = v;
+  else if (stored != null) { mg = stored; said = `Maximum single dose was ${x === '' ? 'blank' : 'not a positive number'}, so the saved ${stored} mg is kept.`; }
+  if (mg != null) { try { localStorage.setItem(RRT_LOCAL_KEY, JSON.stringify({ maxDoseMg: mg })); } catch (e) { /* private window: this visit only */ } }
+  fillRrtLocalSettings();
+  ['t', 'b'].forEach(k => { const s = document.getElementById(`${k}-rrt-set-status`); if (s) s.textContent = k === c ? said : ''; });
+  refreshRrtReferences();
+}
+function clearRrtLocalSettings() {
+  try { localStorage.removeItem(RRT_LOCAL_KEY); } catch (e) { /* private window: nothing was stored */ }
+  ['t', 'b'].forEach(k => {
+    const e = document.getElementById(`${k}-rrt-set-max`); if (e) e.value = '';
+    const s = document.getElementById(`${k}-rrt-set-status`);
+    if (s) s.textContent = `Cleared. The guideline maximum applies: ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020, Rec 11).`;
+  });
+  refreshRrtReferences();
+}
+function fillRrtLocalSettings() {
+  const m = rrtLocalSettings().maxDoseMg;
+  if (m == null) return;
+  ['t', 'b'].forEach(k => { const e = document.getElementById(`${k}-rrt-set-max`); if (e) e.value = m; });
 }
 function pdHoursAt(dateId, timeId) {
   const d = String((document.getElementById(dateId) || {}).value || ''), t = String((document.getElementById(timeId) || {}).value || '');
@@ -9472,6 +9573,32 @@ function hdSessionDefaultType() {
   const k = bayesRrt();
   return HD_SESSION_TYPES.indexOf(k) >= 0 ? k : 'ihd';
 }
+// What the section says follows the renal replacement (Task 24 review, must fix): haemodialysis rows are
+// placed against the fit and marked on the chart; hybrid rows are only recorded, so the guideline reference can
+// name when each maintenance dose is due. Under hybrid nothing is fitted, charted or read, and the copy says so.
+const HD_SESSION_COPY = {
+  ihd: { heading: 'Haemodialysis sessions', add: '+ Add HD session', row: 'HD', name: 'HD session', lower: 'HD session',
+    err: 'HD session row', overlap: 'The HD session',
+    hint: 'Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.' },
+  hybrid: { heading: 'Hybrid sessions', add: '+ Add session', row: 'Session', name: 'Session', lower: 'session',
+    err: 'Session row', overlap: 'The session',
+    hint: 'Past and planned sessions, as start and length. They are recorded so the guideline reference can say when each maintenance dose is due, after the session ends. Nothing is fitted, charted or read from them.' },
+};
+function hdSessionCopy() { return HD_SESSION_COPY[hdSessionDefaultType()]; }
+function hdEmptyRowHTML() {
+  return `<tr><td colspan="4" class="course-empty-msg" id="b-hd-empty">No sessions — press ${hdSessionCopy().add}</td></tr>`;
+}
+// A row's label and the names its controls are announced by.
+function relabelHdRow(id, w) {
+  const n = document.getElementById(`b-hd-n-${id}`); if (n) n.textContent = `${w.row} ${id}`;
+  const aria = (elId, words) => { const e = document.getElementById(elId); if (e && typeof e.setAttribute === 'function') e.setAttribute('aria-label', words); };
+  aria(`b-hd-type-${id}`, `${w.name} ${id} type`);
+  aria(`b-hd-hours-${id}`, `${w.name} ${id} length (hours)`);
+  aria(`b-hd-date-${id}`, `${w.name} ${id} start date`);
+  aria(`b-hd-time-${id}`, `${w.name} ${id} start time (24-hour)`);
+  const rm = document.querySelector ? document.querySelector(`[data-onclick="k75"][data-arg="${id}"]`) : null;
+  if (rm && typeof rm.setAttribute === 'function') rm.setAttribute('aria-label', `Remove ${w.lower} ${id}`);
+}
 // A row's length field offers its own type's limit (the field's min/max; parseBayesSessions decides).
 function syncHdRowType(id) {
   const t = (document.getElementById(`b-hd-type-${id}`) || {}).value;
@@ -9488,24 +9615,24 @@ function addBayesSession() {
   if (empty && empty.querySelector('.course-empty-msg')) empty.remove();
   const rb = `course-rb-hd-${id}`;
   const type = hdSessionDefaultType();
-  const lim = INPUT_LIMITS[HD_SESSION_TYPE_LIMIT[type]];
+  const lim = INPUT_LIMITS[HD_SESSION_TYPE_LIMIT[type]], w = HD_SESSION_COPY[type];
   const tr = document.createElement('tr');
   tr.id = `b-hd-row-${id}`;
   tr.className = 'course-row';
   tr.innerHTML = `
-    <td class="course-head"><span class="course-n">HD ${id}</span> <span class="course-readback" id="${rb}"></span></td>
+    <td class="course-head"><span class="course-n" id="b-hd-n-${id}">${w.row} ${id}</span> <span class="course-readback" id="${rb}"></span></td>
     <td class="course-what">
-      <select id="b-hd-type-${id}" class="course-type" aria-label="HD session ${id} type" data-onchange="k104" data-arg="${id}">
+      <select id="b-hd-type-${id}" class="course-type" aria-label="${w.name} ${id} type" data-onchange="k104" data-arg="${id}">
         ${HD_SESSION_TYPES.map(t => `<option value="${t}"${t === type ? ' selected' : ''}>${t === 'ihd' ? 'Haemodialysis' : 'Hybrid'}</option>`).join('')}
       </select>
       <span class="course-field"><input type="number" id="b-hd-hours-${id}" inputmode="decimal" min="${lim.min}" max="${lim.max}" step="0.25" placeholder="4"
-         aria-label="HD session ${id} length (hours)"><span class="course-unit" aria-hidden="true">h</span></span>
+         aria-label="${w.name} ${id} length (hours)"><span class="course-unit" aria-hidden="true">h</span></span>
     </td>
     <td class="course-when">
-      <input type="date" id="b-hd-date-${id}" aria-label="HD session ${id} start date" aria-describedby="${rb}">
-      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="b-hd-time-${id}" aria-label="HD session ${id} start time (24-hour)" aria-describedby="${rb}">
+      <input type="date" id="b-hd-date-${id}" aria-label="${w.name} ${id} start date" aria-describedby="${rb}">
+      <input type="text" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="24-hour, e.g. 08:00" maxlength="5" inputmode="numeric" data-time24 id="b-hd-time-${id}" aria-label="${w.name} ${id} start time (24-hour)" aria-describedby="${rb}">
     </td>
-    <td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k75" data-arg="${id}" aria-label="Remove HD session ${id}">${courseRemoveIcon()}</button></td>`;
+    <td class="course-rm"><button type="button" class="course-remove-btn" data-onclick="k75" data-arg="${id}" aria-label="Remove ${w.lower} ${id}">${courseRemoveIcon()}</button></td>`;
   tbody.appendChild(tr);
   syncHdSection();
   scheduleCourseReadback();
@@ -9515,7 +9642,7 @@ function removeBayesSession(id) {
   if (row) row.remove();
   const tbody = document.getElementById('b-hd-tbody');
   if (tbody && !tbody.querySelector('tr')) {
-    tbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>';
+    tbody.innerHTML = hdEmptyRowHTML();
   }
   syncHdSection();
   scheduleCourseReadback();
@@ -9530,6 +9657,14 @@ function syncHdSection() {
   const hasRows = !!document.querySelector('[id^="b-hd-row-"]');
   const rrt = bayesRrt();
   wrap.hidden = !((rrt === 'ihd' && bayesTile() === 'gotihd') || rrt === 'hybrid' || hasRows);
+  // The copy, and every row's label, follow the renal replacement (HD_SESSION_COPY).
+  const w = hdSessionCopy();
+  const say = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  say('b-hd-heading', w.heading); say('b-hd-add', w.add); say('b-hd-hint', w.hint);
+  say('b-hd-empty', `No sessions — press ${w.add}`);
+  if (typeof document.querySelectorAll === 'function') {
+    Array.from(document.querySelectorAll('[id^="b-hd-row-"]') || []).forEach(row => relabelHdRow(String(row.id).replace('b-hd-row-', ''), w));
+  }
   // The schedule generator offers the type its rows will be stamped with.
   const sh = document.getElementById('b-hds-hours');
   if (sh && typeof sh.setAttribute === 'function') sh.setAttribute('max', String(INPUT_LIMITS[HD_SESSION_TYPE_LIMIT[hdSessionDefaultType()]].max));
@@ -9652,6 +9787,7 @@ function parseBayesCourse() {
 function parseBayesSessions(rrt) {
   const sessions = [], errors = [];
   const want = HD_SESSION_TYPES.indexOf(rrt) >= 0 ? rrt : 'ihd';
+  const W = HD_SESSION_COPY[want];   // a row is named as it is labelled ("HD 2", or "Session 2" under hybrid)
   document.querySelectorAll('[id^="b-hd-row-"]').forEach(row => {
     const id    = row.id.replace('b-hd-row-','');
     const dateS = (document.getElementById(`b-hd-date-${id}`) || {}).value;
@@ -9661,9 +9797,9 @@ function parseBayesSessions(rrt) {
     const type  = typeEl && typeEl.value != null && typeEl.value !== '' ? String(typeEl.value) : 'ihd';
     const anything = [dateS, timeS, hRaw].some(v => v !== undefined && String(v).trim() !== '');
     if (!anything) return;                                  // an untouched spare row (its type is a default)
-    if (HD_SESSION_TYPES.indexOf(type) < 0) { errors.push(`HD session row ${id}: unknown session type "${type}".`); return; }
+    if (HD_SESSION_TYPES.indexOf(type) < 0) { errors.push(`${W.err} ${id}: unknown session type "${type}".`); return; }
     if (type !== want) {
-      errors.push(`HD session row ${id} is typed ${HD_SESSION_TYPE_WORD[type]} while Renal replacement is ${RRT_LABEL[rrt] || 'None'}.`);
+      errors.push(`${W.err} ${id} is typed ${HD_SESSION_TYPE_WORD[type]} while Renal replacement is ${RRT_LABEL[rrt] || 'None'}.`);
       return;
     }
     const miss = [];
@@ -9679,7 +9815,7 @@ function parseBayesSessions(rrt) {
     const tMs = dateS && timeS ? new Date(`${dateS}T${timeS}`).getTime() : NaN;
     if (dateS && timeS && !Number.isFinite(tMs)) miss.push('a valid date/time');
     if (miss.length) {
-      errors.push(`HD session row ${id}: missing or invalid ${miss.join(', ')}.`);
+      errors.push(`${W.err} ${id}: missing or invalid ${miss.join(', ')}.`);
       return;
     }
     // n is the input row's own number, so "session 3" is always the row labelled HD 3.
@@ -9688,7 +9824,7 @@ function parseBayesSessions(rrt) {
   sessions.sort((a, b) => a.startH - b.startH);
   for (let i = 1; i < sessions.length; i++) {
     if (sessions[i].startH < sessions[i - 1].endH - 1e-9) {
-      errors.push(`The HD session at ${sessions[i].label} starts before the ${sessions[i - 1].label} session ends — check the times.`);
+      errors.push(`${W.overlap} at ${sessions[i].label} starts before the ${sessions[i - 1].label} session ends — check the times.`);
     }
   }
   return errors.length ? { errors } : { sessions };
@@ -9884,6 +10020,51 @@ function hdEmpiricDoses(abwKg) {
       md, mdOverCeiling: md[1] > DOSE_MAX_PER_DOSE_MG });
   }
   return rows;
+}
+
+// ─── The CRRT and hybrid guideline references (D28, Task 25) ───
+// Rybak MJ et al. Am J Health-Syst Pharm 2020;77:835–864, read in full text 2026-11-16 (the release plan's
+// "Verified guideline values"). Reference tables by actual body weight, never a fitted answer: levels decide
+// every later dose. No dose is scaled from an effluent rate, and creatinine is not used.
+const CRRT_LOAD_MG_PER_KG_MIN = 20;      // Rybak 2020 Rec 16 (B-II): CRRT loading 20–25 mg/kg actual body weight
+const CRRT_LOAD_MG_PER_KG_MAX = 25;      // Rybak 2020 Rec 16 (B-II)
+const CRRT_MAINT_MG_PER_KG_MIN = 7.5;    // Rybak 2020 Rec 16 (B-II): CRRT maintenance 7.5–10 mg/kg
+const CRRT_MAINT_MG_PER_KG_MAX = 10;     // Rybak 2020 Rec 16 (B-II)
+const CRRT_MAINT_INTERVAL_H = 12;        // Rybak 2020 Rec 16 (B-II): maintenance "every 12 hours"
+const CRRT_EFFLUENT_MIN_ML_KG_H = 20;    // Rybak 2020 Rec 16 (B-II): the KDIGO-recommended effluent rates (20–25 mL/kg/h) its doses assume
+const CRRT_EFFLUENT_MAX_ML_KG_H = 25;    // Rybak 2020 Rec 16 (B-II)
+const CRRT_FIRST_LEVEL_WITHIN_H = 24;    // Rybak 2020 Rec 16 text: a level "within the first 24 hours"
+const HYBRID_LOAD_MG_PER_KG_MIN = 20;    // Rybak 2020 Rec 15 (B-III): hybrid (SLED / PIRRT) loading 20–25 mg/kg actual body weight
+const HYBRID_LOAD_MG_PER_KG_MAX = 25;    // Rybak 2020 Rec 15 (B-III)
+const HYBRID_MAINT_MG_PER_KG = 15;       // Rybak 2020 Rec 15 (B-III): 15 mg/kg after the session ends, or in its final 60–90 min
+const RRT_NO_SAMPLE_AFTER_SESSION_H = 2; // Rybak 2020 hybrid text (Rec 15): a level during or within 2 h of a session's end "will be artificially low"
+
+// One cap rule for every weight-based dose here (the user's ruling U10; PD's load since D23): the lower of the
+// Rybak 2020 Rec 11 loading maximum (HD_LOADING_MAX_MG) and the user's local maximum, when one is set. `by`
+// says which applied, so the screen names it ("Rybak 2020, Rec 11" or "your setting").
+function doseCapOf(localMaxMg) {
+  const mg = Math.min(HD_LOADING_MAX_MG, localMaxMg > 0 ? localMaxMg : Infinity);
+  return { mg, by: mg < HD_LOADING_MAX_MG ? 'local' : 'guideline' };
+}
+// mg/kg × weight (raw, unrounded), rounded to the 250 mg step (one rounding, roundDose250), then capped.
+function cappedWeightDose(mgPerKg, kg, capMg) {
+  const raw = mgPerKg * kg, rounded = roundDose250(raw);
+  return { mgPerKg, raw, mg: Math.min(rounded, capMg), capped: rounded > capMg };
+}
+// The reference for CRRT (Rec 16) or hybrid therapy (Rec 15) at one actual body weight, or null: for any other
+// kind, and for a weight that is not a number inside INPUT_LIMITS.weight (Review Focus 5: never NaN, never a
+// 250 mg floor from a missing weight). The cap applies to load and maintenance alike. A maintenance dose over the
+// 2 g per-dose ceiling is flagged (overCeiling), as the HD table does; the flag changes nothing.
+function rrtReferenceDoses(kind, abwKg, localMaxMg) {
+  if (kind !== 'crrt' && kind !== 'hybrid') return null;
+  const kg = typeof abwKg === 'number' ? abwKg : NaN;
+  if (!Number.isFinite(kg) || kg < INPUT_LIMITS.weight.min || kg > INPUT_LIMITS.weight.max) return null;
+  const cap = doseCapOf(localMaxMg), crrt = kind === 'crrt';
+  const dose = (perKg) => cappedWeightDose(perKg, kg, cap.mg);
+  const load = (crrt ? [CRRT_LOAD_MG_PER_KG_MIN, CRRT_LOAD_MG_PER_KG_MAX] : [HYBRID_LOAD_MG_PER_KG_MIN, HYBRID_LOAD_MG_PER_KG_MAX]).map(p => dose(p));
+  const maint = (crrt ? [CRRT_MAINT_MG_PER_KG_MIN, CRRT_MAINT_MG_PER_KG_MAX] : [HYBRID_MAINT_MG_PER_KG])
+    .map(p => { const d = dose(p); d.overCeiling = d.mg > DOSE_MAX_PER_DOSE_MG; return d; });
+  return { kind, abwKg: kg, cap, load, maint, intervalH: crrt ? CRRT_MAINT_INTERVAL_H : null };
 }
 
 // AUC of the fitted curve over [t0, t1], composite Simpson. Numerical, so the
@@ -10198,11 +10379,11 @@ function pdInterval(anchor, level, doses, vL, sc, naive) {
 // The loading dose: PD_LOAD_MG_PER_KG x the weight now, rounded to the 250 mg step,
 // capped at the Rybak 2020 Rec 11 loading maximum (HD_LOADING_MAX_MG, which applies
 // to any loading dose) or the user's lower local maximum.
+// One cap rule and one rounding with the CRRT and hybrid references (doseCapOf, cappedWeightDose; D28).
 function pdLoadingDose(kg, localMaxMg) {
-  const cap = Math.min(HD_LOADING_MAX_MG, localMaxMg > 0 ? localMaxMg : Infinity);
-  const raw = roundDose250(PD_LOAD_MG_PER_KG * kg);
-  const mg = Math.min(raw, cap);
-  return { mg, mgPerKg: mg / kg, capped: raw > cap, cap };
+  const cap = doseCapOf(localMaxMg).mg;
+  const d = cappedWeightDose(PD_LOAD_MG_PER_KG, kg, cap);
+  return { mg: d.mg, mgPerKg: d.mg / kg, capped: d.capped, cap };
 }
 // The AM-labs instant on the calendar day after afterH (local wall clock).
 function pdNextAmLabs(afterH, amLabs) {
@@ -11132,6 +11313,92 @@ function hdEmpiricHTML(rows, abwKg, doses) {
       </tbody></table>
     <p class="vx-hold vx-muted">Rybak 2020, Rec 13 (rounded to ${MATRIX_DOSE_STEP} mg); loading by actual body weight, at most ${fmtDose(HD_LOADING_MAX_MG)} (Rec 11)${rows.some(r => r.ldCapped) ? ' — * capped' : ''}${rows.some(r => r.mdOverCeiling) ? `; † above the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling` : ''}.
       Once a pre-HD level exists, it — not weight — drives the dose (Rec 14).</p>`;
+}
+
+// The CRRT or hybrid guideline reference (D28, Task 25), from rrtReferenceDoses. A reference, not a
+// recommendation, so never terracotta: each cell shows the mg/kg it came from, the cap that applied is named
+// (the user's ruling U10), and levels decide every later dose. opts.effluentMlH (CRRT) only says where the
+// rate lies against the 20–25 mL/kg/h the table assumes; it never changes a cell. opts.sessions (hybrid, the
+// parsed rows {n, endH}) gives one line per logged session naming its end as when the maintenance dose is due.
+// A hybrid reference never shows a pre-session band: none has been validated for hybrid therapy.
+function rrtReferenceHTML(ref, opts) {
+  if (!ref) return '';
+  opts = opts || {};
+  const crrt = ref.kind === 'crrt', kg = +ref.abwKg.toFixed(1);
+  const nb = (t) => `<span class="hd-dose">${t}</span>`;
+  const cell = (c) => `${nb(fmtDose(c.mg) + (c.capped ? '*' : '') + (c.overCeiling ? '†' : ''))}<span class="hd-perkg">${c.mgPerKg} mg/kg</span>`;
+  const cells = ref.load.concat(ref.maint);
+  const capWords = ref.cap.by === 'local' ? `at most ${fmtDose(ref.cap.mg)} (your setting)` : `at most ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020, Rec 11)`;
+  const footer = `Rounded to ${MATRIX_DOSE_STEP} mg; each dose ${capWords}${cells.some(c => c.capped) ? '; * capped at that maximum' : ''}${cells.some(c => c.overCeiling) ? `; † above the ${fmtDose(DOSE_MAX_PER_DOSE_MG)} per-dose ceiling` : ''}.`;
+  const caption = `${crrt ? 'Rybak 2020, Rec 16 (B-II)' : 'Rybak 2020, Rec 15 (B-III)'}, for ${kg} kg actual body weight`;
+  const head = `<thead><tr><th scope="col">Dose</th><th scope="col">Lower</th><th scope="col">Upper</th></tr></thead>`;
+  const loadRow = `<tr><th scope="row">Loading</th><td>${cell(ref.load[0])}</td><td>${cell(ref.load[1])}</td></tr>`;
+  const title = `<h3 class="rrt-ref-title">Guideline reference · ${crrt ? 'CRRT' : 'hybrid therapy (SLED / PIRRT)'}</h3>
+      <p class="rrt-ref-line vx-muted">What the guideline gives by weight. Nothing here is fitted to this patient.</p>`;
+  if (crrt) {
+    const ml = Number(opts.effluentMlH);
+    let effluent = '';
+    if (Number.isFinite(ml) && ml > 0) {
+      // Judged on the rate as shown (one decimal), so the words and the number never disagree.
+      const perKg = +(ml / ref.abwKg).toFixed(1);
+      const inside = perKg >= CRRT_EFFLUENT_MIN_ML_KG_H && perKg <= CRRT_EFFLUENT_MAX_ML_KG_H;
+      effluent = `<p class="rrt-ref-line">Effluent ${Math.round(ml)} mL/h is ${perKg.toFixed(1)} mL/kg/h at ${kg} kg: ${inside
+        ? `inside the ${CRRT_EFFLUENT_MIN_ML_KG_H}–${CRRT_EFFLUENT_MAX_ML_KG_H} mL/kg/h this table applies at.`
+        : `outside ${CRRT_EFFLUENT_MIN_ML_KG_H}–${CRRT_EFFLUENT_MAX_ML_KG_H} mL/kg/h; the guideline gives no figure for this rate; the dose is not scaled.`}</p>`;
+    }
+    return `<section class="rrt-ref" aria-label="Guideline reference, CRRT">
+      ${title}
+      <table class="ev-table rrt-ref-table"><caption>${caption}</caption>${head}
+        <tbody>${loadRow}
+          <tr><th scope="row">Maintenance, ${fmtFreq(ref.intervalH)}</th><td>${cell(ref.maint[0])}</td><td>${cell(ref.maint[1])}</td></tr>
+        </tbody></table>
+      <p class="rrt-ref-line">The table applies at an effluent rate of ${CRRT_EFFLUENT_MIN_ML_KG_H}–${CRRT_EFFLUENT_MAX_ML_KG_H} mL/kg/h.</p>
+      ${effluent}
+      <p class="rrt-ref-line">First level within ${CRRT_FIRST_LEVEL_WITHIN_H} h; later doses and the interval follow levels.</p>
+      <p class="rrt-ref-line vx-muted">${footer} AUC-targeted work since 2020 supports lower daily maintenance than this table; later doses follow levels.</p>
+      ${txPrintActionHTML()}
+    </section>`;
+  }
+  const sessions = (Array.isArray(opts.sessions) ? opts.sessions : []).filter(s => s && Number.isFinite(s.endH));
+  return `<section class="rrt-ref" aria-label="Guideline reference, hybrid therapy">
+      ${title}
+      <table class="ev-table rrt-ref-table"><caption>${caption}</caption>${head}
+        <tbody>${loadRow}
+          <tr><th scope="row">Maintenance</th><td colspan="2">${cell(ref.maint[0])}<span class="rrt-when">after each session ends, or in its final 60–90 min</span></td></tr>
+        </tbody></table>
+      <p class="rrt-ref-line">Give the load without waiting for the session to end.</p>
+      <p class="rrt-ref-line">Levels guide every later dose. A level drawn during a session or within ${RRT_NO_SAMPLE_AFTER_SESSION_H} h of its end reads falsely low.</p>
+      <p class="rrt-ref-line">No pre-session target has been validated for hybrid therapy.</p>
+      ${sessions.length ? `<ul class="rrt-sessions">${sessions.map(s => `<li class="rrt-session">Session ${escHtml(String(s.n))} ends ${fmtClock(s.endH)}: the maintenance dose is due then, or in the session's final 60–90 min.</li>`).join('')}</ul>` : ''}
+      <p class="rrt-ref-line vx-muted">${footer}</p>
+      ${txPrintActionHTML()}
+    </section>`;
+}
+// The reference's place when there is no usable weight: a refusal that names the weight (Review Focus 5).
+function rrtReferenceRefusalHTML(rawKg) {
+  const c = checkValue(rawKg, 'weight');
+  return noteHTML({ tier: 'caution', word: 'No guideline reference without a weight', html:
+    `${c.ok ? '' : escHtml(c.message) + ' '}The guideline's reference doses are by actual body weight.` });
+}
+// The [data-rrt-reference] slot a refusal carries (Task 23 left it empty; ruling P1): the reference for the
+// column's own weight field, as typed, and the local maximum. data-kind and data-kg let a change of the local
+// maximum redraw it in place (refreshRrtReferences) without re-reading the form.
+function rrtReferenceSlotHTML(kind, module, rawKg, sessions) {
+  const c = checkValue(rawKg, 'weight');
+  const ref = c.ok ? rrtReferenceDoses(kind, c.value, rrtLocalSettings().maxDoseMg) : null;
+  if (!ref) return `<div data-rrt-reference data-module="${module}">${rrtReferenceRefusalHTML(rawKg)}</div>`;
+  return `<div data-rrt-reference data-module="${module}" data-kind="${kind}" data-kg="${ref.abwKg}">${rrtReferenceHTML(ref, { effluentMlH: null, sessions: sessions || null })}</div>`;
+}
+// Every reference on screen, redrawn for the local maximum now stored (a save or a Clear).
+function refreshRrtReferences() {
+  if (typeof document === 'undefined' || !document || typeof document.querySelectorAll !== 'function') return;
+  const max = rrtLocalSettings().maxDoseMg;
+  Array.from(document.querySelectorAll('[data-rrt-reference][data-kind]') || []).forEach(slot => {
+    const d = slot.dataset || {};
+    const ref = rrtReferenceDoses(d.kind, Number(d.kg), max);
+    if (ref) slot.innerHTML = rrtReferenceHTML(ref, { effluentMlH: null,
+      sessions: d.module === 'auc' && typeof bState !== 'undefined' && bState ? bState.hybridSessions : null });
+  });
 }
 
 // ─── 1-compartment superposition ───
@@ -13824,7 +14091,7 @@ function runBayesian() {
     bState.hybridSessions = hs.sessions || null;
     if (hs.errors) showFormErrors('auc', hs.errors, hs.errors.map(m => courseErrorTarget(m)), {
       lead: 'Some session rows cannot be read.', tail: 'Complete or delete these rows.' });
-    showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc'), !!hs.errors);
+    showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc'), !!hs.errors);   // the reference names these sessions (Task 25)
     return;
   }
   const { doses, levels, sessions, errors } = parseBayesCourse();
@@ -16671,7 +16938,7 @@ function resetBayesian() {
   bScrCount   = 0;
   bHdCount    = 0;
   const hdTbody = document.getElementById('b-hd-tbody');
-  if (hdTbody) hdTbody.innerHTML = '<tr><td colspan="4" class="course-empty-msg">No sessions — press + Add HD session</td></tr>';
+  if (hdTbody) hdTbody.innerHTML = hdEmptyRowHTML();
   document.getElementById('b-dose-tbody').innerHTML  = '<tr><td colspan="4" class="course-empty-msg">No doses — press + Add dose</td></tr>';
   document.getElementById('b-level-tbody').innerHTML = '<tr><td colspan="3" class="course-empty-msg">No levels — press + Add level</td></tr>';
   // Clear serial SCr table
@@ -17482,7 +17749,10 @@ function _buildPrintReport() {
   // decides which result is authoritative; a Bayesian result is only used when
   // the Bayesian module is the one showing.
   const bayesShell = document.getElementById('app-shell-bayesian');
-  const bayesVisible = !!bayesShell && bayesShell.style.display !== 'none';
+  const bayesShown = !!bayesShell && bayesShell.style.display !== 'none';
+  // D28: a CRRT or hybrid refusal on screen carries the guideline reference; it prints as the Trough panel does.
+  const aucRef = bayesShown ? rrtReferencePrintSource() : null;
+  const bayesVisible = bayesShown && !aucRef;
   const r = bayesVisible ? bState.result : null;
   // Dates print with the month by name on a 24-hour clock (fmtClock), never
   // as 09/10, which reads as two different days on either side of the Atlantic.
@@ -17492,7 +17762,7 @@ function _buildPrintReport() {
     // fit yet, printing used to fall through to whatever the hidden Trough-Based
     // panel last held. Only the module on screen prints.
     if (bayesVisible) return null;
-    const rc = document.getElementById('results-content');
+    const rc = aucRef || document.getElementById('results-content');
     const visible = (rc && rc.style.display !== 'none' && rc.children.length > 0) ? rc : null;
     if (!visible) return null;
     let h = _prHeader(now, '');
@@ -18068,9 +18338,9 @@ function courseErrorTarget(msg) {
     if (/\btime\b/.test(w))           ids.push(`b-lvl-time-${n}`);
     return ids.length ? ids : [`b-lvl-conc-${n}`];
   }
-  m = /^HD session row (\d+) is typed /.exec(s);   // D28: the row's type, not the renal replacement in force
+  m = /^(?:HD session|Session) row (\d+) is typed /.exec(s);   // D28: the row's type, not the renal replacement in force
   if (m) return [`b-hd-type-${m[1]}`];
-  m = /^HD session row (\d+): (.*)$/.exec(s);
+  m = /^(?:HD session|Session) row (\d+): (.*)$/.exec(s);
   if (m) {
     const n = m[1], w = m[2], ids = [];
     if (/session type/.test(w))       ids.push(`b-hd-type-${n}`);
@@ -18830,6 +19100,12 @@ function _prAdvisoryNote(kind, text) {
 // value (only its default attribute), so: graphs become light images, controls
 // are dropped rather than printed with stale defaults, closed evidence opens,
 // and ids go, so the copy never shadows the live panel.
+// The AUC Precision panel when it shows a CRRT or hybrid refusal with its guideline reference (D28), else null.
+function rrtReferencePrintSource() {
+  if (typeof bState !== 'undefined' && bState && bState.result) return null;
+  const b = document.getElementById('b-results');
+  return b && typeof b.querySelector === 'function' && b.querySelector('[data-rrt-refusal] .rrt-ref') ? b : null;
+}
 function _prTroughBody(src) {
   const box = document.createElement('div');
   box.innerHTML = src.innerHTML;

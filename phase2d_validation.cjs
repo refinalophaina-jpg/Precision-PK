@@ -9602,7 +9602,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
             const word = kind === 'crrt' ? 'On CRRT — no model here describes it' : 'On hybrid therapy (SLED / PIRRT) — no model or target here describes it';
             assert(calls.parseBayesCourse === 0, `${kind}/${t}: parseBayesCourse called ${calls.parseBayesCourse}`);
             assert(html.indexOf(word) >= 0, `${kind}/${t}: ${html.slice(0, 300)}`);
-            assert(/<div data-rrt-reference><\/div>/.test(html), `${kind}/${t}: the reference slot`);
+            assert(/<div data-rrt-reference data-module="auc" data-kind="[a-z]+" data-kg="80">[\s\S]*Guideline reference/.test(html), `${kind}/${t}: the reference, for the AUC weight (Task 25 fills the slot)`);
             assert(kind !== 'crrt' || /data-onclick="k103"[^>]*>Open Trough-based · CRRT</.test(html), `${kind}/${t}: the CRRT button`);
             assert(vm.runInContext('bState.result', sandbox) === null && !/rec-dose|vx-regimen/.test(html), `${kind}/${t}: a regimen was left or written`);
           } finally { reset46(); }
@@ -9926,14 +9926,14 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const c = fn46('checkValue')('24.25', 'hybridHours');
     assert(!c.ok && c.message === 'Session length must be between 0.5 and 24 h. Got 24.25.', JSON.stringify(c));
     const p = sess46('hybrid', [['2026-11-16', '08:00', '24.25', 'hybrid']]);
-    assert(p.sessions.length === 0 && p.errors.length === 1 && p.errors[0] === `HD session row 1: missing or invalid session length (${c.message}).`, p.errors.join('; '));
+    assert(p.sessions.length === 0 && p.errors.length === 1 && p.errors[0] === `Session row 1: missing or invalid session length (${c.message}).`, p.errors.join('; '));   // Task 25: a hybrid row is named as it is labelled
   });
 
   test('46.17 a row typed for the other kind is a blocking error naming the row; Goti-HD fits nothing with it', () => {
     const toIhd = sess46('ihd', [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-18', '08:00', '10', 'hybrid']]);
     assert(toIhd.errors.indexOf('HD session row 2 is typed hybrid while Renal replacement is intermittent haemodialysis.') >= 0 && toIhd.sessions.length === 0, toIhd.errors.join('; '));
     const toHyb = sess46('hybrid', [['2026-11-16', '08:00', '10', 'hybrid'], ['2026-11-18', '08:00', '4', 'ihd']]);
-    assert(toHyb.errors.indexOf('HD session row 2 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, toHyb.errors.join('; '));
+    assert(toHyb.errors.indexOf('Session row 2 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, toHyb.errors.join('; '));   // Task 25: named as labelled
     // parseBayesSessions returns the errors alone (ruling R75's shape), and the message points at the row's type.
     const only = sess46('hybrid', [['2026-11-18', '08:00', '4', 'ihd']], (env) => {
       env.document.body = env.el('body');
@@ -9948,7 +9948,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
   test('46.18 the overlap check still fires across a 20 h hybrid row crossing midnight', () => {
     const ovl = sess46('hybrid', [['2026-11-16', '20:00', '20', 'hybrid'], ['2026-11-17', '08:00', '4', 'hybrid']]);
-    assert(ovl.errors.some(e => e === 'The HD session at 2026-11-17 08:00 starts before the 2026-11-16 20:00 session ends — check the times.'), ovl.errors.join('; '));
+    assert(ovl.errors.some(e => e === 'The session at 2026-11-17 08:00 starts before the 2026-11-16 20:00 session ends — check the times.'), ovl.errors.join('; '));   // Task 25: no HD copy under hybrid
     const after = sess46('hybrid', [['2026-11-16', '20:00', '20', 'hybrid'], ['2026-11-17', '16:00', '4', 'hybrid']]);
     assert(!after.errors.length && after.sessions.length === 2, after.errors.join('; '));
   });
@@ -10060,12 +10060,290 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assertClose(hs[1].endH, hdH46('2026-11-17', '20:00') + 14, 1e-9, 'the end Task 25 names');
     }));
     withBayesForm({ doses: D, hdRows: [['2026-11-16', '08:00', '4', 'ihd']] }, (env) => spy(env, 'hybrid', (calls, html) => {
-      assert(calls.c === 0 && /On hybrid therapy/.test(html) && html.indexOf('HD session row 1 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, html.slice(0, 600));
+      assert(calls.c === 0 && /On hybrid therapy/.test(html) && html.indexOf('Session row 1 is typed haemodialysis while Renal replacement is hybrid therapy (SLED / PIRRT).') >= 0, html.slice(0, 600));   // Task 25: named as labelled
       assert(vm.runInContext('bState.hybridSessions', sandbox) === null && vm.runInContext('bState.result', sandbox) === null, 'sessions or a result kept');
     }));
     withBayesForm({ doses: D, hdRows: [['2026-11-16', '08:00', '4', 'hybrid']] }, (env) => spy(env, 'crrt', (calls, html) => {
       assert(calls.c === 0 && calls.s === 0 && /On CRRT/.test(html), JSON.stringify(calls));
     }));
+  });
+
+  // ── Task 25: the guideline references for CRRT and hybrid, and the local maximum (D28) ──
+  // The plan's 46.21–46.32 are 46.25–46.36 here; 46.37 is the session copy under hybrid (Task 24 review, must
+  // fix) and 46.38 the hybrid Trough column (ruling R73). Fictional patients, 70 kg unless stated.
+  const ref46 = (kind, kg, max) => fn46('rrtReferenceDoses')(kind, kg, max == null ? null : max);
+  const refHtml46 = (ref, opts) => fn46('rrtReferenceHTML')(ref, opts || {});
+  const cells46 = (r) => JSON.stringify({ load: r.load.map(c => [c.mgPerKg, c.raw, c.mg, c.capped]), maint: r.maint.map(c => [c.mgPerKg, c.raw, c.mg, c.capped]) });
+  const text46 = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const BAND46 = /15\s*[–-]\s*20 mg\/L/;
+  // runBayesian on a small AUC form, renal replacement as given; the tile left on plain Goti.
+  const aucRun46 = (env, kind) => {
+    const keep = { setTimeout: sandbox.setTimeout, announceResult: sandbox.announceResult };
+    sandbox.setTimeout = () => 0; sandbox.announceResult = () => {};
+    env.document.body = env.el('body');
+    vm.runInContext(`bState.rrt = ${JSON.stringify(kind)}; bState.dial = false; bState.model = 'goti'; bState.tile = 'goti'; bState.result = null;`, sandbox);
+    try { fn46('runBayesian')(); return (env.els['b-results'] || {}).innerHTML || ''; }
+    finally { Object.assign(sandbox, keep); }
+  };
+
+  test('46.25 every Task 25 constant is parsed out of index.html by harness_constants.cjs with the verified table\'s value, and names Rybak 2020 (and its grade) on its line', () => {
+    const K = __extractConsts();
+    const want = { CRRT_LOAD_MG_PER_KG_MIN: 20, CRRT_LOAD_MG_PER_KG_MAX: 25, CRRT_MAINT_MG_PER_KG_MIN: 7.5, CRRT_MAINT_MG_PER_KG_MAX: 10,
+      CRRT_MAINT_INTERVAL_H: 12, CRRT_EFFLUENT_MIN_ML_KG_H: 20, CRRT_EFFLUENT_MAX_ML_KG_H: 25, CRRT_FIRST_LEVEL_WITHIN_H: 24,
+      HYBRID_LOAD_MG_PER_KG_MIN: 20, HYBRID_LOAD_MG_PER_KG_MAX: 25, HYBRID_MAINT_MG_PER_KG: 15, RRT_NO_SAMPLE_AFTER_SESSION_H: 2 };
+    for (const [k, v] of Object.entries(want)) assert(K[k] === v, `${k}: ${K[k]}`);
+    const graded = ['CRRT_LOAD_MG_PER_KG_MIN', 'CRRT_LOAD_MG_PER_KG_MAX', 'CRRT_MAINT_MG_PER_KG_MIN', 'CRRT_MAINT_MG_PER_KG_MAX', 'CRRT_MAINT_INTERVAL_H',
+      'CRRT_EFFLUENT_MIN_ML_KG_H', 'CRRT_EFFLUENT_MAX_ML_KG_H', 'HYBRID_LOAD_MG_PER_KG_MIN', 'HYBRID_LOAD_MG_PER_KG_MAX', 'HYBRID_MAINT_MG_PER_KG'];
+    for (const k of Object.keys(want)) {
+      const line = (src46.match(new RegExp(`^const ${k} = [^\\n]*`, 'm')) || [''])[0];
+      assert(/Rybak 2020/.test(line) && /Rec 1[56]/.test(line), `${k}: ${line}`);
+      if (graded.indexOf(k) >= 0) assert(/Rec 16 \(B-II\)/.test(line) || /Rec 15 \(B-III\)/.test(line), `${k} has no grade: ${line}`);
+    }
+  });
+
+  test('46.26 CRRT at 70 kg: loads 1.5 g (20 mg/kg, raw 1,400) and 1.75 g (25); maintenance 500 mg (7.5, raw 525) and 750 mg (10, raw 700) q12h; the guideline cap', () => {
+    const r = ref46('crrt', 70, null);
+    assert(r && r.kind === 'crrt' && r.abwKg === 70 && r.intervalH === 12, JSON.stringify(r));
+    assert(cells46(r) === JSON.stringify({ load: [[20, 1400, 1500, false], [25, 1750, 1750, false]], maint: [[7.5, 525, 500, false], [10, 700, 750, false]] }), cells46(r));
+    assert(r.cap && r.cap.mg === 3000 && r.cap.by === 'guideline', JSON.stringify(r.cap));
+  });
+
+  test('46.27 hybrid at 70 kg: loads 1.5 g / 1.75 g; maintenance 1 g (15 mg/kg, raw 1,050); no interval', () => {
+    const r = ref46('hybrid', 70, null);
+    assert(r && r.kind === 'hybrid' && r.abwKg === 70 && r.intervalH === null && r.cap.by === 'guideline' && r.cap.mg === 3000, JSON.stringify(r));
+    assert(cells46(r) === JSON.stringify({ load: [[20, 1400, 1500, false], [25, 1750, 1750, false]], maint: [[15, 1050, 1000, false]] }), cells46(r));
+  });
+
+  test('46.28 CRRT at 140 kg: the 25 mg/kg load (raw 3,500) is capped at 3 g and marked; the footer names Rybak 2020 Rec 11', () => {
+    const r = ref46('crrt', 140, null);
+    assert(cells46(r) === JSON.stringify({ load: [[20, 2800, 2750, false], [25, 3500, 3000, true]], maint: [[7.5, 1050, 1000, false], [10, 1400, 1500, false]] }), cells46(r));
+    const h = refHtml46(r), t = text46(h);
+    assert(h.indexOf('3 g*') >= 0 && h.indexOf('2.75 g*') < 0, 'the capped cell is marked, and only it');
+    assert(/at most 3 g \(Rybak 2020, Rec 11\)/.test(t) && /\* capped/.test(t), t);
+  });
+
+  test('46.29 a local maximum lower than 3 g caps load and maintenance and says "your setting"; a higher one leaves the guideline cap, named; PD\'s load reads the same cap rule, unchanged', () => {
+    const r = ref46('crrt', 140, 2000);
+    assert(r.cap.mg === 2000 && r.cap.by === 'local', JSON.stringify(r.cap));
+    assert(r.load.every(c => c.mg === 2000 && c.capped) && r.maint[0].mg === 1000 && !r.maint[0].capped && r.maint[1].mg === 1500 && !r.maint[1].capped, cells46(r));
+    const t = text46(refHtml46(r));
+    assert(/at most 2 g \(your setting\)/.test(t) && !/at most 3 g/.test(t), t);
+    const g = ref46('crrt', 140, 4000);
+    assert(g.cap.mg === 3000 && g.cap.by === 'guideline' && g.load[1].mg === 3000 && g.load[1].capped, JSON.stringify(g.cap));
+    const tg = text46(refHtml46(g));
+    assert(/at most 3 g \(Rybak 2020, Rec 11\)/.test(tg) && !/your setting/.test(tg), tg);
+    const hy = ref46('hybrid', 150, 2000);
+    assert(hy.maint[0].raw === 2250 && hy.maint[0].mg === 2000 && hy.maint[0].capped && hy.cap.by === 'local', cells46(hy));
+    // pdLoadingDose: the same output as v3.15.0, through the shared rule.
+    const pj = (kg, m) => JSON.stringify(fn46('pdLoadingDose')(kg, m));
+    assert(pj(70) === JSON.stringify({ mg: 1500, mgPerKg: 1500 / 70, capped: false, cap: 3000 }), pj(70));
+    assert(pj(160, 2000) === JSON.stringify({ mg: 2000, mgPerKg: 2000 / 160, capped: true, cap: 2000 }), pj(160, 2000));
+    assert(pj(160, 4000) === JSON.stringify({ mg: 3000, mgPerKg: 3000 / 160, capped: true, cap: 3000 }), pj(160, 4000));
+    assert(pj(160) === JSON.stringify({ mg: 3000, mgPerKg: 3000 / 160, capped: true, cap: 3000 }), pj(160));
+    const pdSrc = fn46('pdLoadingDose').toString();
+    assert(/doseCapOf\(/.test(pdSrc) && /cappedWeightDose\(/.test(pdSrc), 'pdLoadingDose reads the shared cap rule');
+  });
+
+  test('46.30 an effluent rate only states the per-kg rate and whether it is inside 20–25 mL/kg/h: the dose cells never change (no scaling)', () => {
+    const r = ref46('crrt', 70, null), before = JSON.stringify(r);
+    const table = (h) => (h.match(/<table[\s\S]*?<\/table>/) || [''])[0];
+    const h0 = refHtml46(r, { effluentMlH: null }), h1 = refHtml46(r, { effluentMlH: 1500 }), h2 = refHtml46(r, { effluentMlH: 2000 });
+    const t0 = text46(h0), t1 = text46(h1), t2 = text46(h2);
+    assert(/21\.4 mL\/kg\/h/.test(t1) && /\binside\b/.test(t1) && !/\boutside\b/.test(t1) && !/no figure/.test(t1), t1);
+    assert(/28\.6 mL\/kg\/h/.test(t2) && /\boutside\b/.test(t2) && /the guideline gives no figure for this rate; the dose is not scaled/.test(t2), t2);
+    assert(!/\binside\b|\boutside\b/.test(t0), t0);
+    assert(table(h0) && table(h1) === table(h0) && table(h2) === table(h0), 'the dose cells changed with the effluent');
+    assert(JSON.stringify(r) === before, 'the reference object changed');
+    assert(/\binside\b/.test(text46(refHtml46(r, { effluentMlH: 1750 }))) && /\binside\b/.test(text46(refHtml46(r, { effluentMlH: 1400 }))), 'the bounds are inside');
+    assert(/\boutside\b/.test(text46(refHtml46(r, { effluentMlH: 1000 }))), 'below the range is outside');
+  });
+
+  test('46.31 weight missing, 0 or outside INPUT_LIMITS: no reference, and the screen refuses naming weight in both modules; never NaN', () => {
+    for (const kg of [undefined, null, NaN, '', 0, -5, 19.9, 400.1, 1000, Infinity]) {
+      assert(ref46('crrt', kg, null) === null && ref46('hybrid', kg, null) === null, `weight ${kg}`);
+    }
+    assert(ref46('crrt', 20, null) && ref46('hybrid', 400, null), 'the limits themselves');
+    assert(ref46('pd', 70, null) === null && ref46('ihd', 70, null) === null && ref46('none', 70, null) === null, 'only CRRT and hybrid');
+    assert(fn46('rrtReferenceHTML')(null, {}) === '', 'no reference, no markup');
+    for (const [tbw, want] of [['', /Weight is required/], ['0', /Weight must be between 20 and 400 kg/], ['401', /Weight must be between 20 and 400 kg/]]) {
+      for (const kind of ['crrt', 'hybrid']) {
+        const r = trough44('initial', 'M', { tbw }, { rrt: kind });
+        assert(want.test(r.text) && /No guideline reference without a weight/.test(r.text) && !/NaN|undefined|Infinity/.test(r.h) && !/mg\/kg/.test(r.text), `Trough ${kind}, weight "${tbw}": ${r.text.slice(0, 400)}`);
+      }
+    }
+    for (const kind of ['crrt', 'hybrid']) {
+      const html = withBayesForm({ 'b-tbw': '0', doses: [[1000, 1, '2026-11-16', '13:00']] }, (env) => aucRun46(env, kind));
+      const t = text46(html);
+      assert(/data-rrt-refusal/.test(html) && /No guideline reference without a weight/.test(t) && /Weight must be between 20 and 400 kg/.test(t) && !/NaN|undefined|Infinity/.test(html), `AUC ${kind}: ${t.slice(0, 400)}`);
+    }
+  });
+
+  test('46.32 the hybrid reference: B-III, the load without waiting, maintenance after each session, the 2 h sampling sentence, "No pre-session target", and no 15–20 mg/L', () => {
+    const r = ref46('hybrid', 70, null);
+    const s1 = hdH46('2026-11-16', '08:00'), s2 = hdH46('2026-11-17', '20:00');
+    const S = [{ n: 1, startH: s1, endH: s1 + 8, hours: 8, label: '2026-11-16 08:00', type: 'hybrid' }, { n: 3, startH: s2, endH: s2 + 14, hours: 14, label: '2026-11-17 20:00', type: 'hybrid' }];
+    for (const opts of [{}, { sessions: S }, { sessions: [] }]) {
+      const h = refHtml46(r, opts), t = text46(h);
+      assert(/Rybak 2020, Rec 15 \(B-III\)/.test(t) && !/Rec 16|B-II\b/.test(t), t);
+      assert(t.indexOf('Give the load without waiting for the session to end') >= 0, t);
+      assert(t.indexOf('after each session ends, or in its final 60–90 min') >= 0, t);
+      assert(t.indexOf('Levels guide every later dose. A level drawn during a session or within 2 h of its end reads falsely low') >= 0, t);
+      assert(t.indexOf('No pre-session target has been validated for hybrid therapy') >= 0, t);
+      assert(['20 mg/kg', '25 mg/kg', '15 mg/kg', '1.5 g', '1.75 g', '1 g'].every(x => t.indexOf(x) >= 0), t);
+      assert(!BAND46.test(h) && !BAND46.test(t), 'a 15–20 mg/L band on a hybrid screen');
+    }
+    // One line per logged session, naming its end as when the maintenance dose is due.
+    const h = refHtml46(r, { sessions: S }), clk = fn46('fmtClock');
+    const lines = (h.match(/<li class="rrt-session">[\s\S]*?<\/li>/g) || []).map(text46);
+    assert(lines.length === 2, JSON.stringify(lines));
+    assert(/^Session 1\b/.test(lines[0]) && lines[0].indexOf(`ends ${clk(s1 + 8)}`) >= 0 && /maintenance dose/.test(lines[0]), lines[0]);
+    assert(/^Session 3\b/.test(lines[1]) && lines[1].indexOf(`ends ${clk(s2 + 14)}`) >= 0, lines[1]);
+    assert(!/rrt-session/.test(refHtml46(r, {})), 'no session lines without sessions');
+  });
+
+  test('46.33 the CRRT reference names Rybak 2020, Rec 16 (B-II), shows every cell\'s mg/kg, the 20–25 mL/kg/h it applies at, the first level and the AUC-era footer', () => {
+    const t = text46(refHtml46(ref46('crrt', 70, null)));
+    assert(/Rybak 2020, Rec 16 \(B-II\)/.test(t) && !/Rec 15|B-III/.test(t), t);
+    for (const x of ['1.5 g', '20 mg/kg', '1.75 g', '25 mg/kg', '500 mg', '7.5 mg/kg', '750 mg', '10 mg/kg', 'q12h', '20–25 mL/kg/h', 'for 70 kg actual body weight']) assert(t.indexOf(x) >= 0, `${x}: ${t}`);
+    assert(t.indexOf('First level within 24 h; later doses and the interval follow levels.') >= 0, t);
+    assert(t.indexOf('AUC-targeted work since 2020 supports lower daily maintenance than this table; later doses follow levels.') >= 0, t);
+    assert(/Rounded to 250 mg/.test(t) && !/rrt-session/.test(refHtml46(ref46('crrt', 70, null), { sessions: [{ n: 1, startH: 0, endH: 4, hours: 4, label: 'x', type: 'hybrid' }] })), 'no session lines on CRRT');
+  });
+
+  test('46.34 rrtLocalSettings on vanco.rrt.local: empty is no maximum; a blank or invalid entry keeps a stored one and says so; Clear removes the key; PD\'s key untouched', () => {
+    const LS = 'vanco.rrt.local', PDV = JSON.stringify({ maxDoseMg: 1500 });
+    const store = { 'vanco.pd.local': PDV };
+    const env = profEnv44(store, {});
+    ['t-rrt-set-max', 'b-rrt-set-max', 't-rrt-set-status', 'b-rrt-set-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      const get = () => fn46('rrtLocalSettings')();
+      assert(get().maxDoseMg === null, 'empty storage');
+      env.els['t-rrt-set-max'].value = '2000'; fn46('saveRrtLocalSettings')('t');
+      assert(JSON.parse(store[LS]).maxDoseMg === 2000 && get().maxDoseMg === 2000 && env.els['t-rrt-set-status'].textContent === '', store[LS]);
+      assert(env.els['b-rrt-set-max'].value === '2000', 'the other column shows the saved value');
+      for (const bad of ['', '0', '-1', 'abc']) {
+        env.els['b-rrt-set-max'].value = bad; fn46('saveRrtLocalSettings')('b');
+        assert(JSON.parse(store[LS]).maxDoseMg === 2000 && env.els['b-rrt-set-max'].value === '2000', `"${bad}" overwrote the stored maximum: ${store[LS]}`);
+        assert(/Maximum single dose/.test(env.els['b-rrt-set-status'].textContent) && /2000 mg/.test(env.els['b-rrt-set-status'].textContent) && /kept/.test(env.els['b-rrt-set-status'].textContent), env.els['b-rrt-set-status'].textContent);
+      }
+      fn46('clearRrtLocalSettings')();
+      assert(!(LS in store) && get().maxDoseMg === null && env.els['t-rrt-set-max'].value === '' && env.els['b-rrt-set-max'].value === '', `cleared: ${JSON.stringify(store)}`);
+      assert(/Cleared/.test(env.els['t-rrt-set-status'].textContent), env.els['t-rrt-set-status'].textContent);
+      assert(store['vanco.pd.local'] === PDV, 'PD settings changed');
+      env.els['t-rrt-set-max'].value = ''; fn46('saveRrtLocalSettings')('t');
+      assert(get().maxDoseMg === null && env.els['t-rrt-set-status'].textContent === '', 'blank with nothing stored is simply no setting');
+      store[LS] = '{not json'; assert(get().maxDoseMg === null, 'unreadable storage is no setting');
+    });
+    // The controls: save on change and Clear, in both columns, through __ACT (no inline handler).
+    for (const c of ['t', 'b']) {
+      assert(new RegExp(`<input type="number" id="${c}-rrt-set-max"[^>]*data-onchange="k105" data-arg="${c}"`).test(src46), `${c}: save on change`);
+      assert(new RegExp(`id="${c}-rrt-set-status"`).test(src46), `${c}: a status line`);
+    }
+    assert((src46.match(/data-onclick="k106"/g) || []).length === 2, 'a Clear in each column');
+    assert(vm.runInContext("typeof __ACT.k105 === 'function' && typeof __ACT.k106 === 'function'", sandbox), '__ACT entries');
+  });
+
+  test('46.35 PD settings gain Clear: it removes vanco.pd.local and pdLocalSettings() returns its defaults; the CRRT/hybrid key untouched', () => {
+    const RV = JSON.stringify({ maxDoseMg: 2000 });
+    const store = { 'vanco.pd.local': JSON.stringify({ maxDoseMg: 1500, targetPeak: 30, amLabs: '05:30' }), 'vanco.rrt.local': RV };
+    const env = profEnv44(store, { 'pd-set-max': '1500', 'pd-set-peak': '30', 'pd-set-amlabs': '05:30' });
+    ['pd-set-max', 'pd-set-peak', 'pd-set-amlabs', 'pd-set-status'].forEach(k => env.get(k));
+    withProf44(env, [], () => {
+      assert(sandbox.pdLocalSettings().maxDoseMg === 1500, 'fixture');
+      fn46('clearPdLocalSettings')();
+      assert(!('vanco.pd.local' in store), JSON.stringify(store));
+      assert(JSON.stringify(sandbox.pdLocalSettings()) === JSON.stringify({ maxDoseMg: null, targetPeak: null, amLabs: '06:00', amLabsSet: false }), JSON.stringify(sandbox.pdLocalSettings()));
+      assert(['pd-set-max', 'pd-set-peak', 'pd-set-amlabs'].every(k => env.els[k].value === ''), 'the fields still show the cleared values');
+      assert(/Cleared/.test(env.els['pd-set-status'].textContent) && store['vanco.rrt.local'] === RV, env.els['pd-set-status'].textContent);
+    });
+    const pdSettings = (src46.match(/<details class="pd-settings">[\s\S]*?<\/details>\s*<\/div><!-- \/section-pd -->/) || [''])[0];
+    assert(/data-onclick="k107"/.test(pdSettings), 'a Clear control in the PD settings');
+    assert(vm.runInContext("typeof __ACT.k107 === 'function'", sandbox), '__ACT entry');
+  });
+
+  test('46.36 the references on screen: AUC Precision under its CRRT and hybrid refusals, for the AUC column\'s weight, hybrid naming each logged session\'s end; the Trough CRRT and hybrid modes for the Trough weight', () => {
+    const D = [[1000, 1, '2026-11-16', '13:00']], clk = fn46('fmtClock');
+    const rows = [['2026-11-16', '08:00', '8', 'hybrid'], ['2026-11-17', '20:00', '14', 'hybrid']];
+    const hyb = withBayesForm({ 'b-tbw': '70', tbw: '95', doses: D, hdRows: rows }, (env) => aucRun46(env, 'hybrid'));
+    const th = text46(hyb);
+    assert(/data-rrt-refusal/.test(hyb) && hyb.indexOf('On hybrid therapy') < hyb.indexOf('data-rrt-reference'), hyb.slice(0, 300));
+    assert(/<div data-rrt-reference data-module="auc" data-kind="hybrid" data-kg="70">/.test(hyb), 'the slot names its kind and weight');
+    assert(/for 70 kg actual body weight/.test(th) && !/95 kg/.test(th) && /Rybak 2020, Rec 15 \(B-III\)/.test(th) && !BAND46.test(hyb), th.slice(0, 600));
+    const lines = (hyb.match(/<li class="rrt-session">[\s\S]*?<\/li>/g) || []).map(text46);
+    assert(lines.length === 2 && lines[0].indexOf(`ends ${clk(hdH46('2026-11-16', '08:00') + 8)}`) >= 0 && lines[1].indexOf(`ends ${clk(hdH46('2026-11-17', '20:00') + 14)}`) >= 0, JSON.stringify(lines));
+    const crrt = withBayesForm({ 'b-tbw': '70', tbw: '95', doses: D }, (env) => aucRun46(env, 'crrt'));
+    const tc = text46(crrt);
+    assert(/On CRRT — no model here describes it/.test(tc) && /data-onclick="k103"/.test(crrt) && /<div data-rrt-reference data-module="auc" data-kind="crrt" data-kg="70">/.test(crrt), crrt.slice(0, 300));
+    assert(/Rybak 2020, Rec 16 \(B-II\)/.test(tc) && /for 70 kg actual body weight/.test(tc) && ['1.5 g', '1.75 g', '500 mg', '750 mg'].every(x => tc.indexOf(x) >= 0) && !/rrt-session/.test(crrt), tc.slice(0, 600));
+    for (const kind of ['crrt', 'hybrid']) {
+      const r = trough44('initial', 'M', { tbw: '90' }, { rrt: kind });
+      assert(r.text.indexOf(kind === 'crrt' ? 'On CRRT' : 'On hybrid therapy') === 0 && /for 90 kg actual body weight/.test(r.text)
+        && new RegExp(`<div data-rrt-reference data-module="trough" data-kind="${kind}" data-kg="90">`).test(r.h), `Trough ${kind}: ${r.text.slice(0, 400)}`);
+      assert(kind === 'crrt' ? /Rec 16 \(B-II\)/.test(r.text) : /Rec 15 \(B-III\)/.test(r.text) && !BAND46.test(r.h), `Trough ${kind}: ${r.text.slice(0, 400)}`);
+      assert(/data-onclick="k0"/.test(r.h) && !/class="rec-dose"/.test(r.h), `Trough ${kind}: print, and nothing reads as a recommendation`);
+    }
+  });
+
+  test('46.37 the session section speaks of the renal replacement: under hybrid "Hybrid sessions", "+ Add session", rows "Session N", a hint that says nothing is fitted, and row errors named as the rows are; haemodialysis copy unchanged', () => {
+    const IHD_HINT = 'Past and planned sessions, as start and length. They place each level against dialysis and mark the chart; they do not change the fit — Goti-HD averages dialysis over the whole course. Add the next planned session to read the pre-HD level.';
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        ['b-hd-wrap', 'b-hd-heading', 'b-hd-add', 'b-hd-hint', 'b-hd-tbody'].forEach(k => env.get(k));
+        fn46('setRrt')('hybrid');
+        const h = { head: env.els['b-hd-heading'].textContent, add: env.els['b-hd-add'].textContent, hint: env.els['b-hd-hint'].textContent };
+        assert(h.head === 'Hybrid sessions' && h.add === '+ Add session', JSON.stringify(h));
+        assert(/recorded/.test(h.hint) && /maintenance dose is due/.test(h.hint) && /[Nn]othing is fitted/.test(h.hint)
+          && !/Goti-HD|pre-HD|mark the chart|haemodialysis|\bHD\b|dialysis/.test(h.hint), h.hint);
+        fn46('addBayesSession')();
+        const tr = env.els['b-hd-tbody'].children.slice(-1)[0];
+        assert(tr && /<span class="course-n" id="b-hd-n-\d+">Session \d+<\/span>/.test(tr.innerHTML) && !/HD session|>HD \d/.test(tr.innerHTML), tr && tr.innerHTML.slice(0, 500));
+        fn46('setRrt')('ihd');
+        assert(env.els['b-hd-heading'].textContent === 'Haemodialysis sessions' && env.els['b-hd-add'].textContent === '+ Add HD session' && env.els['b-hd-hint'].textContent === IHD_HINT,
+          JSON.stringify([env.els['b-hd-heading'].textContent, env.els['b-hd-add'].textContent, env.els['b-hd-hint'].textContent]));
+      } finally { reset46(); }
+    });
+    // Existing rows are relabelled when the renal replacement changes.
+    const labels = withBayesForm({ hdRows: [['2026-11-16', '08:00', '8', 'hybrid'], ['2026-11-18', '08:00', '8', 'hybrid']] }, (env) => {
+      vm.runInContext("bState.rrt = 'hybrid';", sandbox); fn46('syncHdSection')();
+      const hyb = [1, 2].map(n => env.el(`b-hd-n-${n}`).textContent);
+      vm.runInContext("bState.rrt = 'ihd';", sandbox); fn46('syncHdSection')();
+      return { hyb, ihd: [1, 2].map(n => env.el(`b-hd-n-${n}`).textContent) };
+    });
+    assert(JSON.stringify(labels) === JSON.stringify({ hyb: ['Session 1', 'Session 2'], ihd: ['HD 1', 'HD 2'] }), JSON.stringify(labels));
+    // A hybrid row's error names it as it is labelled, and still marks its field.
+    const bad = sess46('hybrid', [['2026-11-16', '08:00', '', 'hybrid']], (env) => {
+      env.document.body = env.el('body');
+      const p = fn46('parseBayesSessions')('hybrid');
+      return { p, target: fn46('courseErrorTarget')(p.errors && p.errors[0]) };
+    });
+    assert(bad.p.errors[0] === 'Session row 1: missing or invalid session length.' && JSON.stringify(bad.target) === '["b-hd-hours-1"]', JSON.stringify(bad));
+    // The markup: the static copy is haemodialysis's (the default type), and the comment no longer says Goti-HD only.
+    assert(/<h3 class="form-h3" id="b-hd-heading">Haemodialysis sessions<\/h3>/.test(src46) && /id="b-hd-add"[^>]*>\+ Add HD session</.test(src46)
+      && new RegExp(`id="b-hd-hint"[^>]*>${IHD_HINT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</p>`).test(src46), 'the static markup');
+    assert(!/<!-- Haemodialysis sessions \(D15\): shown for Goti-HD, or whenever a session row exists -->/.test(src46), 'the old markup comment');
+  });
+
+  test('46.38 the Trough hybrid mode (R73): the creatinine and loading-dose blocks are hidden as on PD, weight stays, the trough target goes (no 15–20 band), the reference section shows', () => {
+    assert(/\.panel-left\[data-mode="hybrid"\] \.not-pd\s*\{\s*display:\s*none;\s*\}/.test(src46), 'the hide rule');
+    const at = (s) => src46.indexOf(s);
+    assert(at('id="tbw"') > 0 && at('id="tbw"') < at('<div id="amp-section" class="not-pd">'), 'weight sits before the hidden blocks, in the patient section');
+    assert(/<div id="section-renal" class="not-pd">/.test(src46) && /<div id="section-ld" class="not-pd">/.test(src46), 'the creatinine and loading-dose blocks are .not-pd');
+    const env = env46({});
+    const panel = { dataset: {} };
+    env.document.querySelector = (sel) => (sel === '.app-shell:not(#app-shell-bayesian) > .panel-left' ? panel : null);
+    withProf44(env, [], () => {
+      try {
+        const disp = (id) => env.get(id).style.display;
+        fn46('setRrt')('hybrid');
+        assert(panel.dataset.mode === 'hybrid' && disp('section-trough-shared') === 'none' && disp('section-rrt') === '' && disp('section-pd') === 'none',
+          JSON.stringify([panel.dataset.mode, disp('section-trough-shared'), disp('section-rrt'), disp('section-pd')]));
+        fn46('setRrt')('crrt');
+        assert(panel.dataset.mode === 'crrt' && disp('section-rrt') === '', JSON.stringify([panel.dataset.mode, disp('section-rrt')]));
+        fn46('setRrt')('none');
+        assert(panel.dataset.mode === 'initial' && disp('section-rrt') === 'none' && disp('section-trough-shared') === '', JSON.stringify([panel.dataset.mode, disp('section-rrt'), disp('section-trough-shared')]));
+      } finally { reset46(); }
+    });
   });
 }
 
@@ -10073,7 +10351,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 645;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.24)
+const EXPECTED_TOTAL = 659;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.38)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

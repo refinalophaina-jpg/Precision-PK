@@ -3072,6 +3072,106 @@ async function enterCourse(page) {
     await sctx.close();
   }
   // ── end Release 3 Task 24
+  // ── Release 3 (v3.16.0, D28), Task 25: the CRRT and hybrid guideline references and the local maximum, by real input.
+  {
+    const gctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const g = await gctx.newPage();
+    const gProblems = watch(g, 'd28-reference');
+    await g.goto(BASE + '?v=pwd28g-' + Date.now(), { waitUntil: 'networkidle' });
+    await g.evaluate(() => { localStorage.removeItem('vanco.rrt.local'); localStorage.removeItem('vanco.pd.local'); });
+    const txt = (sel) => g.evaluate((sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim(), sel);
+    const BAND = /15\s*[–-]\s*20/;
+    const paper = () => g.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const t = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      window.dispatchEvent(new Event('afterprint')); return t; });
+
+    // Trough-based · CRRT: the Rec 16 table for the Trough weight, by real click; it prints, closing with the disclaimer.
+    await g.locator('[data-onclick="k1"]').click();
+    await typeInto(g, '#tbw', '70');
+    await g.locator('#t-rrt').selectOption('crrt');
+    await g.locator('[data-onclick="k31"]').click(); await g.waitForTimeout(200);
+    const tC = await txt('#results-content'), tCp = await paper();
+    ok('D28: Trough-based · CRRT shows the Rybak 2020 Rec 16 reference for the Trough weight, each cell with its mg/kg; it prints with the disclaimer',
+       /^On CRRT/.test(tC) && /Guideline reference · CRRT/.test(tC) && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(tC)
+       && ['1.5 g', '20 mg/kg', '1.75 g', '25 mg/kg', '500 mg', '7.5 mg/kg', '750 mg', '10 mg/kg'].every(x => tC.includes(x)) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(tC)
+       && /Guideline reference · CRRT/.test(tCp) && /not clinically validated/.test(tCp), JSON.stringify({ tC: tC.slice(0, 300), tCp: tCp.slice(-160) }));
+
+    // Trough-based · hybrid (R73): creatinine, loading dose, amputation and the trough target hidden; weight kept; no 15–20 anywhere.
+    await g.locator('#t-rrt').selectOption('hybrid');
+    await g.locator('[data-onclick="k31"]').click(); await g.waitForTimeout(200);
+    const tH = await txt('#results-content');
+    const col = await g.evaluate(() => ({ scr: !!document.getElementById('scr').offsetParent, ld: !!document.getElementById('section-ld').offsetParent,
+      amp: !!document.getElementById('amp-section').offsetParent, tbw: !!document.getElementById('tbw').offsetParent,
+      target: !!document.getElementById('trough-min').offsetParent, ref: !!document.getElementById('section-rrt').offsetParent, screen: document.body.innerText }));
+    const tHp = await paper();
+    ok('D28: Trough-based · hybrid hides creatinine, loading dose and the trough target (R73), keeps weight, shows the Rec 15 reference, and no 15–20 band is on screen or paper',
+       !col.scr && !col.ld && !col.amp && col.tbw && !col.target && col.ref && /Rybak 2020, Rec 15 \(B-III\)/.test(tH)
+       && /No pre-session target has been validated for hybrid therapy/.test(tH) && /within 2 h of its end reads falsely low/.test(tH)
+       && !BAND.test(col.screen) && /Guideline reference · hybrid/.test(tHp) && !BAND.test(tHp) && /not clinically validated/.test(tHp),
+       JSON.stringify({ col: Object.assign({}, col, { screen: (col.screen.match(/.{0,40}15\s*[–-]\s*20.{0,40}/) || [''])[0] }), tH: tH.slice(0, 200) }));
+
+    // AUC Precision on hybrid (the selector is one value): a session row speaks of hybrid; the reference names its end.
+    await g.locator('[data-onclick="k2"]').click();
+    await typeInto(g, '#b-tbw', '70');
+    await g.locator('[data-onclick="k74"]').click();
+    const hid = await g.evaluate(() => [...document.querySelectorAll('[id^="b-hd-row-"]')].pop().id.split('-').pop());
+    await g.locator(`#b-hd-date-${hid}`).fill(D2); await typeInto(g, `#b-hd-time-${hid}`, '08:00'); await typeInto(g, `#b-hd-hours-${hid}`, '8');
+    await g.keyboard.press('Tab');
+    const copy = { head: await txt('#b-hd-heading'), add: await txt('#b-hd-add'), hint: await txt('#b-hd-hint'), row: await txt(`#b-hd-n-${hid}`) };
+    await g.locator('[data-onclick="k47"]').click(); await g.waitForTimeout(200);
+    const aH = await txt('#b-results');
+    const endWant = await g.evaluate((d) => fmtClock(new Date(`${d}T08:00`).getTime() / 3600000 + 8), D2);
+    const aHp = await paper();
+    ok('D28: AUC Precision on hybrid: the refusal, then the Rec 15 reference for the AUC weight naming the logged session\'s end; the section says hybrid sessions; it prints',
+       copy.head === 'Hybrid sessions' && copy.add === '+ Add session' && copy.row === `Session ${hid}` && /Nothing is fitted/.test(copy.hint) && !/Goti-HD|pre-HD/.test(copy.hint)
+       && /^On hybrid therapy/.test(aH) && /for 70 kg actual body weight/.test(aH) && aH.includes(`Session ${hid} ends ${endWant}`) && !BAND.test(aH)
+       && /Guideline reference · hybrid/.test(aHp) && aHp.includes(`ends ${endWant}`) && /not clinically validated/.test(aHp) && !/Nothing to print yet/.test(aHp),
+       JSON.stringify({ copy, aH: aH.slice(0, 400), endWant, aHp: aHp.slice(0, 200) }));
+    await g.locator(`[data-onclick="k75"][data-arg="${hid}"]`).click();
+
+    // AUC Precision on CRRT at 140 kg: the 3 g cap marked; a local maximum typed by keyboard redraws it in place; Clear restores it.
+    await g.locator('#b-rrt').selectOption('crrt');
+    await typeInto(g, '#b-tbw', '140');
+    await g.locator('[data-onclick="k47"]').click(); await g.waitForTimeout(200);
+    const before = await txt('#b-results');
+    const aCp = await paper();
+    await g.locator('#b-rrt-settings summary').click();
+    await typeInto(g, '#b-rrt-set-max', '2000'); await g.keyboard.press('Tab'); await g.waitForTimeout(150);
+    const set = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')), other: await g.evaluate(() => document.getElementById('t-rrt-set-max').value) };
+    await g.locator('#b-rrt-settings [data-onclick="k106"]').click(); await g.waitForTimeout(150);
+    const cleared = { text: await txt('#b-results'), ls: await g.evaluate(() => localStorage.getItem('vanco.rrt.local')),
+      field: await g.evaluate(() => document.getElementById('b-rrt-set-max').value), status: await txt('#b-rrt-set-status') };
+    ok('D28: AUC Precision on CRRT prints its reference; a local maximum typed by keyboard redraws the marked cells as "your setting"; Clear removes it and Rec 11 returns',
+       /^On CRRT/.test(before) && /3 g\*/.test(before) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(before) && /Guideline reference · CRRT/.test(aCp) && /not clinically validated/.test(aCp)
+       && /2 g\*/.test(set.text) && /at most 2 g \(your setting\)/.test(set.text) && !/at most 3 g/.test(set.text) && JSON.parse(set.ls || '{}').maxDoseMg === 2000 && set.other === '2000'
+       && /3 g\*/.test(cleared.text) && /at most 3 g \(Rybak 2020, Rec 11\)/.test(cleared.text) && cleared.ls === null && cleared.field === '' && /^Cleared/.test(cleared.status),
+       JSON.stringify({ before: before.slice(-300), set: Object.assign({}, set, { text: set.text.slice(-300) }), cleared: Object.assign({}, cleared, { text: cleared.text.slice(-200) }) }));
+
+    // The PD settings' Clear removes a stored PD maximum.
+    await g.locator('[data-onclick="k1"]').click();
+    await g.locator('#t-rrt').selectOption('pd');
+    await g.locator('#section-pd .pd-settings summary').click();
+    await typeInto(g, '#pd-set-max', '1500'); await g.keyboard.press('Tab'); await g.waitForTimeout(100);
+    const pdSet = await g.evaluate(() => localStorage.getItem('vanco.pd.local'));
+    await g.locator('[data-onclick="k107"]').click(); await g.waitForTimeout(100);
+    const pdClr = await g.evaluate(() => ({ ls: localStorage.getItem('vanco.pd.local'), field: document.getElementById('pd-set-max').value, st: document.getElementById('pd-set-status').textContent }));
+    ok('D28: the PD settings\' Clear removes the stored PD maximum (vanco.pd.local) and empties the field',
+       JSON.parse(pdSet || '{}').maxDoseMg === 1500 && pdClr.ls === null && pdClr.field === '' && /^Cleared/.test(pdClr.st), JSON.stringify({ pdSet, pdClr }));
+
+    // 375 px: the hybrid reference and its settings, with no horizontal scroll.
+    await g.setViewportSize({ width: 375, height: 812 });
+    await g.locator('#t-rrt').selectOption('hybrid');
+    await g.locator('[data-onclick="k31"]').click(); await g.waitForTimeout(200);
+    const narrow = await g.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth,
+      table: (document.querySelector('#results-content .rrt-ref-table') || { getBoundingClientRect: () => ({ right: 9999 }) }).getBoundingClientRect().right }));
+    ok('D28: at 375 px the hybrid reference fits the screen, with no horizontal scroll', narrow.sw <= narrow.iw && narrow.table <= narrow.iw, JSON.stringify(narrow));
+    await g.locator('#results-content .rrt-ref').scrollIntoViewIfNeeded();
+    await g.screenshot({ path: path.join(OUT, 'd28-reference-375.png') });
+    const gAttr = await attributeInjected(g, gProblems);
+    results.problems.push(...gAttr.kept);
+    await gctx.close();
+  }
+  // ── end Release 3 Task 25
   await browser.close();
 
   results.checks = checks;
