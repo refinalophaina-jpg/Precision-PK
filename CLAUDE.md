@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~18,600 lines / ~1.12 MB (2026-11-15, v3.15.0).
+~20,200 lines / ~1.24 MB (2026-11-17, v3.16.0).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -28,15 +28,17 @@ git hash-object index.html
 
 | Range (approx) | Contents |
 |---|---|
-| 1–2,815 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
-| 2,816–4,073 | Markup — print report, header, module tabs, the two module panels |
-| 4,074–end | One inline `<script>` — the whole engine and UI |
+| 1–2,833 | CSS — `:root` tokens, components, the results grammar ("RESULTS — the course timeline"), responsive, `@media print` |
+| 2,834–4,269 | Markup — print report, header, module tabs, the two module panels |
+| 4,270–end | One inline `<script>` — the whole engine and UI |
 
 **Two modules** (tabs, switched by `switchModule()`):
 
-1. **Trough-Based** — deterministic. Five sub-modes via `setCalcMode()`: `initial`,
-   `level` (steady-state trough), `twolevels` (Sawchuk–Zaske), `randomlevel`, and `pd` (IV
-   vancomycin on peritoneal dialysis, D23).
+1. **Trough-Based** — deterministic. Four creatinine-based sub-modes via `setCalcMode()`: `initial`,
+   `level` (steady-state trough), `twolevels` (Sawchuk–Zaske), `randomlevel`; and one per renal
+   replacement (D28), set by the selector: `pd` (IV vancomycin on peritoneal dialysis, D23), `crrt`
+   (level-based), `ihd` (a peak-equation reading from your settings) and `hybrid` (the guideline
+   reference only).
 2. **AUC Precision** — MAP Bayesian, `runBayesian()`. Four priors: Buelga 2005 (1-comp),
    Goti 2018 (2-comp), Goti-HD, Hughes 2024 (FFM-scaled, class-3 obesity).
 
@@ -147,8 +149,10 @@ Presentation only: engine parity 0 differences.
 - **Load:** 20 mg/kg, institutional; cap Rec 11 3,000 mg. First level: the AM labs nearest 48 h.
 - **Published APD/CAPD half-lives** (Manley 2001, Lam 2020) are context and never enter a row.
 - **Local settings** (maximum dose, target peak, AM labs) live in the browser only
-  (`vanco.pd.local`).
-- **AUC Precision** refuses a PD patient (`b-pd`) and links here.
+  (`vanco.pd.local`), with a Clear control (`k107`, D28). Since D28 a maximum must lie in 250–4,000 mg
+  (one dispensing step to `INPUT_LIMITS.dose`, R84/R101); outside it nothing is stored and the status line
+  says why. A value stored by v3.15.0 outside that range is still read (R102).
+- **AUC Precision** refuses a PD patient (Renal replacement: Peritoneal dialysis; `#b-pd` until D28) and links here.
 - Workplace protocols and real patients never enter this repo.
 
 **The workstation (D24, v3.13.0):** presentation only (engine parity 0).
@@ -165,7 +169,8 @@ Presentation only: engine parity 0 differences.
   (`modelMismatchText`).
 - **Notes** over `NOTE_CLAMP_CHARS` (300, a preference) show three lines and "Read the rest: <word>".
 - **The input column:** mode, patient, creatinine, course, target, then profiles. PD hides amputation,
-  creatinine and loading-dose blocks (`.not-pd`), keeping a ticked HD box in view. "Clear all fields" is a
+  creatinine and loading-dose blocks (`.not-pd`); since D28 the Renal replacement selector sits in the patient
+  section and stays in view in every mode (the CRRT, haemodialysis and hybrid modes hide the same blocks, R73). "Clear all fields" is a
   text action with Undo (`clearWithUndo`), which snapshots its own module's column and re-derives the
   CrCl override, weight basis and amputation from the restored fields; a profile load ends the Undo.
   Clearing unticks the CrCl override. No native `confirm()` remains. Alarm notes are never clamped.
@@ -251,7 +256,7 @@ logic, the engine moves.
   course travels with a save only when the other column's demographics are filled and agree (R18, R22).
   `dial` is stored and loaded only with Goti (R21). `validProfile` on read; unreadable JSON is kept under
   `ainadara.profiles.v1.bak`; ids and labels go through `escHtml`. A load clears both columns. Trough
-  Clear resets the weight basis, amputation, HD flag and PD form (R20, R22), never the PD local
+  Clear resets the weight basis, amputation, HD flag (since D28, Renal replacement to None) and PD form (R20, R22), never the PD local
   settings, and a blank local setting never overwrites a stored one (R23).
 - **Parity against v3.13.0 (`edc5b53`):** 72 differences, all listed in D26: 64 in six `findOptimalDose`
   calls (the ceilings and the refusal, Task 3) and 8 additive `calcLoadingDose` fields (Task 4b). The final
@@ -300,6 +305,39 @@ logic, the engine moves.
 - **Open for the user:** whether the Hughes line should lower confidence; whether an in-range regimen judged on the
   early row gets ruling 3's protection.
 
+**Release 3: dialysis (D28, v3.16.0):** one renal-replacement selector, CRRT and hybrid references, a
+level-based CRRT answer and a haemodialysis reading from your settings. Not clinically validated.
+- **The gaps closed:** a CRRT patient was fitted silently as a non-dialysis patient; a hybrid (SLED / PIRRT)
+  session could only be typed as haemodialysis; daily sessions passed without comment.
+- **One selector** (`RRT_KINDS`, `setRrt`, `#t-rrt`/`#b-rrt`, "Renal replacement": None, Intermittent
+  haemodialysis, Hybrid (SLED / PIRRT), CRRT, Peritoneal dialysis) replaced `#t-hd`, `#b-dial` and `#b-pd`.
+  `state.rrt === bState.rrt`; `bState.dial` is derived (`rrt === 'ihd'`), so the engine is untouched. Off None the
+  four creatinine-based Trough modes are `aria-disabled` with a reason (R64). AUC Precision refuses CRRT before
+  anything is fitted, refuses hybrid, and on haemodialysis refuses every tile but Goti 2018 · HD. A refusal clears
+  `bState.result` (R72) and goes when the selector or tile changes. Profiles save `core.rrt`; older ones map
+  through `rrtOf`; one with both a PD form and an HD flag is refused on load (R74).
+- **Sessions:** typed rows (`ihd`/`hybrid`); hybrid to 24 h (`INPUT_LIMITS.hybridHours`), haemodialysis still 12 h;
+  a mismatch is a blocking error naming the row; `parseBayesSessions` is the one reader. More than
+  `HD_SESSIONS_PER_WEEK_CAUTION` (3) session starts in any seven calendar days is one caution on Goti-HD that
+  changes no number (U8, R77).
+- **References** (`rrtReferenceDoses`/`rrtReferenceHTML`): Rybak 2020 Rec 16 (CRRT, B-II) and Rec 15 (hybrid, B-III)
+  for actual body weight, each cell with its mg/kg, capped at the lower of 3 g (Rec 11) and the local maximum
+  (`vanco.rrt.local`, U10), the cap named. CRRT says where an effluent rate lies against 20–25 mL/kg/h and never
+  scales a dose. Hybrid shows no pre-session band.
+- **CRRT, level-based** (`crrtAnswer`): the decline between this patient's own levels, level to level, used only
+  while one circuit run covered it at one rate and modality and neither level was within
+  `POST_DISTRIBUTION_MIN_H` (1 h, Rec 8a) of an infusion's end. The projection needs one run covering from the end
+  of the last used interval to the next draw with no setting change (R91 revised); otherwise "Draw a level".
+  250 mg rows judged at the next draw; `pickGoalStep`; no AUC (R61); no creatinine, model or effluent scaling.
+- **Haemodialysis reading** (`hdReading`, Trough `ihd`): pre × your fraction remaining, then V × (your target
+  peak − that), from four settings in `vanco.hd.local` (U11). The repository ships no value; no setting, no reading.
+  Shown below the Goti-HD pointer, never instead of it; refuses a level during a session or within
+  `RRT_NO_SAMPLE_AFTER_SESSION_H` (2 h) of one.
+- **Shared, not copied (rule 2):** `solveIntervalK`, `pickGoalStep`, `peakEquationDose` (PD, CRRT, HD);
+  `doseCapOf`/`cappedWeightDose`; `levelAfterNow` with `FUTURE_LEVEL_TOLERANCE_H`; one goal control for PD and CRRT
+  with a value per mode (P2). PD is unchanged (46.44, `docs/audit/pd-parity/`).
+- **Parity against v3.15.0 (`bcee5dd`): 0 differences.** The corpus reaches no dialysis path; SUITE 46 is the record.
+
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
 intradialytic dosing recommendations, a Bayesian CRRT model, AUC in CRRT, a level-based hybrid answer,
 SLED / PIRRT dosing beyond the guideline reference, continuous infusion, intraperitoneal dosing, AUC or
@@ -339,7 +377,7 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
 8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
    shipping a clinical number without provenance. A number no paper sets is a preference: its
    source comment says "PREFERENCE (rule 8)", what it orders, and whether it can change a dose.
-   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-15 (v3.15.0) they are:
+   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-17 (v3.16.0) they are:
    - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
      splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9, the Trough
      module's "three doses is not steady state" wording only; AUC Precision reads `SS_FRACTION_EARLY`);
@@ -358,7 +396,9 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
      regimen is changed); `CONFIDENCE_SIGMA` (2/3/4, which since D26's ruling 3 gates one decision,
      `finalizeDecision`); `INTERVAL_PREFERENCE` (24, 12, 48, 8, ties only); the CrCl → interval
      cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the
-     weight-based level-dosing cuts; `HOLD_SEARCH_MAX_H` (72 h, the user's ruling U2, counted from the
+     weight-based level-dosing cuts; the one goal pick (`pickGoalStep`, D28), PD's 250 mg step nearest the goal's
+     middle now shared with CRRT; `CRRT_NEXT_DRAW_DEFAULT_H` (24 h, R65, D28): with no next-draw time entered the
+     CRRT options are judged this long after the dose, so it can change the dose picked (editable); `HOLD_SEARCH_MAX_H` (72 h, the user's ruling U2, counted from the
      later of the due time and now, or the planned dose, R51): when a hold gives "recheck a level" instead
      of a resume time; `SS_FRACTION_EARLY` (Buelga 0.925, Goti 0.775, Hughes 0.575, D27): below this
      fraction of steady state the most recent level is "early", so the fit reads the early uncertainty row
@@ -369,7 +409,13 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
 
    Everything they sit beside is sourced: sigma is each model's published residual error, the AUC
    band is Rybak 2020 Rec 1, the 250 mg step is the dispensing increment, the hold threshold is the
-   user's ruling. Prefer a rule that needs no weight at all: the exposure matrix replaced a composite
+   user's ruling. D28's constants are sourced, not preferences: `HD_SESSIONS_PER_WEEK_CAUTION` (3, Rec 13, B-II;
+   a caution only); `POST_DISTRIBUTION_MIN_H` (1 h, Rec 8a, A-II); the `CRRT_*` reference constants (Rec 16, B-II;
+   `CRRT_FIRST_LEVEL_WITHIN_H` is Rec 16 text, not separately graded); `HYBRID_*` (Rec 15, B-III);
+   `RRT_NO_SAMPLE_AFTER_SESSION_H` (2 h, the guideline's hybrid text, not separately graded); and
+   `FUTURE_LEVEL_TOLERANCE_H` (one minute, D26's refusal tolerance, named in D28). `PD_K_FLOOR` (1e-4) is a search
+   bound, not a clinical constant. The haemodialysis reading's four settings are the user's own and ship with no
+   value. Prefer a rule that needs no weight at all: the exposure matrix replaced a composite
    ranking score precisely because it needs none.
 9. **Do not weaken a test to make it pass.** If a threshold is wrong, say why in the file and
    in the decisions doc, and record the numbers that justify the change.
@@ -384,18 +430,19 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **621/621 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` |
+| `phase2d_validation.cjs` | **712/712 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
 | `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
 | `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
-| `docs/audit/mutation.cjs` | **63 of 63 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
+| `docs/audit/mutation.cjs` | **120 of 120 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
-| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27). The script prints the first 40 |
-| `docs/audit/browser-flows.cjs` | **223/223** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27); v3.16.0 against `bcee5dd` reads 0 (D28: the corpus reaches no dialysis path). The script prints the first 40 |
+| `docs/audit/pd-parity/` | The PD parity guard's scripts (D28, R87): `capture.cjs`, `replay.cjs`, `encode.cjs`, `load.cjs` and `fixtures58.json` regenerate SUITE 46.44's digests (58 PD calls at 9 significant digits) from any commit, e.g. the released `bcee5dd` |
+| `docs/audit/browser-flows.cjs` | **262/262** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
 for an engine or model overhaul. The history table is in the README. The release that adds a suite pins
-its version there (43.12 for v3.14.0, 45.58 for v3.15.0); the earlier pins accept a successor.
+its version there (43.12 for v3.14.0, 45.58 for v3.15.0, 46.91 for v3.16.0); the earlier pins accept a successor.
 
 **CI.** `.github/workflows/test.yml` runs on every push and pull request (`permissions: contents: read`,
 actions pinned by commit SHA, Node 22, no install): the syntax check, phase2d, phase2d under
@@ -531,7 +578,7 @@ errors — it previously called a `drawGraph()` that does not exist, inside an e
 the trough-based graphs kept their light-theme colours on the dark page for months.
 
 Results are built as HTML strings via `innerHTML`. **Any user-entered value interpolated into
-one must go through `escHtml()`.** About 150 call sites do (149 on 131 lines, 2026-11-15); the
+one must go through `escHtml()`.** About 180 call sites do (181 on 162 lines, 2026-11-17, v3.16.0); the
 2026-11-13 review's hostile-profile probe found one gap (the profile id in `data-arg`), closed in v3.14.0.
 
 ## Where things are
@@ -541,9 +588,10 @@ one must go through `escHtml()`.** About 150 call sites do (149 on 131 lines, 20
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 223 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 262 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
-| `docs/audit/mutation.cjs` | The mutation gate: 63 mutants, each must be killed by the Node suites |
+| `docs/audit/mutation.cjs` | The mutation gate: 120 mutants, each must be killed by the Node suites |
+| `docs/audit/pd-parity/` | D28's PD parity guard: the fixtures and the replay that regenerate SUITE 46.44's digests from a released commit |
 | `.github/workflows/test.yml` | CI: the Node suites and the mutation gate on every push and pull request |
 | `docs/audit/probe-map-starts.cjs`, `docs/audit/uncertainty-by-model.cjs --early`, `docs/audit/probe-hold-rate.cjs` | D27's evidence: the MAP starts, the early band and its decision flips (`docs/audit/task19/`), and how often the Hold fires and is false (`docs/audit/task21b/`) |
 | `docs/audit-2026-09.md` | Code and math audit — findings, what was verified against which paper |

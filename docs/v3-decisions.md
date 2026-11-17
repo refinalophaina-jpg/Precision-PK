@@ -2728,3 +2728,427 @@ PREFERENCE. The cap binds from 175 kg (15 × 175 = 2,625, rounded to 2,750); 174
 The two questions the probe raised during this release were answered by the user on 2026-11-15: Goti's fitted-only
 Hold (U5) and the measured Hold from a level drawn soon after the first dose (U6, U6a, bounded by U7 after the final
 review).
+
+## D28 — Release 3: dialysis. One renal-replacement selector, CRRT and hybrid references, a level-based CRRT answer, and a haemodialysis reading from your settings (2026-11-17, v3.16.0)
+
+**Asked.** Release 3 of `docs/superpowers/plans/2026-11-14-review-fixes-and-dialysis.md`, detailed in
+`docs/superpowers/plans/2026-11-16-release-3-dialysis.md` (Tasks 23–30). The source is a dialysis research report
+the user commissioned, which lives outside this public repository. Branch `v3.16.0-dialysis`, cut from the released
+v3.15.0 (`bcee5dd`). Every number below comes from the unit test, browser check or mutant named beside it, from a
+committed script under `docs/audit/`, or from a command run for this record.
+
+**Not clinically validated.** Nothing in this release has been validated clinically. Passing tests, a hand-checked
+row and a verified citation show that the code does what it says; they do not show that what it says is right for a
+patient. Every answer here is advisory and needs a clinician's review.
+
+**What was wrong.** Three gaps in v3.15.0, read from the code path:
+1. **A CRRT patient was fitted silently as an ordinary patient.** There was no CRRT input in either module. The only
+   statement was one sentence inside the very-low-clearance advisory, which appeared only when Cockcroft–Gault was
+   under 10 mL/min. Above that threshold a patient on CRRT was fitted on a creatinine-derived clearance with no
+   warning. On CRRT, creatinine is itself removed by the circuit, so that clearance describes the machine as much as
+   the patient.
+2. **A hybrid session (SLED or PIRRT) could only be typed as haemodialysis.** A session row had a start and a length of
+   0.5–12 h and no type. A hybrid session of 12 h or less therefore received the whole intermittent-haemodialysis
+   answer: a prior built on high-flux intermittent dialysis, the Rec 13 table and the 15–20 mg/L pre-dialysis target.
+   None of the three has a source for hybrid therapy. A longer session could not be entered at all.
+3. **Daily and extra sessions passed without comment.** The schedule generator offers "every N days" down to N = 1.
+   Goti's dialysis covariate is a yes/no flag, and Rybak 2020 Rec 13's maintenance doses are for thrice-weekly
+   administration. A daily course was fitted with no caution.
+
+**Smaller findings acted on.** The pre-dialysis target cited Hui 2019's introduction rather than the guideline (now
+Rybak 2020 Rec 14, C-III; Task 29). The guideline comparison's 15 mg/kg had no recommendation number (now Rec 9, A-II).
+The weight-based tables had a 3,000 mg cap and no local maximum, unlike PD (U10). The README's "Not implemented" list
+did not match `CLAUDE.md`'s (Task 29 reconciles them, and 46.83 compares the two).
+
+### The user's rulings that bind it
+
+From 2026-11-14 (the master plan's rulings 5–7):
+- **5.** CRRT is a guard, then the guideline reference, then a level-based answer. No Bayesian model.
+- **6.** Hybrid therapy is a guard and the reference only. Sessions may run to 24 h.
+- **7.** The Trough module gains a level-based haemodialysis reading driven only by browser-stored settings, shown
+  beside the model's answer.
+
+From 2026-11-16:
+- **U8.** The D-j defaults stand. No dialyser or therapy descriptor. More than three haemodialysis sessions in any seven
+  days is a caution only. A fit across a change of modality is refused and the course restarts. The pre-dialysis
+  target stays 15–20 mg/L. One five-way selector replaces the checkboxes.
+- **U9.** The CRRT goal is the PD presets (10–15, 15–20, custom), with nothing preselected and one goal control for both
+  modes.
+- **U10.** The CRRT and hybrid tables take a browser-only local maximum dose. The cap is the lower of
+  `HD_LOADING_MAX_MG` and the local maximum, and the table says which applied.
+- **U11.** The haemodialysis reading's hold level is a fourth local setting. No setting, no reading.
+
+### What changed, task by task, and the tests that pin it
+
+New unit tests are SUITE 46 in `phase2d_validation.cjs` (46.1–46.91, 91 tests; `EXPECTED_TOTAL` 621 → 712). New
+browser checks are the 39 `D28:` checks in `docs/audit/browser-flows.cjs` (223 → 262). The mutation gate gained 57
+mutants, R3-23-1 to R3-29-9 (63 → 120). Each task's new behaviour began with tests seen failing on the commit before
+it. Three tests could not fail first, by design: 46.44 is a parity guard (P4); 46.64's failing evidence is mutant
+R3-27-11; and 46.79 pins a case that was already right beside its fix, 46.78.
+
+**Task 23 — one renal-replacement selector** (`20b313c`, fix round `ec06c4f`).
+- `RRT_KINDS = ['none','ihd','hybrid','crrt','pd']`. One `<select>`, "Renal replacement", in each column's patient
+  section (None; Intermittent haemodialysis; Hybrid (SLED / PIRRT); CRRT; Peritoneal dialysis). It replaces `#t-hd`,
+  `#b-dial` and `#b-pd`. `setRrt(kind)` is the one writer: both selects, `state.rrt` and `bState.rrt` (always equal),
+  the Trough mode and the AUC tile.
+- `bState.dial` is derived, `=== (rrt === 'ihd')`, so `gotiPopPK(…, dial)` and every engine reader are unchanged.
+- Routing. **AUC Precision:** CRRT refuses before anything is fitted ("On CRRT — no model here describes it"), with a
+  button to Trough-based · CRRT. Hybrid refuses the haemodialysis answer. On haemodialysis, any tile but Goti 2018 · HD
+  refuses ("only Goti 2018 · HD carries dialysis"), with a button selecting it. PD keeps its refusal. **Trough
+  module:** each kind has its own mode. While `rrt` is not None the four creatinine-based mode buttons are
+  `aria-disabled`, with one line: "Not used on <modality>. Set Renal replacement to None to use it."
+- Profiles: `core.rrt` is saved (and `core.hd` for older readers). A profile without it maps through `rrtOf` (a PD form
+  → pd; `core.hd` or `demographics.dial` → ihd; else none). `validProfile` refuses an unknown `core.rrt`, never
+  repairing it. Either Clear sets None.
+- Fix round (review Important 1, Review Focus 1): an AUC refusal is removed when the selector or the tile changes.
+  R74: a legacy profile carrying both a PD form and a haemodialysis flag is refused on load.
+- Pinned by 46.1–46.14, mutants R3-23-1 to R3-23-6, and 11 `D28:` checks (each kind follows across the columns; CRRT
+  and hybrid refused under every tile; the unavailable buttons; Review Focus 2's Buelga profile on haemodialysis loads
+  to the refusal; 375 px).
+
+**Task 24 — typed session rows, hybrid sessions to 24 h, the sessions-per-week caution** (`b7a897e`).
+- Each session row carries `type ∈ {ihd, hybrid}`, defaulting to the renal replacement in force.
+  `INPUT_LIMITS.hybridHours` is 0.5–24 h beside `hdHours` (0.5–12, unchanged).
+- A haemodialysis row over 12 h is refused with the words "prolonged therapy: set Renal replacement to Hybrid (SLED /
+  PIRRT)". A row typed for one modality under another is a blocking error naming the row.
+- `parseBayesSessions(rrt)` is the one reader of the rows (R75). The hybrid refusal reads them so the reference can name
+  each session's end; nothing is fitted.
+- `HD_SESSIONS_PER_WEEK_CAUTION = 3` (sourced: Rybak 2020 Rec 13, B-II; the caution's instruction is Rec 14's B-II
+  sentence). `sessionsPerWeekMax` counts session starts in any seven calendar days (R77). On Goti-HD, more than three
+  is one caution that cites Rec 13 and Rec 14 and says it changes no number.
+- Pinned by 46.15–46.24 (46.20 proves every number is identical with the caution suppressed), R3-24-1 to R3-24-7 and
+  five `D28:` checks.
+
+**Task 25 — guideline references for CRRT and hybrid therapy, and the local maximum** (`6223308`).
+- Twelve constants from the verified table below. `doseCapOf` and `cappedWeightDose` are the one cap rule and the one
+  rounding, which PD's load now calls too (byte-identical, 46.29).
+- `rrtReferenceDoses(kind, kg, localMax)` returns `null` for a weight missing or outside `INPUT_LIMITS.weight`, and the
+  screen says "No guideline reference without a weight" (Review Focus 5). `rrtReferenceHTML` shows each cell with its
+  mg/kg, marks a capped cell, and names the cap that applied: "at most 3 g (Rybak 2020, Rec 11)" or "(your setting)".
+- CRRT: the table applies at an effluent of 20–25 mL/kg/h. An entered rate is said as mL/kg/h and inside or outside;
+  outside, "the guideline gives no figure for this rate; the dose is not scaled". Then "First level within 24 h; later
+  doses and the interval follow levels", and the footer "AUC-targeted work since 2020 supports lower daily maintenance
+  than this table".
+- Hybrid: grade B-III; the load without waiting for the session to end; maintenance "after each session ends, or in its
+  final 60–90 min"; levels guide every later dose; a level during a session or within 2 h of its end reads falsely
+  low; "No pre-session target has been validated for hybrid therapy". No 15–20 band appears on a hybrid screen (R81).
+- `vanco.rrt.local` holds the local maximum (R63). A Clear control removes it, and a Clear is added to PD's settings
+  (a deferred Release 1 item).
+- The session section's copy under hybrid is its own ("Hybrid sessions", "Session N", a hint that nothing is fitted or
+  charted). Under Task 24 it read as haemodialysis, which `CLAUDE.md` forbids implying.
+- Pinned by 46.25–46.38, R3-25-1 to R3-25-12 and six `D28:` checks. Fictional 70 kg: CRRT loads 1,500 and 1,750 mg,
+  maintenance 500 and 750 mg q12h; hybrid maintenance 1,000 mg; 140 kg caps the 25 mg/kg load at 3,000 mg.
+
+**Task 26 — one interval solver and one goal pick, shared; PD unchanged** (`ed28fd2`).
+- `solveIntervalK`, `pickGoalStep` and `peakEquationDose` were extracted from PD. PD, CRRT and the haemodialysis
+  reading call them (rule 2). `PD_K_FLOOR` (1e-4, a search bound, not a clinical constant) names the old
+  `PD_K_SEARCH[0]` (R86).
+- 46.44 is a parity guard (P4): 58 `pdAnswer`/`pdIntervals` calls, digests generated from the released `bcee5dd`. It
+  passes before and after by design. Its scripts are in `docs/audit/pd-parity/` (R87: 9 significant digits, so a last
+  bit on another Node version cannot fail it falsely).
+- Pinned by 46.39–46.44 and R3-26-1 to R3-26-3. SUITE 41 (PD) passes unchanged.
+
+**Task 27 — a level-based CRRT answer, Trough-based · CRRT** (`e8dad7f`, fix round `c35e618`).
+- Form: modality; circuit runs (start, and stop or blank while running); effluent rows (from, mL/h, optional modality);
+  residual urine band (recorded and printed only); volume basis (nothing preselected, R62); the goal (U9, P2); doses,
+  levels, give-at and next draw.
+- `crrtAnswer` reads the decline between this patient's own levels, level to level (R90). An interval is used only when
+  one circuit run covers it at one rate and modality and neither level was drawn within `POST_DISTRIBUTION_MIN_H`
+  (1 h, Rybak 2020 Rec 8a, A-II) of an infusion's end.
+- The projection holds only while the circuit runs as it did when the decline was measured: one run must cover from the
+  end of the last used interval to the next draw (R91 revised), with no setting change since. Otherwise the answer is
+  "Draw a level: the circuit stopped at … since the decline was measured" (Review Focus 3), or the rate or modality
+  that changed.
+- Rows run from 0 to the lower of `DOSE_MAX_PER_DOSE_MG` and the local maximum, in 250 mg steps, each with the expected
+  level at the next draw as a range. The pick is `pickGoalStep`. No AUC is reported (R61). No creatinine, CrCl, model or
+  effluent scaling: 46.57 reads the function text. Every answer prints the modality and effluent as recorded.
+- States: the reference (no level), a named refusal, `need-level`, `dose`, `no-dose`. Refused by name: no weight, no
+  goal, no basis, no circuit start, no modality, no effluent rate (R89), a level inside an infusion, the next level too
+  soon, overlapping runs (R93), a level dated in the future (R94) and a run that stops before it starts (R95b).
+- Fix round: the reviewer's I1 (overlapping or open runs crossed an unrecorded stop), I2 (a stop and restart between the
+  measured decline and the starting level still dosed), I3 (a future level was projected) and I4 (the mixed-setting
+  guard was untested).
+- Pinned by 46.45–46.64, R3-27-1 to R3-27-11 and seven `D28:` checks (a full course by keyboard to a dose; a stop an
+  hour ago gives "Draw a level"; print; 375 px). The decline row was hand-checked by the reviewer (k 0.030081 h⁻¹, every
+  row within 1e-4 mg/L).
+
+**Task 28 — a peak-equation haemodialysis reading from your settings, Trough-based · HD** (`c47b804`, fix round
+`fd36711`).
+- Four settings on `vanco.hd.local`: fraction remaining after the session (between 0 and 1), target peak, volume per kg
+  and hold level. They are validated, a blank keeps the stored value, and a Clear removes them. **The repository ships
+  no value for any of them** (46.73 reads `hdLocalSettings` and `hdReading` and allows no digit but 0 and 1).
+- `hdReading`: post = pre × fraction; V = volume per kg × weight; dose = `peakEquationDose(V, peak, post, cap)`; a hold
+  at or above the hold level. The cap is the lower of 2 g and the shared local maximum (R99).
+- Refused: a level drawn at or after the session's start, before the previous session ended, or within
+  `RRT_NO_SAMPLE_AFTER_SESSION_H` (2 h) of its end (R67); a future level (R96); session times that disagree. With no
+  previous session entered it reads, with a caution that the 2 h check was not made.
+- The screen keeps the existing pointer to Goti 2018 · HD first in every state. The reading is titled "Peak-equation
+  reading (your settings)", says it is not a model's answer and sits beside Goti-HD, never instead of it, and marks every
+  setting "(your setting)". It has Print but no Copy summary, and its form is not saved in profiles (R97).
+- Fix round (I1): a zero dose is worded by its cause, the estimate at or above the target, or a top-up under 125 mg that
+  rounds to no dose.
+- Pinned by 46.65–46.79, R3-28-1 to R3-28-9 and eight `D28:` checks. Fixture settings (0.65, 25, 0.7 L/kg, 25),
+  labelled as fictional, live in the test files only (R98): pre 18 mg/L at 80 kg gives post 11.7, V 56 L, 750 mg.
+
+**Task 29 — citations, notes and the not-implemented lists** (`33fd6c9`, R101 `ee1321b`).
+- The pre-dialysis target cites Rybak 2020 Rec 14 (C-III); Hui 2019 is context, not the source. The sessions caution's
+  comment gives Rec 14's monitoring sentence its own grade, B-II (R80). The guideline comparison's 15 mg/kg cites Rec 9
+  (A-II); its 2,500 mg cap and CrCl cut-points stay PREFERENCE.
+- `severeRenalNote`'s "CRRT is not modelled here" became one line pointing to the selector.
+- R83: `CRRT_FIRST_LEVEL_WITHIN_H` and `RRT_NO_SAMPLE_AFTER_SESSION_H` say "guideline text, not separately graded".
+- R84 and R101: a local maximum (CRRT, hybrid, HD and PD) must lie in 250–4,000 mg, at least one dispensing step and
+  within `INPUT_LIMITS.dose`. Outside it nothing is stored and the status line says why.
+- R95a and R100: one constant, `FUTURE_LEVEL_TOLERANCE_H` (one minute, D26), read through one helper, `levelAfterNow`,
+  by AUC Precision, CRRT and the haemodialysis reading.
+- Pinned by 46.80–46.90, R3-29-1 to R3-29-9 and two `D28:` checks.
+
+**Task 30 — the release.** `APP_VERSION` 3.16.0, the header and print header (SUITE 36), pinned by 46.91, which failed
+first (711 of 712) and passed after the bump. 42.15, 43.12 and 45.58 accept the successor, as 42.15 and 43.12 did for
+v3.15.0.
+
+### Controller rulings, each with what it costs if wrong
+
+Planning (P1–P5):
+- **P1.** Task 23's AUC refusals render an empty `data-rrt-reference` slot that Task 25 fills. *If wrong:* one extra
+  edit in Task 25.
+- **P2.** U9's "one goal control" is one implementation (one builder and one handler, by mode), with the goal value held
+  per mode, so a PD goal never silently becomes a CRRT goal. *If wrong:* the user re-enters a goal once.
+- **P3.** Tests and browser checks naming the removed ids were rewritten to drive the selector, each listed in the Task
+  23 report with its assertion kept. *If wrong:* a weakened assertion slips through (the reviewer checked each).
+- **P4.** 46.44 is a parity guard that passes before and after by design, not a TDD test. *If wrong:* none.
+- **P5.** 46.43 checks the pick comparison and `PD_K_SEARCH` by function text, not whole-file counts. *If wrong:* none.
+
+During the build (R61–R102):
+- **R61.** The CRRT answer reports no AUC in v3.16.0. The master plan allowed one only with a patient-measured volume,
+  whose solver is deferred. *If wrong:* the user wanted a CRRT AUC this release; it can be added later.
+- **R62.** The CRRT volume basis is PD's two shipped bases (Bauer 0.70 L/kg, Matzke group III 0.90 L/kg), nothing
+  preselected; no CRRT-specific volume is sourced. *If wrong:* one more required click.
+- **R63.** The CRRT and hybrid local maximum lives in `vanco.rrt.local`; PD keeps `vanco.pd.local`. *If wrong:* two
+  settings where one would do.
+- **R64.** While renal replacement is not None, the creatinine-based mode buttons are shown unavailable with a reason,
+  and the selector is never reset silently. *If wrong:* an extra step to leave a modality.
+- **R65.** `CRRT_NEXT_DRAW_DEFAULT_H = 24`, a PREFERENCE (rule 8), editable. *If wrong:* a different default pick.
+- **R66.** The CRRT `distribution` flag is under 1 h after an infusion ends (Rec 8a). *If wrong:* a usable level
+  excluded, or an early one used.
+- **R67.** The haemodialysis reading's sampling exclusion is `RRT_NO_SAMPLE_AFTER_SESSION_H` (2 h, the guideline text),
+  not `hdRedistributionWindowH`, which needs a fit the Trough module lacks. *If wrong:* a level 2–3 h after a session
+  is used.
+- **R68.** Hybrid sessions stay in AUC Precision's session table, typed, so the reference can name each end; no hybrid
+  answer is fitted. *If wrong:* unused input.
+- **R69.** The more-than-three-sessions caution moved into Task 24, which reads typed sessions. *If wrong:* none.
+- **R70.** Leaving `ihd` for any kind moves the Goti-HD tile to Goti; choosing `ihd` selects Goti-HD; a profile load
+  restores its saved tile (so Review Focus 2 still refuses on Buelga). *If wrong:* a tile change the user did not
+  expect.
+- **R71.** 44.26b and its browser twin now expect `bState.dial` true for a `core.hd` profile under Buelga (R21 had it
+  false); the load is refused before any fit, which is the safety R21 bought. The reviewer judged it not a weakening.
+  *If wrong:* a weakened R21 check.
+- **R72.** AUC refusals, the PD one included, clear `bState.result`, so a refused run never leaves an earlier fit current
+  for print or a save. *If wrong:* none found.
+- **R73.** The CRRT, hybrid and haemodialysis modes hide the creatinine and loading blocks (the PD `.not-pd` pattern), in
+  Tasks 25, 27 and 28. *If wrong:* creatinine visible on a dialysis screen for a task's span.
+- **R74.** A legacy profile with both a PD form and a haemodialysis flag, and no `core.rrt`, is refused on load and left
+  untouched. The plan's mapping order would have read it silently as PD and given a dose; v3.15.0 gave it no answer.
+  *If wrong:* the user re-saves one contradictory profile.
+- **R75.** One `parseBayesSessions(rrt)` reads the rows for the course parse and the hybrid refusal; CRRT parses
+  nothing. *If wrong:* none.
+- **R76.** Task 24's tests take the next free SUITE 46 numbers. *If wrong:* none.
+- **R77.** "Any seven days" counts calendar days, not 168 h, so a shifted thrice-weekly start or a clock change raises
+  no false caution. *If wrong:* a fourth session a few hours past day 7 is missed by the caution (no number changes).
+- **R78.** A row typed hybrid under None is a blocking error too. *If wrong:* one extra correction.
+- **R79.** A partly typed session row marks a shown result stale. *If wrong:* an extra re-run.
+- **R80.** The sessions caution's comment gives Rec 14's monitoring sentence its grade, B-II; C-III belongs to the
+  15–20 mg/L target. *If wrong:* none (one comment).
+- **R81.** The Trough hybrid mode also hides the PK-model and trough-target block, which shows "severe infections
+  15–20". *If wrong:* none.
+- **R82.** Printing AUC Precision under a CRRT or hybrid refusal prints the reference with the disclaimer; other
+  refusals still print "Nothing to print yet". *If wrong:* a printed page the user did not expect.
+- **R83.** `CRRT_FIRST_LEVEL_WITHIN_H` and `RRT_NO_SAMPLE_AFTER_SESSION_H` carry no grade; the guideline grades neither
+  sentence. *If wrong:* none.
+- **R84.** A local maximum must lie within `INPUT_LIMITS.dose`; outside it nothing is stored and the line says so (a
+  g-for-mg slip, "2", would otherwise cap every cell at 2 mg). *If wrong:* one refused entry.
+- **R85.** `solveIntervalK` takes an optional `why` argument for PD's unexplained-high and -low flags. *If wrong:* a
+  slightly wider signature than planned.
+- **R86.** `PD_K_FLOOR` names the solver's lower bound, so `PD_K_SEARCH` is read only in the solver. *If wrong:* two
+  names for one bound.
+- **R87.** The PD parity guard rounds to 9 significant digits, commits its scripts under `docs/audit/pd-parity/`,
+  restores the time zone by assignment, and checks `crrtAnswer` unconditionally. *If wrong:* a little more test code.
+- **R88.** With no level, the CRRT answer is the reference, shown before the goal and basis refusals; nothing is
+  computed without a level. *If wrong:* a missing goal is named only once a level exists.
+- **R89.** Three added CRRT refusals: modality missing, effluent missing, next level too soon. *If wrong:* more required
+  fields.
+- **R90.** CRRT intervals run level to level only; there is no field for drug given before the first recorded dose, so a
+  rate needs two levels. *If wrong:* one more level before the first answer.
+- **R91, as first ruled.** The projection had to lie inside one running interval from the last level to the next draw,
+  stricter than the plan's give-at span.
+- **R91, revised (the reviewer's I2).** One recorded run must cover from the **end of the last used interval** to the
+  next draw, the same span the effluent and modality check reads. The first version let a stop and restart inside an
+  excluded later interval through: the levels on either side of it were not used, yet the projection started from the
+  last level as if the circuit had run throughout. The engine's contract is "the circuit still runs as it did when the
+  decline was measured". *If wrong:* "Draw a level" more often.
+- **R92.** The reference footer's "AUC-targeted work since 2020 supports lower daily maintenance" stays: R61 bars
+  reporting a patient AUC, not mentioning the literature. *If wrong:* one sentence.
+- **R93.** Circuit runs are checked against each other; a run that starts before the previous run's stop, or while it
+  has none, is refused by name. An unrecorded stop is never read as continuous running. *If wrong:* one more field.
+- **R94.** A CRRT level dated after now, beyond one minute, is refused by name, as AUC Precision does. *If wrong:* none.
+- **R95.** (a) One named future-level tolerance; (b) a run whose stop is at or before its start is refused by name.
+  *If wrong:* none.
+- **R96.** The haemodialysis reading refuses a future level as R94 does. *If wrong:* none.
+- **R97.** The haemodialysis reading's form is not saved in profiles and has Print but no Copy summary; it is a one-off
+  reading. *If wrong:* four fields re-entered after a profile load.
+- **R98.** The fictional fixture settings may appear in the test files, labelled; "the repository ships no value" means
+  `index.html`. *If wrong:* none.
+- **R99.** The shared local maximum is also editable from the haemodialysis settings; its Clear says it clears it for
+  CRRT, hybrid and haemodialysis. *If wrong:* none.
+- **R100.** AUC Precision and CRRT read the tolerance through `levelAfterNow`, not the constant spelled at each site.
+  *If wrong:* none.
+- **R101.** A local maximum must also be at least one dispensing step (250 mg), so a weight-based table can never cap at
+  a non-dispensable 100–249 mg. *If wrong:* one refused entry.
+- **R102.** A PD maximum stored by v3.15.0 outside the new bounds is still read, never dropped silently: a low one falls
+  under "Local maximum ignored", a high one under the 3 g cap. *If wrong:* none.
+
+### The guideline values, verified
+
+Rybak MJ et al., Am J Health-Syst Pharm 2020;77:835–864, read in full text on 2026-11-16. The controller read the
+guideline PDF locally (it is held in the project's literature folder, outside this public repository, because it is a
+third-party paper), and verified each phrase quoted below against it. This closes D27's note that Rybak 2020 was not
+available locally.
+
+| Constant or use | Value | Source and grade |
+|---|---|---|
+| Guideline comparison (existing) | 15 mg/kg actual body weight, the lower end of 15–20 mg/kg q8–12h, normal renal function | Rec 9, A-II |
+| `HD_LOADING_MAX_MG` (existing) | at most 3,000 mg | Rec 11, B-II |
+| `HD_SESSIONS_PER_WEEK_CAUTION` | 3 | Rec 13, B-II: maintenance doses footnoted "thrice-weekly dose administration" |
+| `HD_PREDIALYSIS_MIN/MAX` (existing, re-cited) | 15 / 20 mg/L | Rec 14, C-III |
+| Monitoring drives dosing (the caution's instruction) | — | Rec 14, B-II |
+| `HYBRID_LOAD_MG_PER_KG_MIN/MAX` | 20 / 25 mg/kg actual body weight | Rec 15, B-III |
+| `HYBRID_MAINT_MG_PER_KG` | 15 mg/kg after the session ends or in its final 60–90 min | Rec 15, B-III |
+| `RRT_NO_SAMPLE_AFTER_SESSION_H` | 2 h: levels during or within 2 h of a session's end "will be artificially low" | hybrid text, not separately graded |
+| `CRRT_LOAD_MG_PER_KG_MIN/MAX` | 20 / 25 mg/kg actual body weight | Rec 16, B-II |
+| `CRRT_MAINT_MG_PER_KG_MIN/MAX` | 7.5 / 10 mg/kg | Rec 16, B-II |
+| `CRRT_MAINT_INTERVAL_H` | 12 ("every 12 hours") | Rec 16, B-II |
+| `CRRT_EFFLUENT_MIN/MAX_ML_KG_H` | 20 / 25 mL/kg/h ("KDIGO-recommended effluent rates") | Rec 16, B-II |
+| `CRRT_FIRST_LEVEL_WITHIN_H` | 24 ("within the first 24 hours") | Rec 16 text, not separately graded |
+| `POST_DISTRIBUTION_MIN_H` | 1 h: the post-distributional peak "1 to 2 hours after infusion" | Rec 8a, A-II |
+
+`harness_constants.cjs` parses every one (rule 6). 46.25 checks each source comment names Rybak 2020 and its
+recommendation.
+
+### Declined, and why
+
+- **A Bayesian CRRT prior (the user's ruling 5).** The report's candidate was Tong 2026 (Ther Drug Monit), the only CRRT
+  model with a complete stochastic specification, a large sample and a held-out test. It was declined because:
+  - it is vendor-authored and has had no independent evaluation;
+  - its renal clearance carries an eGFR term, a creatinine-based input that the circuit itself distorts;
+  - removing its CRRT clearance while the circuit is off needs the parked event engine;
+  - it would put this tool beyond what the user's practice does for CRRT.
+
+  Ulldemolins 2026 (Crit Care) was declined as well. Its covariate forms and reference intensity are in a supplement
+  not read, so it cannot be coded faithfully. Its published evaluation erred badly in patients who still passed urine
+  (+81.9% in 27 patients, nearly half with 500 mL/day or more). Either would have been a fitted answer the user did not
+  ask for.
+- **Scaling a dose from the effluent rate.** Measured extracorporeal clearance rises less than proportionally with
+  effluent, so "effluent × a sieving coefficient" overstates it at high flows. The guideline gives figures only at
+  20–25 mL/kg/h. The reference says where an entered rate lies and changes no cell (46.30). The April design brief's
+  unsourced CRRT numbers stay unrevived.
+- **AUC in CRRT (R61).** It would need a volume measured from this patient's own rise; that solver is deferred.
+- **A level-based hybrid answer (ruling 6).** The hybrid literature covers about 250 patients, of whom about 43 distinct
+  patients underlie the three published models, and one B-III recommendation; no pre-session target has been
+  validated. The reference names each session's end; levels decide
+  every later dose.
+- **Session-aware haemodialysis modelling.** Goti-HD averages dialysis and stays the model (D15). The session-clearance
+  engine stays parked off `main`.
+- **A dialyser or therapy descriptor (U8).** D16's decision for permeability stands. The caution about more than three
+  sessions is the only new HD wording.
+- **Continuous infusion.** It is still not implemented; the guideline accepts it as an alternative.
+
+### The haemodialysis reading ships no value
+
+The reading's form, a fraction of the pre-dialysis level remaining after the session, a volume per kilogram, a target
+peak and a hold level, is a common protocol shape. Its numbers are protocol choices with no single published source, so
+they are the user's own numbers, entered in the user's browser (`vanco.hd.local`) and never shipped. With any one
+missing there is no reading, and the refusal names what is missing (Review Focus 4, 46.65). The reading sits beside
+Goti 2018 · HD and never replaces it.
+
+The research report also compared this tool with institutional protocols. That comparison stays outside this
+repository, and nothing from it is in the code, the tests or this record. In general terms: the public protocols the
+report read disagree with one another on these numbers, and cap a dose at 2 g where the guideline's loading maximum is
+3,000 mg. That is why the reading takes all four numbers from the user, and why the CRRT and hybrid tables take a local
+maximum (U10).
+
+### Engine parity against v3.15.0 (`bcee5dd`)
+
+`node docs/audit/engine-parity.cjs --ref bcee5dd`: **225 calls compared, 0 differences.** Every task's report recorded 0,
+and the release head (Task 30) reads 0. The cause is structural: the corpus calls the non-dialysis engine (fits, the
+optimiser, the guideline comparison, regimen detection), and Release 3 left every non-dialysis path's output unchanged
+(the plan's architecture). `bState.dial` is derived from the selector with the same meaning, so `gotiPopPK` sees the same
+flag. The corpus reaches no dialysis path: `crrtAnswer`, `hdReading`, `rrtReferenceDoses` and the PD solver are outside
+it. Their record is SUITE 46 and the PD parity guard (46.44, 58 calls against `bcee5dd` through
+`docs/audit/pd-parity/`).
+
+### Verified (2026-11-17, Task 30a, branch head before the final review)
+
+- JS syntax check: OK.
+- `node phase2d_validation.cjs`: **712/712**. Also 712/712 under `TZ=Pacific/Auckland` and under `TZ=UTC`.
+- `node phase3_simulation.cjs`: **21/21**. `node phase4_regimen_validation.cjs`: **49/49**.
+- `node phase2d_comprehensive_validation.cjs`: only scenarios 3 and 4 fail, by design, with D26's and D27's figures:
+  scenario 3's MAE 344.2 against 260; scenario 4's MAE 351.3 against 200, improvement 14.6 against 15 and coverage
+  38.0% against 45%. Scenario 6's dose attainment is unchanged at 75.2%.
+- `node docs/audit/mutation.cjs`: **120 of 120 killed**, exit 0.
+- Browser flows under the CSP, run alone: **262/262**, 0 console problems.
+- Engine parity against `bcee5dd`: 0 differences.
+
+### Known limits (recorded, not changed)
+
+From the reviews' deferred minors, where they describe what ships:
+- **Haemodialysis reading.**
+  - The form (level and session times) is not saved in profiles, and there is no Copy summary (R97).
+  - A level at or above the hold level with no weight reads "Weight now missing" rather than "Hold the dose", though
+    the hold needs no weight.
+  - The announcement says "no dose" without its cause.
+  - The "Local maximum ignored" caution is a third copy of the wording and has no HD test.
+- **The local maximum.**
+  - A maximum that is not a multiple of 250 mg (for example 1,100) is stored and can appear as a reference cell, marked
+    "your setting".
+  - The Rec 13 haemodialysis table does not read the local maximum; it keeps its own spelling of the 3,000 mg cap.
+  - A value stored by v3.15.0 outside 250–4,000 mg is still read (R102).
+- **CRRT.**
+  - A rate needs two levels (R90). After one level the answer is "Draw a level" without the reference, though the lead
+    says the reference shows "until two levels".
+  - In the `need-level` message, the reason "unexplained-high" reaches the screen as its raw id; the decline table
+    words it.
+  - Duplicate level times are not refused by name.
+  - A run's stop exactly at the next draw counts as covering it.
+  - The overlap and backwards-run messages number runs in order of start; the form numbers them by row.
+  - The future-level refusal prints a date where the other messages print a clock time.
+  - "Next level too soon" has no unit test or mutant.
+  - At 375 px the circuit start date is clipped and the row modality select reads "Modality as …".
+  - Residual urine is recorded and printed only; it drives nothing, because no sourced CRRT wording exists for it.
+- **Hybrid.**
+  - A session line reads "the maintenance dose is due then" for a session already ended.
+  - A kept session-error summary would print with the reference.
+  - The reference slot keeps the weight it was drawn for, if the weight changes and the local maximum then changes.
+- **Selector and resets.**
+  - Trough Clear moves the AUC tile from Goti-HD to Goti.
+  - Trough Undo restores haemodialysis with Buelga as Goti-HD.
+  - AUC Clear wipes a Trough PD answer that Undo cannot restore.
+  - A refused profile load drops a pending "Form cleared — Undo".
+  - A refused both-flags profile stays listed with no hint that it can only be deleted.
+  - There is no announcement on a renal-replacement refusal.
+  - The AUC CRRT refusal says "nothing was parsed or fitted"; the session rows are not parsed, but the words could be
+    "nothing was fitted".
+  - The "creatinine modes not used" line appears twice in the hybrid, CRRT and HD modes.
+- **Sessions.**
+  - On Goti-HD a type mismatch shows under the lead "Some rows are incomplete".
+  - The caution's signal word says "three" while the threshold is a constant.
+  - An empty row type is read as haemodialysis.
+  - The schedule generator gives no prolonged-therapy hint for a 14 h haemodialysis length.
+- **Code and tests.**
+  - `setRrt` and `clearBayesRrtRefusal` swallow display errors in empty `catch` blocks.
+  - `state.hdLast` is written and never read.
+  - `PD_K_FLOOR` is parsed by the harness but read by no suite.
+  - The PD parity fixtures exist twice (`fixtures58.json` and the test's inline copy), with nothing asserting that they
+    are equal.
+  - The generator under hybrid, R78 and two R84 browser checks have no RED run of their own.
+- **Not clinically validated.** The CRRT answer, the references and the haemodialysis reading have been checked against
+  the guideline and by hand; none has been compared with patient outcomes. Institutional acceptance needs a clinical
+  reviewer.
