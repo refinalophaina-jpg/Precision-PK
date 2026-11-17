@@ -321,6 +321,23 @@ const MUTANTS = [
     find: 'levels.filter(l => l.timeH > nowH + 1 / 60)', replace: 'levels.filter(l => false)' },
   { id: 'R3-27-11', what: 'used intervals at different settings are fitted together (the mixed guard forced false) [46.64]',
     find: 'const mixed = used.some(i => i.setting.mlPerH !== ref.mlPerH || i.setting.modality !== ref.modality);', replace: 'const mixed = false;' },
+  // Task 28: a peak-equation haemodialysis reading from browser-only settings (D28; U11, R67, R96).
+  { id: 'R3-28-1', what: 'the hold at the hold level becomes strictly above it (≥ → >) [46.68]',
+    find: 'if (inp.pre >= s.holdPreMgL) return', replace: 'if (inp.pre > s.holdPreMgL) return' },
+  { id: 'R3-28-2', what: 'the 2 h exclusion after the previous session removed (R67) [46.70]',
+    find: 'if (inp.preAtH - prev < RRT_NO_SAMPLE_AFTER_SESSION_H)', replace: 'if (inp.preAtH < prev)' },
+  { id: 'R3-28-3', what: 'the fraction applied as removed instead of remaining [46.66, 46.67]',
+    find: 'const post = inp.pre * s.fractionRemaining,', replace: 'const post = inp.pre * (1 - s.fractionRemaining),' },
+  { id: 'R3-28-4', what: 'a level drawn exactly at the session start is read (≥ → >) [46.70]',
+    find: 'if (inp.preAtH >= inp.sessionStartH)', replace: 'if (inp.preAtH > inp.sessionStartH)' },
+  { id: 'R3-28-5', what: 'a pre-dialysis level dated after now is read, not refused (R96) [46.75]',
+    find: 'if (Number.isFinite(inp.nowH) && levelAfterNow(inp.preAtH, inp.nowH))', replace: 'if (false)' },
+  { id: 'R3-28-6', what: 'a fraction of 1 or more is accepted as a setting [46.72]',
+    find: "return key === 'fractionRemaining' ? v < 1 : true;", replace: 'return true;' },
+  { id: 'R3-28-7', what: 'the local maximum is not applied to the reading (the cap is the lower of the two) [46.69]',
+    find: 'const capMg = Math.min(DOSE_MAX_PER_DOSE_MG, localMax || Infinity);', replace: 'const capMg = DOSE_MAX_PER_DOSE_MG;' },
+  { id: 'R3-28-8', what: 'the Goti-HD pointer is dropped from the reading screen [46.74]',
+    find: 'if (rc) rc.innerHTML = troughHdNoticeHTML() + hdReadingHTML(reading);', replace: 'if (rc) rc.innerHTML = hdReadingHTML(reading);' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

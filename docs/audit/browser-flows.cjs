@@ -1049,6 +1049,9 @@ async function enterCourse(page) {
     // save afterwards does not carry the previous patient's.
     await s.evaluate((k) => { localStorage.removeItem(k); renderProfileList(); }, KEY);
     await s.locator('[data-onclick="k1"]').click();
+    // D28 (Task 28, R73): the Goti-HD fixture above left haemodialysis selected, and the haemodialysis mode now hides the
+    // creatinine and amputation blocks; this patient is not on dialysis, so renal replacement is None first, as on the page.
+    await s.locator('#t-rrt').selectOption('none');
     await s.locator('[data-onclick="k15"]').click();
     await s.evaluate(() => { const c = document.getElementById('amp-enabled'); if (c && !c.checked) c.click(); });
     await s.locator('#jt-RL-knee').click();
@@ -3258,6 +3261,90 @@ async function enterCourse(page) {
     await cctx.close();
   }
   // ── end Release 3 Task 27
+  // ── Release 3 (v3.16.0, D28), Task 28: the peak-equation haemodialysis reading from browser-only settings. A fictional
+  // 80 kg patient, a pre-dialysis level of 18 mg/L at 07:00 today, the session at 11:00, the previous one ended two days
+  // ago; the four settings are typed here as the user would (test values only; the app ships none), on a fixed clock.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const h = await hctx.newPage();
+    const hProblems = watch(h, 'd28-hd');
+    await h.clock.setFixedTime(new Date(`${day(0)}T10:00`));
+    await h.goto(BASE + '?v=pwd28h-' + Date.now(), { waitUntil: 'networkidle' });
+    await h.evaluate(() => { localStorage.removeItem('vanco.hd.local'); localStorage.removeItem('vanco.rrt.local'); });
+    const txt = (sel) => h.evaluate((sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim(), sel);
+    const press = async (sel) => { await h.locator(sel).focus(); await h.keyboard.press('Enter'); };
+    const run = async () => { await press('[data-onclick="k31"]'); await h.waitForTimeout(250); };
+    const order = (t) => ({ notice: t.indexOf('On haemodialysis — use AUC Precision'), title: t.indexOf('Peak-equation reading (your settings)') });
+    await h.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await h.locator('#t-rrt').selectOption('ihd');
+    const col = await h.evaluate(() => ({ hd: getComputedStyle(document.getElementById('section-hd')).display !== 'none',
+      renal: getComputedStyle(document.getElementById('section-renal')).display, ld: getComputedStyle(document.getElementById('section-ld')).display,
+      shared: getComputedStyle(document.getElementById('section-trough-shared')).display, tbw: !!document.getElementById('tbw').offsetParent,
+      fields: ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold'].map(id => document.getElementById(id).value).join('|') }));
+    ok('D28: Trough-based on haemodialysis shows its own section; creatinine, the loading dose and the PK model hidden (R73), weight kept; no setting has a value',
+       col.hd && col.renal === 'none' && col.ld === 'none' && col.shared === 'none' && col.tbw && col.fields === '|||', JSON.stringify(col));
+    await typeInto(h, '#tbw', '80');
+    await typeInto(h, '#hd-pre', '18');
+    await h.locator('#hd-pre-date').fill(day(0)); await typeInto(h, '#hd-pre-time', '0700');
+    await h.locator('#hd-start-date').fill(day(0)); await typeInto(h, '#hd-start-time', '1100');
+    await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
+    await run();
+    const empty = await txt('#results-content'), eo = order(empty);
+    ok('D28: with storage empty the reading names all four settings and where to set them, below the Goti-HD pointer',
+       eo.notice === 0 && eo.title > 0 && /No reading/.test(empty) && /Not set: Fraction remaining after the session, Target peak, Volume of distribution, Hold level\./.test(empty)
+       && /Your settings \(this browser\)/.test(empty) && !/\d+ mg after the session/.test(empty), empty.slice(0, 600));
+    // The four settings, by keyboard: open the settings, type each and Tab on (each saves on change; the reading follows).
+    await press('#hd-settings > summary');
+    for (const [id, v] of [['#hd-set-frac', '0.65'], ['#hd-set-peak', '25'], ['#hd-set-vd', '0.7'], ['#hd-set-hold', '25']]) {
+      await h.locator(id).focus(); await h.keyboard.type(v); await h.keyboard.press('Tab');
+    }
+    await h.waitForTimeout(250);
+    const dose = await h.evaluate(() => ({ t: ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      stored: localStorage.getItem('vanco.hd.local'), state: (document.querySelector('[data-hd-reading]') || { dataset: {} }).dataset.hdReading,
+      rec: !!document.querySelector('#results-content .rec-dose') }));
+    const dor = order(dose.t);
+    ok('D28: the four settings typed by keyboard give a reading: 750 mg after the session, each setting marked "your setting", the pointer still first; stored in this browser only',
+       dose.state === 'dose' && dor.notice === 0 && dor.title > 0 && /750 mg after the session/.test(dose.t) && /0\.65 \(your setting\)/.test(dose.t)
+       && /0\.7 L\/kg \(your setting\)/.test(dose.t) && /25 mg\/L \(your setting\)/.test(dose.t) && /11\.7 mg\/L/.test(dose.t) && !dose.rec
+       && dose.stored === JSON.stringify({ fractionRemaining: 0.65, targetPeak: 25, vdPerKg: 0.7, holdPreMgL: 25 }), JSON.stringify({ state: dose.state, stored: dose.stored, t: dose.t.slice(0, 500) }));
+    const paper = await h.evaluate(() => { window.dispatchEvent(new Event('beforeprint'));
+      const t = ((document.getElementById('print-report') || {}).textContent || '').replace(/\s+/g, ' ');
+      window.dispatchEvent(new Event('afterprint')); return t; });
+    ok('D28: the reading prints beneath the Goti-HD pointer, with its settings marked and the disclaimer',
+       /use AUC Precision/.test(paper) && /Peak-equation reading \(your settings\)/.test(paper) && /your setting\)/.test(paper) && /750 mg/.test(paper) && /not clinically validated/.test(paper), paper.slice(0, 400));
+    // A level drawn an hour after the previous session's end is refused, naming the 2 h rule; then Clear.
+    await h.locator('#hd-prev-date').fill(day(0)); await typeInto(h, '#hd-prev-time', '0600');
+    await run();
+    const soon = await txt('#results-content'), so = order(soon);
+    ok('D28: a pre-dialysis level drawn an hour after the previous session ended is refused, naming the 2 h rule; the pointer stays first',
+       so.notice === 0 && so.title > 0 && /Too soon after the previous session/.test(soon) && /within 2 h of the previous session's end/.test(soon) && !/mg after the session/.test(soon), soon.slice(0, 500));
+    await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
+    await run();
+    await press('[data-onclick="k112"]');
+    await h.waitForTimeout(250);
+    const cleared = await h.evaluate(() => ({ t: ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      stored: localStorage.getItem('vanco.hd.local'), line: document.getElementById('hd-set-status').textContent,
+      fields: ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold'].map(id => document.getElementById(id).value).join('|') }));
+    const co = order(cleared.t);
+    ok('D28: Clear removes the settings and the reading returns to the refusal naming all four; the Goti-HD pointer stays above',
+       cleared.stored === null && cleared.fields === '|||' && /^Cleared/.test(cleared.line) && co.notice === 0 && co.title > 0 && /No reading/.test(cleared.t)
+       && /Not set: Fraction remaining after the session, Target peak, Volume of distribution, Hold level\./.test(cleared.t), JSON.stringify(cleared).slice(0, 500));
+    // 375 px: the section and the settings fit, with no horizontal scroll.
+    await h.setViewportSize({ width: 375, height: 812 });
+    await h.waitForTimeout(150);
+    const narrow = await h.evaluate(() => {
+      const rs = ['hd-pre-time', 'hd-start-time', 'hd-prev-time', 'hd-set-frac', 'hd-set-max'].map(id => document.getElementById(id).getBoundingClientRect());
+      return { sw: document.documentElement.scrollWidth, iw: innerWidth, right: Math.max(...rs.map(r => r.right)), minH: Math.min(...rs.map(r => r.height)) };
+    });
+    ok('D28: at 375 px the haemodialysis section and its settings fit the screen as 44 px targets, with no horizontal scroll',
+       narrow.sw <= narrow.iw && narrow.right <= narrow.iw && narrow.minH >= 43.5, JSON.stringify(narrow));
+    await h.locator('#section-hd').scrollIntoViewIfNeeded();
+    await h.screenshot({ path: path.join(OUT, 'd28-hd-375.png') });
+    const hAttr = await attributeInjected(h, hProblems);
+    results.problems.push(...hAttr.kept);
+    await hctx.close();
+  }
+  // ── end Release 3 Task 28
   await browser.close();
 
   results.checks = checks;

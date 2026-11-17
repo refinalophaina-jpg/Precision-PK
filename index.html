@@ -2606,6 +2606,10 @@
   .panel-left[data-mode="pd"] .not-pd { display: none; }
   .panel-left[data-mode="hybrid"] .not-pd { display: none; }
   .panel-left[data-mode="crrt"] .not-pd { display: none; }
+  .panel-left[data-mode="ihd"] .not-pd { display: none; }   /* haemodialysis likewise (D28, R73): its reading is from levels and your settings */
+  /* The haemodialysis peak-equation reading (D28): its title sits under the Goti-HD pointer, smaller than a regimen. */
+  .hd-reading-title { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-lg); color: var(--ink); margin: 0 0 4px; }
+  .hd-reading .ev-dl { margin-top: 10px; }
   /* A creatinine-based mode while renal replacement is not None (D28): shown, not offered. */
   .calc-mode-btn[aria-disabled="true"] { color: var(--ink-muted); cursor: not-allowed; }
   .calc-mode-btn[aria-disabled="true"]:hover { transform: none; }
@@ -3763,6 +3767,59 @@
       </div>
     </div><!-- /section-crrt -->
 
+    <!-- Intermittent haemodialysis (D28): a peak-equation reading from four numbers the user sets, beside Goti 2018 · HD and
+         never instead of it. The app ships no value for any of them (the user's ruling U11): no setting, no reading. -->
+    <div id="section-hd" style="display:none">
+      <hr class="section-divider">
+      <div>
+        <h2 class="form-h2">Haemodialysis</h2>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <p class="field-hint">AUC Precision · Goti 2018 · HD doses from the logged sessions. Here, Calculate gives a peak-equation reading from your own settings, beside it.</p>
+          <div class="field-group">
+            <label class="field-label" for="hd-pre">Pre-dialysis level</label>
+            <div class="input-row"><input type="number" id="hd-pre" inputmode="decimal" min="0.5" max="100" step="0.1" placeholder="—"><span class="unit-badge">mg/L</span></div>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="hd-pre-label">Drawn at</span>
+            <div class="form-grid-2" role="group" aria-labelledby="hd-pre-label">
+              <input type="date" id="hd-pre-date" aria-label="Date the pre-dialysis level was drawn">
+              <div class="input-row"><input type="text" id="hd-pre-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" aria-label="Time the pre-dialysis level was drawn, 24-hour"><span class="unit-badge">24 h</span></div>
+            </div>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="hd-start-label">This session starts at</span>
+            <div class="form-grid-2" role="group" aria-labelledby="hd-start-label">
+              <input type="date" id="hd-start-date" aria-label="Date this session starts">
+              <div class="input-row"><input type="text" id="hd-start-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" aria-label="Time this session starts, 24-hour"><span class="unit-badge">24 h</span></div>
+            </div>
+          </div>
+          <div class="field-group">
+            <span class="field-label" id="hd-prev-label">The previous session ended at (optional)</span>
+            <div class="form-grid-2" role="group" aria-labelledby="hd-prev-label">
+              <input type="date" id="hd-prev-date" aria-label="Date the previous session ended">
+              <div class="input-row"><input type="text" id="hd-prev-time" data-time24 inputmode="numeric" maxlength="5" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="hh:mm" aria-label="Time the previous session ended, 24-hour"><span class="unit-badge">24 h</span></div>
+            </div>
+            <p class="field-hint">A level drawn too soon after a session reads falsely low; with this time the reading checks for it.</p>
+          </div>
+        </div>
+      </div>
+      <details class="pd-settings" id="hd-settings">
+        <summary>Your settings (this browser)</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <p class="field-hint">Kept in this browser only, never part of the app. The reading needs all four, from your own protocol: the app ships no value for any of them.</p>
+          <div class="field-group"><label class="field-label" for="hd-set-frac">Fraction remaining after the session (of the pre-dialysis level, between 0 and 1)</label><div class="input-row"><input type="number" id="hd-set-frac" step="any" placeholder="none" data-onchange="k111"><span class="unit-badge">fraction</span></div></div>
+          <div class="field-group"><label class="field-label" for="hd-set-peak">Target peak</label><div class="input-row"><input type="number" id="hd-set-peak" step="any" placeholder="none" data-onchange="k111"><span class="unit-badge">mg/L</span></div></div>
+          <div class="field-group"><label class="field-label" for="hd-set-vd">Volume of distribution</label><div class="input-row"><input type="number" id="hd-set-vd" step="any" placeholder="none" data-onchange="k111"><span class="unit-badge">L/kg</span></div></div>
+          <div class="field-group"><label class="field-label" for="hd-set-hold">Hold level (pre-dialysis, at or above)</label><div class="input-row"><input type="number" id="hd-set-hold" step="any" placeholder="none" data-onchange="k111"><span class="unit-badge">mg/L</span></div></div>
+          <div><button type="button" class="text-action" data-onclick="k112">Clear your settings</button></div>
+          <p class="field-hint" id="hd-set-status" role="status"></p>
+          <div class="field-group"><label class="field-label" for="hd-set-max">Maximum single dose (also caps the CRRT and hybrid references)</label><div class="input-row"><input type="number" id="hd-set-max" placeholder="none" data-onchange="k105" data-arg="h"><span class="unit-badge">mg</span></div></div>
+          <div><button type="button" class="text-action" data-onclick="k106">Clear the maximum</button></div>
+          <p class="field-hint" id="hd-set-max-status" role="status"></p>
+        </div>
+      </details>
+    </div><!-- /section-hd -->
+
     <!-- CRRT and hybrid (D28): the guideline reference for the weight above, and its local maximum -->
     <div id="section-rrt" style="display:none">
       <hr class="section-divider">
@@ -4344,6 +4401,8 @@ const __ACT = {
   k108: (el, ev, arg) => { addCrrtRow(arg); focusNewRow(`crrt-${arg}-tbody`); },   /* a CRRT row: circuit run, effluent rate, dose, level (D28) */
   k109: (el, ev, arg) => { removeCrrtRow(arg); },   /* remove a CRRT row ("kind|n") (D28) */
   k110: (el, ev, arg) => { copyResultSummary(el, (state.crrtLast && state.crrtSummary) || '', 'trough'); },   /* Copy summary, CRRT mode (D28) */
+  k111: (el, ev, arg) => { saveHdLocalSettings(); },   /* the haemodialysis reading's four settings, saved on change (D28, U11) */
+  k112: (el, ev, arg) => { clearHdLocalSettings(); },   /* Clear the haemodialysis reading's settings (D28) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4834,7 +4893,7 @@ function setCalcMode(mode) {
   if (CREATININE_MODES.indexOf(mode) >= 0 && currentRrt() !== 'none') { syncRrtModeButtons(); return false; }
   state.calcMode = mode;
   // The panel shows only what the mode reads (D24): PD hides amputation, creatinine and
-  // the loading-dose blocks (.not-pd in CSS); so do hybrid and CRRT (D28, ruling R73), keeping weight.
+  // the loading-dose blocks (.not-pd in CSS); so do hybrid, CRRT and haemodialysis (D28, ruling R73), keeping weight.
   const pl = document.querySelector('.app-shell:not(#app-shell-bayesian) > .panel-left');
   if (pl && pl.dataset) pl.dataset.mode = mode;
   document.getElementById('mode-btn-initial').classList.toggle('active',      mode === 'initial');
@@ -4850,11 +4909,14 @@ function setCalcMode(mode) {
   document.getElementById('section-pd').style.display               = mode === 'pd'           ? '' : 'none';
   const crrtSec = document.getElementById('section-crrt');
   if (crrtSec) crrtSec.style.display = mode === 'crrt' ? '' : 'none';
+  const hdSec = document.getElementById('section-hd');
+  if (hdSec) hdSec.style.display = mode === 'ihd' ? '' : 'none';
   document.getElementById('section-trough-shared').style.display    = mode === 'pd'           ? 'none' : '';
   // Hybrid hides the PK model and the trough target too (D28): nothing there is used, and a hybrid screen shows
   // no 15–20 band (no pre-session target is validated for hybrid therapy). CRRT and hybrid show the reference section.
-  // CRRT likewise (D28, R73): its answer is level-based, with its own goal; nothing in that block is read.
-  if (mode === 'hybrid' || mode === 'crrt') document.getElementById('section-trough-shared').style.display = 'none';
+  // CRRT likewise (D28, R73): its answer is level-based, with its own goal; nothing in that block is read. So is
+  // haemodialysis (Task 28): its reading reads the level, the session times and your settings, nothing there.
+  if (mode === 'hybrid' || mode === 'crrt' || mode === 'ihd') document.getElementById('section-trough-shared').style.display = 'none';
   const rrtSec = document.getElementById('section-rrt');
   if (rrtSec) rrtSec.style.display = mode === 'crrt' || mode === 'hybrid' ? '' : 'none';
   const hints = {
@@ -4862,14 +4924,15 @@ function setCalcMode(mode) {
     level:        'Enter the current dose, interval, and a measured steady-state level to fit individual PK and adjust the regimen.',
     twolevels:    'Two post-infusion levels from the <strong>first dose</strong> determine individual Kel &amp; Vd directly — useful when Cockcroft-Gault CrCl is unreliable (bedbound, AKI, obesity).',
     pd:           'IV vancomycin for a patient on peritoneal dialysis, dosed by level: what to give, whether to give it today, and when to draw the next level, from this patient\'s own levels and cycler schedule. No population model drives a dose.',
-    ihd:          'Renal replacement is intermittent haemodialysis. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
+    ihd:          'Renal replacement is intermittent haemodialysis. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here. AUC Precision · Goti 2018 · HD doses from the sessions; Calculate here gives a peak-equation reading from your own settings, beside it.',
     crrt:         'Renal replacement is CRRT. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here. Before a level, Calculate shows the guideline reference; from two levels drawn with the circuit running, the dose is sized from this patient\'s own decline.',
     hybrid:       'Renal replacement is hybrid therapy (SLED / PIRRT). Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
     randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-muted)">The graph shows the recommended regimen at steady state, not the course your level came from, so the level itself is not drawn on it. Read the fitted parameters, not the curve.</span>'
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
   if (mode === 'pd') { fillPdLocalSettings(); pdToggleFields(); }
-  if (mode === 'crrt' || mode === 'hybrid') fillRrtLocalSettings();
+  if (mode === 'crrt' || mode === 'hybrid' || mode === 'ihd') fillRrtLocalSettings();
+  if (mode === 'ihd') fillHdLocalSettings();
   const refHint = document.getElementById('rrt-ref-hint');
   if (refHint) refHint.textContent = mode === 'crrt'
     ? 'Before the first level, Calculate shows Rybak 2020\'s reference doses for the weight above (actual body weight). Your maximum single dose also caps the level-based options.'
@@ -5010,38 +5073,133 @@ function clearPdLocalSettings() {
 // CRRT and hybrid (D28, ruling R63): the user's maximum single dose for the guideline references, in this
 // browser only, under its own key (PD keeps vanco.pd.local). The PD pattern (R23): a blank or invalid entry
 // never overwrites a stored value, and the line under the field says so. Each column has its own field
-// (t-rrt-set-max, b-rrt-set-max) for the one value.
+// (t-rrt-set-max, b-rrt-set-max) for the one value; the Trough haemodialysis settings show it a third time (hd-set-max,
+// column 'h', Task 28), where it caps the peak-equation reading below the per-dose maximum.
 const RRT_LOCAL_KEY = 'vanco.rrt.local';
+const RRT_MAX_FIELD = { t: 't-rrt-set-max', b: 'b-rrt-set-max', h: 'hd-set-max' };
+const RRT_MAX_STATUS = { t: 't-rrt-set-status', b: 'b-rrt-set-status', h: 'hd-set-max-status' };
 function rrtLocalSettings() {
   let o = {};
   try { o = JSON.parse(localStorage.getItem(RRT_LOCAL_KEY) || '{}') || {}; } catch (e) { o = {}; }
   return { maxDoseMg: o.maxDoseMg > 0 ? +o.maxDoseMg : null };
 }
 function saveRrtLocalSettings(col) {
-  const c = col === 'b' ? 'b' : 't';
-  const x = String((document.getElementById(`${c}-rrt-set-max`) || {}).value || '').trim();
+  const c = col === 'b' || col === 'h' ? col : 't';
+  const x = String((document.getElementById(RRT_MAX_FIELD[c]) || {}).value || '').trim();
   const v = x === '' ? NaN : Number(x), stored = rrtLocalSettings().maxDoseMg;
   let said = '', mg = null;
   if (Number.isFinite(v) && v > 0) mg = v;
   else if (stored != null) { mg = stored; said = `Maximum single dose was ${x === '' ? 'blank' : 'not a positive number'}, so the saved ${stored} mg is kept.`; }
   if (mg != null) { try { localStorage.setItem(RRT_LOCAL_KEY, JSON.stringify({ maxDoseMg: mg })); } catch (e) { /* private window: this visit only */ } }
   fillRrtLocalSettings();
-  ['t', 'b'].forEach(k => { const s = document.getElementById(`${k}-rrt-set-status`); if (s) s.textContent = k === c ? said : ''; });
+  Object.keys(RRT_MAX_STATUS).forEach(k => { const s = document.getElementById(RRT_MAX_STATUS[k]); if (s) s.textContent = k === c ? said : ''; });
   refreshRrtReferences();
+  refreshHdReading();
 }
 function clearRrtLocalSettings() {
   try { localStorage.removeItem(RRT_LOCAL_KEY); } catch (e) { /* private window: nothing was stored */ }
-  ['t', 'b'].forEach(k => {
-    const e = document.getElementById(`${k}-rrt-set-max`); if (e) e.value = '';
-    const s = document.getElementById(`${k}-rrt-set-status`);
-    if (s) s.textContent = `Cleared. The guideline maximum applies: ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020, Rec 11).`;
+  Object.keys(RRT_MAX_FIELD).forEach(k => {
+    const e = document.getElementById(RRT_MAX_FIELD[k]); if (e) e.value = '';
+    const s = document.getElementById(RRT_MAX_STATUS[k]);
+    if (s) s.textContent = k === 'h' ? `Cleared. The reading is capped at the ${fmtDose(DOSE_MAX_PER_DOSE_MG)} per-dose maximum.`
+      : `Cleared. The guideline maximum applies: ${fmtDose(HD_LOADING_MAX_MG)} (Rybak 2020, Rec 11).`;
   });
   refreshRrtReferences();
+  refreshHdReading();
 }
 function fillRrtLocalSettings() {
   const m = rrtLocalSettings().maxDoseMg;
   if (m == null) return;
-  ['t', 'b'].forEach(k => { const e = document.getElementById(`${k}-rrt-set-max`); if (e) e.value = m; });
+  Object.keys(RRT_MAX_FIELD).forEach(k => { const e = document.getElementById(RRT_MAX_FIELD[k]); if (e) e.value = m; });
+}
+
+// Haemodialysis, Trough-based (D28, the user's rulings 7 and U11): the peak-equation reading's four numbers are the
+// user's own, kept in this browser only under their own key. The app ships no value for any of them (46.73): no
+// setting, no reading. A fraction remaining lies strictly between 0 and 1; the other three are positive. Anything else,
+// typed or stored, is not a setting: never repaired, never coerced from a string.
+const HD_LOCAL_KEY = 'vanco.hd.local';
+const HD_SETTING_KEYS = ['fractionRemaining', 'targetPeak', 'vdPerKg', 'holdPreMgL'];
+const HD_SETTING_FIELD = { fractionRemaining: 'hd-set-frac', targetPeak: 'hd-set-peak', vdPerKg: 'hd-set-vd', holdPreMgL: 'hd-set-hold' };
+const HD_SETTING_LABEL = { fractionRemaining: 'Fraction remaining after the session', targetPeak: 'Target peak', vdPerKg: 'Volume of distribution', holdPreMgL: 'Hold level' };
+function hdSettingOk(key, v) {
+  if (typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) return false;
+  return key === 'fractionRemaining' ? v < 1 : true;
+}
+function hdLocalSettings() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(HD_LOCAL_KEY) || '{}') || {}; } catch (e) { o = {}; }
+  const out = {};
+  HD_SETTING_KEYS.forEach(k => { out[k] = hdSettingOk(k, o[k]) ? o[k] : null; });
+  return out;
+}
+// Saved on change (k111). A blank field keeps its stored value and shows it again; an invalid entry is not saved, the
+// line says so and the field shows what is kept (the PD pattern, R23).
+function saveHdLocalSettings() {
+  const stored = hdLocalSettings(), o = {}, said = [];
+  HD_SETTING_KEYS.forEach(k => {
+    const el = document.getElementById(HD_SETTING_FIELD[k]);
+    const x = String((el || {}).value || '').trim(), v = x === '' ? NaN : Number(x);
+    if (hdSettingOk(k, v)) { o[k] = v; return; }
+    if (x !== '') said.push(`${HD_SETTING_LABEL[k]} was not ${k === 'fractionRemaining' ? 'a number between 0 and 1' : 'a positive number'}, so it is not saved${stored[k] != null ? `; your saved ${stored[k]} is kept` : ''}.`);
+    if (stored[k] != null) o[k] = stored[k];
+    if (el) el.value = stored[k] != null ? stored[k] : '';
+  });
+  const line = document.getElementById('hd-set-status'); if (line) line.textContent = said.join(' ');
+  try { localStorage.setItem(HD_LOCAL_KEY, JSON.stringify(o)); } catch (e) { /* private window: settings last this visit only */ }
+  refreshHdReading();
+}
+function clearHdLocalSettings() {
+  try { localStorage.removeItem(HD_LOCAL_KEY); } catch (e) { /* private window: nothing was stored */ }
+  HD_SETTING_KEYS.forEach(k => { const e = document.getElementById(HD_SETTING_FIELD[k]); if (e) e.value = ''; });
+  const line = document.getElementById('hd-set-status');
+  if (line) line.textContent = 'Cleared. With none of your settings there is no peak-equation reading.';
+  refreshHdReading();
+}
+function fillHdLocalSettings() {
+  const st = hdLocalSettings();
+  HD_SETTING_KEYS.forEach(k => { const e = document.getElementById(HD_SETTING_FIELD[k]); if (e && st[k] != null) e.value = st[k]; });
+}
+// A reading on screen follows its settings: a change or a Clear recalculates it, so it never reads as current for
+// numbers that have since changed.
+function refreshHdReading() {
+  if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+  const rc = document.getElementById('results-content');
+  if (rc && /data-hd-reading/.test(String(rc.innerHTML || '')) && currentRrt() === 'ihd') calculate();
+}
+// The haemodialysis form into hdReading's input, or every malformed entry at once. What is missing the reading refuses by name.
+function readHdForm() {
+  const val = (id) => String((document.getElementById(id) || {}).value || '');
+  const errors = [], ids = [], bad = (id, msg) => { errors.push(msg); ids.push(id); };
+  const x = val('hd-pre').trim(), pre = x === '' ? NaN : Number(x);
+  if (x !== '' && !(pre >= 0.5 && pre <= 100)) bad('hd-pre', 'Pre-dialysis level: 0.5–100 mg/L.');
+  const at = pdHoursAt('hd-pre-date', 'hd-pre-time'), start = pdHoursAt('hd-start-date', 'hd-start-time'), prev = pdHoursAt('hd-prev-date', 'hd-prev-time');
+  if (at.bad) bad('hd-pre-date', 'Drawn at: a date and a 24-hour time.');
+  if (start.bad) bad('hd-start-date', 'This session starts at: a date and a 24-hour time.');
+  if (prev.bad) bad('hd-prev-date', 'The previous session ended at: a date and a 24-hour time, or leave both blank.');
+  if (errors.length) return { errors, ids };
+  const kg = val('tbw').trim();
+  return { input: { kg: kg === '' ? NaN : Number(kg), pre, preAtH: at.h != null ? at.h : null, sessionStartH: start.h != null ? start.h : null,
+    prevSessionEndH: prev.h != null ? prev.h : null, settings: hdLocalSettings(), localMaxMg: rrtLocalSettings().maxDoseMg, nowH: calculationNowH() } };
+}
+function clearHdForm() {
+  if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+  ['hd-pre', 'hd-pre-date', 'hd-pre-time', 'hd-start-date', 'hd-start-time', 'hd-prev-date', 'hd-prev-time']
+    .forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+}
+// The Trough haemodialysis screen: the Goti-HD pointer first in every state (a form error included), then the reading.
+function runHd() {
+  if (typeof document === 'undefined' || !document) return;
+  const rc = document.getElementById('results-content');
+  const r = readHdForm();
+  if (r.errors) {
+    reportValidation({ ok: false, errors: r.errors, ids: r.ids });
+    if (rc && typeof rc.insertAdjacentHTML === 'function') rc.insertAdjacentHTML('afterbegin', troughHdNoticeHTML());
+    return;
+  }
+  const reading = hdReading(r.input);
+  state.hdLast = { input: r.input, reading };
+  if (rc) rc.innerHTML = troughHdNoticeHTML() + hdReadingHTML(reading);
+  announceResult('Result: ' + hdReadingSummary(reading));
 }
 function pdHoursAt(dateId, timeId) {
   const d = String((document.getElementById(dateId) || {}).value || ''), t = String((document.getElementById(timeId) || {}).value || '');
@@ -7804,7 +7962,9 @@ function calculate() {
   const rrt = currentRrt();
   // D28 (Task 27): CRRT has its own level-based answer (the guideline reference before any level).
   if (rrt === 'crrt') { beginFormRun('trough'); runCrrt(); return; }
-  if (rrt === 'ihd' || rrt === 'hybrid') {
+  // D28 (Task 28): haemodialysis shows the Goti-HD pointer first, then a peak-equation reading from your settings.
+  if (rrt === 'ihd') { beginFormRun('trough'); runHd(); return; }
+  if (rrt === 'hybrid') {
     beginFormRun('trough');   // shows the result area, hides the placeholder, clears stale
     const rc = typeof document !== 'undefined' ? document.getElementById('results-content') : null;
     if (rc) rc.innerHTML = rrtNoticeHTML(rrt, 'trough');
@@ -9515,7 +9675,8 @@ function resetForm() {
   // The PD local settings (pd-set-*) are this browser's, not the patient's, and one is a dose cap:
   // Clear leaves them as they are (R23). They had been blanked here, and the next change to any
   // setting wrote the blank over the stored value.
-  shell.querySelectorAll('input[type="number"]').forEach(i => { if (!/^pd-set-/.test(i.id)) i.value = ''; });
+  // So are the haemodialysis reading's settings (hd-set-*, D28).
+  shell.querySelectorAll('input[type="number"]').forEach(i => { if (!/^(pd|hd)-set-/.test(i.id)) i.value = ''; });
   // A cleared form leaves no CrCl override active. The box stayed ticked with its value
   // blanked while every model kept the old value (the final review, 2026-11-10).
   const coBox = document.getElementById('crcl-override-on');
@@ -9563,6 +9724,7 @@ function resetForm() {
   // The PD form is this column's too (R22): every field and row, not only its number inputs. So is the CRRT form (D28).
   applyPdForm(null);
   applyCrrtForm(null);
+  clearHdForm();   // the haemodialysis level and session times (D28); its settings are this browser's and stay
   setPatientSex(null);   // a new patient starts with sex unset (it has no default), in both modules
 }
 
@@ -11280,6 +11442,117 @@ function troughHdNoticeHTML() {
     `Trough-based dosing estimates clearance from creatinine, which does not describe vancomycin clearance on
      intermittent haemodialysis. Use AUC Precision with Goti 2018 · HD: log the sessions, and dose after each one
      from the pre-HD level. <button type="button" class="vx-act" data-onclick="k77">Open AUC Precision · Goti-HD</button>` });
+}
+// A level dated after now can only be a wrong date (D26; CRRT R94; the haemodialysis reading R96). One minute of
+// tolerance covers a level typed to the minute. This is the third spelling of that tolerance: Task 29 (R95) folds it,
+// AUC Precision's and CRRT's into one named constant.
+function levelAfterNow(timeH, nowH) { return timeH > nowH + 1 / 60; }
+// The Trough haemodialysis reading (D28, plan Task 28; the user's rulings 7 and U11): a peak equation from the user's own
+// four settings, beside Goti 2018 · HD and never instead of it. Pure. input = { kg, pre, preAtH, sessionStartH,
+// prevSessionEndH|null, settings (hdLocalSettings()), localMaxMg|null, nowH }.
+//   post-session level = pre-dialysis level × fraction remaining (your setting)
+//   V = L/kg (your setting) × the weight now
+//   dose = peakEquationDose(V, target peak (your setting), post-session level, cap), the one V × ΔC (Task 26)
+//   cap = the lower of DOSE_MAX_PER_DOSE_MG and the local maximum (rrtLocalSettings, shared with CRRT and hybrid)
+//   hold when the pre-dialysis level is at or above the hold level (your setting, U11)
+// Refused: a level drawn at or after this session's start (it reads falsely low), or within RRT_NO_SAMPLE_AFTER_SESSION_H
+// of the previous session's end (R67: the Rybak 2020 text, not hdRedistributionWindowH, which needs a fit), or dated
+// after now (R96). No previous session entered: read, with a caution that the check was not made. No number here is the
+// app's own: each is the user's or a named constant (46.73 holds this function to the literals 0 and 1).
+function hdReading(input) {
+  const inp = input || {}, s = inp.settings || {};
+  const missing = HD_SETTING_KEYS.filter(k => !hdSettingOk(k, s[k]));
+  if (missing.length) return { state: 'no-settings', missing };
+  const refuse = (word, html) => ({ state: 'refuse', word, html });
+  const w = checkValue(Number.isFinite(inp.kg) ? inp.kg : '', 'weight');
+  if (!w.ok) return refuse('Weight now missing', `${escHtml(w.message)} The volume is your setting per kilogram × the weight now.`);
+  if (!(Number.isFinite(inp.pre) && inp.pre > 0)) return refuse('Pre-dialysis level missing', 'Enter the pre-dialysis level, in mg/L.');
+  if (!Number.isFinite(inp.preAtH)) return refuse('When the level was drawn', 'Enter the date and time the pre-dialysis level was drawn.');
+  if (!Number.isFinite(inp.sessionStartH)) return refuse('Session start missing', 'Enter when this session starts. A level drawn during a session reads falsely low, so the reading checks that the level came first.');
+  if (Number.isFinite(inp.nowH) && levelAfterNow(inp.preAtH, inp.nowH))
+    return refuse('The level is dated in the future', escHtml(`The level at ${fmtDT(inp.preAtH, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`));
+  if (inp.preAtH >= inp.sessionStartH)
+    return refuse('Drawn during the session', escHtml(`The level at ${fmtClock(inp.preAtH)} was drawn at or after this session's start (${fmtClock(inp.sessionStartH)}). A level drawn during a session reads falsely low; this reading needs one drawn before the session.`));
+  const cautions = [], prev = inp.prevSessionEndH;
+  if (prev == null) {
+    cautions.push({ tier: 'caution', word: `The ${RRT_NO_SAMPLE_AFTER_SESSION_H} h check was not made`, html:
+      `No previous session's end was entered, so whether this level was drawn within ${RRT_NO_SAMPLE_AFTER_SESSION_H} h of a session's end, when it reads falsely low, could not be checked.` });
+  } else {
+    if (!Number.isFinite(prev)) return refuse('Previous session end', 'Enter when the previous session ended, or leave it blank.');
+    if (prev >= inp.sessionStartH)
+      return refuse('Session times disagree', escHtml(`The previous session is recorded to end at ${fmtClock(prev)}, at or after this session's start (${fmtClock(inp.sessionStartH)}). Check both times.`));
+    if (inp.preAtH - prev < RRT_NO_SAMPLE_AFTER_SESSION_H)
+      return refuse('Too soon after the previous session', escHtml(inp.preAtH < prev
+        ? `The level at ${fmtClock(inp.preAtH)} was drawn before the previous session ended (${fmtClock(prev)}). It is not a pre-dialysis level for this session.`
+        : `The level at ${fmtClock(inp.preAtH)} was drawn within ${RRT_NO_SAMPLE_AFTER_SESSION_H} h of the previous session's end (${fmtClock(prev)}), when a level reads falsely low. Draw the pre-dialysis level later.`));
+  }
+  if (inp.pre >= s.holdPreMgL) return { state: 'hold', pre: inp.pre, hold: s.holdPreMgL, preAtH: inp.preAtH, kg: inp.kg, settings: s, cautions };
+  // A local maximum below one dispensing step cannot be honoured: ignored, and said (PD's and CRRT's rule).
+  const localMax = inp.localMaxMg >= MATRIX_DOSE_STEP ? inp.localMaxMg : null;
+  if (inp.localMaxMg > 0 && !localMax) cautions.push({ tier: 'caution', word: 'Local maximum ignored', html:
+    `Your maximum single dose (${escHtml(String(inp.localMaxMg))} mg) is below one ${MATRIX_DOSE_STEP} mg step, so it is ignored.` });
+  const capMg = Math.min(DOSE_MAX_PER_DOSE_MG, localMax || Infinity);
+  const post = inp.pre * s.fractionRemaining, vL = s.vdPerKg * inp.kg;
+  const mg = peakEquationDose(vL, s.targetPeak, post, capMg);
+  const capped = peakEquationDose(vL, s.targetPeak, post, Infinity) > capMg;
+  return { state: 'dose', pre: inp.pre, preAtH: inp.preAtH, kg: inp.kg, post, vL, mg, capped, capMg,
+    capBy: capMg < DOSE_MAX_PER_DOSE_MG ? 'local' : 'ceiling', settings: s, cautions };
+}
+// The reading on screen and on paper. Every setting value is labelled "your setting"; the title says what it is not.
+function hdReadingHTML(r) {
+  const yours = (v, unit) => `${escHtml(String(v))}${unit ? ` ${unit}` : ''} <span class="vx-muted">(your setting)</span>`;
+  const n = (x) => String(+(+x).toFixed(2));
+  const head = `<h3 class="hd-reading-title" id="hd-reading-h">Peak-equation reading (your settings)</h3>
+      <p class="vx-sub vx-muted">From four numbers you set, so not a model's answer. It sits beside Goti 2018 · HD in AUC Precision, never instead of it.</p>`;
+  const foot = `<p class="vx-sub vx-muted">A level drawn during a session or within ${RRT_NO_SAMPLE_AFTER_SESSION_H} h of its end reads falsely low (Rybak 2020); this reading refuses one. No creatinine and no model are used.</p>`;
+  const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
+  const wrap = (state, body, notes, more) => `
+    <div class="tx-result hd-reading" data-hd-reading="${state}">
+      <div class="tx-top tx-top-solo"><section class="tx-verdict" aria-labelledby="hd-reading-h">${head}${body}</section></div>
+      ${txNotesHTML(notes)}${more || ''}
+    </div>`;
+  if (!r) return '';
+  if (r.state === 'no-settings') {
+    const list = r.missing.map(k => HD_SETTING_LABEL[k]).join(', ');
+    return wrap('no-settings', `
+      <p class="vx-regimen vx-regimen-hd">No reading</p>
+      <p class="vx-hold">This reading needs four numbers from your own protocol, and the app ships none of them. Not set: ${escHtml(list)}.
+        Set ${r.missing.length === 1 ? 'it' : 'them'} under Your settings (this browser) in the Haemodialysis section of the form; they stay in this browser only.</p>`);
+  }
+  if (r.state === 'refuse') return wrap('refuse', `
+      <p class="vx-regimen vx-regimen-hold">${escHtml(r.word)}</p>
+      <p class="vx-hold">${r.html}</p>${foot}`);
+  const st = r.settings, when = escHtml(fmtClock(r.preAtH));
+  const row = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  if (r.state === 'hold') return wrap('hold', `
+      <p class="vx-regimen vx-regimen-hd">Hold the dose</p>
+      <p class="vx-hold">The pre-dialysis level, ${n(r.pre)} mg/L at ${when}, is at or above your hold level, ${yours(st.holdPreMgL, 'mg/L')}.</p>
+      ${foot}${actions}`, r.cautions);
+  const verdict = r.mg > 0 ? `${fmtDose(r.mg)} after the session` : 'No dose by your settings';
+  const cap = !r.capped ? '' : `<p class="vx-sub">Capped at ${r.capBy === 'local' ? `${yours(fmtDose(r.capMg))}, your maximum single dose` : `${fmtDose(r.capMg)}, the per-dose maximum`}.</p>`;
+  return wrap('dose', `
+      <p class="vx-regimen vx-regimen-hd">${verdict}</p>
+      ${r.mg > 0 ? '' : '<p class="vx-hold">The post-session estimate is at or above your target peak.</p>'}
+      ${cap}
+      <dl class="ev-dl">
+        ${row('Pre-dialysis level', `${n(r.pre)} mg/L at ${when}`)}
+        ${row(HD_SETTING_LABEL.fractionRemaining, yours(st.fractionRemaining))}
+        ${row('Post-session estimate', `${n(r.post)} mg/L (pre-dialysis level × fraction remaining)`)}
+        ${row(HD_SETTING_LABEL.vdPerKg, `${yours(st.vdPerKg, 'L/kg')} × ${n(r.kg)} kg = ${n(r.vL)} L`)}
+        ${row(HD_SETTING_LABEL.targetPeak, yours(st.targetPeak, 'mg/L'))}
+        ${row(HD_SETTING_LABEL.holdPreMgL, yours(st.holdPreMgL, 'mg/L'))}
+        ${row('Dose', `V × (target peak − post-session estimate), to the nearest ${MATRIX_DOSE_STEP} mg, at most ${r.capBy === 'local' ? 'your maximum single dose' : fmtDose(DOSE_MAX_PER_DOSE_MG)}`)}
+      </dl>
+      ${foot}${actions}`, r.cautions);
+}
+function hdReadingSummary(r) {
+  const lead = 'Haemodialysis, peak-equation reading (your settings)';
+  if (!r) return '';
+  if (r.state === 'no-settings') return `${lead}: no reading; not set: ${r.missing.map(k => HD_SETTING_LABEL[k]).join(', ')}.`;
+  if (r.state === 'refuse') return `${lead}: ${r.word}.`;
+  if (r.state === 'hold') return `${lead}: hold; the pre-dialysis level ${n2(r.pre)} mg/L is at or above your hold level.`;
+  return `${lead}: ${r.mg > 0 ? `${fmtDose(r.mg)} after the session` : 'no dose'}.`;
+  function n2(x) { return String(+(+x).toFixed(2)); }
 }
 // Recurring sessions (D16). Calendar days at local noon, so a DST change can
 // never move a session to the wrong date (no "+24 h" arithmetic, SUITE 19).

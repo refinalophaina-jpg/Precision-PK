@@ -2216,7 +2216,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const crrtPaired = /id="crrt-give-time"|id="crrt-draw-time"|id="\$\{id\(tf\)\}"/;
     assert(/id="crrt-give-date"[\s\S]{0,400}id="crrt-give-time"/.test(body) && /id="crrt-draw-date"[\s\S]{0,400}id="crrt-draw-time"/.test(body), 'the CRRT give-at and next-draw times sit beside their dates');
     assert(/id="\$\{id\(df\)\}"[^>]*>\s*<input[^>]*id="\$\{id\(tf\)\}"/.test(body), 'the CRRT row time is paired with its date');
-    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !crrtPaired.test(t) && !recurring.test(t));
+    // D28 (Task 28): the haemodialysis reading's level, session-start and previous-session times each sit beside their own date.
+    const hdPaired = /id="hd-(?:pre|start|prev)-time"/;
+    for (const k of ['pre', 'start', 'prev'])
+      assert(new RegExp(`id="hd-${k}-date"[^>]*>\\s*<div class="input-row"><input[^>]*id="hd-${k}-time"`).test(body), `hd-${k}: the time sits beside its date`);
+    const orphans = clockOnly.filter(t => !paired.test(t) && !pdPaired.test(t) && !crrtPaired.test(t) && !hdPaired.test(t) && !recurring.test(t));
     assert(orphans.length === 0,
       `clock-only input with no date field: ${orphans.join(' | ').slice(0, 200)}`);
   });
@@ -4255,8 +4259,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const staticBody = src.slice(src.indexOf('<body>'), src.indexOf('<script>'));
     assert(!/data-onclick="k0"/.test(staticBody), 'no print action outside a result');
     const prints = src.match(/<button type="button" class="vx-act" data-onclick="k0">[^<]*<\/button>/g) || [];
-    // D28 (Task 27): the CRRT answer is a fourth answer with its own actions.
-    assert(prints.length === 4 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, CRRT, AUC): ${prints.length}`);
+    // D28 (Task 27): the CRRT answer is a fourth answer with its own actions; (Task 28) the haemodialysis reading a fifth.
+    assert(prints.length === 5 && prints.every(b => />Print or save as PDF</.test(b)), `one labelled print action in each answer (Trough, PD, CRRT, HD reading, AUC): ${prints.length}`);
     const act = rules.find(r => /\.vx-act\b/.test(r.sel) && /color/.test(r.body));
     assert(act && /terracotta-ink/.test(act.body) && !/background:\s*var\(--terracotta\)/.test(act.body), 'a text action, not a filled button');
     const prevGet = sandbox.document.getElementById;
@@ -10247,7 +10251,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       assert(new RegExp(`<input type="number" id="${c}-rrt-set-max"[^>]*data-onchange="k105" data-arg="${c}"`).test(src46), `${c}: save on change`);
       assert(new RegExp(`id="${c}-rrt-set-status"`).test(src46), `${c}: a status line`);
     }
-    assert((src46.match(/data-onclick="k106"/g) || []).length === 2, 'a Clear in each column');
+    // Task 28: the Trough haemodialysis settings show the same maximum a third time (column 'h', hd-set-max), with its Clear.
+    assert(/<input type="number" id="hd-set-max"[^>]*data-onchange="k105" data-arg="h"/.test(src46) && /id="hd-set-max-status"/.test(src46), 'h: save on change, a status line');
+    assert((src46.match(/data-onclick="k106"/g) || []).length === 3, 'a Clear in each column, and in the haemodialysis settings');
     assert(vm.runInContext("typeof __ACT.k105 === 'function' && typeof __ACT.k106 === 'function'", sandbox), '__ACT entries');
   });
 
@@ -10883,13 +10889,204 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(m.intervals.every(i => i.used) && m.state === 'need-level' && m.reason === 'modality' && !m.rows && /CVVHDF → CVVH\)/.test(m.message), JSON.stringify({ state: m.state, m: m.message }));
   });
 
+  // ── Task 28: a peak-equation haemodialysis reading from browser-only settings (Trough-based · HD). The plan's
+  // 46.53–46.62 are 46.65–46.74 here (the next free numbers, in the plan's order); 46.75–46.77 are R96 (a level dated
+  // after now), R73 (the column) and the settings' save and Clear. The four settings are the user's own: the values below
+  // are TEST FIXTURES, defined only in this file (the repository ships no value for any of them, 46.73). Fictional 80 kg.
+  const S48 = { fractionRemaining: 0.65, targetPeak: 25, vdPerKg: 0.7, holdPreMgL: 25 };
+  const KEYS48 = ['fractionRemaining', 'targetPeak', 'vdPerKg', 'holdPreMgL'];
+  const B48 = new Date(2026, 5, 15, 0, 0).getTime() / 3600000;   // 15 Jun 2026 00:00, local
+  const inp48 = (o) => Object.assign({ kg: 80, pre: 18, preAtH: B48 + 7, sessionStartH: B48 + 8, prevSessionEndH: B48 - 40,
+    settings: S48, localMaxMg: null, nowH: B48 + 7.5 }, o || {});
+  const hd48 = (o) => fn46('hdReading')(inp48(o));
+  const near48 = (a, b) => Math.abs(a - b) < 1e-9;
+  const text48 = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const ls48 = (d) => ({ _d: d || {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+    setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } });
+  const withLs48 = (store, fn) => {
+    const prev = sandbox.localStorage; sandbox.localStorage = ls48(store);
+    try { return fn(sandbox.localStorage); } finally { sandbox.localStorage = prev; }
+  };
+  const { RRT_NO_SAMPLE_AFTER_SESSION_H: GAP48, DOSE_MAX_PER_DOSE_MG: CEIL48 } = __extractConsts();
+
+  test('46.65 Review Focus 4: empty storage → no reading, naming all four settings and where to set them; three set → no reading, naming the fourth', () => {
+    const empty = withLs48({}, () => fn46('hdLocalSettings')());
+    const r = hd48({ settings: empty });
+    assert(r.state === 'no-settings' && JSON.stringify(r.missing) === JSON.stringify(KEYS48) && r.mg == null, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/Peak-equation reading \(your settings\)/.test(t) && /not a model's answer/.test(t) && /Goti 2018 · HD/.test(t) && /Your settings \(this browser\)/.test(t), t.slice(0, 500));
+    const labels = ['Fraction remaining after the session', 'Target peak', 'Volume of distribution', 'Hold level'];
+    assert(labels.every(l => t.indexOf(l) >= 0), t.slice(0, 600));
+    KEYS48.forEach((k, i) => {
+      const three = Object.assign({}, S48); delete three[k];
+      const st = withLs48({ 'vanco.hd.local': JSON.stringify(three) }, () => fn46('hdLocalSettings')());
+      assert(st[k] === null && KEYS48.filter(x => x !== k).every(x => st[x] === S48[x]), `${k}: ${JSON.stringify(st)}`);
+      const r3 = hd48({ settings: st });
+      assert(r3.state === 'no-settings' && JSON.stringify(r3.missing) === JSON.stringify([k]), `${k}: ${JSON.stringify(r3)}`);
+      const t3 = text48(fn46('hdReadingHTML')(r3));
+      assert(t3.indexOf(labels[i]) >= 0 && labels.filter((l, j) => j !== i).every(l => t3.indexOf(`Not set: ${l}`) < 0), `${k}: ${t3.slice(0, 500)}`);
+    });
+  });
+
+  test('46.66 pre-dialysis 18 mg/L → post-session 11.7 mg/L, V 56 L, 750 mg; every setting shows "your setting"', () => {
+    const r = hd48();
+    assert(r.state === 'dose' && near48(r.post, 11.7) && near48(r.vL, 56) && r.mg === 750 && r.capped === false, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/0\.65 \(your setting\)/.test(t) && /25 mg\/L \(your setting\)/.test(t) && /0\.7 L\/kg \(your setting\)/.test(t)
+      && (t.match(/your setting/g) || []).length >= 5 && /750 mg/.test(t) && /11\.7 mg\/L/.test(t) && /56(\.0)? L/.test(t), t.slice(0, 900));
+  });
+
+  test('46.67 pre-dialysis 5 mg/L → post-session 3.25 mg/L → 1,250 mg', () => {
+    const r = hd48({ pre: 5 });
+    assert(r.state === 'dose' && near48(r.post, 3.25) && r.mg === 1250 && r.capped === false, JSON.stringify(r));
+  });
+
+  test('46.68 a pre-dialysis level at or above the hold level (your setting) is a hold: 26 and exactly 25; 24.9 is a dose', () => {
+    const r = hd48({ pre: 26 });
+    assert(r.state === 'hold' && r.pre === 26 && r.hold === 25 && r.mg == null, JSON.stringify(r));
+    const eq = hd48({ pre: 25 });
+    assert(eq.state === 'hold' && eq.hold === 25, JSON.stringify(eq));
+    assert(hd48({ pre: 24.9 }).state === 'dose', 'just below the hold level');
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/26(\.0)? mg\/L/.test(t) && /25 mg\/L \(your setting\)/.test(t), t.slice(0, 500));
+  });
+
+  test('46.69 120 kg and a target peak of 40: capped at the 2 g per-dose ceiling; a local maximum of 1,500 caps at 1,500 (your setting)', () => {
+    const big = Object.assign({}, S48, { targetPeak: 40 });
+    const r = hd48({ kg: 120, settings: big });
+    assert(r.state === 'dose' && r.mg === CEIL48 && r.capped === true && r.capBy === 'ceiling', JSON.stringify(r));
+    const l = hd48({ kg: 120, settings: big, localMaxMg: 1500 });
+    assert(l.state === 'dose' && l.mg === 1500 && l.capped === true && l.capBy === 'local', JSON.stringify(l));
+    assert(/1,?500 mg \(your setting\)|1\.5 g \(your setting\)/.test(text48(fn46('hdReadingHTML')(l))), text48(fn46('hdReadingHTML')(l)).slice(0, 900));
+    const hi = hd48({ kg: 120, settings: big, localMaxMg: 3000 });
+    assert(hi.mg === CEIL48 && hi.capBy === 'ceiling', 'a local maximum above the ceiling leaves the ceiling: ' + JSON.stringify(hi));
+    const under = hd48({ localMaxMg: 1500 });
+    assert(under.mg === 750 && under.capped === false, 'below the cap, uncapped: ' + JSON.stringify(under));
+  });
+
+  test(`46.70 sampling: a level drawn at or after the session start is refused ("drawn during the session"); within ${GAP48} h of the previous session's end is refused; 3 h after (and exactly ${GAP48} h) is read`, () => {
+    for (const at of [B48 + 8, B48 + 8.5]) {
+      const r = hd48({ preAtH: at, nowH: B48 + 9 });
+      assert(r.state === 'refuse' && /during the session/i.test(r.word) && r.mg == null, `${at - B48}: ${JSON.stringify(r)}`);
+    }
+    const soon = hd48({ prevSessionEndH: B48 + 6 });
+    assert(soon.state === 'refuse' && /previous session/i.test(soon.word) && soon.html.indexOf(`within ${GAP48} h`) >= 0 && soon.mg == null, JSON.stringify(soon));
+    const before = hd48({ prevSessionEndH: B48 + 7.5, sessionStartH: B48 + 9, nowH: B48 + 8 });
+    assert(before.state === 'refuse' && /previous session/i.test(before.word), JSON.stringify(before));
+    const ok3 = hd48({ prevSessionEndH: B48 + 4 });
+    assert(ok3.state === 'dose' && ok3.mg === 750 && !(ok3.cautions || []).length, JSON.stringify(ok3));
+    const edge = hd48({ prevSessionEndH: B48 + 7 - GAP48 });
+    assert(edge.state === 'dose', 'exactly at the boundary: ' + JSON.stringify(edge));
+    const order = hd48({ prevSessionEndH: B48 + 8.5, preAtH: B48 + 7, sessionStartH: B48 + 8 });
+    assert(order.state === 'refuse', 'a previous session ending after this one starts: ' + JSON.stringify(order));
+  });
+
+  test(`46.71 no previous session entered → a dose, with a caution that the ${GAP48} h check could not be made`, () => {
+    const r = hd48({ prevSessionEndH: null });
+    assert(r.state === 'dose' && r.mg === 750 && (r.cautions || []).length === 1, JSON.stringify(r));
+    const t = text48(fn46('hdReadingHTML')(r));
+    assert(/could not be (made|checked)/.test(t) && t.indexOf(`${GAP48} h`) >= 0, t.slice(0, 900));
+  });
+
+  test('46.72 a fraction of 1.2 or 0 is not stored, the line says so, and the reading stays no-settings; a stored 1.2 is never read', () => {
+    for (const bad of ['1.2', '0']) {
+      const env = env46({ 'hd-set-frac': bad, 'hd-set-peak': '25', 'hd-set-vd': '0.7', 'hd-set-hold': '25' });
+      const st = withProf44(env, [], () => { fn46('saveHdLocalSettings')(); return fn46('hdLocalSettings')(); });
+      assert(st.fractionRemaining === null && st.targetPeak === 25 && st.vdPerKg === 0.7 && st.holdPreMgL === 25, `${bad}: ${JSON.stringify(st)}`);
+      const saved = JSON.parse(env.localStorage.getItem('vanco.hd.local') || '{}');
+      assert(!('fractionRemaining' in saved) || saved.fractionRemaining == null, `${bad}: stored ${JSON.stringify(saved)}`);
+      assert(/Fraction remaining after the session/.test(env.get('hd-set-status').textContent) && env.get('hd-set-frac').value === '', `${bad}: ${env.get('hd-set-status').textContent}`);
+      const r = hd48({ settings: st });
+      assert(r.state === 'no-settings' && JSON.stringify(r.missing) === '["fractionRemaining"]', `${bad}: ${JSON.stringify(r)}`);
+    }
+    for (const v of [1.2, 0, 1, -0.5, '0.65']) {
+      const st = withLs48({ 'vanco.hd.local': JSON.stringify(Object.assign({}, S48, { fractionRemaining: v })) }, () => fn46('hdLocalSettings')());
+      assert(st.fractionRemaining === null, `${JSON.stringify(v)} read as ${st.fractionRemaining}`);
+    }
+    for (const k of ['targetPeak', 'vdPerKg', 'holdPreMgL']) {
+      const st = withLs48({ 'vanco.hd.local': JSON.stringify(Object.assign({}, S48, { [k]: 0 })) }, () => fn46('hdLocalSettings')());
+      assert(st[k] === null, `${k} 0 read as ${st[k]}`);
+    }
+    // A stored value out of range in the input itself is never used either (defence in depth).
+    assert(hd48({ settings: Object.assign({}, S48, { fractionRemaining: 1.2 }) }).state === 'no-settings', 'hdReading used a fraction of 1.2');
+  });
+
+  test('46.73 the repository ships no value: with empty storage every setting is null, the source of hdLocalSettings and hdReading holds no number but 0 and 1, and the setting fields carry no value', () => {
+    const empty = withLs48({}, () => fn46('hdLocalSettings')());
+    assert(KEYS48.every(k => empty[k] === null) && Object.keys(empty).length === 4, JSON.stringify(empty));
+    const none = fn46('hdLocalSettings')();   // no localStorage at all in the bare sandbox
+    assert(KEYS48.every(k => none[k] === null), JSON.stringify(none));
+    for (const f of ['hdLocalSettings', 'hdReading']) {
+      const nums = (fn46(f).toString().replace(/[A-Za-z_$][\w$]*/g, ' ').match(/\d+(?:\.\d+)?/g) || []).filter(n => n !== '0' && n !== '1');
+      assert(!nums.length, `${f} holds ${nums.join(', ')}`);
+    }
+    for (const id of ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold']) {
+      const tag = (src46.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`)) || [''])[0];
+      assert(tag && !/\d/.test(tag.replace(/data-onchange="k\d+"/, '')), `${id}: ${tag}`);
+    }
+  });
+
+  test('46.74 the Trough haemodialysis screen shows the Goti-HD pointer first, then the reading, in every state', () => {
+    const NOTICE = 'On haemodialysis — use AUC Precision', TITLE = 'Peak-equation reading (your settings)';
+    const form = { tbw: 80, 'hd-pre': 18, 'hd-pre-date': '2026-06-15', 'hd-pre-time': '07:00', 'hd-start-date': '2026-06-15', 'hd-start-time': '08:00',
+      'hd-prev-date': '2026-06-13', 'hd-prev-time': '08:00' };
+    const run = (store, vals) => {
+      const prevNow = sandbox.calculationNowH; sandbox.calculationNowH = () => B48 + 7.5;
+      try { return withLs48(store, () => trough44('initial', 'M', Object.assign({}, form, vals || {}), { rrt: 'ihd' })); }
+      finally { sandbox.calculationNowH = prevNow; reset46(); }
+    };
+    const full = { 'vanco.hd.local': JSON.stringify(S48) };
+    const cases = { 'no-settings': run({}), refuse: run(full, { 'hd-prev-date': '2026-06-15', 'hd-prev-time': '06:00' }), hold: run(full, { 'hd-pre': 26 }), dose: run(full) };
+    for (const [st, r] of Object.entries(cases)) {
+      const n = r.h.indexOf(NOTICE), t = r.h.indexOf(TITLE);
+      assert(n >= 0 && t > n && new RegExp(`data-hd-reading="${st}"`).test(r.h), `${st}: notice ${n}, title ${t}: ${r.text.slice(0, 300)}`);
+    }
+    assert(/750 mg/.test(cases.dose.text) && /^Result: /.test(cases.dose.said), cases.dose.text.slice(0, 400));
+    const bad = run(full, { 'hd-pre-time': '' });
+    assert(bad.h.indexOf(NOTICE) >= 0 && bad.h.indexOf(TITLE) < 0, 'a malformed form: the pointer stays, no reading: ' + bad.text.slice(0, 300));
+  });
+
+  test('46.75 R96: a pre-dialysis level dated after now (beyond one minute) is refused by name; within the minute it is read', () => {
+    const r = hd48({ preAtH: B48 + 7.5, nowH: B48 + 7 });
+    assert(r.state === 'refuse' && /future/i.test(r.word) && r.mg == null, JSON.stringify(r));
+    const tol = hd48({ preAtH: B48 + 7 + 0.5 / 60, nowH: B48 + 7 });
+    assert(tol.state === 'dose', JSON.stringify(tol));
+  });
+
+  test('46.76 R73: the haemodialysis mode hides creatinine, the loading dose, the PK model and the trough target; keeps weight; shows its own section', () => {
+    assert(/\.panel-left\[data-mode="ihd"\] \.not-pd \{ display: none; \}/.test(src46), 'the CSS rule hides the .not-pd blocks in ihd');
+    assert(/<div id="section-renal" class="not-pd">/.test(src46) && /<div id="section-ld" class="not-pd">/.test(src46), 'creatinine and loading-dose blocks are .not-pd');
+    assert(!/class="[^"]*not-pd[^"]*"[^>]*>[\s\S]{0,400}id="tbw"/.test(src46.slice(src46.indexOf('id="tbw"') - 420, src46.indexOf('id="tbw"') + 10)), 'weight is not in a .not-pd block');
+    const env = env46({});
+    withProf44(env, [], () => { fn46('setRrt')('ihd'); });
+    try {
+      assert(env.get('section-trough-shared').style.display === 'none' && env.get('section-hd').style.display === '' && env.get('section-rrt').style.display === 'none',
+        JSON.stringify({ shared: env.get('section-trough-shared').style.display, hd: env.get('section-hd').style.display, rrt: env.get('section-rrt').style.display }));
+    } finally { withProf44(env, [], () => { fn46('setRrt')('none'); }); reset46(); }
+    assert(env.get('section-hd').style.display === 'none', 'leaving haemodialysis hides the section');
+  });
+
+  test('46.77 the settings: saved as numbers; a blank field keeps its stored value and shows it again; Clear removes the key, empties the fields and says so', () => {
+    const env = env46({ 'hd-set-frac': '0.65', 'hd-set-peak': '25', 'hd-set-vd': '0.7', 'hd-set-hold': '25' });
+    withProf44(env, [], () => fn46('saveHdLocalSettings')());
+    assert(JSON.stringify(JSON.parse(env.localStorage.getItem('vanco.hd.local'))) === JSON.stringify(S48), env.localStorage.getItem('vanco.hd.local'));
+    env.get('hd-set-frac').value = ''; env.get('hd-set-peak').value = '30';
+    const st = withProf44(env, [], () => { fn46('saveHdLocalSettings')(); return fn46('hdLocalSettings')(); });
+    assert(st.fractionRemaining === 0.65 && st.targetPeak === 30 && env.get('hd-set-frac').value === '0.65', JSON.stringify(st));
+    const after = withProf44(env, [], () => { fn46('clearHdLocalSettings')(); return fn46('hdLocalSettings')(); });
+    assert(env.localStorage.getItem('vanco.hd.local') === null && KEYS48.every(k => after[k] === null)
+      && ['hd-set-frac', 'hd-set-peak', 'hd-set-vd', 'hd-set-hold'].every(id => env.get(id).value === '') && /^Cleared/.test(env.get('hd-set-status').textContent),
+      JSON.stringify({ after, status: env.get('hd-set-status').textContent }));
+    assert(hd48({ settings: after }).state === 'no-settings', 'Clear returns the reading to the refusal');
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 685;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.64)
+const EXPECTED_TOTAL = 698;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.77)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);
