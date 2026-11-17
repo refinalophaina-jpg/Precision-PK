@@ -231,6 +231,15 @@ const MUTANTS = [
     find: "target: g('b-auc-target'), mic: g('b-mic'),", replace: "target: '', mic: '', // g('b-auc-target') g('b-mic')" },
   { id: 'CF-2', what: 'an unquoted inline handler (onclick=x()) in the body',
     find: '<div id="b-results" style=', replace: '<div id="b-results" onclick=resetForm() style=' },
+
+  // Release 3 (v3.16.0, D28), Task 23: one renal-replacement selector.
+  { id: 'R3-23-1', what: 'bState.dial derived from peritoneal dialysis instead of haemodialysis [46.9]',
+    find: "bState.dial = (kind === 'ihd');", replace: "bState.dial = (kind === 'pd');" },
+  { id: 'R3-23-2', what: 'the CRRT and hybrid refusal moved after parseBayesCourse [46.3]',
+    find: "  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n  const { doses, levels, sessions, errors } = parseBayesCourse();\n",
+    replace: "  const { doses, levels, sessions, errors } = parseBayesCourse();\n  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }\n" },
+  { id: 'R3-23-3', what: "rrtOf drops the legacy demographics.dial branch [46.2]",
+    find: "if ((core && core.hd) || (demographics && demographics.dial)) return 'ihd';", replace: "if (core && core.hd) return 'ihd';" },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

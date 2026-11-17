@@ -176,6 +176,8 @@ function extract() {
     FIRST_INTERVAL_CAUTION_H: num(src, 'FIRST_INTERVAL_CAUTION_H'),
     // v3.14.0 (D26) — nextLevelValue reads the fit's confidence state
     CONFIDENCE_SIGMA:       objLiteral(src, 'CONFIDENCE_SIGMA'),
+    // v3.16.0 (D28) — the renal-replacement kinds the one selector offers
+    RRT_KINDS:              arrayLiteral(src, 'RRT_KINDS'),
   };
 }
 

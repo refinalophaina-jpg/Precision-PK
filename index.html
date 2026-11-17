@@ -2594,11 +2594,13 @@
   .dt-pair .course-readback { flex: 1 0 100%; font-size: var(--fs-xs); min-height: 1.2em; }
   .form-grid-2 > .field-group:has(.dt-pair) { grid-column: 1 / -1; }
   /* The PD mode reads levels, the schedule and weight (D23): no amputation, creatinine or
-     loading-dose blocks (D24). A ticked HD box stays in view, alone, because the refusal it
-     causes must be undoable where it was set. */
+     loading-dose blocks (D24). The renal-replacement selector (D28) sits in the patient section,
+     which no mode hides, so whatever it sets can be undone where it was set. */
   .panel-left[data-mode="pd"] .not-pd { display: none; }
-  .panel-left[data-mode="pd"] #section-renal:has(#t-hd:checked) { display: block; }
-  .panel-left[data-mode="pd"] #section-renal:has(#t-hd:checked) > :not(h2):not(.hd-flag) { display: none; }
+  /* A creatinine-based mode while renal replacement is not None (D28): shown, not offered. */
+  .calc-mode-btn[aria-disabled="true"] { color: var(--ink-muted); cursor: not-allowed; }
+  .calc-mode-btn[aria-disabled="true"]:hover { transform: none; }
+  .rrt-mode-note { margin-top: 6px; }
   .course-what { grid-area: what; display: flex; align-items: center; gap: 8px; }
   .course-when {
     grid-area: when; display: grid; gap: 8px;
@@ -2882,6 +2884,7 @@
       <button class="calc-mode-btn" id="mode-btn-randomlevel" data-onclick="k8" aria-pressed="false">Random level</button>
       <button class="calc-mode-btn" id="mode-btn-pd" data-onclick="k84" aria-pressed="false">Peritoneal dialysis</button>
     </div>
+    <p class="calc-mode-hint rrt-mode-note" id="rrt-mode-note" hidden></p>
     <p class="calc-mode-hint" id="calc-mode-hint">Population PK → recommends starting dose &amp; loading dose. Switch to <strong>Steady-state trough</strong> once a steady-state level is available.</p>
 
     <!-- Clearing the form: a text action away from the run button, with Undo (D24) -->
@@ -2950,6 +2953,17 @@
           <p id="ibw-method-note" class="field-hint" style="display:none;margin-top:8px;line-height:1.4"></p>
         </div>
 
+        <!-- Renal replacement (D28): one value both modules read; it replaced the HD and PD checkboxes -->
+        <div class="field-group">
+          <label class="field-label" for="t-rrt">Renal replacement</label>
+          <select id="t-rrt" data-onchange="k102">
+            <option value="none">None</option>
+            <option value="ihd">Intermittent haemodialysis</option>
+            <option value="hybrid">Hybrid (SLED / PIRRT)</option>
+            <option value="crrt">CRRT</option>
+            <option value="pd">Peritoneal dialysis</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -3012,7 +3026,6 @@
     <!-- Renal Function -->
     <div id="section-renal" class="not-pd">
       <h2 class="form-h2">Renal function</h2>
-      <label class="hd-flag"><input type="checkbox" id="t-hd"> Patient receives intermittent haemodialysis</label>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field-group">
           <label class="field-label" for="scr">Serum creatinine</label>
@@ -3825,6 +3838,17 @@
             </div>
           </div>
         </div>
+        <!-- Renal replacement (D28): one value both modules read; it replaced the HD and PD checkboxes -->
+        <div class="field-group">
+          <label class="field-label" for="b-rrt">Renal replacement</label>
+          <select id="b-rrt" data-onchange="k102">
+            <option value="none">None</option>
+            <option value="ihd">Intermittent haemodialysis</option>
+            <option value="hybrid">Hybrid (SLED / PIRRT)</option>
+            <option value="crrt">CRRT</option>
+            <option value="pd">Peritoneal dialysis</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -3844,11 +3868,6 @@
         <div id="b-crcl-result" style="display:none;font-family:var(--font-num);font-size:var(--fs-sm);color:var(--accent-amber)"></div>
         <div id="b-goti-scr-note" style="display:none;font-size:var(--fs-xs);color:var(--accent-amber);font-style:italic"></div>
         <p class="field-hint">Cockcroft-Gault · AdjBW auto if TBW &gt;20% above IBW · Used as fallback if no serial SCr entries below</p>
-        <div id="b-dial-wrap" style="display:none;align-items:center;gap:8px;margin-top:4px">
-          <input type="checkbox" id="b-dial" data-onchange="k41" style="accent-color:var(--accent-blue);width:18px;height:18px;cursor:pointer">
-          <label for="b-dial" style="display:inline-flex;align-items:center;min-height:44px;font-size:var(--fs-xs);color:var(--text-secondary);cursor:pointer">Haemodialysis patient (HD)</label>
-        </div>
-        <label class="hd-flag"><input type="checkbox" id="b-pd"> Patient on peritoneal dialysis</label>
       </div>
     </div>
 
@@ -4150,7 +4169,6 @@ const __ACT = {
   k38: (el, ev, arg) => { updateBayesCrCl() },   /* updateBayesCrCl() */
   k39: (el, ev, arg) => { setBSex(el,'M') },   /* setBSex(this,'M') */
   k40: (el, ev, arg) => { setBSex(el,'F') },   /* setBSex(this,'F') */
-  k41: (el, ev, arg) => { bState.dial=el.checked;syncHdSection();updateBayesCrCl() },   /* bState.dial=this.checked;updateBayesCrCl() */
   k42: (el, ev, arg) => { addScrRow(); focusNewRow('b-scr-tbody'); },   /* + Add SCr */
   k43: (el, ev, arg) => { addBayesDose(); focusNewRow('b-dose-tbody'); },   /* + Add dose: the new row takes the focus (D24) */
   k44: (el, ev, arg) => { setRegimenOverride(el.value) },   /* setRegimenOverride(this.value) */
@@ -4197,6 +4215,8 @@ const __ACT = {
   k98: (el, ev, arg) => { markSuggestedModel(); },   /* ICU changes the suggested model (D24) */
   k100: (el, ev, arg) => { deleteAllProfiles(); },   /* Delete all profiles, with Undo (Task 20b) */
   k101: (el, ev, arg) => { const b = document.getElementById('action-status'); if (b) { b.hidden = true; b.innerHTML = ''; } },   /* dismiss the failed-action line (Task 21) */
+  k102: (el, ev, arg) => { setRrt(el.value); },   /* the renal-replacement selector, either column (D28) */
+  k103: (el, ev, arg) => { switchModule('trough'); setRrt('crrt'); },   /* AUC Precision CRRT refusal → Trough-based · CRRT (D28) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4361,7 +4381,141 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // ══════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════
-let state = { sex:null, dosingWt:'auto', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose' };
+let state = { sex:null, dosingWt:'auto', levelType:'trough', isSS:true, calcMode:'initial', rlMode:'firstdose', tlBasis:'firstdose', rrt:'none' };
+
+// ══════════════════════════════════════════
+//  RENAL REPLACEMENT (D28, v3.16.0)
+// ══════════════════════════════════════════
+// One value, shared by both modules, replaces three checkboxes that disagreed: the Trough HD
+// flag, the AUC Precision dialysis box (shown only under Goti) and the AUC Precision PD box (never
+// cleared by a reset). state.rrt and bState.rrt always hold the same kind; setRrt is the one
+// writer. bState.dial stays, derived (rrt is haemodialysis), so gotiPopPK(…, dial) and the engine
+// read what they always read. A kind with no model here is refused, never fitted as a patient
+// off dialysis.
+const RRT_KINDS = ['none', 'ihd', 'hybrid', 'crrt', 'pd'];
+// The kind as the creatinine-mode line names it ("Not used on …").
+const RRT_LABEL = { ihd: 'intermittent haemodialysis', hybrid: 'hybrid therapy (SLED / PIRRT)', crrt: 'CRRT', pd: 'peritoneal dialysis' };
+// The Trough modes that estimate clearance from creatinine: not used while rrt is not None.
+const CREATININE_MODES = ['initial', 'level', 'twolevels', 'randomlevel'];
+
+// A saved profile's kind. core.rrt when the profile stored one (validProfile has refused any it
+// does not know); otherwise the older flags: a PD modality, then a haemodialysis flag in the core
+// or the AUC demographics; otherwise none.
+function rrtOf(core, demographics, pd) {
+  if (core && core.rrt != null) return core.rrt;
+  if (pd && pd.modality) return 'pd';
+  if ((core && core.hd) || (demographics && demographics.dial)) return 'ihd';
+  return 'none';
+}
+// The kind in force. A state object without one (a test harness's fresh bState) is None.
+function currentRrt() {
+  const k = typeof state !== 'undefined' && state ? state.rrt : undefined;
+  return RRT_KINDS.indexOf(k) >= 0 ? k : 'none';
+}
+function bayesRrt() {
+  const k = typeof bState !== 'undefined' && bState ? bState.rrt : undefined;
+  return RRT_KINDS.indexOf(k) >= 0 ? k : 'none';
+}
+// The AUC Precision tile the clinician has selected. bState.model alone cannot say it: Goti and
+// Goti-HD are both model 'goti'.
+function bayesTile() {
+  if (typeof bState === 'undefined' || !bState) return 'buelga';
+  if (bState.tile) return bState.tile;
+  return bState.model === 'goti' && bState.dial ? 'gotihd' : (bState.model || 'buelga');
+}
+function selectBayesTile(key) {
+  const el = typeof document !== 'undefined' && document && typeof document.getElementById === 'function'
+    ? document.getElementById('b-model-btn-' + key) : null;
+  setBModel(el, key);
+}
+
+// The one writer. Sets both selectors and both states, the Trough calc mode and the AUC tile, and
+// re-checks both results against their inputs: an AUC result fitted under the old kind is marked
+// stale (rrt is in its fingerprint); the Trough result goes with the mode change (setCalcMode
+// clears it). Returns false, changing nothing, for a kind it does not know.
+function setRrt(kind) {
+  if (RRT_KINDS.indexOf(kind) < 0) return false;
+  const prev = currentRrt();
+  state.rrt = kind;
+  if (typeof bState !== 'undefined' && bState) {
+    bState.rrt = kind;
+    bState.dial = (kind === 'ihd');   // derived (D28): the engine reads dial as before
+  }
+  const dom = typeof document !== 'undefined' && document && typeof document.getElementById === 'function';
+  if (dom) ['t-rrt', 'b-rrt'].forEach(id => { const el = document.getElementById(id); if (el && el.value !== kind) el.value = kind; });
+  // The tile: choosing haemodialysis selects Goti 2018 · HD, the one model that carries dialysis;
+  // leaving it moves that tile to plain Goti, so Goti-HD is never shown for a patient not on HD.
+  const tile = bayesTile();
+  if (kind === 'ihd' && prev !== 'ihd' && tile !== 'gotihd') selectBayesTile('gotihd');
+  else if (kind !== 'ihd' && tile === 'gotihd') selectBayesTile('goti');
+  // The Trough mode: each kind other than None has its own; None returns to initial dosing from one.
+  const mode = kind === 'none' ? (CREATININE_MODES.indexOf(state.calcMode) >= 0 ? state.calcMode : 'initial') : kind;
+  if (mode !== state.calcMode) setCalcMode(mode);
+  syncRrtModeButtons();
+  try { syncHdSection(); updateBayesCrCl(); markSuggestedModel(); } catch (e) { /* display only */ }
+  refreshStaleResult('trough');
+  refreshStaleResult('auc');
+  return true;
+}
+
+// The four creatinine-based mode buttons: available only with renal replacement None. Shown, marked
+// aria-disabled, and described by one line that says why and how to use them.
+function syncRrtModeButtons() {
+  if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+  const rrt = currentRrt(), off = rrt !== 'none';
+  const note = document.getElementById('rrt-mode-note');
+  if (note) {
+    note.textContent = off ? `Not used on ${RRT_LABEL[rrt]}. Set Renal replacement to None to use it.` : '';
+    note.hidden = !off;
+  }
+  CREATININE_MODES.forEach(m => {
+    const b = document.getElementById('mode-btn-' + m);
+    if (!b || typeof b.setAttribute !== 'function') return;
+    if (off) { b.setAttribute('aria-disabled', 'true'); b.setAttribute('aria-describedby', 'rrt-mode-note'); }
+    else if (typeof b.removeAttribute === 'function') { b.removeAttribute('aria-disabled'); b.removeAttribute('aria-describedby'); }
+  });
+}
+
+// The refusal a module shows for a kind it does not dose. module: 'auc' | 'trough'. '' when the
+// module has an answer for the kind (None anywhere, PD in the Trough module, Goti-HD on HD).
+// The empty [data-rrt-reference] slot is where the guideline's reference table goes (Task 25).
+function rrtNoticeHTML(kind, module) {
+  const auc = module === 'auc';
+  if (kind === 'pd') return auc ? bayesPdNoticeHTML() : '';
+  if (kind === 'ihd') {
+    if (!auc) return troughHdNoticeHTML();
+    const tile = bayesTile();
+    if (tile === 'gotihd') return '';
+    return noteHTML({ tier: 'caution', word: 'On haemodialysis — only Goti 2018 · HD carries dialysis', html:
+      `Renal replacement is set to intermittent haemodialysis, and ${escHtml(MODEL_NAME[tile] || tile)} does not describe
+       vancomycin removal by dialysis, so nothing was fitted.
+       <button type="button" class="vx-act" data-onclick="k77">Use Goti 2018 · HD</button>` });
+  }
+  if (kind === 'crrt') {
+    if (!auc) return noteHTML({ tier: 'caution', word: 'On CRRT — no creatinine-based regimen', html:
+      `Trough-based dosing estimates clearance from creatinine, which does not describe vancomycin clearance on
+       continuous renal replacement therapy, so no regimen is calculated here.` });
+    return noteHTML({ tier: 'caution', word: 'On CRRT — no model here describes it', html:
+      `None of the models here was developed in continuous renal replacement therapy, and creatinine does not
+       describe vancomycin clearance on it, so nothing was parsed or fitted.
+       <button type="button" class="vx-act" data-onclick="k103">Open Trough-based · CRRT</button>` })
+      + '<div data-rrt-reference></div>';
+  }
+  if (kind === 'hybrid') {
+    return noteHTML({ tier: 'caution', word: 'On hybrid therapy (SLED / PIRRT) — no model or target here describes it', html:
+      `None of the models here was developed in hybrid therapy, creatinine does not describe vancomycin clearance on
+       it, and no level target here is set for it, so no regimen is ${auc ? 'fitted' : 'calculated'}.` })
+      + '<div data-rrt-reference></div>';
+  }
+  return '';
+}
+// AUC Precision shows a refusal in place of a result, and forgets the previous answer in state too:
+// print, a redraw and a saved profile all read bState.result.
+function showBayesRrtRefusal(html) {
+  if (typeof bState !== 'undefined' && bState) { bState.result = null; bState.resultFingerprint = null; }
+  const area = formArea('auc');
+  if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = html; }
+}
 
 // ══════════════════════════════════════════
 //  UI HELPERS
@@ -4514,6 +4668,10 @@ function toggleLD() {
 }
 
 function setCalcMode(mode) {
+  // D28: a dialysis mode is the patient's renal replacement, so it is set through the selector's
+  // one writer; a creatinine-based mode is not used while renal replacement is not None.
+  if (RRT_KINDS.indexOf(mode) > 0 && currentRrt() !== mode) return setRrt(mode);
+  if (CREATININE_MODES.indexOf(mode) >= 0 && currentRrt() !== 'none') { syncRrtModeButtons(); return false; }
   state.calcMode = mode;
   // The panel shows only what the mode reads (D24): PD hides amputation, creatinine and
   // the loading-dose blocks (.not-pd in CSS).
@@ -4536,10 +4694,14 @@ function setCalcMode(mode) {
     level:        'Enter the current dose, interval, and a measured steady-state level to fit individual PK and adjust the regimen.',
     twolevels:    'Two post-infusion levels from the <strong>first dose</strong> determine individual Kel &amp; Vd directly — useful when Cockcroft-Gault CrCl is unreliable (bedbound, AKI, obesity).',
     pd:           'IV vancomycin for a patient on peritoneal dialysis, dosed by level: what to give, whether to give it today, and when to draw the next level, from this patient\'s own levels and cycler schedule. No population model drives a dose.',
+    ihd:          'Renal replacement is intermittent haemodialysis. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
+    crrt:         'Renal replacement is CRRT. Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
+    hybrid:       'Renal replacement is hybrid therapy (SLED / PIRRT). Creatinine does not describe vancomycin clearance on it, so the creatinine-based modes are not used here.',
     randomlevel:  'Single level at <strong>any time point</strong> — first dose or steady state. Uses population Vd to fit individual Kel. Ideal when a trough was not specifically timed.<br><span style="color:var(--ink-muted)">The graph shows the recommended regimen at steady state, not the course your level came from, so the level itself is not drawn on it. Read the fitted parameters, not the curve.</span>'
   };
   document.getElementById('calc-mode-hint').innerHTML = hints[mode] || '';
   if (mode === 'pd') { fillPdLocalSettings(); pdToggleFields(); }
+  syncRrtModeButtons();
   document.getElementById('results-placeholder').style.display = 'flex';
   document.getElementById('results-content').style.display = 'none';
   document.getElementById('results-content').innerHTML = '';
@@ -4679,7 +4841,7 @@ function readPdForm() {
   return { input: {
     course: { doses, levels, loadKg: isNaN(loadKg) ? nowKg : loadKg, nowKg, vdPerKg, prior,
       schedule: { modality, startClock, hours, heldDates, stoppedAtH, exchanges: num('pd-exchanges'), fillL: num('pd-fill') } },
-    goal, urine, ipToo: !!(document.getElementById('pd-ip') || {}).checked, hd: !!(document.getElementById('t-hd') || {}).checked,
+    goal, urine, ipToo: !!(document.getElementById('pd-ip') || {}).checked, hd: currentRrt() === 'ihd',
     giveAtH: give.h != null ? give.h : null, settings: pdLocalSettings() } };
 }
 // Saved profiles carry the PD fields as entered (strings), and restore them.
@@ -7098,17 +7260,18 @@ function updateModelInfo() {
 //  MAIN CALCULATION
 // ══════════════════════════════════════════
 function calculate() {
-  // D16: CrCl does not describe vancomycin clearance on dialysis, so every
-  // trough-based number would be wrong in kind, not degree. Refuse, and point
-  // to the dialysis model.
-  if (typeof document !== 'undefined' && (document.getElementById('t-hd') || {}).checked) {
+  // D16, D28: CrCl does not describe vancomycin clearance on haemodialysis, CRRT or hybrid
+  // therapy, so every trough-based number would be wrong in kind, not degree. Refuse whatever
+  // the calc mode says, and point to what there is.
+  const rrt = currentRrt();
+  if (rrt === 'ihd' || rrt === 'crrt' || rrt === 'hybrid') {
     beginFormRun('trough');   // shows the result area, hides the placeholder, clears stale
-    const rc = document.getElementById('results-content');
-    if (rc) rc.innerHTML = troughHdNoticeHTML();
+    const rc = typeof document !== 'undefined' ? document.getElementById('results-content') : null;
+    if (rc) rc.innerHTML = rrtNoticeHTML(rrt, 'trough');
     return;
   }
   // D23: the PD mode needs no age, height or SCr — its answer comes from levels.
-  if (state.calcMode === 'pd') { beginFormRun('trough'); runPd(); return; }
+  if (rrt === 'pd' || state.calcMode === 'pd') { beginFormRun('trough'); runPd(); return; }
   const age = v('age'), tbw = v('tbw'), ht = v('height'), scr = v('scr');
   const troughMin = v('trough-min'), troughMax = v('trough-max'), mic = v('mic');
   const clModel = s('cl-model'), vdModel = s('vd-model');
@@ -8764,7 +8927,9 @@ function clearWithUndo(mod) {
     offerUndo([document.getElementById('undo-auc')], 'Form cleared.', () => {
       restoreFormDOM(dom);
       [bDoseCount, bLevelCount, bScrCount, bHdCount] = counts;
-      const key = b.dial && b.model === 'goti' ? 'gotihd' : (b.model || 'buelga');
+      // Renal replacement first (it is both modules'), then the tile the clinician had.
+      setRrt(RRT_KINDS.indexOf(b.rrt) >= 0 ? b.rrt : 'none');
+      const key = b.tile || (b.dial && b.model === 'goti' ? 'gotihd' : (b.model || 'buelga'));
       setBModel(document.getElementById(`b-model-btn-${key}`), key);
       bState = Object.assign({}, b, { result: null, resultFingerprint: null, tinkCompare: [] });
       setPatientSex(sex);
@@ -8775,7 +8940,7 @@ function clearWithUndo(mod) {
       focusStatusLine([document.getElementById('undo-auc')], 'Form restored.');
     });
   } else {
-    const st = { calcMode: state.calcMode, rlMode: state.rlMode, amp: Object.assign({}, ampState) };
+    const st = { calcMode: state.calcMode, rlMode: state.rlMode, amp: Object.assign({}, ampState), rrt: currentRrt() };
     resetForm();
     offerUndo([document.getElementById('undo-trough')], 'Form cleared.', () => {
       restoreFormDOM(dom);
@@ -8787,6 +8952,7 @@ function clearWithUndo(mod) {
       if (dwBtn) setDosingWt(dwBtn, dw);
       Object.keys(ampState).forEach(k => { ampState[k] = st.amp[k] || null; });
       ampToggleEnabled(document.getElementById('amp-enabled'));
+      setRrt(st.rrt);   // renal replacement first: it decides which modes are available (D28)
       setCalcMode(st.calcMode);
       if (st.calcMode !== 'pd') setRLMode(st.rlMode);
       setPatientSex(sex);
@@ -8820,6 +8986,8 @@ function resetForm() {
   document.getElementById('level-fields').classList.remove('visible');
   document.getElementById('has-ld').checked = false;
   document.getElementById('ld-fields').classList.remove('visible');
+  // Renal replacement is this patient's (review item 1; D28): None, in both modules, before the mode.
+  setRrt('none');
   setCalcMode('initial');
   setRLMode('firstdose');
   document.getElementById('interval-hint').textContent = '';
@@ -8841,10 +9009,8 @@ function resetForm() {
   document.getElementById('scr-baseline').value = '';
   document.getElementById('aki-manual').checked = false;
   document.getElementById('aki-banner').style.display = 'none';
-  // The haemodialysis flag, the CrCl weight basis and amputation are this patient's too (review
-  // item 1; R20, engine report M3): a save after a clear carried the previous patient's.
-  const tHd = document.getElementById('t-hd');
-  if (tHd) tHd.checked = false;
+  // The CrCl weight basis and amputation are this patient's too (R20, engine report M3): a save
+  // after a clear carried the previous patient's. Renal replacement (D28) was cleared above.
   const dwAuto = document.querySelector('[data-onclick="k73"]');
   if (dwAuto) setDosingWt(dwAuto, 'auto');
   else { state.dosingWt = 'auto'; const dw = document.getElementById('dosing-wt'); if (dw) dw.value = 'auto'; }
@@ -8863,7 +9029,7 @@ function resetForm() {
 // ══════════════════════════════════════════════════════════════
 
 // ─── State ───
-let bState = { sex:null, result:null, tinkCompare:[], regimenOverrideH:null };
+let bState = { sex:null, result:null, tinkCompare:[], regimenOverrideH:null, rrt:'none', dial:false, tile:'buelga' };
 let bDoseCount = 0;
 let bLevelCount = 0;
 
@@ -11421,8 +11587,12 @@ function burtonObj3D_hughes(etaCL, etaVc, etaVp, TVCL, TVVc, TVVp, TVQ, doses, l
 function setBModel(el, m) {
   const isGotiHD = m === 'gotihd';
   const effectiveModel = isGotiHD ? 'goti' : m;
+  // D28: the Goti-HD tile means the patient is on haemodialysis. Any other tile leaves renal
+  // replacement as it is; on haemodialysis AUC Precision then refuses it (runBayesian).
+  if (isGotiHD && bayesRrt() !== 'ihd') setRrt('ihd');
+  bState.tile  = m;
   bState.model = effectiveModel;
-  bState.dial  = isGotiHD;
+  bState.dial  = (bayesRrt() === 'ihd');
   // The model picker became a .model-grid of .model-opt cells in the UI pass,
   // but this deselect loop still asked for .toggle-opt — so it matched NOTHING
   // and every model clicked stayed highlighted at once. Clear the whole picker,
@@ -11442,21 +11612,6 @@ function setBModel(el, m) {
       m === 'goti'         ? 'Goti 2018 · 2-compartment' :
       m === 'hughes'       ? 'Hughes 2024 · 2-compartment · BMI ≥ 40' :
                              'Buelga 2005 · 1-compartment';
-  }
-  const dialWrap = document.getElementById('b-dial-wrap');
-  const dialCb   = document.getElementById('b-dial');
-  if (isGotiHD) {
-    if (dialWrap) dialWrap.style.display = 'flex';
-    if (dialCb) dialCb.checked = true;
-  } else if (m === 'goti') {
-    if (dialWrap) dialWrap.style.display = 'flex';
-    // Goti-HD → Goti left this ticked while bState.dial went false, so the
-    // very-low-CrCl advisory and a saved profile read dialysis that the fit
-    // did not use. The box follows the state.
-    if (dialCb) dialCb.checked = false;
-  } else {
-    if (dialWrap) dialWrap.style.display = 'none';
-    if (dialCb) dialCb.checked = false;
   }
   const gotiNote = document.getElementById('b-goti-scr-note');
   if (gotiNote && effectiveModel !== 'goti') gotiNote.style.display = 'none';
@@ -13478,7 +13633,7 @@ function markSuggestedModel() {
   if (typeof document === 'undefined' || !document.getElementById || !document.querySelectorAll) return;
   const num = (id) => parseFloat((document.getElementById(id) || {}).value);
   const tbw = num('b-tbw'), ht = num('b-height');
-  const hd = !!(typeof bState !== 'undefined' && bState && bState.dial) || !!document.querySelector('[id^="b-hd-row-"]');
+  const hd = bayesRrt() === 'ihd' || !!document.querySelector('[id^="b-hd-row-"]');
   const nLev = document.querySelectorAll('[id^="b-level-row-"]').length;
   const icu = !!(document.getElementById('b-icu') || {}).checked;
   const rec = (tbw > 0 && ht > 0) || hd ? getModelRecommendation(nLev, icu, tbw > 0 ? tbw : 70, ht > 0 ? ht : null, hd) : null;
@@ -13520,13 +13675,13 @@ function computeGuidelineDose(tbw, crcl) {
 // ─── Main Bayesian runner ───
 function runBayesian() {
   beginFormRun('auc');   // forget the last refusal and its field marks
-  // D23: no model here is evaluated in peritoneal dialysis. Refuse before anything
-  // is parsed or fitted, and point to the level-based PD mode.
-  if ((document.getElementById('b-pd') || {}).checked) {
-    const area = formArea('auc');
-    if (area.el) { if (area.ph) area.ph.style.display = 'none'; area.el.style.display = FORM_AREAS.auc.display; area.el.innerHTML = bayesPdNoticeHTML(); }
-    return;
-  }
+  // D23, D28: refuse before anything is parsed or fitted. No model here is evaluated in peritoneal
+  // dialysis (the level-based PD mode is), on CRRT or on hybrid therapy; on haemodialysis only
+  // Goti 2018 · HD carries dialysis, so any other tile would fit a patient off dialysis.
+  const rrt = bayesRrt();
+  if (rrt === 'pd') { showBayesRrtRefusal(rrtNoticeHTML('pd', 'auc')); return; }
+  if (rrt === 'ihd' && bayesTile() !== 'gotihd') { showBayesRrtRefusal(rrtNoticeHTML('ihd', 'auc')); return; }
+  if (rrt === 'crrt' || rrt === 'hybrid') { showBayesRrtRefusal(rrtNoticeHTML(rrt, 'auc')); return; }
   const { doses, levels, sessions, errors } = parseBayesCourse();
   bState.hdGiveAtH = null;   // a give-at time belongs to the answer it was set on (final review I4)
   bState.firstDoseAtH = null; // so does a first-dose time (v3.9.0)
@@ -13651,7 +13806,7 @@ function runBayesian() {
   }
 
   // ── Phase 2C: model recommendation, guideline dose, SCr trend ──
-  const modelRec = getModelRecommendation(filteredLevels.length, isICU, tbw, htCm, !!bState.dial || sessions.length > 0);
+  const modelRec = getModelRecommendation(filteredLevels.length, isICU, tbw, htCm, rrt === 'ihd' || sessions.length > 0);
   const guidDose = computeGuidelineDose(tbw, crcl);
   updateScrTrendDisplay();
 
@@ -13663,10 +13818,8 @@ function runBayesian() {
     crclUsed: crcl   // capped value the model actually used
   };
   // ── Phase 3 Step 6: very-low CrCl non-dialysis (advisory-only) ──
-  // Read b-dial regardless of model visibility (the checkbox exists in the DOM
-  // but is only shown when Goti is selected). Buelga/Hughes patients on RRT
-  // are a separate gap surfaced inside the advisory text.
-  const isOnDial    = document.getElementById('b-dial')?.checked || false;
+  // On haemodialysis (D28: the renal-replacement selector; only the Goti-HD tile reaches here on it).
+  const isOnDial    = rrt === 'ihd';
   const lowCrClInfo = {
     detected: detectVeryLowCrCl(crclUncapped) && !isOnDial,
     crclUncapped,
@@ -16358,7 +16511,7 @@ function runBayesTinkerer() {
 
 // ─── Reset ───
 function resetBayesian() {
-  bState = { sex:null, result:null, tinkCompare:[], model:'buelga', dial:false, regimenOverrideH:null };
+  bState = { sex:null, result:null, tinkCompare:[], model:'buelga', tile:'buelga', dial:false, rrt:'none', regimenOverrideH:null };
   _tinkSSRedraw = null;   // the old patient's Tinkerer preview is never repainted after a reset (Task 21)
   const _ro = document.getElementById('b-regimen-override');
   if (_ro) { _ro.value = 'auto'; }
@@ -16400,10 +16553,9 @@ function resetBayesian() {
     .forEach(b => b.classList.toggle('active', b.id === 'b-model-btn-buelga'));
   const badge = document.getElementById('b-model-badge');
   if (badge) badge.textContent = 'Buelga 2005 · 1-compartment';
-  const dialWrap = document.getElementById('b-dial-wrap');
-  if (dialWrap) { dialWrap.style.display = 'none'; }
-  const dialCb = document.getElementById('b-dial');
-  if (dialCb) dialCb.checked = false;
+  // Renal replacement is the patient's (D28): None in both modules. The PD box this replaced was
+  // never cleared here.
+  setRrt('none');
   syncHdSection();
   const gotiNote = document.getElementById('b-goti-scr-note');
   if (gotiNote) gotiNote.style.display = 'none';
@@ -16443,6 +16595,8 @@ function validProfile(p) {
   if (!s.doses.every(isObj) || !s.levels.every(isObj)) return false;
   if (['scrRows', 'hdSessions'].some(k => s[k] != null && !(Array.isArray(s[k]) && s[k].every(isObj)))) return false;
   if (['core', 'target', 'pd'].some(k => s[k] != null && !isObj(s[k]))) return false;
+  // D28: a stored renal-replacement kind must be one of the five; anything else is refused, never repaired.
+  if (s.core && s.core.rrt !== undefined && RRT_KINDS.indexOf(s.core.rrt) < 0) return false;
   return true;
 }
 
@@ -16513,7 +16667,7 @@ function bayesInputFingerprint() {
     const { doses, levels, sessions } = parseBayesCourse();
     return JSON.stringify({
       age: g('b-age'), tbw: g('b-tbw'), ht: g('b-height'), scr: g('b-scr'),
-      cysc: g('cysc'), sex: bState.sex, model: bState.model, dial: !!bState.dial,
+      cysc: g('cysc'), sex: bState.sex, model: bState.model, tile: bayesTile(), rrt: bayesRrt(),
       // target and MIC change the recommendation, so a changed target must read
       // as a stale fit — it did not (engine audit 2026-09-28)
       target: g('b-auc-target'), mic: g('b-mic'),
@@ -16595,7 +16749,8 @@ function snapshotBayesForm() {
     demographics: { age: val('b-age'), sex: bState.sex, tbw: val('b-tbw'),
                     height: val('b-height'), scr: val('b-scr'),
                     icu: document.getElementById('b-icu')?.checked || false,
-                    dial: document.getElementById('b-dial')?.checked || false },
+                    // dial means the Goti-HD tile and nothing else (R21; D28: on haemodialysis)
+                    dial: bayesRrt() === 'ihd' && bayesTile() === 'gotihd' },
     model:   bState.model || 'buelga',
     target:  { auc: val('b-auc-target'), mic: val('b-mic') },
     doses, levels, scrRows, hdSessions,
@@ -16644,10 +16799,9 @@ function snapshotPatientCore(source) {
     if (f.demographic && !b) otherFilled = false;
   }
   otherFilled = otherFilled && !conflicts.length;
-  // Haemodialysis (review item 1): the Trough flag and the AUC dialysis box. The other column's
-  // tick counts only when it holds this patient; either tick means dialysis (the refusal side, D16).
-  const hdOf = { trough: !!document.getElementById('t-hd')?.checked, bayes: !!document.getElementById('b-dial')?.checked };
-  core.hd = hdOf[from] || (otherFilled && hdOf[other]);
+  // Renal replacement (D28): one value both columns share. core.hd is kept for older readers.
+  core.rrt = currentRrt();
+  core.hd = core.rrt === 'ihd';
   core.sex       = (state.sex === 'F' || state.sex === 'M') ? state.sex : null;   // one patient attribute — see setPatientSex; unset is saved unset, never as 'M'
   core.dosingWt  = state.dosingWt || 'auto';
   core.amputation = Object.assign({}, ampState);
@@ -16902,13 +17056,13 @@ function loadProfileIntoForm(id) {
     aucTarget: s.target?.auc, mic: s.target?.mic,
     dosingWt: 'auto', amputation: {}, crcl: { on: false, value: null },
   });
-  // The PD mode's fields (D23). A PD profile ticks AUC Precision's PD box, so its
-  // course never reaches the fit, and opens the Trough module's PD mode (the reset
-  // above returned it to initial dosing).
+  // The PD mode's fields (D23), then the profile's renal replacement (D28): core.rrt, or for an
+  // older profile its flags (rrtOf). It sets both modules: a PD patient's course never reaches the
+  // fit and the Trough module opens its PD mode; a haemodialysis patient is refused anything but
+  // Goti 2018 · HD (the reset above returned both to None).
   applyPdForm(s.pd || null);
-  const bpd = document.getElementById('b-pd');
-  if (bpd) bpd.checked = !!(s.pd && s.pd.modality);
-  if (s.pd && s.pd.modality) setCalcMode('pd');
+  const rrt = rrtOf(s.core, s.demographics, s.pd);
+  setRrt(rrt);
 
   // setPatientSex styles both modules' toggles (rule 2: one implementation).
   // The core, when present, is authoritative — demographics.sex of a profile
@@ -16919,18 +17073,13 @@ function loadProfileIntoForm(id) {
   // lookup found nothing, so setBModel got undefined: the model changed and the
   // highlight stayed on the previous card. Goti with dialysis is the Goti-HD cell.
   const modelKey = ['buelga', 'goti', 'hughes'].includes(s.model) ? s.model : 'buelga';
-  // R21: a stored dial counts only with Goti (Goti-HD). With Buelga or Hughes it is ignored, so an
-  // older profile cannot load a hidden ticked box that switches off the severe-renal hold.
-  const dialOn   = modelKey === 'goti' && !!s.demographics.dial;
+  // R21: a stored dial counts only with Goti (Goti-HD), and (D28) only on haemodialysis. With Buelga
+  // or Hughes the tile stays as saved: on haemodialysis AUC Precision then refuses it, naming
+  // Goti 2018 · HD, rather than fitting a patient off dialysis (Review Focus 2).
+  const dialOn   = modelKey === 'goti' && !!s.demographics.dial && rrt === 'ihd';
   const cellKey  = dialOn ? 'gotihd' : modelKey;
   setBModel(document.getElementById('b-model-btn-' + cellKey), cellKey);
-
-  // The Trough haemodialysis flag is the profile's (review item 1): the previous patient's tick
-  // never survives, and a dialysis profile ticks it, so the Trough module refuses (D16).
-  const tHd = document.getElementById('t-hd');
-  if (tHd) tHd.checked = !!((s.core && s.core.hd) || s.demographics.dial);
   const icuCb  = document.getElementById('b-icu');  if (icuCb)  icuCb.checked  = !!s.demographics.icu;
-  const dialCb = document.getElementById('b-dial'); if (dialCb) { dialCb.checked = dialOn; bState.dial = dialOn; }
 
   (s.doses || []).forEach(d => {
     addBayesDose();

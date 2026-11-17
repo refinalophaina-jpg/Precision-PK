@@ -4560,7 +4560,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/HD rule\./.test(rb), 'Show the math states the HD rule');
   });
   test('35.20 the Trough guard shows its notice (form run begun); a schedule start time must be a real clock time', () => {
-    const calc = bodyOf35('calculate'), g = calc.indexOf("document.getElementById('t-hd')");
+    const calc = bodyOf35('calculate'), g = calc.indexOf("rrt === 'ihd'");   // D28: the selector replaced #t-hd
     assert(/beginFormRun\('trough'\)/.test(calc.slice(g, g + 400)), 'the guard begins the form run, which shows the area');
     assert(sandbox.isClock24('13:00') && sandbox.isClock24('00:00') && !sandbox.isClock24('29:99') && !sandbox.isClock24('24:00'), 'clock');
   });
@@ -4597,9 +4597,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('35.11 the Trough module refuses an HD patient before any number is computed', () => {
     const calc = bodyOf35('calculate');
-    const guard = calc.indexOf("document.getElementById('t-hd')"), first = calc.indexOf('calcCrCl(');
+    const guard = calc.indexOf("rrt === 'ihd'"), first = calc.indexOf('calcCrCl(');   // D28: the selector replaced #t-hd
     assert(guard > 0 && guard < first, 'the HD guard runs before CrCl');
-    assert(/troughHdNoticeHTML\(\)/.test(calc) && /return;/.test(calc.slice(guard, guard + 400)), 'it renders the notice and returns');
+    assert(/rrtNoticeHTML\(rrt, 'trough'\)/.test(calc) && /if \(kind === 'ihd'\) \{\s*if \(!auc\) return troughHdNoticeHTML\(\);/.test(bodyOf35('rrtNoticeHTML'))
+      && /return;/.test(calc.slice(guard, guard + 400)), 'it renders the notice and returns');
     assert(/k77:[^\n]*switchModule\('auc'\)[^\n]*gotihd/.test(script35), 'one action moves the patient to Goti-HD');
     const note = sandbox.troughHdNoticeHTML();
     assert(/use AUC Precision/.test(note) && /data-onclick="k77"/.test(note) && !/mg IV q\d+h/.test(note), note.slice(0, 160));
@@ -5358,7 +5359,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(sandbox.getModelRecommendation(0, false, 130, 160, false).recommended === 'hughes', 'class 3 obesity');
     assert(/Buelga 1-comp is often the more reliable choice/.test(sandbox.getModelRecommendation(1, false, 80, 175, false).oneLevelGotiNote), 'the non-HD note unchanged');
     // Wiring: told about dialysis from the model or logged sessions; the banner compares against Goti-HD.
-    assert(/getModelRecommendation\(filteredLevels\.length, isICU, tbw, htCm, !!bState\.dial \|\| sessions\.length > 0\)/.test(bodyOf40('runBayesian')), 'runBayesian tells it');
+    assert(/getModelRecommendation\(filteredLevels\.length, isICU, tbw, htCm, rrt === 'ihd' \|\| sessions\.length > 0\)/.test(bodyOf40('runBayesian')), 'runBayesian tells it');   // D28: rrt replaced bState.dial here
     assert(/renderModelBanner\(p2c\.modelRec, isHD \? 'gotihd' : r\.model\)/.test(bodyOf40('renderBayesianResults')), 'the banner knows Goti-HD');
   });
 }
@@ -5545,15 +5546,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const src = fs.readFileSync(htmlPath, 'utf8');
     const script = src.match(/<script>([\s\S]*?)<\/script>/)[1];
     const body = (n) => { const c = script.slice(script.indexOf('function ' + n + '(')); return c.slice(0, c.indexOf('\nfunction ')); };
-    assert(/<input type="checkbox" id="b-pd"/.test(src), 'the box in the AUC renal area');
+    // D28: the AUC column's renal-replacement selector (option "Peritoneal dialysis") replaced the #b-pd box.
+    assert(/<select id="b-rrt"[^>]*>[\s\S]*?<option value="pd">Peritoneal dialysis<\/option>/.test(src), 'the box in the AUC renal area');
     const rb = body('runBayesian');
-    assert(rb.indexOf("getElementById('b-pd')") > 0 && rb.indexOf("getElementById('b-pd')") < rb.indexOf('parseBayesCourse()'), 'checked before anything is parsed or fitted');
+    assert(rb.indexOf("rrt === 'pd'") > 0 && rb.indexOf("rrt === 'pd'") < rb.indexOf('parseBayesCourse()'), 'checked before anything is parsed or fitted');
     assert(/data-onclick="k93"/.test(body('bayesPdNoticeHTML')) && /Trough-based · Peritoneal dialysis/.test(body('bayesPdNoticeHTML')), 'the refusal links to the PD mode');
     assert(/\n  k93: [^\n]*switchModule\('trough'\)[^\n]*setCalcMode\('pd'\)/.test(script), 'k93 opens it');
     assert(!/on RRT \(HD\/CRRT\/PD\), switch model to/.test(src) && /for peritoneal dialysis use Trough-based · Peritoneal dialysis/.test(src), 'the advisory no longer sends PD to Goti');
     // v3.14.0 (D26, R22): read into pdForm, stored unless an AUC save's Trough column is another patient's.
     assert(/const pdForm = snapshotPdForm\(\);/.test(body('saveCurrentProfile')) && /snapshot\.pd = [^;]*\bpdForm;/.test(body('saveCurrentProfile')), 'saved');
-    assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /getElementById\('b-pd'\)/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');
+    assert(/applyPdForm\(s\.pd\b/.test(body('loadProfileIntoForm')) && /const rrt = rrtOf\(s\.core, s\.demographics, s\.pd\);\s*setRrt\(rrt\);/.test(body('loadProfileIntoForm')), 'loaded, and the box follows it');   // D28: the selector replaced #b-pd
     assert(/const PROFILE_SCHEMA\s+=\s+1;/.test(src), 'the profile schema is unchanged: older profiles load with no pd block');
   });
   // ── Final review (v3.12.0): each case below failed before its fix ──
@@ -5763,7 +5765,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('42.10 the PD mode shows only what it reads: no amputation, creatinine or loading-dose blocks; the HD box only if ticked', () => {
     for (const id of ['amp-section', 'section-renal', 'section-ld']) assert(new RegExp(`id="${id}"[^>]*class="[^"]*not-pd`).test(trough42), `${id} is marked not-pd`);
     assert(/\.panel-left\[data-mode="pd"\] \.not-pd\s*\{\s*display:\s*none/.test(css42), 'hidden in PD');
-    assert(/\.panel-left\[data-mode="pd"\] #section-renal:has\(#t-hd:checked\)/.test(css42), 'a ticked HD box stays visible, so the refusal it causes can be undone');
+    // D28: the HD box became the renal-replacement selector, in the Patient block, which no mode hides.
+    const patient42 = trough42.slice(trough42.indexOf('>Patient<'), trough42.indexOf('id="amp-section"'));
+    assert(/<select id="t-rrt"/.test(patient42) && !/not-pd/.test(patient42), 'a ticked HD box stays visible, so the refusal it causes can be undone');
     assert(/dataset\.mode = mode/.test(code42.slice(code42.indexOf('function setCalcMode('), code42.indexOf('function setCalcMode(') + 2500)), 'setCalcMode marks the panel');
   });
   test('42.11 every Trough time is one date and one 24-hour time with a read-back, composed into the one instant the engine reads', () => {
@@ -6311,12 +6315,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       // Choosing the sex refreshes the CrCl readout, which suggests an initial interval and
       // overwrites the one typed; the pharmacist's choice comes after it, as on the page.
       if (vals['init-interval'] != null) get('init-interval').value = String(vals['init-interval']);
+      // Renal replacement (D28) is chosen on the selector, as the page does; forceMode then forces a calc mode
+      // the selector would not allow (a forced call).
+      if (extra && extra.rrt) fn44('setRrt')(extra.rrt);
+      if (extra && extra.forceMode) vm.runInContext(`state.calcMode = ${JSON.stringify(extra.forceMode)};`, sandbox);
       fn44('calculate')();
       const h = get('results-content').innerHTML;
-      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent, hint: get('interval-hint').textContent };
+      return { h, text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), said: get('sr-announce').textContent, hint: get('interval-hint').textContent, get };
     } finally {
       sandbox.document = prevDoc; sandbox.setTimeout = prevST; sandbox.calculationNowH = prevNow;
-      vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null;`, sandbox);
+      vm.runInContext(`state.calcMode = 'initial'; state.sex = null; bState.sex = null; state.rrt = 'none'; bState.rrt = 'none'; bState.dial = false;`, sandbox);
     }
   };
   const HOLD_H3 = /<h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">([^<]*)<\/h3>/;
@@ -6382,7 +6390,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert((script44.match(/Give a single weight-based loading dose/g) || []).length === 1, 'the advisory text exists once');
     assert(/severeRenalNote\(/.test(body44('renderBayesianResults')), 'AUC Precision reads the same advisory');
     // The HD box still gives the HD notice, never a number.
-    const hd = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 }, { checked: ['t-hd'] });
+    const hd = trough44('initial', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, 'init-interval': 48, 'init-tinf': 1 }, { rrt: 'ihd' });   // D28: the selector replaced #t-hd
     assert(/On haemodialysis — use AUC Precision/.test(hd.text) && !HOLD_H3.test(hd.h), hd.text.slice(0, 200));
     // Steady-state mode with no level entered is empiric too: withheld the same way.
     const ss = trough44('level', 'F', { age: 85, tbw: 45, height: 155, scr: 4.5, dose: 500, interval: 48, tinf: 1 });
@@ -7667,8 +7675,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       const prev = { cysc: '2.4', 'scr-baseline': '0.8', dose: '1500', 'level-val': '31', age: '82' };   // the previous patient
       const env = profEnv44({ [PROF_KEY44]: JSON.stringify(profFixture44) }, prev);
       Object.keys(prev).forEach(k => env.get(k));   // on screen before the load
-      env.get('t-hd').checked = true;   // the previous patient was on haemodialysis
       withProf44(env, ['resetForm', 'resetBayesian', 'addBayesDose', 'addBayesLevel', 'addBayesSession'], (calls) => {
+        sandbox.setRrt('ihd');   // the previous patient was on haemodialysis (D28: the selector replaced #t-hd)
         assert(sandbox.loadProfiles().length === profFixture44.length, 'every fixture is listed');
         let threw = null;
         try { sandbox.loadProfileIntoForm(p.id); } catch (e) { threw = e; }
@@ -7685,8 +7693,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
           && calls.addBayesSession === (p.snapshot.hdSessions || []).length, `${p.label}: rows ${JSON.stringify(calls)}`);
         // The Trough module's haemodialysis flag is the profile's (review item 1): a previous tick never
         // survives, and a dialysis profile ticks it, so the Trough module refuses a CrCl regimen (D16).
-        assert(env.els['t-hd'].checked === !!d.dial, `${p.label}: #t-hd ${env.els['t-hd'].checked}, dial ${d.dial}`);
-        assert(env.els['b-dial'].checked === !!d.dial, `${p.label}: #b-dial ${env.els['b-dial'].checked}`);
+        // D28: #t-hd is the Trough selector reading haemodialysis; #b-dial (Goti's dialysis box) is the Goti-HD tile.
+        assert((env.els['t-rrt'].value === 'ihd') === !!d.dial, `${p.label}: #t-rrt ${env.els['t-rrt'].value}, dial ${d.dial}`);
+        assert((vm.runInContext('bState.tile', sandbox) === 'gotihd') === !!d.dial, `${p.label}: tile ${vm.runInContext('bState.tile', sandbox)}`);
         // The previous patient's Trough-only fields are gone (engine report I5).
         ['cysc', 'scr-baseline', 'dose', 'level-val'].forEach(k => assert(env.els[k].value === '', `${p.label}: ${k} kept "${env.els[k].value}"`));
         // A loaded fit is never the result on screen: the profile re-fits.
@@ -7702,11 +7711,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     withProf44(env, [], () => {
       vm.runInContext("state.dosingWt = 'IBW'; ampState.RL = 'knee';", sandbox);
       env.get('amp-enabled').checked = true; env.get('dosing-wt').value = 'IBW';
-      env.get('t-hd').checked = true;   // the previous patient was on haemodialysis (review item 1)
+      sandbox.setRrt('ihd');   // the previous patient was on haemodialysis (review item 1; D28: the selector replaced #t-hd)
       sandbox.resetForm();
       assert(vm.runInContext('state.dosingWt', sandbox) === 'auto' && env.els['dosing-wt'].value === 'auto', `basis ${vm.runInContext('state.dosingWt', sandbox)}`);
       assert(vm.runInContext('Object.values(ampState).every(v => v === null)', sandbox) && env.els['amp-enabled'].checked === false, 'amputation kept');
-      assert(env.els['t-hd'] && env.els['t-hd'].checked === false, 'the haemodialysis flag kept');
+      assert(env.els['t-rrt'] && env.els['t-rrt'].value === 'none' && vm.runInContext('state.rrt', sandbox) === 'none', 'the haemodialysis flag kept');
       // A new patient typed into AUC Precision and saved.
       [['b-age', '50'], ['b-tbw', '72'], ['b-height', '170'], ['b-scr', '1.0']].forEach(([k, v]) => { env.get(k).value = v; });
       sandbox.setPatientSex('M');
@@ -7723,35 +7732,38 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const env = profEnv44({}, T);
     Object.keys(T).concat(['b-age', 'b-tbw', 'b-height', 'b-scr']).forEach(k => env.get(k));
     env.get('app-shell-bayesian').style.display = 'none';
-    env.get('t-hd').checked = true;
     withProf44(env, ['addBayesSession'], (calls) => {
-      vm.runInContext("bState.model = 'buelga'; bState.dial = false;", sandbox);
+      // D28: haemodialysis on the selector (it replaced #t-hd); the AUC column left on Buelga, as a click leaves it.
+      sandbox.setRrt('ihd');
+      sandbox.setBModel(env.get('b-model-btn-buelga'), 'buelga');
       sandbox.setPatientSex('M');
       env.labels[0].value = 'Patient HD';
       sandbox.saveCurrentProfile();
       const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
       assert(p && p.snapshot.model === 'buelga' && p.snapshot.core.hd === true && p.snapshot.demographics.dial === false,
         'stored: ' + JSON.stringify(p && { model: p.snapshot.model, hd: p.snapshot.core.hd, dial: p.snapshot.demographics.dial }));
-      env.get('t-hd').checked = false; env.get('b-dial').checked = true;   // a different screen before the load
+      sandbox.setRrt('crrt'); sandbox.setBModel(env.get('b-model-btn-hughes'), 'hughes');   // a different screen before the load
       sandbox.loadProfileIntoForm(p.id);
-      assert(env.els['t-hd'].checked === true, 'the Trough flag is not ticked');
-      assert(env.els['b-dial'].checked === false && vm.runInContext('bState.dial', sandbox) === false && vm.runInContext('bState.model', sandbox) === 'buelga',
-        `AUC: dial ${env.els['b-dial'].checked} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
+      assert(env.els['t-rrt'].value === 'ihd', 'the Trough flag is not ticked');
+      // D28 (Review Focus 2) supersedes "AUC Precision not on dialysis": the patient is on haemodialysis in both
+      // modules (bState.dial is derived from it), the Buelga tile stays, and AUC Precision refuses it (46.6).
+      assert(vm.runInContext('bState.tile', sandbox) === 'buelga' && vm.runInContext('bState.dial', sandbox) === true && vm.runInContext('bState.model', sandbox) === 'buelga',
+        `AUC: tile ${vm.runInContext('bState.tile', sandbox)} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
       // Defence in depth: a stored dial true with Buelga (or Hughes) loads with dial false; the Trough flag still ticks.
       for (const model of ['buelga', 'hughes']) {
         const crafted = JSON.parse(JSON.stringify(profFixture44[1]));
         crafted.id = 'p_crafted' + model; crafted.snapshot.model = model; crafted.snapshot.demographics.dial = true;
         env.localStorage.setItem(PROF_KEY44, JSON.stringify([crafted]));
         sandbox.loadProfileIntoForm(crafted.id);
-        assert(env.els['b-dial'].checked === false && vm.runInContext('bState.dial', sandbox) === false && vm.runInContext('bState.model', sandbox) === model,
-          `${model}: dial ${env.els['b-dial'].checked} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
-        assert(env.els['t-hd'].checked === true, `${model}: the Trough flag`);
+        assert(vm.runInContext('bState.tile', sandbox) === model && vm.runInContext('bState.model', sandbox) === model,
+          `${model}: tile ${vm.runInContext('bState.tile', sandbox)} / ${vm.runInContext('bState.dial', sandbox)}, model ${vm.runInContext('bState.model', sandbox)}`);
+        assert(env.els['t-rrt'].value === 'ihd', `${model}: the Trough flag`);
       }
       // The Goti-HD fixture is unchanged: Goti, dialysis on, the Trough flag ticked.
       env.localStorage.setItem(PROF_KEY44, JSON.stringify(profFixture44));
       sandbox.loadProfileIntoForm(profFixture44[2].id);
       assert(vm.runInContext('bState.model', sandbox) === 'goti' && vm.runInContext('bState.dial', sandbox) === true
-        && env.els['b-dial'].checked === true && env.els['t-hd'].checked === true, 'the Goti-HD fixture changed');
+        && vm.runInContext('bState.tile', sandbox) === 'gotihd' && env.els['t-rrt'].value === 'ihd', 'the Goti-HD fixture changed');
     });
   });
 
@@ -9530,10 +9542,255 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 46 — Release 3 (v3.16.0, D28): dialysis
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 46 — Release 3 (v3.16.0, D28): dialysis');
+  console.log(`${'─'.repeat(60)}`);
+  const { profEnv44, withProf44, profFixture44, PROF_KEY44, trough44 } = __suiteShared;
+  const fn46 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const src46 = fs.readFileSync(htmlPath, 'utf8');
+  const KINDS46 = ['none', 'ihd', 'hybrid', 'crrt', 'pd'];
+  const TILES46 = ['buelga', 'goti', 'hughes', 'gotihd'];
+  const rrt46 = () => ({ t: vm.runInContext('state.rrt', sandbox), b: vm.runInContext('bState.rrt', sandbox), dial: vm.runInContext('bState.dial', sandbox),
+    tile: vm.runInContext('bState.tile', sandbox), model: vm.runInContext('bState.model', sandbox), mode: vm.runInContext('state.calcMode', sandbox) });
+  // Every SUITE 46 test leaves the shared sandbox off dialysis, on Buelga, in initial dosing.
+  const reset46 = () => vm.runInContext("state.rrt = 'none'; bState.rrt = 'none'; bState.dial = false; bState.model = 'buelga'; bState.tile = 'buelga'; state.calcMode = 'initial'; bState.result = null;", sandbox);
+  // The profile DOM (SUITE 44); a tile click is setBModel on its cell, as k33-k36 call it.
+  const env46 = (vals) => {
+    const env = profEnv44({}, vals || {});
+    Object.keys(vals || {}).forEach(k => env.get(k));
+    return env;
+  };
+  const tile46 = (env, t) => fn46('setBModel')(env.get('b-model-btn-' + t), t);
+
+  test('46.1 RRT_KINDS is parsed out of index.html by harness_constants.cjs: the five kinds, in order', () => {
+    const k = __extractConsts().RRT_KINDS;
+    assert(Array.isArray(k) && JSON.stringify(k) === JSON.stringify(KINDS46), JSON.stringify(k));
+  });
+
+  test('46.2 rrtOf maps a saved profile to one kind: PD modality, a haemodialysis flag in the core or the demographics, else none; a stored kind wins', () => {
+    const f = fn46('rrtOf'), of = (s) => f(s.core, s.demographics, s.pd);
+    assert(of({ pd: { modality: 'apd' } }) === 'pd', 'pd');
+    assert(of({ core: { hd: true } }) === 'ihd', 'core.hd');
+    assert(of({ demographics: { dial: true } }) === 'ihd', 'demographics.dial');
+    assert(of({}) === 'none', 'nothing');
+    assert(of({ core: { rrt: 'crrt', hd: true }, demographics: { dial: true } }) === 'crrt', 'core.rrt wins over core.hd');
+    assert(of({ core: { hd: false }, demographics: { dial: false }, pd: { modality: '' } }) === 'none', 'flags off');
+  });
+
+  test('46.3 CRRT and hybrid: AUC Precision refuses under each of the four tiles before anything is parsed or fitted, and writes no regimen', () => {
+    for (const kind of ['crrt', 'hybrid']) {
+      for (const t of TILES46) {
+        const env = env46({ 'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0' });
+        withProf44(env, ['parseBayesCourse'], (calls) => {
+          try {
+            tile46(env, t);
+            fn46('setRrt')(kind);
+            if (t !== 'gotihd') tile46(env, t);   // the tile the clinician left selected (Goti-HD itself moves the patient to haemodialysis)
+            vm.runInContext('bState.result = { rec: { dose: 1000, tau: 12 } };', sandbox);   // a previous answer in state
+            calls.parseBayesCourse = 0;
+            fn46('runBayesian')();
+            const html = env.els['b-results'] ? env.els['b-results'].innerHTML : '';
+            const word = kind === 'crrt' ? 'On CRRT — no model here describes it' : 'On hybrid therapy (SLED / PIRRT) — no model or target here describes it';
+            assert(calls.parseBayesCourse === 0, `${kind}/${t}: parseBayesCourse called ${calls.parseBayesCourse}`);
+            assert(html.indexOf(word) >= 0, `${kind}/${t}: ${html.slice(0, 300)}`);
+            assert(/<div data-rrt-reference><\/div>/.test(html), `${kind}/${t}: the reference slot`);
+            assert(kind !== 'crrt' || /data-onclick="k103"[^>]*>Open Trough-based · CRRT</.test(html), `${kind}/${t}: the CRRT button`);
+            assert(vm.runInContext('bState.result', sandbox) === null && !/rec-dose|vx-regimen/.test(html), `${kind}/${t}: a regimen was left or written`);
+          } finally { reset46(); }
+        });
+      }
+    }
+  });
+
+  test('46.4 intermittent haemodialysis: Buelga, Goti or Hughes refuses before parsing, naming Goti 2018 · HD with a button to it; the Goti-HD tile runs as today', () => {
+    for (const t of TILES46) {
+      const env = env46({});
+      withProf44(env, ['parseBayesCourse'], (calls) => {
+        try {
+          fn46('setRrt')('ihd');
+          tile46(env, t);
+          const s = rrt46();
+          assert(s.t === 'ihd' && s.b === 'ihd' && s.tile === t, `${t}: ${JSON.stringify(s)}`);
+          calls.parseBayesCourse = 0;
+          fn46('runBayesian')();
+          const html = env.els['b-results'] ? env.els['b-results'].innerHTML : '';
+          if (t === 'gotihd') {
+            assert(calls.parseBayesCourse === 1 && !/only Goti 2018 · HD carries dialysis/.test(html), `Goti-HD: parse ${calls.parseBayesCourse}, ${html.slice(0, 200)}`);
+            assert(s.model === 'goti' && s.dial === true, `Goti-HD runs as Goti with dialysis: ${JSON.stringify(s)}`);
+          } else {
+            assert(calls.parseBayesCourse === 0, `${t}: parseBayesCourse called`);
+            assert(/On haemodialysis — only Goti 2018 · HD carries dialysis/.test(html) && /data-onclick="k77"/.test(html), `${t}: ${html.slice(0, 300)}`);
+            assert(vm.runInContext('bState.result', sandbox) === null, `${t}: a result`);
+          }
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  test('46.5 Trough-Based: CRRT, hybrid and haemodialysis refuse even with initial dosing forced; the creatinine modes are unavailable and say why', () => {
+    const pt = { age: 60, tbw: 80, height: 178, scr: 1.0, 'init-interval': 12, 'init-tinf': 1 };
+    const words = { crrt: 'On CRRT', hybrid: 'On hybrid therapy (SLED / PIRRT)', ihd: 'On haemodialysis — use AUC Precision' };
+    for (const kind of ['crrt', 'hybrid', 'ihd']) {
+      const r = trough44('initial', 'M', pt, { rrt: kind, forceMode: 'initial' });
+      assert(r.text.indexOf(words[kind]) >= 0 && !/class="rec-dose"/.test(r.h) && !/IV q\d+h/.test(r.text), `${kind}: ${r.text.slice(0, 300)}`);
+      for (const m of ['initial', 'level', 'twolevels', 'randomlevel']) {
+        const b = r.get('mode-btn-' + m);
+        assert(b.getAttribute('aria-disabled') === 'true' && b.getAttribute('aria-describedby') === 'rrt-mode-note', `${kind}: ${m} ${JSON.stringify(b.attrs)}`);
+      }
+      assert(/^Not used on .+\. Set Renal replacement to None to use it\.$/.test(r.get('rrt-mode-note').textContent), `${kind}: ${r.get('rrt-mode-note').textContent}`);
+    }
+    // Off dialysis the same patient gets a regimen and every mode is available.
+    const none = trough44('initial', 'M', pt);
+    assert(/class="rec-dose"/.test(none.h) && none.get('mode-btn-initial').getAttribute('aria-disabled') !== 'true', none.text.slice(0, 200));
+  });
+
+  test('46.6 Review Focus 2: a v3.15.0 profile with core.hd under Buelga loads as haemodialysis on the Buelga tile, and AUC Precision refuses', () => {
+    const p = JSON.parse(JSON.stringify(profFixture44[0]));
+    p.id = 'p_rf2buelga'; p.label = 'Buelga HD'; p.snapshot.model = 'buelga';
+    p.snapshot.core.hd = true; p.snapshot.demographics.dial = false; delete p.snapshot.core.rrt;
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify([p]) }, {});
+    withProf44(env, ['parseBayesCourse'], (calls) => {
+      try {
+        fn46('loadProfileIntoForm')(p.id);
+        const s = rrt46();
+        assert(s.t === 'ihd' && s.b === 'ihd' && s.tile === 'buelga' && s.model === 'buelga' && s.dial === true, JSON.stringify(s));
+        assert(env.els['t-rrt'].value === 'ihd' && env.els['b-rrt'].value === 'ihd', `selects ${env.els['t-rrt'].value} / ${env.els['b-rrt'].value}`);
+        const parsedAtLoad = calls.parseBayesCourse;
+        fn46('runBayesian')();
+        const html = env.els['b-results'].innerHTML;
+        assert(calls.parseBayesCourse === parsedAtLoad && /only Goti 2018 · HD carries dialysis/.test(html) && vm.runInContext('bState.result', sandbox) === null, html.slice(0, 300));
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.7 validProfile refuses a stored renal-replacement kind it does not know (never repaired), and accepts the five and none at all', () => {
+    const base = JSON.parse(JSON.stringify(profFixture44[0]));
+    assert(fn46('validProfile')(base) === true, 'no core.rrt: valid');
+    for (const k of KINDS46) { const c = JSON.parse(JSON.stringify(base)); c.snapshot.core.rrt = k; assert(fn46('validProfile')(c) === true, k); }
+    for (const bad of ['sled', 'IHD', '', 3, null]) {
+      const c = JSON.parse(JSON.stringify(base)); c.snapshot.core.rrt = bad;
+      assert(fn46('validProfile')(c) === false, `core.rrt ${JSON.stringify(bad)} accepted`);
+    }
+    const sled = JSON.parse(JSON.stringify(base)); sled.id = 'p_sled1'; sled.snapshot.core.rrt = 'sled';
+    const env = profEnv44({ [PROF_KEY44]: JSON.stringify([sled]) }, {});
+    withProf44(env, [], () => {
+      assert(fn46('loadProfiles')().length === 0, 'listed');
+      const stored = JSON.parse(env.localStorage.getItem(PROF_KEY44));
+      assert(stored[0].snapshot.core.rrt === 'sled', 'repaired in storage');
+    });
+  });
+
+  test('46.8 save then load round-trips each of the five kinds (core.rrt, and core.hd for older readers)', () => {
+    for (const k of KINDS46) {
+      const vals = { age: '60', tbw: '80', height: '178', scr: '1.0', 'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0', mic: '1', 'b-mic': '1', 'b-auc-target': '450' };
+      const env = env46(vals);
+      withProf44(env, [], () => {
+        try {
+          fn46('setPatientSex')('M');
+          fn46('setRrt')(k);
+          env.labels[1].value = 'Round trip ' + k;
+          fn46('saveCurrentProfile')();
+          const p = JSON.parse(env.localStorage.getItem(PROF_KEY44) || '[]')[0];
+          assert(p && p.snapshot.core.rrt === k && p.snapshot.core.hd === (k === 'ihd'), `${k}: stored ${JSON.stringify(p && p.snapshot.core)}`);
+          fn46('setRrt')(k === 'none' ? 'crrt' : 'none');
+          fn46('loadProfileIntoForm')(p.id);
+          const s = rrt46();
+          assert(s.t === k && s.b === k && env.els['t-rrt'].value === k && env.els['b-rrt'].value === k, `${k}: loaded ${JSON.stringify(s)}`);
+          assert(s.mode === (k === 'none' ? 'initial' : k), `${k}: Trough mode ${s.mode}`);
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  test('46.9 bState.dial is derived: it equals (rrt is haemodialysis) after every setRrt and every tile click; the tile follows the selector', () => {
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        const check = (what) => {
+          const s = rrt46();
+          assert(s.dial === (s.b === 'ihd') && s.t === s.b, `${what}: ${JSON.stringify(s)}`);
+          assert(env.els['t-rrt'].value === s.t && env.els['b-rrt'].value === s.t, `${what}: selects ${env.els['t-rrt'].value} / ${env.els['b-rrt'].value}`);
+        };
+        for (const from of KINDS46) for (const to of KINDS46) {
+          fn46('setRrt')(from); check(`setRrt ${from}`);
+          for (const t of TILES46) { tile46(env, t); check(`${from}, tile ${t}`); fn46('setRrt')(from); check(`${from} again after tile ${t}`); }
+          fn46('setRrt')(to); check(`${from} -> ${to}`);
+        }
+        fn46('setRrt')('none'); tile46(env, 'gotihd');
+        assert(rrt46().b === 'ihd' && rrt46().tile === 'gotihd', 'the Goti-HD tile sets haemodialysis');
+        fn46('setRrt')('none');
+        assert(rrt46().tile === 'goti' && rrt46().model === 'goti' && rrt46().dial === false, `haemodialysis to none moves Goti-HD to Goti: ${JSON.stringify(rrt46())}`);
+        tile46(env, 'buelga'); fn46('setRrt')('ihd');
+        assert(rrt46().tile === 'gotihd', 'choosing haemodialysis selects Goti 2018 · HD');
+        assert(fn46('setRrt')('sled') === false && rrt46().b === 'ihd', 'an unknown kind changes nothing');
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.10 the three dialysis checkboxes are gone: no #t-hd, #b-dial or #b-pd, in the markup or the script; one labelled selector in each column', () => {
+    for (const id of ['t-hd', 'b-dial', 'b-pd', 'b-dial-wrap']) {
+      assert(src46.indexOf(`id="${id}"`) < 0, `id="${id}" is still in index.html`);
+      assert(src46.indexOf(`getElementById('${id}')`) < 0 && src46.indexOf(`#${id}:`) < 0, `${id} is still read`);
+    }
+    assert(/<select id="t-rrt"[^>]*data-onchange="k102"/.test(src46) && /<select id="b-rrt"[^>]*data-onchange="k102"/.test(src46), 'one selector in each column');
+    for (const id of ['t-rrt', 'b-rrt']) {
+      const at = src46.indexOf(`<select id="${id}"`);
+      const sel = src46.slice(at, src46.indexOf('</select>', at));
+      const opts = [...sel.matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)].map(m => `${m[1]}=${m[2]}`);
+      assert(JSON.stringify(opts) === JSON.stringify(['none=None', 'ihd=Intermittent haemodialysis', 'hybrid=Hybrid (SLED / PIRRT)', 'crrt=CRRT', 'pd=Peritoneal dialysis']), `${id}: ${JSON.stringify(opts)}`);
+      assert(new RegExp(`<label class="field-label" for="${id}">Renal replacement</label>`).test(src46), `${id}: labelled`);
+    }
+    // In each column's patient section, after sex and before creatinine.
+    const tPanel = src46.slice(src46.indexOf('id="sex-label"'), src46.indexOf('id="scr"'));
+    const bPanel = src46.slice(src46.indexOf('id="b-sex-label"'), src46.indexOf('id="b-scr"'));
+    assert(tPanel.indexOf('id="t-rrt"') > 0 && bPanel.indexOf('id="b-rrt"') > 0, 'placement');
+  });
+
+  test('46.11 Clear in either column (resetForm, resetBayesian) leaves renal replacement None in both states', () => {
+    for (const [fnName, kind] of [['resetBayesian', 'pd'], ['resetForm', 'crrt'], ['resetBayesian', 'ihd'], ['resetForm', 'pd']]) {
+      const env = env46({});
+      withProf44(env, [], () => {
+        try {
+          fn46('setRrt')(kind);
+          fn46(fnName)();
+          const s = rrt46();
+          assert(s.t === 'none' && s.b === 'none' && s.dial === false && env.els['t-rrt'].value === 'none' && env.els['b-rrt'].value === 'none', `${fnName} after ${kind}: ${JSON.stringify(s)}`);
+        } finally { reset46(); }
+      });
+    }
+  });
+
+  test('46.12 changing renal replacement after a run: the AUC result is marked stale, the Trough result is cleared', () => {
+    const env = env46({ 'b-age': '60', 'b-tbw': '80', 'b-height': '178', 'b-scr': '1.0' });
+    withProf44(env, [], () => {
+      try {
+        // An AUC result on screen, fitted off dialysis.
+        const res = env.get('b-results'); res.style.display = 'block'; res.innerHTML = '<h3 id="vx-regimen">1 g IV q12h</h3>';
+        const fp = fn46('bayesInputFingerprint')();
+        assert(typeof fp === 'string' && fp.length > 0, 'fingerprint');
+        vm.runInContext(`bState.result = { rec: { dose: 1000, tau: 12 } }; bState.resultFingerprint = ${JSON.stringify(fp)};`, sandbox);
+        assert(fn46('refreshStaleResult')('auc') === false, 'fresh before the change');
+        // A Trough result on screen.
+        const tr = env.get('results-content'); tr.style.display = 'flex'; tr.innerHTML = '<h3 id="tx-regimen">1 g IV q12h</h3>';
+        fn46('setRrt')('crrt');
+        assert(vm.runInContext('formRuns.auc.stale', sandbox) === true && res.classList.contains('is-stale') && /Inputs changed since this result/.test(res.innerHTML), `AUC: ${res.innerHTML.slice(0, 200)}`);
+        assert(tr.innerHTML === '' && tr.style.display === 'none', `Trough: ${tr.innerHTML.slice(0, 200)}`);
+        // Back to none: the fingerprint matches again.
+        fn46('setRrt')('none');
+        assert(vm.runInContext('formRuns.auc.stale', sandbox) === false, 'restoring the inputs clears the stale mark');
+      } finally { reset46(); }
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 621;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw)
+const EXPECTED_TOTAL = 633;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.12)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

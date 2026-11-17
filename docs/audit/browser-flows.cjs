@@ -643,7 +643,7 @@ async function enterCourse(page) {
   ok('Goti-HD with no level shows the empiric table, says doses were given, and fits 375 px',
      emp.visible && emp.given && emp.sw <= emp.iw, JSON.stringify(emp));
   await m.locator('[data-onclick="k1"]').tap();
-  await m.evaluate(() => { const c = document.getElementById('t-hd'); if (c && !c.checked) c.click(); });
+  await m.locator('#t-rrt').selectOption('ihd');   // D28: the renal-replacement selector replaced the #t-hd box
   await m.locator('[data-onclick="k31"]').tap(); await m.waitForTimeout(300);
   const guard = await m.evaluate(() => { const rc = document.getElementById('results-content'); const n = rc && rc.querySelector('.note');
     const b = rc && rc.querySelector('[data-onclick="k77"]');
@@ -958,7 +958,7 @@ async function enterCourse(page) {
     await typeInto(s, '#dose', '1500');
     await s.evaluate(() => { const x = document.getElementById('has-level'); if (x && !x.checked) x.click(); });
     await typeInto(s, '#level-val', '31');
-    await s.locator('#t-hd').check();   // patient D is on haemodialysis; patient C is not
+    await s.locator('#t-rrt').selectOption('ihd');   // patient D is on haemodialysis; patient C is not (D28: the selector replaced #t-hd)
     const advisories = () => s.evaluate(() => {
       const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== 'none' && e.textContent.trim() !== ''; };
       return { cys: shown('cysc-result'), aki: shown('aki-banner') };
@@ -969,7 +969,7 @@ async function enterCourse(page) {
     const p2 = Object.assign(await s.evaluate(() => {
       const v = (id) => document.getElementById(id).value;
       return { cysc: v('cysc'), base: v('scr-baseline'), dose: v('dose'), level: v('level-val'), age: v('age'), bAge: v('b-age'), scr: v('scr'),
-        hasLevel: document.getElementById('has-level').checked, hd: document.getElementById('t-hd').checked };
+        hasLevel: document.getElementById('has-level').checked, hd: document.getElementById('t-rrt').value === 'ihd' };
     }), await advisories());
     ok('D26: a profile load clears the Trough column',
        p2Before.cys && p2Before.aki
@@ -1030,7 +1030,8 @@ async function enterCourse(page) {
     };
     const fx1 = await loadFix('Fixture 64F v3.13.0'), fx2 = await loadFix('Fixture 71M legacy');
     const fx3 = await loadFix('Fixture 58M Goti-HD');
-    const fx3hd = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked }));
+    // D28: the Trough flag is the selector reading haemodialysis; Goti's dialysis box is the Goti-HD tile.
+    const fx3hd = await s.evaluate(() => ({ tHd: document.getElementById('t-rrt').value === 'ihd', bDial: bState.tile === 'gotihd' }));
     await s.locator('[data-onclick="k1"]').click();
     await s.locator('[data-onclick="k31"]:visible').first().click(); await s.waitForTimeout(300);
     const fx3trough = await s.evaluate(() => ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' '));
@@ -1073,17 +1074,24 @@ async function enterCourse(page) {
     await s.locator('[data-onclick="k32"]:visible').first().click();
     await typeInto(s, '#age', '58'); await typeInto(s, '#tbw', '77'); await typeInto(s, '#height', '174'); await typeInto(s, '#scr', '6.8');
     await s.locator('[data-onclick="k9"]').click();
-    await s.locator('#t-hd').check();
+    // D28: haemodialysis on the selector (it replaced #t-hd), which also selects Goti-HD in AUC Precision; the AUC
+    // column is put back on its default Buelga by a click, as the R21 case has it.
+    await s.locator('#t-rrt').selectOption('ihd');
+    await s.locator('[data-onclick="k2"]').click(); await s.locator('#b-model-btn-buelga').click(); await s.locator('[data-onclick="k1"]').click();
     await save('Patient F HD');
     const pf = (await stored())[0];
-    await s.locator('#t-hd').uncheck();
+    await s.locator('#t-rrt').selectOption('none');
     await s.locator('.app-shell:not(#app-shell-bayesian) .profile-item', { hasText: 'Patient F HD' }).locator('.profile-item-btn.load').click();
     await s.waitForTimeout(300);
-    const r21 = await s.evaluate(() => ({ tHd: document.getElementById('t-hd').checked, bDial: document.getElementById('b-dial').checked,
-      dial: bState.dial, model: bState.model, wrap: getComputedStyle(document.getElementById('b-dial-wrap')).display }));
+    await s.locator('[data-onclick="k2"]').click(); await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(300);
+    const r21 = await s.evaluate(() => ({ tHd: document.getElementById('t-rrt').value === 'ihd', bDial: bState.tile === 'gotihd',
+      dial: bState.dial, model: bState.model, refusal: ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' ').slice(0, 200) }));
+    await s.locator('[data-onclick="k1"]').click();
+    // D28 (Review Focus 2) supersedes "AUC Precision not on dialysis": both modules read haemodialysis (bState.dial is
+    // derived from it), the Buelga tile stays, and AUC Precision refuses rather than fitting a patient off dialysis.
     ok('D26: a Trough-only haemodialysis profile loads with the Trough flag ticked and AUC Precision not on dialysis (R21)',
        !!pf && pf.snapshot.core.hd === true && pf.snapshot.demographics.dial === false && pf.snapshot.model === 'buelga'
-       && r21.tHd && !r21.bDial && r21.dial === false && r21.model === 'buelga' && r21.wrap === 'none',
+       && r21.tHd && !r21.bDial && r21.dial === true && r21.model === 'buelga' && /only Goti 2018 · HD carries dialysis/.test(r21.refusal),
        JSON.stringify({ stored: pf && { hd: pf.snapshot.core.hd, dial: pf.snapshot.demographics.dial, model: pf.snapshot.model }, r21 }));
 
     // R22: patient A's PD form; Trough "Clear all fields" empties all of it.
@@ -1803,7 +1811,7 @@ async function enterCourse(page) {
     ok('PD at 375 px: no horizontal overflow', pw.sw <= pw.iw, JSON.stringify(pw));
     await pd.setViewportSize({ width: 1280, height: 900 });
     await pd.locator('.module-tab', { hasText: 'AUC' }).first().click();
-    await pd.locator('#b-pd').check();
+    await pd.locator('#b-rrt').selectOption('pd');   // D28: the selector replaced the #b-pd box
     await pd.locator('[data-onclick="k47"]').click(); await pd.waitForTimeout(300);
     const refusal = await pd.evaluate(() => ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' '));
     await pd.locator('#b-results [data-onclick="k93"]').click(); await pd.waitForTimeout(200);
@@ -2272,6 +2280,7 @@ async function enterCourse(page) {
       if (mode === 'level') await m.evaluate(() => { const h = document.getElementById('has-level'); if (h && !h.checked) h.click(); });
       offenders.push(...await small('Trough ' + mode));
     }
+    await m.locator('#t-rrt').selectOption('none');   // D28: the creatinine modes are unavailable while the PD mode's renal replacement is set
     await m.locator('#mode-btn-initial').tap();
     await typeInto(m, '#age', '60'); await typeInto(m, '#tbw', '80'); await typeInto(m, '#height', '175'); await typeInto(m, '#scr', '1.0');
     await m.locator('[data-onclick="k9"]').first().tap();
@@ -2832,6 +2841,111 @@ async function enterCourse(page) {
     await fctx.close();
   }
   // ── end Task 21b
+  // ── Release 3 (v3.16.0, D28), Task 23: one renal-replacement selector, by real input under the CSP.
+  {
+    const rctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+    const r = await rctx.newPage();
+    const rProblems = watch(r, 'd28-rrt');
+    await r.goto(BASE + '?v=pwd28-' + Date.now(), { waitUntil: 'networkidle' });
+    const KINDS = ['ihd', 'hybrid', 'crrt', 'pd', 'none'];
+    const both = () => r.evaluate(() => ({ t: document.getElementById('t-rrt').value, b: document.getElementById('b-rrt').value,
+      st: state.rrt, bs: bState.rrt, dial: bState.dial, mode: state.calcMode, tile: bState.tile }));
+    // Each kind chosen in the Trough column: the AUC column follows, and the reverse.
+    const fromTrough = [], fromAuc = [];
+    await r.locator('[data-onclick="k1"]').click();
+    for (const k of KINDS) { await r.locator('#t-rrt').selectOption(k); fromTrough.push(Object.assign({ k }, await both())); }
+    await r.locator('[data-onclick="k2"]').click();
+    for (const k of KINDS) { await r.locator('#b-rrt').selectOption(k); fromAuc.push(Object.assign({ k }, await both())); }
+    const agree = (x) => x.t === x.k && x.b === x.k && x.st === x.k && x.bs === x.k && x.dial === (x.k === 'ihd') && x.mode === (x.k === 'none' ? 'initial' : x.k);
+    ok('D28: each renal-replacement kind chosen in the Trough column is the AUC column\'s, and the reverse; haemodialysis selects Goti 2018 · HD',
+       fromTrough.every(agree) && fromAuc.every(agree) && fromTrough[0].tile === 'gotihd' && fromTrough[4].tile === 'goti',
+       JSON.stringify({ fromTrough, fromAuc }).slice(0, 300));
+
+    // CRRT and hybrid, by real click, under every tile: refused before any fit, the reference slot, no regimen.
+    await typeInto(r, '#b-age', '60'); await typeInto(r, '#b-tbw', '80'); await typeInto(r, '#b-height', '178'); await typeInto(r, '#b-scr', '1.0');
+    await r.locator('[data-onclick="k39"]').click();
+    await r.locator('[data-onclick="k43"]').click();
+    await typeInto(r, '#b-dose-mg-1', '1000'); await typeInto(r, '#b-dose-tinf-1', '1');
+    await r.locator('#b-dose-date-1').fill(D2); await typeInto(r, '#b-dose-time-1', '08:00');
+    const refusals = [];
+    for (const kind of ['crrt', 'hybrid']) {
+      for (const tile of ['buelga', 'goti', 'hughes', 'gotihd']) {
+        await r.locator('#b-rrt').selectOption('none');
+        await r.locator(`#b-model-btn-${tile}`).click();
+        await r.locator('#b-rrt').selectOption(kind);
+        await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+        refusals.push(await r.evaluate(([kind, tile]) => { const el = document.getElementById('b-results');
+          return { kind, tile, at: bState.tile, text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120), shown: !!el.offsetParent,
+            slot: !!el.querySelector('[data-rrt-reference]'), regimen: !!el.querySelector('.rec-dose, #vx-regimen'), result: !!bState.result,
+            crrtBtn: !!el.querySelector('[data-onclick="k103"]') }; }, [kind, tile]));
+      }
+    }
+    ok('D28: CRRT and hybrid are refused by real click under every tile, with the reference slot and no regimen',
+       refusals.length === 8 && refusals.every(x => x.shown && x.slot && !x.regimen && !x.result
+         && (x.kind === 'crrt' ? /^On CRRT — no model here describes it/.test(x.text) && x.crrtBtn : /^On hybrid therapy \(SLED \/ PIRRT\) — no model or target here describes it/.test(x.text))),
+       JSON.stringify(refusals).slice(0, 300));
+    // The CRRT refusal's button opens Trough-based · CRRT.
+    await r.locator('#b-rrt').selectOption('crrt');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    await r.locator('#b-results [data-onclick="k103"]').click(); await r.waitForTimeout(200);
+    const crrtOpen = await r.evaluate(() => ({ trough: getComputedStyle(document.getElementById('app-shell-bayesian')).display === 'none', mode: state.calcMode, rrt: state.rrt }));
+    ok('D28: the CRRT refusal opens Trough-based · CRRT', crrtOpen.trough && crrtOpen.mode === 'crrt' && crrtOpen.rrt === 'crrt', JSON.stringify(crrtOpen));
+
+    // The creatinine-based modes are shown unavailable and say why; a click changes nothing.
+    const modes = await r.evaluate(() => ['initial', 'level', 'twolevels', 'randomlevel'].map(m => { const b = document.getElementById('mode-btn-' + m);
+      const d = document.getElementById(b.getAttribute('aria-describedby') || '-');
+      return { m, dis: b.getAttribute('aria-disabled'), desc: d ? d.textContent : '', shown: !!(d && d.offsetParent) }; }));
+    // Playwright itself reads aria-disabled as not enabled (it will not click it unforced): a forced click is a pointer press.
+    const enabled = await r.locator('#mode-btn-level').isEnabled();
+    await r.locator('#mode-btn-level').click({ force: true }); await r.waitForTimeout(100);
+    const stillCrrt = await r.evaluate(() => state.calcMode);
+    const snap = await r.locator('#mode-btn-initial').ariaSnapshot().catch(() => '');
+    ok('D28: on CRRT the four creatinine modes are aria-disabled, described by one visible line, and a click does not switch',
+       modes.every(x => x.dis === 'true' && x.shown && x.desc === 'Not used on CRRT. Set Renal replacement to None to use it.') && !enabled && stillCrrt === 'crrt' && /disabled/.test(snap),
+       JSON.stringify({ modes, enabled, stillCrrt, snap }).slice(0, 300));
+    await r.locator('[data-onclick="k31"]').click(); await r.waitForTimeout(200);
+    const tRef = await r.evaluate(() => ((document.getElementById('results-content') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+    ok('D28: Trough-based on CRRT refuses a creatinine-based regimen', /^On CRRT — no creatinine-based regimen/.test(tRef) && !/IV q\d+h/.test(tRef), tRef.slice(0, 200));
+    await r.locator('#t-rrt').selectOption('none');
+    const back = await r.evaluate(() => ({ dis: document.getElementById('mode-btn-initial').getAttribute('aria-disabled'), note: document.getElementById('rrt-mode-note').hidden, mode: state.calcMode }));
+    ok('D28: renal replacement None makes the creatinine modes available again', back.dis === null && back.note && back.mode === 'initial', JSON.stringify(back));
+
+    // Review Focus 2: a v3.15.0 profile, Buelga with the Trough haemodialysis flag, loads to the refusal.
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'profile-fixtures-v3.13.0.json'), 'utf8')).profiles;
+    const bh = JSON.parse(JSON.stringify(fixture[0]));
+    bh.id = 'p_d28buelgahd'; bh.label = 'Buelga HD v3.15.0'; bh.snapshot.model = 'buelga'; bh.snapshot.core.hd = true; bh.snapshot.demographics.dial = false;
+    await r.evaluate(([k, list]) => { localStorage.setItem(k, JSON.stringify(list)); renderProfileList(); }, ['ainadara.profiles.v1', [bh]]);
+    await r.locator('[data-onclick="k2"]').click();
+    await r.locator('#app-shell-bayesian .profile-item', { hasText: 'Buelga HD v3.15.0' }).locator('.profile-item-btn.load').click();
+    await r.waitForTimeout(300);
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(300);
+    const rf2 = await r.evaluate(() => ({ b: document.getElementById('b-rrt').value, t: document.getElementById('t-rrt').value, tile: bState.tile,
+      active: (document.querySelector('#b-model-toggle .model-opt.active') || {}).id, result: !!bState.result,
+      text: ((document.getElementById('b-results') || {}).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200) }));
+    ok('D28: a saved Buelga profile on haemodialysis (v3.15.0) loads to the refusal naming Goti 2018 · HD (Review Focus 2)',
+       rf2.b === 'ihd' && rf2.t === 'ihd' && rf2.tile === 'buelga' && rf2.active === 'b-model-btn-buelga' && !rf2.result
+       && /^On haemodialysis — only Goti 2018 · HD carries dialysis/.test(rf2.text), JSON.stringify(rf2));
+    // Its button selects Goti 2018 · HD, which then runs.
+    await r.locator('#b-results [data-onclick="k77"]').click(); await r.waitForTimeout(200);
+    const toHd = await r.evaluate(() => ({ tile: bState.tile, rrt: bState.rrt, active: (document.querySelector('#b-model-toggle .model-opt.active') || {}).id }));
+    ok('D28: the refusal\'s button selects Goti 2018 · HD, still on haemodialysis', toHd.tile === 'gotihd' && toHd.rrt === 'ihd' && toHd.active === 'b-model-btn-gotihd', JSON.stringify(toHd));
+
+    // 375 px: the selector, the unavailable modes and their line, and a refusal, with no horizontal scroll.
+    await r.setViewportSize({ width: 375, height: 812 });
+    await r.locator('#b-rrt').selectOption('hybrid');
+    await r.locator('[data-onclick="k47"]').click(); await r.waitForTimeout(200);
+    const narrowA = await r.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, h: document.getElementById('b-rrt').getBoundingClientRect().height }));
+    await r.locator('[data-onclick="k1"]').click(); await r.waitForTimeout(150);
+    const narrowT = await r.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, h: document.getElementById('t-rrt').getBoundingClientRect().height,
+      note: !!document.getElementById('rrt-mode-note').offsetParent }));
+    ok('D28: at 375 px the selector is a 44 px target and nothing scrolls sideways, in both modules',
+       narrowA.sw <= narrowA.iw && narrowT.sw <= narrowT.iw && narrowA.h >= 43.5 && narrowT.h >= 43.5 && narrowT.note, JSON.stringify({ narrowA, narrowT }));
+    await r.screenshot({ path: path.join(OUT, 'd28-rrt-375.png') });
+    const rAttr = await attributeInjected(r, rProblems);
+    results.problems.push(...rAttr.kept);
+    await rctx.close();
+  }
+  // ── end Release 3 Task 23
   await browser.close();
 
   results.checks = checks;
