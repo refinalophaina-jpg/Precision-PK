@@ -2756,7 +2756,7 @@ patient. Every answer here is advisory and needs a clinician's review.
    administration. A daily course was fitted with no caution.
 
 **Smaller findings acted on.** The pre-dialysis target cited Hui 2019's introduction rather than the guideline (now
-Rybak 2020 Rec 14, C-III; Task 29). The guideline comparison's 15 mg/kg had no recommendation number (now Rec 9, A-II).
+Rybak 2020 Rec 14, C-III; Task 29). The guideline comparison's 15 mg/kg had no recommendation number (now Rec 1, A-II; R105).
 The weight-based tables had a 3,000 mg cap and no local maximum, unlike PD (U10). The README's "Not implemented" list
 did not match `CLAUDE.md`'s (Task 29 reconciles them, and 46.83 compares the two).
 
@@ -2854,7 +2854,7 @@ R3-27-11; and 46.79 pins a case that was already right beside its fix, 46.78.
   levels, give-at and next draw.
 - `crrtAnswer` reads the decline between this patient's own levels, level to level (R90). An interval is used only when
   one circuit run covers it at one rate and modality and neither level was drawn within `POST_DISTRIBUTION_MIN_H`
-  (1 h, Rybak 2020 Rec 8a, A-II) of an infusion's end.
+  (1 h, Rybak 2020 Rec 2a, A-II; R105) of an infusion's end.
 - The projection holds only while the circuit runs as it did when the decline was measured: one run must cover from the
   end of the last used interval to the next draw (R91 revised), with no setting change since. Otherwise the answer is
   "Draw a level: the circuit stopped at … since the decline was measured" (Review Focus 3), or the rate or modality
@@ -2892,8 +2892,8 @@ R3-27-11; and 46.79 pins a case that was already right beside its fix, 46.78.
 
 **Task 29 — citations, notes and the not-implemented lists** (`33fd6c9`, R101 `ee1321b`).
 - The pre-dialysis target cites Rybak 2020 Rec 14 (C-III); Hui 2019 is context, not the source. The sessions caution's
-  comment gives Rec 14's monitoring sentence its own grade, B-II (R80). The guideline comparison's 15 mg/kg cites Rec 9
-  (A-II); its 2,500 mg cap and CrCl cut-points stay PREFERENCE.
+  comment gives Rec 14's monitoring sentence its own grade, B-II (R80). The guideline comparison's 15 mg/kg cites Rec 1
+  (A-II; R105); its 2,500 mg cap and CrCl cut-points stay PREFERENCE.
 - `severeRenalNote`'s "CRRT is not modelled here" became one line pointing to the selector.
 - R83: `CRRT_FIRST_LEVEL_WITHIN_H` and `RRT_NO_SAMPLE_AFTER_SESSION_H` say "guideline text, not separately graded".
 - R84 and R101: a local maximum (CRRT, hybrid, HD and PD) must lie in 250–4,000 mg, at least one dispensing step and
@@ -2928,7 +2928,7 @@ During the build (R61–R102):
 - **R64.** While renal replacement is not None, the creatinine-based mode buttons are shown unavailable with a reason,
   and the selector is never reset silently. *If wrong:* an extra step to leave a modality.
 - **R65.** `CRRT_NEXT_DRAW_DEFAULT_H = 24`, a PREFERENCE (rule 8), editable. *If wrong:* a different default pick.
-- **R66.** The CRRT `distribution` flag is under 1 h after an infusion ends (Rec 8a). *If wrong:* a usable level
+- **R66.** The CRRT `distribution` flag is under 1 h after an infusion ends (Rec 2a, R105). *If wrong:* a usable level
   excluded, or an early one used.
 - **R67.** The haemodialysis reading's sampling exclusion is `RRT_NO_SAMPLE_AFTER_SESSION_H` (2 h, the guideline text),
   not `hdRedistributionWindowH`, which needs a fit the Trough module lacks. *If wrong:* a level 2–3 h after a session
@@ -3015,7 +3015,7 @@ available locally.
 
 | Constant or use | Value | Source and grade |
 |---|---|---|
-| Guideline comparison (existing) | 15 mg/kg actual body weight, the lower end of 15–20 mg/kg q8–12h, normal renal function | Rec 9, A-II |
+| Guideline comparison (existing) | 15 mg/kg actual body weight, the lower end of 15–20 mg/kg q8–12h, normal renal function | Rec 1 (second sentence), A-II; Table 2 item 9 |
 | `HD_LOADING_MAX_MG` (existing) | at most 3,000 mg | Rec 11, B-II |
 | `HD_SESSIONS_PER_WEEK_CAUTION` | 3 | Rec 13, B-II: maintenance doses footnoted "thrice-weekly dose administration" |
 | `HD_PREDIALYSIS_MIN/MAX` (existing, re-cited) | 15 / 20 mg/L | Rec 14, C-III |
@@ -3028,7 +3028,7 @@ available locally.
 | `CRRT_MAINT_INTERVAL_H` | 12 ("every 12 hours") | Rec 16, B-II |
 | `CRRT_EFFLUENT_MIN/MAX_ML_KG_H` | 20 / 25 mL/kg/h ("KDIGO-recommended effluent rates") | Rec 16, B-II |
 | `CRRT_FIRST_LEVEL_WITHIN_H` | 24 ("within the first 24 hours") | Rec 16 text, not separately graded |
-| `POST_DISTRIBUTION_MIN_H` | 1 h: the post-distributional peak "1 to 2 hours after infusion" | Rec 8a, A-II |
+| `POST_DISTRIBUTION_MIN_H` | 1 h: the post-distributional peak "1 to 2 hours after infusion" | Rec 2a, A-II; Table 2 item 8a |
 
 `harness_constants.cjs` parses every one (rule 6). 46.25 checks each source comment names Rybak 2020 and its
 recommendation.

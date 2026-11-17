@@ -154,6 +154,7 @@ function extract() {
     // v3.12.0 — IV vancomycin on peritoneal dialysis (D23)
     PD_LOAD_MG_PER_KG:      num(src, 'PD_LOAD_MG_PER_KG'),
     PD_EARLY_LEVEL_H:       num(src, 'PD_EARLY_LEVEL_H'),
+    PD_MIN_INTERVAL_H:      num(src, 'PD_MIN_INTERVAL_H'),   // D28 (R103): CRRT excludes a shorter interval too
     PD_APD_T12_ON_H:        num(src, 'PD_APD_T12_ON_H'),
     PD_APD_T12_OFF_H:       num(src, 'PD_APD_T12_OFF_H'),
     PD_CAPD_T12_MIN_H:      num(src, 'PD_CAPD_T12_MIN_H'),

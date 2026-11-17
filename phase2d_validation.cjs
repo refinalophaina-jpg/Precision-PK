@@ -4346,7 +4346,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       : /level-row/.test(sel) ? lvlRows.map((_, i) => ({ id: `b-level-row-${i}` }))
       : /hd-row/.test(sel) ? hdRows.map((_, i) => ({ id: `b-hd-row-${i}` })) : [];
     sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
-    try { return fn(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+    // These sessions are haemodialysis sessions, so the patient is on haemodialysis: since D28 (R104) a session row under
+    // Renal replacement None is a blocking error, where before it was read as haemodialysis by default.
+    const prevRrt = vm.runInContext('bState.rrt', sandbox);
+    vm.runInContext("bState.rrt = 'ihd';", sandbox);
+    try { return fn(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; vm.runInContext(`bState.rrt = ${JSON.stringify(prevRrt)};`, sandbox); }
   };
   const D = [['1500', '1.5', '2026-09-01', '09:18']];
 
@@ -4596,7 +4600,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       'b-hd-date-3': '2026-09-03', 'b-hd-time-3': '13:00', 'b-hd-hours-3': '4' };
     sandbox.document.querySelectorAll = (sel) => /dose-row/.test(sel) ? [{ id: 'b-dose-row-1' }] : /hd-row/.test(sel) ? [{ id: 'b-hd-row-2' }, { id: 'b-hd-row-3' }] : [];
     sandbox.document.getElementById = (id) => (id in f ? { value: f[id] } : null);
-    let r; try { r = sandbox.parseBayesCourse(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; }
+    // On haemodialysis (D28, R104: a session row under Renal replacement None is a blocking error).
+    const prevRrt = vm.runInContext('bState.rrt', sandbox);
+    vm.runInContext("bState.rrt = 'ihd';", sandbox);
+    let r; try { r = sandbox.parseBayesCourse(); } finally { sandbox.document.querySelectorAll = prevQ; sandbox.document.getElementById = prevG; vm.runInContext(`bState.rrt = ${JSON.stringify(prevRrt)};`, sandbox); }
     assert(r.sessions[0].label === '2026-09-03 13:00' && r.sessions[0].n === 3 && r.sessions[1].n === 2, JSON.stringify(r.sessions));
     const rb = sandbox.courseReadback([{ n: '1', date: '2026-09-01', time: '08:00', tinf: '1' }], [{ n: '1', date: '2026-09-04', time: '06:00' }], NaN,
       [{ n: '2', date: '2026-09-05', time: '13:00', hours: '4' }, { n: '3', date: '2026-09-03', time: '13:00', hours: '4' }]);
@@ -10717,7 +10724,9 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert((b.state === 'dose' || b.state === 'no-dose') && b.nextDrawH === now + 7, b.state + ' ' + (b.message || ''));
   });
 
-  test('46.54 a level 0.5 h after an infusion ends: flagged distribution (Rybak 2020 Rec 8a, POST_DISTRIBUTION_MIN_H 1 h) and excluded; at 1 h it is used; a level inside an infusion is refused; under 12 h apart is flagged too-short and still used', () => {
+  // R103 (final review C1) reversed this test's last clause: under PD_MIN_INTERVAL_H apart was "flagged too-short and still
+  // used" (Task 27's "flag only"); a recheck within assay imprecision then doubled a dose. It is now excluded, as PD excludes it.
+  test('46.54 a level 0.5 h after an infusion ends: flagged distribution (Rybak 2020 Rec 2a, POST_DISTRIBUTION_MIN_H 1 h) and excluded; at 1 h it is used; a level inside an infusion is refused; under 12 h apart is flagged too-short and not used (R103)', () => {
     assert(__extractConsts().POST_DISTRIBUTION_MIN_H === 1, 'the constant');
     const lvl = (t) => [{ conc: 10, timeH: B47 + 12 }, { conc: 10 * Math.exp(-K47 * (t - 12)) + inf47(750, 1, B47 + 24, B47 + t, K47, V47), timeH: B47 + t }];
     const early = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(25.5), nowKg: 70 } }), B47 + 27);
@@ -10727,7 +10736,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const inside = crrt47(inp47({ course: { doses: [D1_47], levels: lvl(24.5), nowKg: 70 } }), B47 + 27);
     assert(inside.state === 'refuse' && /infusion/.test(inside.refuse.html), JSON.stringify(inside).slice(0, 300));
     const short = crrt47(inp47({ course: { doses: [], levels: [{ conc: 20, timeH: B47 + 12 }, { conc: 20 * Math.exp(-K47 * 8), timeH: B47 + 20 }], nowKg: 70 } }), B47 + 21);
-    assert(JSON.stringify(short.intervals[0].flags) === '["too-short"]' && short.intervals[0].used === true && Math.abs(short.rate.kMin - K47) < 1e-6, JSON.stringify(short.intervals));
+    assert(JSON.stringify(short.intervals[0].flags) === '["too-short"]' && short.intervals[0].used === false && short.state === 'need-level' && !short.rows
+      && short.message.indexOf('under 12 h after the level before it: assay rounding, not a decline; not used') > 0, JSON.stringify({ i: short.intervals, m: short.message }));
   });
 
   test('46.55 the next level above the goal with no dose: no-dose, the rows still listed, no pick', () => {
@@ -11119,12 +11129,13 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(c.indexOf('Hui') < 0 || c.indexOf('Hui') > c.indexOf('Further context'), c);
   });
 
-  test('46.81 the weight-based guideline comparison cites Rybak 2020 Rec 9 (A-II) for 15 mg/kg; its cap and CrCl cut-points stay PREFERENCE (rule 8)', () => {
+  // R105 (final review I2): "Rec 9" was Table 2's item number; the section summary numbers it Rec 1 (A-II, second sentence).
+  test('46.81 the weight-based guideline comparison cites Rybak 2020 Rec 1 (A-II) for 15 mg/kg; its cap and CrCl cut-points stay PREFERENCE (rule 8)', () => {
     const at = src46.indexOf('// ─── Weight-based guideline dose');
     const block = src46.slice(at, src46.indexOf('function computeGuidelineDose(', at));
-    assert(at > 0 && /Rec 9 \(A-II\)/.test(block) && /15 mg\/kg/.test(block), block.slice(0, 800));
+    assert(at > 0 && /Rec 1 \(A-II\)/.test(block) && /15 mg\/kg/.test(block), block.slice(0, 800));
     assert((block.match(/PREFERENCE \(rule 8\)/g) || []).length === 2, 'the cap and the cut-points each say PREFERENCE (rule 8)');
-    assert(/Rec 9, A-II/.test(fn46('computeGuidelineDose').toString()), 'the 15 mg/kg line names its source');
+    assert(/Rec 1, A-II/.test(fn46('computeGuidelineDose').toString()), 'the 15 mg/kg line names its source');
   });
 
   test('46.82 the severe-renal note no longer says CRRT is not modelled; one line points to the Renal replacement selector', () => {
@@ -11277,13 +11288,139 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/const APP_VERSION = '3\.16\.0';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.0');
   });
 
+  // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
+  // The reviewer's CRRT case (C1): 70 kg, Bauer, goal 15–20, CVVHDF at 2000 mL/h throughout; 1.5 g given 40 h ago;
+  // levels 22 mg/L 30 h ago and 14 mg/L 6 h ago.
+  const NOWF = B47 + 100;
+  const crrtF = (levels) => crrt47(inp47({ course: { doses: [{ mg: 1500, tinfH: sandbox.autoTinf(1500), timeH: NOWF - 40 }], levels, nowKg: 70 },
+    circuit: [{ onH: NOWF - 72, offH: null }], effluent: [{ fromH: NOWF - 72, mlPerH: 2000 }] }), NOWF);
+  const LF = [{ conc: 22, timeH: NOWF - 30 }, { conc: 14, timeH: NOWF - 6 }];
+  const SHORT_WORDS = 'under 12 h after the level before it: assay rounding, not a decline; not used';
+
+  test('46.92 R103 (final review C1): a CRRT level repeated within PD_MIN_INTERVAL_H changes nothing: an extra 12.9 mg/L 1 h or 13.6 mg/L 30 min after the 14 gives the no-extra-level pick (750 mg), its interval flagged too-short and not used; the 14 entered twice at the same minute, or two values at one minute, is refused by name', () => {
+    assert(__extractConsts().PD_MIN_INTERVAL_H === 12, 'the one constant, PD\'s');
+    const base = crrtF(LF);
+    assert(base.state === 'dose' && base.pick.mg === 750 && base.rate.n === 1, JSON.stringify({ state: base.state, pick: base.pick, rate: base.rate }));
+    for (const extra of [{ conc: 12.9, timeH: NOWF - 5 }, { conc: 13.6, timeH: NOWF - 5.5 }]) {
+      const a = crrtF(LF.concat([extra]));
+      const last = a.intervals[a.intervals.length - 1];
+      assert(a.state === base.state && a.pick && a.pick.mg === base.pick.mg && a.rate.n === 1 && a.rate.kMin === base.rate.kMin,
+        `${extra.conc}: ${JSON.stringify({ state: a.state, pick: a.pick, rate: a.rate })}`);
+      assert(JSON.stringify(last.flags) === '["too-short"]' && last.used === false && last.k === null && fn46('crrtFlagWords')(last) === SHORT_WORDS,
+        `${extra.conc}: ${JSON.stringify(last)}`);
+    }
+    const when = fn46('fmtDT')(NOWF - 6, true);
+    for (const dup of [{ conc: 14, timeH: NOWF - 6 }, { conc: 15.2, timeH: NOWF - 6 }]) {
+      const d = crrtF(LF.concat([dup]));
+      assert(d.state === 'refuse' && d.refuse.word === 'Two levels at the same time' && d.refuse.html.indexOf(when) >= 0 && !d.rows && !d.pick,
+        `${dup.conc}: ${JSON.stringify(d).slice(0, 400)}`);
+    }
+  });
+
+  test('46.93 R104 (final review I1): a haemodialysis-typed session row under Renal replacement None is a blocking error naming the row and the selector; after a Clear in the Trough column (Renal replacement → None) AUC Precision on the Goti-HD course with two sessions is refused, with no regimen', () => {
+    const W = 'HD session row 1 is typed haemodialysis while Renal replacement is None.';
+    for (const row of [['2026-11-16', '08:00', '4', 'ihd'], ['2026-11-16', '08:00', '4']]) {
+      const r = sess46('none', [row]);
+      assert(r.errors.indexOf(W) >= 0 && r.sessions.length === 0, `${JSON.stringify(row)}: ${r.errors.join('; ')}`);
+    }
+    // The reviewer's path, through the real Clear: Goti-HD answers; Clear all fields in the Trough column; Run again.
+    const rows = [['2026-11-18', '08:00', '4', 'ihd'], ['2026-11-20', '08:00', '4', 'ihd']];
+    const out = withBayesForm({ 'b-age': '64', 'b-tbw': '78', 'b-height': '172', 'b-scr': '6.2', 'b-auc-target': '450', 'b-mic': '1',
+      doses: [[2000, 2, '2026-11-16', '13:00'], [750, 1, '2026-11-18', '13:00'], [750, 1, '2026-11-20', '13:00']],
+      levels: [[17.4, '2026-11-20', '07:30']], hdRows: rows }, (env) => {
+      const keep = { setTimeout: sandbox.setTimeout, announceResult: sandbox.announceResult }, realNow = Date.now;
+      sandbox.setTimeout = () => 0; sandbox.announceResult = () => {}; Date.now = () => NOW46;
+      env.document.body = env.el('body');
+      // The page's element methods that a Clear and a stale-result mark reach (the form stub has only a field's).
+      const getEl = env.document.getElementById;
+      env.document.getElementById = (id) => Object.assign(getEl(id), { closest: () => null, focus() {}, getClientRects: () => [],
+        insertAdjacentHTML(pos, h) { this.innerHTML += h; } });
+      const html = () => (env.els['b-results'] || {}).innerHTML || '';
+      try {
+        vm.runInContext("bState.model = 'goti'; bState.tile = 'gotihd'; bState.sex = 'M';", sandbox);
+        fn46('setRrt')('ihd');
+        fn46('runBayesian')();
+        const before = { r: !!vm.runInContext('bState.result', sandbox), rrt: rrt46() };
+        fn46('clearWithUndo')('trough');
+        fn46('setPatientSex')('M');   // a Clear unsets the sex in both modules; the reviewer chose it again before Run
+        const cleared = rrt46();
+        fn46('runBayesian')();
+        const h = html();
+        return { before, cleared, after: vm.runInContext('bState.result', sandbox), text: h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '), h };
+      } finally { Date.now = realNow; Object.assign(sandbox, keep); reset46(); }
+    });
+    assert(out.before.r && out.before.rrt.b === 'ihd' && out.before.rrt.tile === 'gotihd', `the control: ${JSON.stringify(out.before)}`);
+    assert(out.cleared.t === 'none' && out.cleared.b === 'none' && out.cleared.tile === 'goti', `the Clear: ${JSON.stringify(out.cleared)}`);
+    assert(out.after === null && out.text.indexOf(W) >= 0 && out.text.indexOf('HD session row 2 is typed haemodialysis while Renal replacement is None.') >= 0
+      && !/rec-dose|vx-regimen/.test(out.h), out.text.slice(0, 500));
+  });
+
+  test('46.94 R105 (final review I2): POST_DISTRIBUTION_MIN_H and the CRRT "How this works" cite Rybak 2020 Rec 2a (A-II); the guideline comparison cites Rec 1 (A-II); no "Rec 8a" or "Rec 9" (Table 2 item numbers) is left in the app or its records', () => {
+    const at = src46.indexOf('const POST_DISTRIBUTION_MIN_H');
+    assert(/Rybak 2020 Rec 2a \(A-II[;)]/.test(src46.slice(at - 700, at)), src46.slice(at - 700, at));
+    const now = B47 + 37, t = text46(fn46('crrtResultsHTML')(crrt47(inp47(), now), inp47(), now));
+    assert(/Rybak 2020, Rec 2a: the post-distributional level is drawn 1 to 2 h after the infusion/.test(t), t.slice(t.indexOf('How this works'), t.indexOf('How this works') + 700));
+    const files = ['index.html', 'CLAUDE.md', 'README.md', 'docs/v3-decisions.md'].map(f => [f, fs.readFileSync(path.join(__dirname, f), 'utf8')]);
+    for (const [f, txt] of files) {
+      const hits = txt.match(/Rec(?:s|\.)? (?:8a|9)\b/g);
+      assert(!hits, `${f}: ${hits && hits.join(', ')}`);
+    }
+  });
+
+  test('46.95 R106 (final review I3): the Trough result placeholder says what each renal-replacement mode gives, with no CrCl and no AUC₂₄ promise; under None it is the markup as shipped', () => {
+    const env = env46({});
+    withProf44(env, [], () => {
+      try {
+        const read = () => [env.get('rp-lead').innerHTML, env.get('rp-items').innerHTML].join(' ');
+        const words = { pd: /cycler/, crrt: /Rybak 2020's reference doses[\s\S]*Draw a level/, ihd: /peak-equation reading[\s\S]*Goti 2018 · HD/, hybrid: /Rybak 2020's reference doses[\s\S]*Nothing is fitted/ };
+        for (const kind of ['pd', 'crrt', 'ihd', 'hybrid']) {
+          fn46('setRrt')(kind);
+          const h = read();
+          assert(words[kind].test(h) && !/CrCl|AUC₂₄|400–600|Population PK|steady-state/.test(h), `${kind}: ${h}`);
+        }
+        fn46('setRrt')('none');
+        const norm = (x) => String(x).replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
+        const lead = (src46.match(/<p id="rp-lead">([\s\S]*?)<\/p>/) || [])[1], items = (src46.match(/<ul class="rp-list" id="rp-items">([\s\S]*?)<\/ul>/) || [])[1];
+        assert(lead && items && norm(env.get('rp-lead').innerHTML) === norm(lead) && norm(env.get('rp-items').innerHTML) === norm(items)
+          && /CrCl/.test(items) && /400–600/.test(items), `None: ${env.get('rp-lead').innerHTML} | ${env.get('rp-items').innerHTML}`);
+      } finally { reset46(); }
+    });
+  });
+
+  test('46.96 the CRRT "Draw a level" sentence names every excluded interval in words, never a raw flag id: two levels the doses cannot explain read "higher than the doses could make"; CRRT_FLAG_WORDS covers every flag crrtIntervals can set', () => {
+    const a = crrt47(inp47({ course: { doses: [], levels: [{ conc: 10, timeH: B47 + 12 }, { conc: 15, timeH: B47 + 36 }], nowKg: 70 } }), B47 + 37);
+    assert(a.state === 'need-level' && a.intervals[0].flags.indexOf('unexplained-high') >= 0 && /higher than the doses could make/.test(a.message), a.message);
+    const ids = ['circuit-off', 'effluent-changed', 'modality-changed', 'distribution', 'too-short', 'unexplained-high', 'unexplained-low'];
+    for (const id of ids) assert(a.message.indexOf(`${id}`) < 0 || id === 'distribution', `raw id ${id}: ${a.message}`);
+    assert(!/[(;] ?[a-z]+-[a-z]+[;)]/.test(a.message), a.message);
+    const keys = JSON.parse(vm.runInContext('JSON.stringify(Object.keys(CRRT_FLAG_WORDS))', sandbox));
+    assert(ids.every(k => keys.indexOf(k) >= 0), JSON.stringify(keys));
+  });
+
+  test('46.97 R107: the CRRT one-level "Draw a level" state shows the Rybak 2020 Rec 16 reference for the weight under the lead "until two levels … the guideline\'s reference follows"; a two-level "Draw a level" does not', () => {
+    const inp = inp47({ course: { doses: [D1_47], levels: [L47[0]], nowKg: 70 } }), now = B47 + 13;
+    const one = crrt47(inp, now), t = text46(fn46('crrtResultsHTML')(one, inp, now));
+    assert(one.state === 'need-level' && one.reason === 'no-interval' && /^Draw a level: one level measures no decline/.test(one.message), JSON.stringify(one).slice(0, 300));
+    assert(/Draw a level/.test(t) && /On CRRT — no creatinine-based regimen/.test(t) && /Until two levels drawn with the circuit running/.test(t)
+      && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(t), t.slice(0, 900));
+    const inp2 = inp47({ circuit: [{ onH: B47 - 24, offH: B47 + 20 }, { onH: B47 + 22, offH: null }] });
+    const two = crrt47(inp2, B47 + 37), t2 = text46(fn46('crrtResultsHTML')(two, inp2, B47 + 37));
+    assert(two.state === 'need-level' && !/Rec 16 \(B-II\), for/.test(t2), t2.slice(0, 600));
+  });
+
+  test('46.98 the CRRT course Modality select says that a later change of modality goes on an effluent rate row with its time (it rewrites every interval)', () => {
+    assert(/<select id="crrt-modality" aria-describedby="crrt-modality-hint">/.test(src46), 'the select is described by the hint');
+    const hint = (src46.match(/<p class="field-hint" id="crrt-modality-hint">([\s\S]*?)<\/p>/) || [])[1] || '';
+    assert(/effluent rate row/.test(hint) && /with the time/.test(hint) && /every interval/.test(hint), hint);
+  });
+
 }
 
 // ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 712;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91)
+const EXPECTED_TOTAL = 719;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

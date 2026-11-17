@@ -3685,12 +3685,13 @@
         <div style="display:flex;flex-direction:column;gap:10px">
           <div class="field-group">
             <label class="field-label" for="crrt-modality">Modality</label>
-            <select id="crrt-modality">
+            <select id="crrt-modality" aria-describedby="crrt-modality-hint">
               <option value="">Choose…</option>
               <option value="cvvh">CVVH — haemofiltration</option>
               <option value="cvvhd">CVVHD — haemodialysis</option>
               <option value="cvvhdf">CVVHDF — haemodiafiltration</option>
             </select>
+            <p class="field-hint" id="crrt-modality-hint">The modality the course started on. A later change goes on an effluent rate row, with the time it changed: changing it here rewrites every interval, so the change is not seen.</p>
           </div>
           <div class="field-group">
             <span class="field-label" id="crrt-circ-label">Circuit runs</span>
@@ -3924,12 +3925,13 @@
   <!-- ═══ RIGHT PANEL — RESULTS ═══ -->
   <div class="panel-right" id="panel-right">
 
-    <!-- Placeholder -->
+    <!-- Placeholder. Its lead and list are what renal replacement None gives; setCalcMode writes each other mode's
+         (resultsPlaceholderParts, D28 ruling R106): off None nothing here estimates CrCl or offers an AUC₂₄ regimen. -->
     <div class="results-placeholder" id="results-placeholder">
       <h2 class="rp-title">Results</h2>
-      <p>Enter the patient's demographics and renal function, then press
+      <p id="rp-lead">Enter the patient's demographics and renal function, then press
          <b>Calculate regimen</b>.</p>
-      <ul class="rp-list">
+      <ul class="rp-list" id="rp-items">
         <li><b>Population PK</b> — CrCl, clearance, volume, half-life</li>
         <li><b>A maintenance regimen</b> against an AUC₂₄ of 400–600 mg·h/L</li>
         <li><b>The predicted steady-state curve</b>, with peak, trough and target band</li>
@@ -4886,6 +4888,41 @@ function toggleLD() {
   document.getElementById('ld-fields').classList.toggle('visible', on);
 }
 
+// The Trough result placeholder, by mode (D28, controller ruling R106): the creatinine-based modes keep the markup as
+// shipped (CrCl, an AUC₂₄ regimen, the steady-state curve); each renal-replacement mode says what it gives instead and
+// promises neither a CrCl nor an AUC₂₄. Static copy, no user value. 'none' is the markup's own text (#rp-lead,
+// #rp-items), which SUITE 46.95 holds equal to it.
+const RESULTS_PLACEHOLDER = {
+  none: { lead: 'Enter the patient\'s demographics and renal function, then press <b>Calculate regimen</b>.',
+    items: ['<b>Population PK</b> — CrCl, clearance, volume, half-life',
+      '<b>A maintenance regimen</b> against an AUC₂₄ of 400–600 mg·h/L',
+      '<b>The predicted steady-state curve</b>, with peak, trough and target band'] },
+  pd: { lead: 'Enter the weight, the cycler schedule, the doses given and the levels drawn, then press <b>Calculate regimen</b>.',
+    items: ['<b>The decline</b> — from this patient\'s own levels, interval by interval',
+      '<b>What to give, and whether today</b> — judged at the next draw against your goal',
+      '<b>When to draw the next level</b> — the AM labs'] },
+  crrt: { lead: 'Enter the weight, the modality, the circuit runs, the effluent rate, the doses and the levels, then press <b>Calculate regimen</b>.',
+    items: ['<b>Before a level</b> — Rybak 2020\'s reference doses for the weight (actual body weight)',
+      '<b>From two levels</b> drawn with the circuit running unchanged — the decline, and each dose option judged at the next draw against your goal',
+      '<b>Draw a level</b> — when the circuit stopped, or its rate or modality changed, since the decline was measured'] },
+  ihd: { lead: 'Enter the weight, the pre-dialysis level and the session times, then press <b>Calculate regimen</b>.',
+    items: ['<b>A peak-equation reading</b> from four settings you set — the app ships none',
+      '<b>Beside AUC Precision · Goti 2018 · HD</b>, never instead of it'] },
+  hybrid: { lead: 'Enter the weight, then press <b>Calculate regimen</b>.',
+    items: ['<b>Rybak 2020\'s reference doses</b> for the weight (actual body weight)',
+      '<b>Nothing is fitted</b> — levels decide later doses'] },
+};
+function resultsPlaceholderParts(mode) {
+  const p = RESULTS_PLACEHOLDER[RRT_KINDS.indexOf(mode) > 0 ? mode : 'none'];
+  return { lead: p.lead, items: p.items.map(i => `<li>${i}</li>`).join('') };
+}
+function syncResultsPlaceholder(mode) {
+  if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+  const lead = document.getElementById('rp-lead'), items = document.getElementById('rp-items');
+  if (!lead || !items) return;
+  const p = resultsPlaceholderParts(mode);
+  lead.innerHTML = p.lead; items.innerHTML = p.items;
+}
 function setCalcMode(mode) {
   // D28: a dialysis mode is the patient's renal replacement, so it is set through the selector's
   // one writer; a creatinine-based mode is not used while renal replacement is not None.
@@ -4938,6 +4975,7 @@ function setCalcMode(mode) {
     ? 'Before the first level, Calculate shows Rybak 2020\'s reference doses for the weight above (actual body weight). Your maximum single dose also caps the level-based options.'
     : 'Calculate shows Rybak 2020\'s reference doses for the weight above (actual body weight). Nothing is fitted; levels decide later doses.';
   syncRrtModeButtons();
+  syncResultsPlaceholder(mode);
   document.getElementById('results-placeholder').style.display = 'flex';
   document.getElementById('results-content').style.display = 'none';
   document.getElementById('results-content').innerHTML = '';
@@ -5713,9 +5751,10 @@ function crrtResultsHTML(a, input, nowH) {
       ${txNotesHTML(a.cautions)}
       ${sections && sections.length ? `<div class="vx-evidence">${sections.join('')}</div>` : ''}
     </div>`;
+  const ml = a.effluentNow ? Math.round(a.effluentNow.mlPerH) : null;
+  const refSlot = () => rrtReferenceSlotHTML('crrt', 'trough', Number.isFinite(c.nowKg) ? String(c.nowKg) : '', null, ml);
   if (a.state === 'reference') {
-    const ml = a.effluentNow ? Math.round(a.effluentNow.mlPerH) : null;
-    return `<div class="crrt-reference"${ml ? ` data-effluent="${ml}"` : ''}>${crrtReferenceLeadHTML()}${setting}${rrtReferenceSlotHTML('crrt', 'trough', Number.isFinite(c.nowKg) ? String(c.nowKg) : '', null, ml)}</div>
+    return `<div class="crrt-reference"${ml ? ` data-effluent="${ml}"` : ''}>${crrtReferenceLeadHTML()}${setting}${refSlot()}</div>
       <div class="vx-evidence">${course}</div>`;
   }
   if (a.state === 'refuse') return wrap(`
@@ -5726,7 +5765,7 @@ function crrtResultsHTML(a, input, nowH) {
   const actions = `<div class="vx-actions"><button type="button" class="vx-act" data-onclick="k110">Copy summary</button><button type="button" class="vx-act" data-onclick="k0">Print or save as PDF</button></div>`;
   const basis = inp.vBasis === 'matzke3' ? 'Matzke 1984 group III 0.90' : 'Bauer 0.70';
   const method = txEvHTML('crrt-method', 'How this works', 'Level-based, not a model', `
-    <p class="ev-note">Every level is read against the one before it: the elimination rate that carries the earlier level, plus every dose in between, onto the measured one, one-compartment with V = ${basis} L/kg × the weight now. An interval is used only when the circuit ran throughout it at one effluent rate and modality, and neither level was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end (Rybak 2020, Rec 8a: the post-distributional level is drawn 1 to 2 h after the infusion).</p>
+    <p class="ev-note">Every level is read against the one before it: the elimination rate that carries the earlier level, plus every dose in between, onto the measured one, one-compartment with V = ${basis} L/kg × the weight now. An interval is used only when the circuit ran throughout it at one effluent rate and modality, and neither level was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end (Rybak 2020, Rec 2a: the post-distributional level is drawn 1 to 2 h after the infusion).</p>
     <p class="ev-note">The projection holds only while the circuit still runs as it did when the decline was measured: a stop, a restart or a change of rate or modality since means a new level. No dose is scaled from the effluent rate, and no creatinine or population model is used.</p>
     <p class="ev-note">A redose is sized by where it puts the next level you will draw, inside your goal: the step whose expected level lands closest to the goal's middle, ties to the smaller. With no time entered, the next level is judged ${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose (a preference you can change); Rybak 2020, Rec 16 asks for a first level within ${CRRT_FIRST_LEVEL_WITHIN_H} h.</p>`, false);
   const t12 = (k) => halfLife(k).toFixed(0);
@@ -5738,6 +5777,10 @@ function crrtResultsHTML(a, input, nowH) {
         <td>${i.setting ? `${escHtml(CRRT_MODALITY_LABEL[i.setting.modality] || '—')} · ${Math.round(i.setting.mlPerH)} mL/h` : 'not recorded'}</td><td>${escHtml(crrtFlagWords(i)) || '—'}</td></tr>`).join('')}</tbody>
     </table>`, false) : '';
   const drawNote = a.nextDrawDefault ? `${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose (default)` : 'as entered';
+  // Controller ruling R107: with one level there is no decline yet, so the guideline's reference still follows, under the
+  // same lead as before any level ("Until two levels … the guideline's reference follows"), beside "Draw a level".
+  const oneLevel = a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length;
+  const oneLevelRef = oneLevel ? `<div class="tx-ld crrt-reference"${ml ? ` data-effluent="${ml}"` : ''}>${crrtReferenceLeadHTML()}${refSlot()}</div>` : '';
   if (a.state === 'need-level') return wrap(`
     <section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">
       <h3 class="vx-regimen vx-regimen-hd" id="tx-regimen">Draw a level</h3>
@@ -5745,7 +5788,7 @@ function crrtResultsHTML(a, input, nowH) {
       ${setting}
       <p class="vx-sub vx-muted">No dose is sized until a new level measures the decline as things stand now.</p>
       ${actions}
-    </section>`, '', [decline, course, method].filter(Boolean));
+    </section>`, oneLevelRef, [decline, course, method].filter(Boolean));
   // 'dose' or 'no-dose'
   const pickRow = a.pick ? a.rows.find(r => r.mg === a.pick.mg) : a.rows[0];
   const vs = (m) => m < goal.min ? 'below the goal' : m > goal.max ? 'above the goal' : 'within the goal';
@@ -10381,9 +10424,11 @@ function parseBayesCourse() {
 // Precision's hybrid refusal, which parses no course but names each session's end (controller
 // ruling R75). Start date and time plus a length in hours — a length, not an end time, because an
 // end typed as a clock time before the start would need the "+24 h" wrap this file forbids
-// (SUITE 19). A row's type must be the renal replacement in force (haemodialysis when it is
-// neither haemodialysis nor hybrid); its length is checked against its type's limit. A row with no
-// type select is a haemodialysis row, the only kind before D28.
+// (SUITE 19). A row's type must be the renal replacement in force; under any other kind (None
+// included, controller ruling R104: a Clear in the Trough column sets None and keeps the rows, and
+// Goti would then fit a dialysis patient off dialysis) every row is a blocking error naming the row
+// and the selector, as a hybrid row is (R78). Its length is checked against its type's limit. A row
+// with no type select is a haemodialysis row, the only kind before D28.
 // Returns { sessions:[{n, startH, endH, hours, label, type}] } sorted by start, or { errors:[string] }.
 function parseBayesSessions(rrt) {
   const sessions = [], errors = [];
@@ -10399,7 +10444,7 @@ function parseBayesSessions(rrt) {
     const anything = [dateS, timeS, hRaw].some(v => v !== undefined && String(v).trim() !== '');
     if (!anything) return;                                  // an untouched spare row (its type is a default)
     if (HD_SESSION_TYPES.indexOf(type) < 0) { errors.push(`${W.err} ${id}: unknown session type "${type}".`); return; }
-    if (type !== want) {
+    if (type !== want || want !== rrt) {
       errors.push(`${W.err} ${id} is typed ${HD_SESSION_TYPE_WORD[type]} while Renal replacement is ${RRT_LABEL[rrt] || 'None'}.`);
       return;
     }
@@ -10900,7 +10945,8 @@ const PD_CAPD_T12_MIN_H = 66;
 const PD_CAPD_T12_MAX_H = 115;
 // PREFERENCE (rule 8): two levels closer than this measure assay rounding, not a
 // decline (two levels 30 min apart would set k from the third digit). It excludes an
-// interval from the range; it never changes a dose by itself.
+// interval from the range; it never changes a dose by itself. CRRT reads it too (D28,
+// controller ruling R103): the same exclusion, the same number.
 const PD_MIN_INTERVAL_H = 12;
 // Search bounds for an interval's elimination rate (half-life 2 h to ~290 days):
 // numerical, not clinical. PD_K_FLOOR is the slowest decline the solver can report;
@@ -11208,8 +11254,9 @@ function pdDrawCaution(schedule, drawH, cautions) {   // eslint-disable-line no-
 // changed since is "Draw a level". One interval solver (solveIntervalK), one goal pick (pickGoalStep) and
 // one set of volume bases with PD. No AUC is reported (controller ruling R61).
 
-// Rybak 2020 Rec 8a (A-II): the post-distributional peak is drawn "1 to 2 hours after infusion" ("after end
-// of infusion" in the guideline's text). A level drawn within this of an infusion's end is still distributing,
+// Rybak 2020 Rec 2a (A-II; Table 2 prints it as item 8a): the post-distributional peak is drawn "1 to 2 hours
+// after infusion" ("after end of infusion" in the guideline's text). The section-summary number is the one this
+// file cites (controller ruling R105, as HD_LOADING_MAX_MG's note does for Recs 10–12). A level drawn within this of an infusion's end is still distributing,
 // so the interval it bounds is flagged 'distribution' and not used for a rate (controller ruling R66). No
 // earlier constant held this boundary: the level-timing narrative's 0.5 h is a wording PREFERENCE.
 const POST_DISTRIBUTION_MIN_H = 1;
@@ -11257,11 +11304,12 @@ function crrtDistributing(t, doses) {
   return (doses || []).some(d => t >= d.timeH + d.tinfH && t - (d.timeH + d.tinfH) < POST_DISTRIBUTION_MIN_H);
 }
 // The decline between consecutive measured levels (level to level only: there is no record here of drug
-// given before the first dose entered, so a first dose is never read as a start from zero). Flags, the first
-// four of which exclude the interval from the rate: 'circuit-off' (not on one circuit run throughout),
-// 'effluent-changed', 'modality-changed' (a recorded change inside it, or no rate recorded at its start),
-// 'distribution' (either level within POST_DISTRIBUTION_MIN_H of an infusion's end); then 'too-short' (under
-// PD_MIN_INTERVAL_H, flagged only), and the solver's 'unexplained-high' / 'unexplained-low'.
+// given before the first dose entered, so a first dose is never read as a start from zero). Every flag excludes
+// the interval from the rate: 'circuit-off' (not on one circuit run throughout), 'effluent-changed',
+// 'modality-changed' (a recorded change inside it, or no rate recorded at its start), 'distribution' (either level
+// within POST_DISTRIBUTION_MIN_H of an infusion's end), 'too-short' (under PD_MIN_INTERVAL_H: assay rounding, not a
+// decline, as PD reads it; controller ruling R103 replaced Task 27's "flag only", under which a recheck an hour after a
+// level doubled the dose), and the solver's 'unexplained-high' / 'unexplained-low'.
 function crrtIntervals(inp, vL) {
   const c = inp.course || {};
   const doses = (c.doses || []).slice().sort((a, b) => a.timeH - b.timeH);
@@ -11278,8 +11326,8 @@ function crrtIntervals(inp, vL) {
       if (rows.some(s => s.modality !== set.modality)) flags.push('modality-changed');
     }
     if (crrtDistributing(a.timeH, doses) || crrtDistributing(l.timeH, doses)) flags.push('distribution');
-    const excluded = flags.length > 0;
     if (l.timeH - a.timeH < PD_MIN_INTERVAL_H) flags.push('too-short');
+    const excluded = flags.length > 0;
     const base = { fromH: a.timeH, toH: l.timeH, fromConc: a.conc, conc: l.conc, hours: l.timeH - a.timeH, setting: set, vL };
     if (excluded) { out.push(Object.assign(base, { k: null, t12: null, flags, used: false })); continue; }
     const why = {}, solved = solveIntervalK({ kind: 'level', timeH: a.timeH, conc: a.conc }, l, doses, vL, why);
@@ -11333,6 +11381,12 @@ function crrtAnswer(input, nowH) {
   // review I3), through the one helper and its one tolerance (levelAfterNow, FUTURE_LEVEL_TOLERANCE_H; R95).
   const future = levels.filter(l => levelAfterNow(l.timeH, nowH));
   if (future.length) return refuse('A level is dated in the future', future.map(l => escHtml(`The level at ${fmtDT(l.timeH, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`)).join(' '));
+  // Controller ruling R103: two levels at the same minute are one level entered twice or a mistyped time (the rule
+  // parseBayesCourse applies to AUC Precision's levels); refused by name, never read as a decline or a starting point.
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i].timeH - levels[i - 1].timeH < 1 / 60)
+      return refuse('Two levels at the same time', escHtml(`Two levels are entered at ${fmtDT(levels[i].timeH, true)} (${levels[i - 1].conc} and ${levels[i].conc} mg/L). Keep one, or correct the time of the other.`));
+  }
   const cautions = [];
   // A local maximum below one dispensing step cannot be honoured: ignored, and said (PD's rule).
   const localMax = st.maxDoseMg >= MATRIX_DOSE_STEP ? st.maxDoseMg : null;
@@ -11352,7 +11406,7 @@ function crrtAnswer(input, nowH) {
   const base = { intervals, cautions, giveAtH: giveAt, giveIsNow, nextDrawH: draw, nextDrawDefault, goal, vNowL: vNow, effluentNow };
   const needLevel = (reason, message, extra) => Object.assign({ state: 'need-level', reason, message }, base, extra || {});
   if (!used.length) {
-    const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags).filter(f => f !== 'too-short'))].map(f => CRRT_FLAG_WORDS[f] || f).join('; ') : '';
+    const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags))].map(f => CRRT_FLAG_WORDS[f]).join('; ') : '';
     return needLevel('no-interval', levels.length === 1
       ? 'Draw a level: one level measures no decline. A second level, drawn with the circuit running at the same rate, measures it.'
       : `Draw a level: no interval between the levels can be used (${why}). The next level, drawn with the circuit running at the same rate as the level before it, measures the decline.`);
@@ -11419,7 +11473,9 @@ const CRRT_FLAG_WORDS = {
   'effluent-changed': 'the effluent rate changed inside it, or none was recorded at its start: not used',
   'modality-changed': 'the modality changed inside it: not used',
   'distribution': `a level within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end, still distributing: not used`,
-  'too-short': `under ${PD_MIN_INTERVAL_H} h between the levels: read with care`,
+  'too-short': `under ${PD_MIN_INTERVAL_H} h after the level before it: assay rounding, not a decline; not used`,   // PD's words (R103)
+  // The "Draw a level" sentence names an interval by these words; the table row adds the volume (crrtFlagWords).
+  'unexplained-high': 'higher than the doses could make at the volume used: a smaller volume, drug given earlier, or a timing error; not used',
   'unexplained-low': 'lower than any decline in range explains; check the times: not used',
 };
 function crrtFlagWords(i) {
@@ -15035,8 +15091,9 @@ function markSuggestedModel() {
 // ─── Weight-based guideline dose (ASHP/IDSA 2020) ───
 // Display only: the comparison line in Show the math (renderBayesianResults, "Weight-based guideline
 // comparison"). It never sets, orders or changes the regimen offered; that is regimenDecision's.
-// Its 15 mg/kg actual body weight is the lower end of Rybak 2020 Rec 9 (A-II): 15–20 mg/kg actual body
-// weight every 8–12 h for most patients with normal renal function, assuming an MIC of 1 mg/L.
+// Its 15 mg/kg actual body weight is the lower end of Rybak 2020 Rec 1 (A-II), its second sentence: 15–20 mg/kg
+// actual body weight every 8–12 h for most patients with normal renal function, assuming an MIC of 1 mg/L (Table 2
+// prints it as item 9; this file cites the section-summary number, controller ruling R105).
 // Its cap and its CrCl cut-points have no source. Searched 2026-11-15 (Task 21, D27; ruling R34):
 // this repository's docs, Vancomycin_TDM_Software_Instructions.md and the literature register. None
 // states them; §3.2 of the instructions reads differently (CrCl > 90, 60-90, 30-59, 10-29, < 10;
@@ -15051,7 +15108,7 @@ const GUIDELINE_DOSE_CAP_MG = 2500;
 const GUIDELINE_INTERVAL_BY_CRCL = [[90, 8], [50, 12], [30, 24], [15, 36]];
 const GUIDELINE_INTERVAL_LAST_H  = 48;
 function computeGuidelineDose(tbw, crcl) {
-  const rawDose = 15 * tbw;   // 15 mg/kg actual body weight (Rybak 2020 Rec 9, A-II)
+  const rawDose = 15 * tbw;   // 15 mg/kg actual body weight (Rybak 2020 Rec 1, A-II)
   const rounded = Math.round(rawDose / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
   const dose    = Math.min(GUIDELINE_DOSE_CAP_MG, rounded);
   const band    = GUIDELINE_INTERVAL_BY_CRCL.find(([cut]) => crcl > cut);

@@ -254,7 +254,7 @@ const MUTANTS = [
   { id: 'R3-24-1', what: 'the sessions-per-week caution fires above four, not three [46.19, 46.20]',
     find: 'const HD_SESSIONS_PER_WEEK_CAUTION = 3;', replace: 'const HD_SESSIONS_PER_WEEK_CAUTION = 4;' },
   { id: 'R3-24-2', what: "the row-type check removed from the session parse parseBayesCourse calls [46.17]",
-    find: '    if (type !== want) {\n', replace: '    if (false) {\n' },
+    find: '    if (type !== want || want !== rrt) {\n', replace: '    if (false) {\n' },   // R104 added the None clause
   { id: 'R3-24-3', what: 'hybrid sessions limited to 12 h [46.15, 46.16]',
     find: "hybridHours: { min: 0.5, max: 24,", replace: "hybridHours: { min: 0.5, max: 12," },
   { id: 'R3-24-4', what: 'sessionsPerWeekMax counts an eight-day window [46.19]',
@@ -305,7 +305,7 @@ const MUTANTS = [
     find: 'const excluded = flags.length > 0;', replace: "const excluded = flags.some(f => f !== 'effluent-changed');" },
   { id: 'R3-27-3', what: 'CRRT_NEXT_DRAW_DEFAULT_H 24 → 12 (the default draw time, a PREFERENCE) [46.47]',
     find: 'const CRRT_NEXT_DRAW_DEFAULT_H = 24;', replace: 'const CRRT_NEXT_DRAW_DEFAULT_H = 12;' },
-  { id: 'R3-27-4', what: 'POST_DISTRIBUTION_MIN_H 1 → 0.5 h (Rybak 2020 Rec 8a) [46.54]',
+  { id: 'R3-27-4', what: 'POST_DISTRIBUTION_MIN_H 1 → 0.5 h (Rybak 2020 Rec 2a, R105) [46.54]',
     find: 'const POST_DISTRIBUTION_MIN_H = 1;', replace: 'const POST_DISTRIBUTION_MIN_H = 0.5;' },
   { id: 'R3-27-5', what: 'a setting change since the last used interval does not end the CRRT projection [46.52]',
     find: ': crrtSettingChange(inp.effluent, inp.modality, ref, used[used.length - 1].toH - 1e-9, draw);', replace: ': null;' },
@@ -361,6 +361,23 @@ const MUTANTS = [
     find: 'lo = Math.max(L.min, MATRIX_DOSE_STEP)', replace: 'lo = L.min' },
   { id: 'R3-29-8', what: 'the severe-renal note says CRRT is not modelled again, without the selector line [46.82, 41.15]',
     find: '<li>On renal replacement, set Renal replacement to the modality: this note is for a patient off dialysis.</li>', replace: '<li>If the patient is on intermittent haemodialysis, use <strong>Goti 2018 · HD</strong>. CRRT is not modelled here.</li>' },
+  // The final review's fix wave (D28, controller rulings R103, R104, R106, R107).
+  { id: 'R3-F-1', what: 'a CRRT interval under PD_MIN_INTERVAL_H is flagged too-short but still used for the rate (Task 27\'s "flag only", R103) [46.54, 46.92]',
+    find: "if (l.timeH - a.timeH < PD_MIN_INTERVAL_H) flags.push('too-short');\n    const excluded = flags.length > 0;",
+    replace: "const excluded = flags.length > 0;\n    if (l.timeH - a.timeH < PD_MIN_INTERVAL_H) flags.push('too-short');" },
+  { id: 'R3-F-2', what: 'two CRRT levels at the same minute are not refused (R103) [46.92]',
+    find: "if (levels[i].timeH - levels[i - 1].timeH < 1 / 60)\n      return refuse('Two levels at the same time'",
+    replace: "if (false)\n      return refuse('Two levels at the same time'" },
+  { id: 'R3-F-3', what: 'a haemodialysis-typed session row under Renal replacement None is read as before (R104) [46.93]',
+    find: 'if (type !== want || want !== rrt) {', replace: 'if (type !== want) {' },
+  { id: 'R3-F-4', what: 'the Trough placeholder keeps the None text (CrCl, an AUC₂₄ regimen) in every mode (R106) [46.95]',
+    find: '  syncResultsPlaceholder(mode);\n', replace: "  syncResultsPlaceholder('initial');\n" },
+  { id: 'R3-F-5', what: 'the CRRT "Draw a level" sentence loses the words for unexplained-high [46.96]',
+    find: "  'unexplained-high': 'higher than the doses could make at the volume used", replace: "  'unexplained-hi': 'higher than the doses could make at the volume used" },
+  { id: 'R3-F-6', what: 'the CRRT one-level "Draw a level" state drops the Rec 16 reference (R107) [46.97]',
+    find: "const oneLevel = a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length;", replace: 'const oneLevel = false;' },
+  { id: 'R3-F-7', what: 'the CRRT "Draw a level" sentence drops the too-short reason again (R103) [46.54]',
+    find: 'const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags))]', replace: "const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags).filter(f => f !== 'too-short'))]" },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

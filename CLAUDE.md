@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~20,200 lines / ~1.24 MB (2026-11-17, v3.16.0).
+~20,300 lines / ~1.25 MB (2026-11-17, v3.16.0).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -317,7 +317,8 @@ level-based CRRT answer and a haemodialysis reading from your settings. Not clin
   `bState.result` (R72) and goes when the selector or tile changes. Profiles save `core.rrt`; older ones map
   through `rrtOf`; one with both a PD form and an HD flag is refused on load (R74).
 - **Sessions:** typed rows (`ihd`/`hybrid`); hybrid to 24 h (`INPUT_LIMITS.hybridHours`), haemodialysis still 12 h;
-  a mismatch is a blocking error naming the row; `parseBayesSessions` is the one reader. More than
+  a mismatch is a blocking error naming the row, and under None every row is one (R104: a Trough Clear sets None and
+  keeps the rows); `parseBayesSessions` is the one reader. More than
   `HD_SESSIONS_PER_WEEK_CAUTION` (3) session starts in any seven calendar days is one caution on Goti-HD that
   changes no number (U8, R77).
 - **References** (`rrtReferenceDoses`/`rrtReferenceHTML`): Rybak 2020 Rec 16 (CRRT, B-II) and Rec 15 (hybrid, B-III)
@@ -326,8 +327,11 @@ level-based CRRT answer and a haemodialysis reading from your settings. Not clin
   scales a dose. Hybrid shows no pre-session band.
 - **CRRT, level-based** (`crrtAnswer`): the decline between this patient's own levels, level to level, used only
   while one circuit run covered it at one rate and modality and neither level was within
-  `POST_DISTRIBUTION_MIN_H` (1 h, Rec 8a) of an infusion's end. The projection needs one run covering from the end
-  of the last used interval to the next draw with no setting change (R91 revised); otherwise "Draw a level".
+  `POST_DISTRIBUTION_MIN_H` (1 h, Rec 2a) of an infusion's end, and the levels were at least `PD_MIN_INTERVAL_H`
+  (12 h) apart, as PD reads them (R103, the final review's C1: a recheck an hour later had doubled the dose); two
+  levels at the same minute are refused by name. With one level, "Draw a level" shows the Rec 16 reference too
+  (R107). The projection needs one run covering from the end of the last used interval to the next draw with no
+  setting change (R91 revised); otherwise "Draw a level".
   250 mg rows judged at the next draw; `pickGoalStep`; no AUC (R61); no creatinine, model or effluent scaling.
 - **Haemodialysis reading** (`hdReading`, Trough `ihd`): pre × your fraction remaining, then V × (your target
   peak − that), from four settings in `vanco.hd.local` (U11). The repository ships no value; no setting, no reading.
@@ -336,6 +340,8 @@ level-based CRRT answer and a haemodialysis reading from your settings. Not clin
 - **Shared, not copied (rule 2):** `solveIntervalK`, `pickGoalStep`, `peakEquationDose` (PD, CRRT, HD);
   `doseCapOf`/`cappedWeightDose`; `levelAfterNow` with `FUTURE_LEVEL_TOLERANCE_H`; one goal control for PD and CRRT
   with a value per mode (P2). PD is unchanged (46.44, `docs/audit/pd-parity/`).
+- **The Trough result placeholder** says what each renal-replacement mode gives, with no CrCl or AUC₂₄ promise off
+  None (`RESULTS_PLACEHOLDER`, `syncResultsPlaceholder`, R106).
 - **Parity against v3.15.0 (`bcee5dd`): 0 differences.** The corpus reaches no dialysis path; SUITE 46 is the record.
 
 **Not implemented — do not imply otherwise in the UI:** session-clearance HD modelling,
@@ -389,7 +395,8 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
      `HD_POSTSESSION_HALF_LIVES` (3, the redistribution window, `hdRedistributionWindowH`, which
      since D26's U1 also marks a 2-comp level as past the distribution phase for the measured
      Hold); `HD_POSTSESSION_DOSE_WINDOW_H` (6 h); `HD_ONE_TIME_GAPS_H` (24/48/72, default 48);
-     `TROUGH_TIMING_WINDOW_H` (0.5 h); `PD_EARLY_LEVEL_H` (24 h) and `PD_MIN_INTERVAL_H` (12 h); the
+     `TROUGH_TIMING_WINDOW_H` (0.5 h); `PD_EARLY_LEVEL_H` (24 h) and `PD_MIN_INTERVAL_H` (12 h; CRRT reads it too
+     since R103, so it decides whether an interval is used for a CRRT dose); the
      PD AM-labs default (06:00); and the level-timing narrative's 0.5 h "immediate post-infusion"
      boundary (`interpretLevelTiming`), which U1 also reuses.
    - **Preferences that order or time a dose:** `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
@@ -410,7 +417,7 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
    Everything they sit beside is sourced: sigma is each model's published residual error, the AUC
    band is Rybak 2020 Rec 1, the 250 mg step is the dispensing increment, the hold threshold is the
    user's ruling. D28's constants are sourced, not preferences: `HD_SESSIONS_PER_WEEK_CAUTION` (3, Rec 13, B-II;
-   a caution only); `POST_DISTRIBUTION_MIN_H` (1 h, Rec 8a, A-II); the `CRRT_*` reference constants (Rec 16, B-II;
+   a caution only); `POST_DISTRIBUTION_MIN_H` (1 h, Rec 2a, A-II; Table 2 item 8a); the `CRRT_*` reference constants (Rec 16, B-II;
    `CRRT_FIRST_LEVEL_WITHIN_H` is Rec 16 text, not separately graded); `HYBRID_*` (Rec 15, B-III);
    `RRT_NO_SAMPLE_AFTER_SESSION_H` (2 h, the guideline's hybrid text, not separately graded); and
    `FUTURE_LEVEL_TOLERANCE_H` (one minute, D26's refusal tolerance, named in D28). `PD_K_FLOOR` (1e-4) is a search
@@ -430,14 +437,14 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **712/712 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
+| `phase2d_validation.cjs` | **719/719 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
 | `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
 | `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
-| `docs/audit/mutation.cjs` | **120 of 120 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
+| `docs/audit/mutation.cjs` | **127 of 127 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27); v3.16.0 against `bcee5dd` reads 0 (D28: the corpus reaches no dialysis path). The script prints the first 40 |
 | `docs/audit/pd-parity/` | The PD parity guard's scripts (D28, R87): `capture.cjs`, `replay.cjs`, `encode.cjs`, `load.cjs` and `fixtures58.json` regenerate SUITE 46.44's digests (58 PD calls at 9 significant digits) from any commit, e.g. the released `bcee5dd` |
-| `docs/audit/browser-flows.cjs` | **262/262** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **266/266** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -578,7 +585,7 @@ errors — it previously called a `drawGraph()` that does not exist, inside an e
 the trough-based graphs kept their light-theme colours on the dark page for months.
 
 Results are built as HTML strings via `innerHTML`. **Any user-entered value interpolated into
-one must go through `escHtml()`.** About 180 call sites do (181 on 162 lines, 2026-11-17, v3.16.0); the
+one must go through `escHtml()`.** About 180 call sites do (182 on 163 lines, 2026-11-17, v3.16.0); the
 2026-11-13 review's hostile-profile probe found one gap (the profile id in `data-arg`), closed in v3.14.0.
 
 ## Where things are
@@ -588,9 +595,9 @@ one must go through `escHtml()`.** About 180 call sites do (181 on 162 lines, 20
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 262 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 266 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
-| `docs/audit/mutation.cjs` | The mutation gate: 120 mutants, each must be killed by the Node suites |
+| `docs/audit/mutation.cjs` | The mutation gate: 127 mutants, each must be killed by the Node suites |
 | `docs/audit/pd-parity/` | D28's PD parity guard: the fixtures and the replay that regenerate SUITE 46.44's digests from a released commit |
 | `.github/workflows/test.yml` | CI: the Node suites and the mutation gate on every push and pull request |
 | `docs/audit/probe-map-starts.cjs`, `docs/audit/uncertainty-by-model.cjs --early`, `docs/audit/probe-hold-rate.cjs` | D27's evidence: the MAP starts, the early band and its decision flips (`docs/audit/task19/`), and how often the Hold fires and is false (`docs/audit/task21b/`) |

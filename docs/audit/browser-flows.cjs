@@ -3060,6 +3060,19 @@ async function enterCourse(page) {
        && /7 sessions start within seven days/.test(cau.inline[0]) && /Rybak 2020 Rec 13/.test(cau.inline[0]) && /Rec 14/.test(cau.inline[0]) && /changes no number/.test(cau.inline[0]),
        JSON.stringify({ gen, cau }).slice(0, 400));
 
+    // The final review's I1 (R104), by real clicks: Clear all fields in the Trough column sets Renal replacement None in
+    // both columns and keeps the session rows; with the sex chosen again, Run is refused naming each row and the selector.
+    await s.locator('.module-tab', { hasText: 'Trough' }).first().click();
+    await s.locator('[data-onclick="k32"]').click();
+    await s.locator('[data-onclick="k2"]').click();
+    await s.locator('[data-onclick="k39"]').click();
+    await s.locator('[data-onclick="k47"]').click(); await s.waitForTimeout(250);
+    const off = Object.assign(await area(), await s.evaluate(() => ({ rrt: document.getElementById('b-rrt').value, tile: bState.tile,
+      rows: document.querySelectorAll('[id^="b-hd-row-"]').length, regimen: !!document.querySelector('#b-results #vx-regimen') })));
+    ok('D28 (final review I1, R104): after Clear all fields in the Trough column, AUC Precision on the Goti-HD course with seven sessions is refused, each row named against Renal replacement None, with no regimen',
+       off.rrt === 'none' && off.tile === 'goti' && off.rows === 7 && !off.result && !off.regimen
+       && off.errors.filter(e => /^HD session row \d+ is typed haemodialysis while Renal replacement is None\.$/.test(e)).length === 7, JSON.stringify(off).slice(0, 500));
+
     // 375 px: a typed row's select and length field are 44 px targets and nothing scrolls sideways.
     await s.setViewportSize({ width: 375, height: 812 });
     await s.waitForTimeout(150);
@@ -3211,6 +3224,14 @@ async function enterCourse(page) {
       tbw: !!document.getElementById('tbw').offsetParent, vd: document.getElementById('crrt-vd').value, goal: document.getElementById('crrt-goal-min').value }));
     ok('D28: Trough-based · CRRT shows its own form; creatinine and the PK model hidden, weight kept; no volume basis and no goal preselected',
        col.crrt && col.renal === 'none' && col.shared === 'none' && col.tbw && col.vd === '' && col.goal === '', JSON.stringify(col));
+    // The final review's I3 (R106) and minor 3: the placeholder says what CRRT gives (no CrCl, no AUC₂₄ regimen); the course
+    // Modality select is described by a visible hint that a later change goes on an effluent rate row.
+    const ph = await c.evaluate(() => ({ text: (document.getElementById('results-placeholder').textContent || '').replace(/\s+/g, ' ').trim(),
+      hint: (document.getElementById('crrt-modality-hint') || {}).textContent || '', shown: !!(document.getElementById('crrt-modality-hint') || {}).offsetParent,
+      desc: document.getElementById('crrt-modality').getAttribute('aria-describedby') }));
+    ok('D28 (final review I3, R106): on CRRT the result placeholder names the reference, the decline and "Draw a level", and promises no CrCl and no AUC₂₄; the Modality select carries its hint',
+       /Rybak 2020's reference doses/.test(ph.text) && /Draw a level/.test(ph.text) && !/CrCl|AUC₂₄|400–600/.test(ph.text)
+       && ph.shown && ph.desc === 'crrt-modality-hint' && /effluent rate row/.test(ph.hint), JSON.stringify(ph));
     // The reference before any level, with the effluent rate entered.
     await typeInto(c, '#tbw', '70');
     await c.selectOption('#crrt-modality', 'cvvhdf');
@@ -3229,6 +3250,12 @@ async function enterCourse(page) {
     await press('[data-goal-for="crrt"] [data-onclick="k85"][data-arg="15|20"]');
     await press('[data-onclick="k108"][data-arg="lvl"]');
     await typeInto(c, '#crrt-lvl-conc-1', '10'); await c.locator('#crrt-lvl-date-1').fill(day(-2)); await typeInto(c, '#crrt-lvl-time-1', '0600');
+    // R107: one level measures no decline; "Draw a level", with the Rec 16 reference still shown under its lead.
+    await run();
+    const one = await txt('#results-content');
+    ok('D28 (R107): CRRT with one level: "Draw a level", and the Rybak 2020 Rec 16 reference for the weight under the lead "until two levels"',
+       /Draw a level: one level measures no decline/.test(one) && /Until two levels drawn with the circuit running/.test(one)
+       && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(one) && !/rec-dose/.test(one), one.slice(0, 600));
     await press('[data-onclick="k108"][data-arg="dose"]');
     await typeInto(c, '#crrt-dose-mg-1', '750'); await typeInto(c, '#crrt-dose-tinf-1', '1'); await c.locator('#crrt-dose-date-1').fill(day(-2)); await typeInto(c, '#crrt-dose-time-1', '1200');
     await press('[data-onclick="k108"][data-arg="lvl"]');
@@ -3249,6 +3276,15 @@ async function enterCourse(page) {
        JSON.stringify(d).slice(0, 400));
     ok('D28: the CRRT answer is announced; the goal preset is pressed in the CRRT control only, and the PD goal stays empty (one control, a value per mode)',
        /^Result: CRRT, IV vancomycin/.test(d.said) && d.pressed === 'true' && d.pdPressed === 'false' && d.pdGoal === '', JSON.stringify({ said: d.said.slice(0, 120), pressed: d.pressed, pdPressed: d.pdPressed, pdGoal: d.pdGoal }));
+    // The final review's C1 (R103): a recheck an hour after the second level (13.5 mg/L) is under 12 h after it, so it is
+    // not used for the rate and the dose picked is unchanged; the decline table says why.
+    await press('[data-onclick="k108"][data-arg="lvl"]');
+    await typeInto(c, '#crrt-lvl-conc-3', '13.5'); await c.locator('#crrt-lvl-date-3').fill(day(-1)); await typeInto(c, '#crrt-lvl-time-3', '0700');
+    await run();
+    const re = await c.evaluate(() => { const rec = document.querySelector('#results-content tr.is-rec th');
+      return { rec: rec ? rec.textContent.trim() : '', decline: ((document.getElementById('crrt-decline') || {}).textContent || '').replace(/\s+/g, ' ') }; });
+    ok('D28 (final review C1, R103): a level an hour after the second changes no dose; its interval reads "assay rounding, not a decline; not used"',
+       re.rec && re.rec === d.rec && /assay rounding, not a decline; not used/.test(re.decline) && /1 interval used/.test(re.decline), JSON.stringify(re).slice(0, 400));
     // Review Focus 3: stop the circuit an hour ago; the answer becomes "Draw a level", with no options.
     await c.locator('#crrt-circ-offdate-1').fill(day(0)); await typeInto(c, '#crrt-circ-offtime-1', '0900');
     await run();
