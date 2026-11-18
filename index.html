@@ -2207,14 +2207,14 @@
   .vx-conf .vx-muted { display: block; margin-top: 2px; }
   .vx-next { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink); margin: 0 0 14px; }
   .vx-actions { display: flex; flex-wrap: wrap; gap: 2px 18px; }
-  :is(#b-results, #results-content) .vx-act {
+  :is(#b-results, #results-content, #rrt-mode-note) .vx-act {
     font: 500 var(--fs-sm)/1.2 var(--font-body); color: var(--terracotta-ink);
     background: none; border: 0; border-radius: 0; padding: 10px 0; min-height: 44px; cursor: pointer;
     text-decoration: underline; text-underline-offset: 4px;
     text-decoration-color: color-mix(in srgb, var(--terracotta) 45%, transparent);
     display: inline-flex; align-items: center;
   }
-  :is(#b-results, #results-content) .vx-act:hover { text-decoration-color: currentColor; background: none; }
+  :is(#b-results, #results-content, #rrt-mode-note) .vx-act:hover { text-decoration-color: currentColor; background: none; }
 
   .vx-curve.profile-canvas-wrap { border: 0; background: none; border-radius: 0; padding: 0; box-shadow: none; }
   #b-profile-canvas { display: block; width: 100%; }
@@ -2612,9 +2612,10 @@
   .hd-reading-title { font-family: var(--font-display); font-weight: 400; font-size: var(--fs-lg); color: var(--ink); margin: 0 0 4px; }
   .hd-reading .ev-dl { margin-top: 10px; }
   /* A creatinine-based mode while renal replacement is not None (D28): shown, not offered. */
-  .calc-mode-btn[aria-disabled="true"] { color: var(--ink-muted); cursor: not-allowed; }
+  .calc-mode-btn[aria-disabled="true"] { color: var(--ink-muted); }   /* a press offers the way back beside the tabs (v3.17.0), so no not-allowed cursor */
   .calc-mode-btn[aria-disabled="true"]:hover { transform: none; }
   .rrt-mode-note { margin-top: 6px; }
+  #rrt-mode-note .vx-act { display: block; text-align: left; padding: 8px 0; }   /* the way back under the tabs (v3.17.0) */
   .goal-control { display: flex; flex-direction: column; gap: 10px; }
   .course-what { grid-area: what; display: flex; align-items: center; gap: 8px; }
   /* A session row's type (D28): as wide as its longest word, the length field takes the rest. */
@@ -2839,7 +2840,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.16.1</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.17.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2870,7 +2871,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.16.1</div>
+  <div class="header-tag">Vancomycin TDM v3.17.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4275,7 +4276,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.16.1';
+const APP_VERSION = '3.17.0';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -4406,6 +4407,7 @@ const __ACT = {
   k110: (el, ev, arg) => { copyResultSummary(el, (state.crrtLast && state.crrtSummary) || '', 'trough'); },   /* Copy summary, CRRT mode (D28) */
   k111: (el, ev, arg) => { saveHdLocalSettings(); },   /* the haemodialysis reading's four settings, saved on change (D28, U11) */
   k112: (el, ev, arg) => { clearHdLocalSettings(); },   /* Clear the haemodialysis reading's settings (D28) */
+  k113: (el, ev, arg) => { if (CREATININE_MODES.indexOf(arg) < 0) return; setRrt('none'); setCalcMode(arg); const b = document.getElementById('mode-btn-' + arg); if (b) b.focus(); },   /* the locked-tab line's action: renal replacement None, then that tab (v3.17.0) */
   k99: (el, ev, arg) => { copyProfileConflicts(String(arg)); },   /* profile refusal: copy this module's conflicting values across (D26, R19) */
   k96: (el, ev, arg) => { const n = el.closest('.note'); if (!n) return; const open = n.classList.toggle('is-open'); el.setAttribute('aria-expanded', String(open)); el.textContent = open ? 'Show less' : `Read the rest: ${arg || ''}`; },   /* a long note, whole (D24) */
   k83: (el, ev, arg) => { const e = document.getElementById('b-first-edit'); if (!e) return; e.hidden = !e.hidden; el.setAttribute('aria-expanded', String(!e.hidden)); if (!e.hidden) { const d = document.getElementById('b-first-date'); if (d) d.focus(); } },   /* "change" on the first-dose line opens its date and time (v3.11.0) */
@@ -4652,15 +4654,33 @@ function setRrt(kind) {
   return true;
 }
 
+// The line under the mode tabs while renal replacement is not None. `tried` is a creatinine-based tab the user
+// has just pressed: the line then offers the way back as one deliberate action (k113), beside the tabs, instead of
+// sending the user to the selector further down (the user's report 2026-11-17: after the Peritoneal dialysis tab
+// the other tabs only showed a not-allowed cursor). The tab itself still never resets renal replacement (R64).
+const CREATININE_MODE_LABEL = { initial: 'Initial dosing', level: 'Steady-state trough', twolevels: 'Two levels', randomlevel: 'Random level' };
+function rrtModeNoteText(rrt) { return `Not used on ${RRT_LABEL[rrt] || rrt}. Set Renal replacement to None to use it.`; }
+function rrtModeNoteHTML(rrt, tried) {
+  const line = escHtml(rrtModeNoteText(rrt));
+  if (CREATININE_MODES.indexOf(tried) < 0) return line;
+  return `${line} <button type="button" class="vx-act" data-onclick="k113" data-arg="${escHtml(tried)}">Set Renal replacement to None and open ${escHtml(CREATININE_MODE_LABEL[tried])}</button>`;
+}
+
 // The four creatinine-based mode buttons: available only with renal replacement None. Shown, marked
 // aria-disabled, and described by one line that says why and how to use them.
-function syncRrtModeButtons() {
+function syncRrtModeButtons(tried) {
   if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
   const rrt = currentRrt(), off = rrt !== 'none';
   const note = document.getElementById('rrt-mode-note');
   if (note) {
-    note.textContent = off ? `Not used on ${RRT_LABEL[rrt]}. Set Renal replacement to None to use it.` : '';
+    // The plain sentence is set as text; markup only when the line carries the action.
+    const withAct = off && CREATININE_MODES.indexOf(tried) >= 0;
+    if (withAct) note.innerHTML = rrtModeNoteHTML(rrt, tried);
+    else note.textContent = off ? rrtModeNoteText(rrt) : '';
     note.hidden = !off;
+    // A press on a locked tab moves focus to the offered action, so a keyboard user reaches it too.
+    const act = withAct && typeof note.querySelector === 'function' ? note.querySelector('button') : null;
+    if (act && typeof act.focus === 'function') act.focus();
   }
   CREATININE_MODES.forEach(m => {
     const b = document.getElementById('mode-btn-' + m);
@@ -4928,7 +4948,7 @@ function setCalcMode(mode) {
   // D28: a dialysis mode is the patient's renal replacement, so it is set through the selector's
   // one writer; a creatinine-based mode is not used while renal replacement is not None.
   if (RRT_KINDS.indexOf(mode) > 0 && currentRrt() !== mode) return setRrt(mode);
-  if (CREATININE_MODES.indexOf(mode) >= 0 && currentRrt() !== 'none') { syncRrtModeButtons(); return false; }
+  if (CREATININE_MODES.indexOf(mode) >= 0 && currentRrt() !== 'none') { syncRrtModeButtons(mode); return false; }
   state.calcMode = mode;
   // The panel shows only what the mode reads (D24): PD hides amputation, creatinine and
   // the loading-dose blocks (.not-pd in CSS); so do hybrid, CRRT and haemodialysis (D28, ruling R73), keeping weight.
@@ -6450,6 +6470,13 @@ const MODEL_AGREEMENT_BANDS = [
 // validation (class 3 obesity, BMI >= 40) — fitting an FFM-scaled model to a
 // lean patient and presenting it as a peer would manufacture disagreement.
 const AGREEMENT_BMI_HUGHES = 40;   // Hughes 2024 validation floor, BMI kg/m^2
+// HUGHES AS A COMPARATOR (v3.17.0, the user's ruling 2026-11-17). From this BMI up to Hughes's own floor
+// (AGREEMENT_BMI_HUGHES, 40), Hughes 2024 is fitted beside the other priors as a comparator: its row is
+// shown and marked outside its validated range, and it is not counted in the spread, the AUC range or the
+// count of applicable priors. So it changes no confidence label and no dose; it only lets the clinician see
+// what the class-3-obesity model says about a patient a hair under its floor (a patient at BMI 39.9 is not
+// "lean"). PREFERENCE (rule 8): no paper sets 39; it orders which rows the Models panel shows.
+const HUGHES_COMPARATOR_MIN_BMI = 39;
 
 function modelAgreement(ctx, doses, levels, dailyDose) {
   try {
@@ -6460,10 +6487,10 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     const active = (ctx.activeModel === 'goti' && ctx.dial) ? 'goti-hd' : (ctx.activeModel || 'buelga');
     const rows = [];
 
-    const push = (key, label, struct, CL, note) => {
+    const push = (key, label, struct, CL, note, comparator) => {
       if (!(CL > 0) || !isFinite(CL)) return;
       rows.push({ key, label, struct, CL, auc24: dailyDose / CL,
-                  active: key === active, note: note || null });
+                  active: key === active, note: note || null, comparator: !!comparator });
     };
 
     // ── Buelga, 1-compartment ── Not a peer on dialysis: a non-dialysis
@@ -6492,21 +6519,28 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     // ── Hughes, 2-compartment, FFM-scaled ──
     const bmi = (ctx.tbw > 0 && ctx.htCm > 0) ? ctx.tbw / Math.pow(ctx.htCm/100, 2) : NaN;
     const hughesApplies = active === 'hughes' || (isFinite(bmi) && bmi >= AGREEMENT_BMI_HUGHES);
-    if (hughesApplies && ctx.crclHughes > 0 && ctx.ffm > 0) {
+    // From HUGHES_COMPARATOR_MIN_BMI to 40, Hughes is shown but not counted (v3.17.0).
+    const hughesComparator = !hughesApplies && isFinite(bmi) && bmi >= HUGHES_COMPARATOR_MIN_BMI;
+    if ((hughesApplies || hughesComparator) && ctx.crclHughes > 0 && ctx.ffm > 0) {
       const hp = hughesPopPK(ctx.crclHughes, ctx.ffm);
       const hf = mapFit((a,b,c) => burtonObj3D_hughes(a,b,c,hp.TVCL,hp.TVVc,hp.TVVp,hp.TVQ,doses,levels),
                         3, OMEGA2_CL_HUGHES, OMEGA2_VC_HUGHES, 400, OMEGA2_VP_HUGHES).eta;
       push('hughes', 'Hughes 2-comp · FFM', '2-compartment',
            hp.TVCL * Math.exp(hf[0]),
-           (isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
-             ? `validated at BMI >= ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}`
-             : null);
+           hughesComparator
+             ? `validated at BMI ≥ ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}, so it is shown as a comparator and not counted in the spread`
+             : (isFinite(bmi) && bmi < AGREEMENT_BMI_HUGHES)
+               ? `validated at BMI >= ${AGREEMENT_BMI_HUGHES}; this patient is ${bmi.toFixed(1)}`
+               : null,
+           hughesComparator);
     }
 
-    if (rows.length < 2) return null;
+    // The spread, range and count read the applicable priors only; a comparator row is shown beside them.
+    const peers = rows.filter(r => !r.comparator);
+    if (peers.length < 2) return null;
 
     // Spread across the whole set, not a pairwise difference.
-    const aucs = rows.map(r => r.auc24);
+    const aucs = peers.map(r => r.auc24);
     const lo = Math.min.apply(null, aucs), hi = Math.max.apply(null, aucs);
     const mean = aucs.reduce((a,b) => a+b, 0) / aucs.length;
     const diffPct = mean > 0 ? (hi - lo) / mean * 100 : NaN;
@@ -6514,7 +6548,7 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     const activeRow = rows.find(r => r.active) || null;
 
     return { rows, lo, hi, mean, diffPct, band, activeRow,
-             n: rows.length,
+             n: peers.length,
              // kept so older render paths that read these still work
              aucBuelga: (rows.find(r => r.key === 'buelga') || {}).auc24,
              aucGoti:   (rows.find(r => r.key === 'goti' || r.key === 'goti-hd') || {}).auc24 };
@@ -6800,7 +6834,7 @@ function confidenceAssessment(r, fd, ag) {
   if (ag && ag.band) {
     // Named with each model's AUC24 (D26, UI review I3): the disagreement was the cause of a
     // Low rating, and the figures behind it sat only in the closed Models section.
-    const each = (ag.rows || []).map(m => `${m.auc24.toFixed(0)} on ${m.label}`);
+    const each = (ag.rows || []).filter(m => !m.comparator).map(m => `${m.auc24.toFixed(0)} on ${m.label}`);
     const aucs = each.length > 1 ? ` (AUC₂₄ ${each.slice(0, -1).join(', ')} and ${each[each.length - 1]})` : '';
     if (ag.band.tone === 'danger') cap(n <= 1 ? 2 : 1, `The applicable models disagree by ${ag.diffPct.toFixed(0)}% on exposure${aucs} — the answer depends on which model is right.`, `the models disagree by ${ag.diffPct.toFixed(0)}%`);
     else if (ag.band.tone === 'warn' && n <= 1) cap(1, `Priors differ by ${ag.diffPct.toFixed(0)}% on exposure${aucs}.`, `the models differ by ${ag.diffPct.toFixed(0)}%`);
@@ -14960,6 +14994,9 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm, onHD) {
     reason = `Obesity class ${bmi < 35 ? 'I' : 'II'} (BMI ${bmi.toFixed(1)}) — Goti 2018 (2-comp) carries a weight covariate and the largest dataset`;
     advisory = `No vancomycin population model is validated specifically for BMI 30–${HUGHES_MIN_BMI}. `
       + `Hughes 2024 was developed only in class 3 obesity (BMI ≥ ${HUGHES_MIN_BMI}, median 46.3) and is NOT recommended here; `
+      + (bmi >= HUGHES_COMPARATOR_MIN_BMI
+        ? `At BMI ${bmi.toFixed(1)} it is shown in Models as a comparator, not counted in the spread. `
+        : '')
       + `Buelga 2005 came from a lean population (mean weight 64.7 kg). Obtain levels early and let the Bayesian fit do the work.`;
   } else if (isICU) {
     recommended = 'goti';
@@ -16120,7 +16157,7 @@ function forestPlotSVG(ag, nLev, bandMin, bandMax, early) {
   const x = v => L + (v - d0) / (d1 - d0) * (W - L - R);
   const body = rows.map((r, i) => {
     const y = 18 + i * 26;
-    return `<text x="${L - 10}" y="${y + 4}" class="lbl${r.m.active ? ' act' : ''}" text-anchor="end">${escHtml(r.m.label)}${r.m.active ? ' · in use' : ''}</text>
+    return `<text x="${L - 10}" y="${y + 4}" class="lbl${r.m.active ? ' act' : ''}" text-anchor="end">${escHtml(r.m.label)}${r.m.active ? ' · in use' : ''}${r.m.comparator ? ' · comparator' : ''}</text>
       <line x1="${x(r.lo).toFixed(1)}" x2="${x(r.hi).toFixed(1)}" y1="${y}" y2="${y}" class="rng${r.m.active ? ' act' : ''}"/>
       <circle cx="${x(r.m.auc24).toFixed(1)}" cy="${y}" r="4" class="pt${r.m.active ? ' act' : ''}"/>
       <text x="${Math.min(W - R, x(r.hi) + 6).toFixed(1)}" y="${y + 4}" class="num">${r.m.auc24.toFixed(0)}</text>`;
@@ -17042,7 +17079,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ? `the detected ${fmtRegimen(cur2.dose, cur2.tau)}`
         : isHD ? `a steady-state reference ${fmtRegimen(rec.dose, rec.tau)} (no consistent schedule was detected)`
         : `the recommended ${fmtRegimen(rec.dose, rec.tau)} (no consistent schedule was detected)`;
-      const inTarget = ag.rows.filter(m => m.auc24 >= bandMin && m.auc24 <= bandMax).length;
+      const inTarget = ag.rows.filter(m => !m.comparator && m.auc24 >= bandMin && m.auc24 <= bandMax).length;
       gist = `${ag.band.label} agreement · ${ag.diffPct.toFixed(0)}% spread across ${ag.n}`;
       const caveats = ag.rows.filter(m => m.note)
         .map(m => `<p class="ev-note vx-muted">${escHtml(m.label)}: ${escHtml(m.note)}.</p>`).join('');
@@ -17051,7 +17088,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         ${forestPlotSVG(ag, nLev, bandMin, bandMax, uEarly)}
         <table class="ev-table">
           <thead><tr><th scope="col">Prior</th><th scope="col">CL (L/h)</th><th scope="col">AUC₂₄</th></tr></thead>
-          <tbody>${ag.rows.map(m => `<tr${m.active ? ' class="is-active"' : ''}><th scope="row">${escHtml(m.label)}${m.active ? ' · in use' : ''}</th><td>${m.CL.toFixed(2)}</td><td>${m.auc24.toFixed(0)}</td></tr>`).join('')}</tbody>
+          <tbody>${ag.rows.map(m => `<tr${m.active ? ' class="is-active"' : ''}><th scope="row">${escHtml(m.label)}${m.active ? ' · in use' : ''}${m.comparator ? ' · comparator' : ''}</th><td>${m.CL.toFixed(2)}</td><td>${m.auc24.toFixed(0)}</td></tr>`).join('')}</tbody>
         </table>
         <p class="ev-note">${ag.n} applicable prior${ag.n === 1 ? '' : 's'} fitted to the same levels and the same
           course — AUC₂₄ ${ag.lo.toFixed(0)}–${ag.hi.toFixed(0)} mg·h/L. Bars are each model's own simulated 80% range.

@@ -392,6 +392,26 @@ const MUTANTS = [
     find: '.vx-regimen-refuse { font-size: var(--fs-xl); color: var(--ink); }', replace: '.vx-regimen-refuse { font-size: var(--fs-xl); color: var(--alarm); }' },
   { id: 'R3-P-5', what: 'the Trough "No regimen recommended" refusal loses the alarm hue [46.99]',
     find: '<h3 class="vx-regimen vx-regimen-hold" id="tx-regimen">${escHtml(o.word)}</h3>', replace: '<h3 class="vx-regimen vx-regimen-refuse" id="tx-regimen">${escHtml(o.word)}</h3>' },
+
+  // ── v3.17.0: Hughes 2024 as a comparator from BMI 39, never counted ──
+  { id: 'R4-H-1', what: 'no Hughes comparator below BMI 40 [47.2, 47.3]',
+    find: 'const hughesComparator = !hughesApplies && isFinite(bmi) && bmi >= HUGHES_COMPARATOR_MIN_BMI;', replace: 'const hughesComparator = false;' },
+  { id: 'R4-H-2', what: 'the comparator is counted in the spread, range and n [47.2]',
+    find: 'const peers = rows.filter(r => !r.comparator);', replace: 'const peers = rows;' },
+  { id: 'R4-H-3', what: 'the comparator floor moves to 38 [47.1, 47.3]',
+    find: 'const HUGHES_COMPARATOR_MIN_BMI = 39;', replace: 'const HUGHES_COMPARATOR_MIN_BMI = 38;' },
+  { id: 'R4-H-4', what: 'the BMI 39-40 advice no longer says Hughes is shown as a comparator [47.5]',
+    find: 'it is shown in Models as a comparator, not counted in the spread. `', replace: 'it is shown in Models. `' },
+  { id: 'R4-H-5', what: 'the confidence sentence names the comparator\'s AUC [47.7]',
+    find: 'const each = (ag.rows || []).filter(m => !m.comparator).map(', replace: 'const each = (ag.rows || []).map(' },
+
+  // ── v3.17.0: the way back from a locked creatinine tab (the user's report) ──
+  { id: 'R4-P-1', what: 'a press on a locked tab no longer offers the way back [47.8]',
+    find: "currentRrt() !== 'none') { syncRrtModeButtons(mode); return false; }", replace: "currentRrt() !== 'none') { syncRrtModeButtons(); return false; }" },
+  { id: 'R4-P-2', what: 'the action opens the tab without setting renal replacement to None [47.8]',
+    find: "if (CREATININE_MODES.indexOf(arg) < 0) return; setRrt('none'); setCalcMode(arg);", replace: "if (CREATININE_MODES.indexOf(arg) < 0) return; setCalcMode(arg);" },
+  { id: 'R4-P-3', what: 'the action is offered for a non-creatinine tab too [47.8]',
+    find: 'if (CREATININE_MODES.indexOf(tried) < 0) return line;', replace: 'if (!tried) return line;' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

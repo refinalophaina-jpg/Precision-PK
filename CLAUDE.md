@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~20,300 lines / ~1.25 MB (2026-11-17, v3.16.1).
+~20,330 lines / ~1.25 MB (2026-11-17, v3.17.0).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -344,6 +344,17 @@ level-based CRRT answer and a haemodialysis reading from your settings. Not clin
   None (`RESULTS_PLACEHOLDER`, `syncResultsPlaceholder`, R106).
 - **Parity against v3.15.0 (`bcee5dd`): 0 differences.** The corpus reaches no dialysis path; SUITE 46 is the record.
 
+**v3.17.0 (D29):** two changes from the user, 2026-11-17. Not clinically validated.
+- **Hughes as a comparator from BMI 39** (`HUGHES_COMPARATOR_MIN_BMI`, PREFERENCE): between 39 and 40 the Models
+  panel fits Hughes 2024 beside the applicable priors, marks its row "comparator" with the reason, and leaves it
+  out of the spread, the AUC range, the count and the confidence sentence (`rows[].comparator`; `ag.n` counts
+  peers). At 40 and above, or with Hughes in use, it is a counted peer as before. Goti stays the recommendation.
+- **The way back from a locked Trough tab:** a press on a creatinine-based tab while Renal replacement is not None
+  still changes nothing by itself (R64), but the line under the tabs (`rrtModeNoteHTML`) then offers one action,
+  "Set Renal replacement to None and open <tab>" (`k113`), focused. No not-allowed cursor. The user's report:
+  after the Peritoneal dialysis tab the only way back was the selector further down, or Clear all fields.
+- SUITE 47 (47.1–47.8), mutants R4-H-1–5 and R4-P-1–3, three browser checks. Parity against v3.16.1: 0.
+
 **v3.16.1 (patch, D28 addendum):** a missing-input or data-check refusal heading in PD, CRRT and the HD reading
 takes `vx-regimen-refuse` (ink); `vx-regimen-hold` (alarm) stays only on the Trough and AUC Precision safety
 refusals ("No regimen recommended", "No empiric maintenance regimen"). 46.99 and mutants R3-P-1–5 pin it. The
@@ -389,14 +400,16 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
 8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
    shipping a clinical number without provenance. A number no paper sets is a preference: its
    source comment says "PREFERENCE (rule 8)", what it orders, and whether it can change a dose.
-   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-17 (v3.16.0) they are:
+   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-17 (v3.17.0) they are:
    - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
      splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9, the Trough
      module's "three doses is not steady state" wording only; AUC Precision reads `SS_FRACTION_EARLY`);
      `AUC24_MODEST_BELOW_MIN` (325); the Trough AUC band (±22% / ±30%); `MAP_TIE_OBJ` /
      `MAP_SPLIT_CL` (two MAP minima); `NOTE_CLAMP_CHARS` (300); `PROFILE_ARRIVE_MS`; and the
      weight-based guideline comparison line's `GUIDELINE_DOSE_CAP_MG` (2,500) and
-     `GUIDELINE_INTERVAL_BY_CRCL` (CrCl 90 / 50 / 30 / 15), which no source states (Task 21).
+     `GUIDELINE_INTERVAL_BY_CRCL` (CrCl 90 / 50 / 30 / 15), which no source states (Task 21); and
+     `HUGHES_COMPARATOR_MIN_BMI` (39, v3.17.0, the user's ruling): from it to 40 Hughes is a Models comparator,
+     shown and never counted in the spread, so no confidence label or dose moves.
    - **Labels and windows that gate an answer:** `HD_PRE_LABEL_H` (12 h) and
      `HD_POSTSESSION_HALF_LIVES` (3, the redistribution window, `hdRedistributionWindowH`, which
      since D26's U1 also marks a 2-comp level as past the distribution phase for the measured
@@ -443,14 +456,14 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **720/720 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
+| `phase2d_validation.cjs` | **728/728 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
 | `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
 | `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
-| `docs/audit/mutation.cjs` | **132 of 132 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
+| `docs/audit/mutation.cjs` | **140 of 140 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27); v3.16.0 against `bcee5dd` reads 0 (D28: the corpus reaches no dialysis path). The script prints the first 40 |
 | `docs/audit/pd-parity/` | The PD parity guard's scripts (D28, R87): `capture.cjs`, `replay.cjs`, `encode.cjs`, `load.cjs` and `fixtures58.json` regenerate SUITE 46.44's digests (58 PD calls at 9 significant digits) from any commit, e.g. the released `bcee5dd` |
-| `docs/audit/browser-flows.cjs` | **267/267** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **270/270** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
@@ -601,9 +614,9 @@ one must go through `escHtml()`.** About 180 call sites do (182 on 163 lines, 20
 | `PRODUCT.md` | Who this is for, the binding constraints, and the design decisions the user made |
 | `DESIGN.md`, `.impeccable/design.json` | The design system as shipped (the course-timeline results) |
 | `.impeccable/surfaces/index-html.md` | The results surface brief and its direction contract |
-| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 267 real-input checks |
+| `docs/audit/serve-csp.py`, `docs/audit/browser-flows.cjs` | The app under the production CSP (bound to 127.0.0.1), and the 270 real-input checks |
 | `docs/audit/engine-parity.cjs` | Proves a presentation change left the engine's output untouched |
-| `docs/audit/mutation.cjs` | The mutation gate: 132 mutants, each must be killed by the Node suites |
+| `docs/audit/mutation.cjs` | The mutation gate: 140 mutants, each must be killed by the Node suites |
 | `docs/audit/pd-parity/` | D28's PD parity guard: the fixtures and the replay that regenerate SUITE 46.44's digests from a released commit |
 | `.github/workflows/test.yml` | CI: the Node suites and the mutation gate on every push and pull request |
 | `docs/audit/probe-map-starts.cjs`, `docs/audit/uncertainty-by-model.cjs --early`, `docs/audit/probe-hold-rate.cjs` | D27's evidence: the MAP starts, the early band and its decision flips (`docs/audit/task19/`), and how often the Hold fires and is false (`docs/audit/task21b/`) |
