@@ -3417,3 +3417,16 @@ note and the out-of-range note. Mutants R5-1–R5-8. One browser check of the au
 - The BMI 30–40 advice read "…NOT recommended here; At BMI 39.9…": the v3.17.0 clause now starts in lower case.
 - 48.10 and mutant R5-9; one browser check that no label's box starts left of 0. Unit 738/738, mutation 149/149,
   browser 272/272, parity against v3.18.0 (`74d366c`) 0.
+
+### v3.18.2 — the Crass supplement, and the user's ruling U14 (2026-11-17)
+
+- The user obtained Crass 2018's supplementary data. Table S2 gives each of Vc and the five clearance coefficients
+  as a per-patient random parameter (mean, SD, %CV, variance, median; skewed: θcon mean 8.688, median 9.656; θwt
+  mean 0.073, median 0.040), Table S3 their 6 × 6 covariance, Tables S4–S5 the base model. Neither the paper nor the
+  supplement publishes a residual-error model; only the assay's inter-day CV (< 5%) is stated.
+- **U14 (the user):** Crass stays a before-a-level comparison only. A fit to a level would rest on a borrowed
+  residual error and a Gaussian approximation of a nonparametric prior. Declined: a fitted comparator, and a
+  selectable dosing model.
+- v3.18.0's note said the published model "gives no between-subject variance to fit a level with". That was wrong
+  once the supplement was read: the note now says neither the paper nor its supplement publishes the residual-error
+  model a fit needs. 48.7 asserts the corrected reason. No engine change; parity against v3.18.1 (`9e334ce`) 0.

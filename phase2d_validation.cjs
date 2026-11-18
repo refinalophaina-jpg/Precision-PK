@@ -11589,7 +11589,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assertClose(c.CL, fn48('crassPopCL')(41, 'F', 0.7, 119), 1e-12, 'its population clearance');
     const out = fn48('priorComparisonHTML')(ag, 'the recommended 1.25 g IV q12h', 400, 600), t = out.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     assert(/Crass 1-comp · obese 6\.49 \d+ 3\.2 g\/day/.test(t) && /spread across 3$/.test(out.gist), t.slice(0, 900));
-    assert(/Crass 2018 is compared before a level only/.test(t) && /nonparametric/.test(t), 'says why it is not fitted to levels');
+    assert(/Crass 2018 is compared before a level only/.test(t) && /publishes the residual-error model a fit to a level needs/.test(t) && !/no between-subject variance/.test(t),
+      'says why it is not fitted to levels: no residual-error model (v3.18.2; the supplement does give the variances)');
     assert(!agC48({}, [{ conc: 15, timeH: 12 }]).rows.some(r => r.key === 'crass'), 'no Crass row once a level is in');
   });
 
@@ -11629,7 +11630,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('48.4 the version', () => {
-    assert(/const APP_VERSION = '3\.18\.1';/.test(src48), 'v3.18.1');
+    assert(/const APP_VERSION = '3\.18\.2';/.test(src48), 'v3.18.2');
   });
 }
 
