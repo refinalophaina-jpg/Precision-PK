@@ -2007,6 +2007,68 @@ async function enterCourse(page) {
     await octx.close();
   }
 
+  // v3.17.0 (the user's ruling 2026-11-17): from BMI 39 to 40 Hughes 2024 is a comparator in Models, shown and
+  // marked, never counted. The audit patient, fictional: 41 F, 119 kg, 172.7 cm (BMI 39.9), SCr 0.7, on Goti, with
+  // the D1/D2 course and its one level.
+  {
+    const qctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const q = await qctx.newPage();
+    const qProblems = watch(q, 'hughes-comparator');
+    await q.goto(BASE + '?v=pwhc-' + Date.now(), { waitUntil: 'networkidle' });
+    await q.locator('[data-onclick="k2"]').click();
+    await typeInto(q, '#b-age', '41'); await typeInto(q, '#b-tbw', '119'); await typeInto(q, '#b-height', '172.7'); await typeInto(q, '#b-scr', '0.7');
+    await q.locator('[data-onclick="k40"]').click();
+    await q.locator('#b-model-btn-goti').click();
+    await enterCourse(q);
+    await q.locator('[data-onclick="k47"]').click();
+    await q.waitForSelector('#b-results .vx-conf', { timeout: 20000 }); await q.waitForTimeout(300);
+    const m = await q.evaluate(() => {
+      const rows = [...document.querySelectorAll('#ev-models .ev-table tbody th')].map(e => e.textContent.trim());
+      return { rows, gist: ((document.querySelector('#ev-models .ev-gist') || {}).textContent || '').trim(),
+        notes: [...document.querySelectorAll('#ev-models .ev-note')].map(e => e.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
+        conf: ((document.querySelector('#b-results .vx-conf') || {}).textContent || '').replace(/\s+/g, ' ') };
+    });
+    ok('v3.17.0: at BMI 39.9 on Goti, Models shows Hughes as a comparator, says why, and counts two priors; the confidence line does not name it',
+       m.rows.includes('Hughes 2-comp · FFM · comparator') && m.rows.some(r => /^Goti 2-comp · in use$/.test(r)) && /spread across 2$/.test(m.gist)
+       && /Hughes 2-comp · FFM: validated at BMI ≥ 40; this patient is 39\.9, so it is shown as a comparator and not counted in the spread\./.test(m.notes)
+       && !/Hughes/.test(m.conf), JSON.stringify(m).slice(0, 700));
+    const qAttr = await attributeInjected(q, qProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + qAttr.injected;
+    results.problems.push(...qAttr.kept);
+    await qctx.close();
+  }
+
+  // v3.17.0, the user's report 2026-11-17: after the Peritoneal dialysis tab the other tabs showed only a not-allowed
+  // cursor, and the way back was a selector further down or Clear all fields. A press on a locked tab now offers one
+  // deliberate action beside the tabs; the tab itself never resets renal replacement (R64).
+  {
+    const yctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const y = await yctx.newPage();
+    const yProblems = watch(y, 'pd-way-back');
+    await y.goto(BASE + '?v=pwpb-' + Date.now(), { waitUntil: 'networkidle' });
+    await y.locator('[data-onclick="k1"]').click();
+    await y.locator('#mode-btn-pd').click();
+    // Playwright reads aria-disabled as not enabled; a forced click is the user's pointer press.
+    await y.locator('#mode-btn-level').click({ force: true }); await y.waitForTimeout(150);
+    const offered = await y.evaluate(() => { const n = document.getElementById('rrt-mode-note'), b = n.querySelector('button');
+      return { mode: state.calcMode, rrt: document.getElementById('t-rrt').value, shown: !n.hidden && !!n.offsetParent,
+        act: b ? b.textContent.trim() : null, focused: !!b && document.activeElement === b,
+        cursor: getComputedStyle(document.getElementById('mode-btn-level')).cursor }; });
+    ok('v3.17.0: on peritoneal dialysis a press on Steady-state trough changes nothing by itself and offers, beside the tabs and focused, "Set Renal replacement to None and open Steady-state trough"; no not-allowed cursor',
+       offered.mode === 'pd' && offered.rrt === 'pd' && offered.shown && offered.act === 'Set Renal replacement to None and open Steady-state trough'
+       && offered.focused && offered.cursor !== 'not-allowed', JSON.stringify(offered));
+    await y.keyboard.press('Enter'); await y.waitForTimeout(200);
+    const back = await y.evaluate(() => ({ mode: state.calcMode, rrt: document.getElementById('t-rrt').value, brrt: document.getElementById('b-rrt').value,
+      dis: document.getElementById('mode-btn-level').getAttribute('aria-disabled'), note: document.getElementById('rrt-mode-note').hidden,
+      focus: document.activeElement && document.activeElement.id }));
+    ok('v3.17.0: the action, by keyboard, sets Renal replacement to None in both modules and opens Steady-state trough, focus on its tab',
+       back.mode === 'level' && back.rrt === 'none' && back.brrt === 'none' && back.dis === null && back.note && back.focus === 'mode-btn-level', JSON.stringify(back));
+    const yAttr = await attributeInjected(y, yProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + yAttr.injected;
+    results.problems.push(...yAttr.kept);
+    await yctx.close();
+  }
+
   // D27 (models review I2, Task 19): a level drawn before steady state reads the band simulated for early
   // levels. Fictional 45 M, 140 kg, 175 cm, SCr 1.0 on Hughes; 1.5 g at D1 08:00 and 20:00; one level,
   // 26 mg/L, at D1 23:00 (15 h after the first dose). The Early level note quotes the early band, and the

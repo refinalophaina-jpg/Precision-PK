@@ -5849,7 +5849,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[3456]\.\d+';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[3-7]\.\d+';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6063,7 +6063,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[456]\.\d+';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[4-7]\.\d+';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -9424,7 +9424,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
   // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.1[56]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[5-7]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -11285,7 +11285,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
   // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
   test('46.91 the version', () => {
-    assert(/const APP_VERSION = '3\.16\.1';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 (the patch that ships 46.99)');
+    assert(/const APP_VERSION = '3\.1[67]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
   });
 
   // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
@@ -11437,10 +11437,96 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 47 — v3.17.0: Hughes 2024 as a comparator from BMI 39 (the user's ruling, 2026-11-17)
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 47 — v3.17.0: Hughes 2024 as a comparator from BMI 39');
+  console.log(`${'─'.repeat(60)}`);
+  const K47 = require('./harness_constants.cjs').extract();
+  const fn47 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const src47 = fs.readFileSync(htmlPath, 'utf8');
+  // The audit patient, fictional: 41 F, 172.7 cm, SCr 0.7. At 119 kg BMI 39.9; CrCl 143.4 (Cockcroft-Gault on
+  // AdjBW 85.9 kg), CrCl on FFM 99.5, FFM 59.6 kg (Janmahasatian). One course and one level.
+  const ht47 = 172.7, doses47 = [{ mg: 2000, timeH: 0, tinfH: 2 }, { mg: 1250, timeH: 12, tinfH: 1.5 }], levels47 = [{ conc: 15, timeH: 23.5 }];
+  const ctx47 = (tbw, active) => ({ activeModel: active || 'goti', crcl: 143.4, crclGoti: 143.4, tbw, htCm: ht47, dial: false,
+    crclHughes: 99.5, ffm: 59.6 });
+  const ag47 = (tbw, active) => fn47('modelAgreement')(ctx47(tbw, active), doses47, levels47, 2500);
+  const bmi47 = (tbw) => tbw / Math.pow(ht47 / 100, 2);
+
+  test('47.1 HUGHES_COMPARATOR_MIN_BMI is 39, below Hughes\'s own floor of 40, and says PREFERENCE (rule 8), what it orders and that it changes no dose', () => {
+    assert(K47.HUGHES_COMPARATOR_MIN_BMI === 39 && K47.HUGHES_COMPARATOR_MIN_BMI < K47.HUGHES_MIN_BMI, `${K47.HUGHES_COMPARATOR_MIN_BMI} / ${K47.HUGHES_MIN_BMI}`);
+    const i = src47.indexOf('const HUGHES_COMPARATOR_MIN_BMI'), block = src47.slice(Math.max(0, i - 900), i);
+    assert(/PREFERENCE \(rule 8\)/.test(block) && /comparator/i.test(block) && /not counted in the spread/i.test(block) && /changes no confidence label and no dose/i.test(block), block.slice(-600));
+  });
+
+  test('47.2 at BMI 39.9 on Goti, Hughes is fitted as a comparator: shown, marked, and not counted in the spread, n or the AUC range', () => {
+    assert(Math.abs(bmi47(119) - 39.9) < 0.05, bmi47(119));
+    const ag = ag47(119), h = ag.rows.find(r => r.key === 'hughes');
+    assert(h && h.comparator === true && h.active === false, JSON.stringify(ag.rows.map(r => [r.key, r.comparator, r.active])));
+    assert(/validated at BMI ≥ 40/.test(h.note) && /comparator/.test(h.note) && /not counted/.test(h.note) && /39\.9/.test(h.note), h.note);
+    const peers = ag.rows.filter(r => !r.comparator), aucs = peers.map(r => r.auc24);
+    const lo = Math.min(...aucs), hi = Math.max(...aucs), mean = aucs.reduce((a, b) => a + b, 0) / aucs.length;
+    assert(ag.n === 2 && peers.length === 2 && peers.every(r => r.key === 'buelga' || r.key === 'goti'), JSON.stringify(peers.map(r => r.key)));
+    assert(Math.abs(ag.lo - lo) < 1e-9 && Math.abs(ag.hi - hi) < 1e-9 && Math.abs(ag.diffPct - (hi - lo) / mean * 100) < 1e-9, `${ag.lo} ${ag.hi} ${ag.diffPct}`);
+    assert(h.CL > 3 && h.CL < 8, `Hughes CL ${h.CL}`);
+  });
+
+  test('47.3 below BMI 39 there is no Hughes row; from BMI 40 Hughes is a peer, counted as before', () => {
+    assert(bmi47(116) < 39 && !ag47(116).rows.some(r => r.key === 'hughes'), `BMI ${bmi47(116)}`);
+    const at39 = ag47(39 * Math.pow(ht47 / 100, 2) + 1e-6).rows.find(r => r.key === 'hughes');
+    assert(at39 && at39.comparator === true, 'BMI 39.0 exactly is a comparator');
+    const ag40 = ag47(119.5), h40 = ag40.rows.find(r => r.key === 'hughes');
+    assert(bmi47(119.5) >= 40 && h40 && !h40.comparator && !h40.note && ag40.n === 3, JSON.stringify({ n: ag40.n, h40 }));
+  });
+
+  test('47.4 with Hughes the model in use at BMI 39.9 it stays a counted peer, with the out-of-range note as before', () => {
+    const ag = ag47(119, 'hughes'), h = ag.rows.find(r => r.key === 'hughes');
+    assert(h && h.active && !h.comparator && ag.n === 3 && /validated at BMI >= 40/.test(h.note) && !/comparator/.test(h.note), JSON.stringify(h));
+  });
+
+  test('47.5 the BMI 30–40 advice still says Hughes is not recommended; from BMI 39 it adds that Hughes is shown as a comparator', () => {
+    const rec = (tbw) => fn47('getModelRecommendation')(1, false, tbw, ht47, false);
+    const r39 = rec(119), r35 = rec(35 * Math.pow(ht47 / 100, 2));
+    assert(r39.recommended === 'goti' && /NOT recommended/.test(r39.advisory) && /comparator/.test(r39.advisory) && /not counted/.test(r39.advisory), r39.advisory);
+    assert(r35.recommended === 'goti' && /NOT recommended/.test(r35.advisory) && !/comparator/.test(r35.advisory), r35.advisory);
+  });
+
+  test('47.6 the version', () => {
+    assert(/const APP_VERSION = '3\.17\.0';/.test(src47), 'v3.17.0');
+  });
+
+  test('47.7 the confidence reason names the counted priors only: a comparator\'s AUC₂₄ never appears in the disagreement sentence', () => {
+    const ag = ag47(119);
+    const c = fn47('confidenceAssessment')({ levels: levels47 }, { worst: { sigma: 0.2 } }, ag);
+    const said = c.reasons.map(x => x.text).join(' | ');
+    assert(/on Buelga 1-comp/.test(said) && /on Goti 2-comp/.test(said) && !/Hughes/.test(said), said);
+  });
+
+  // The user's report 2026-11-17: after the Peritoneal dialysis tab, the creatinine tabs showed a not-allowed cursor
+  // and the only way back was a selector further down, or Clear all fields. A click on a locked tab now offers the way
+  // back as one deliberate action beside the tabs; the tab still never resets renal replacement by itself (R64).
+  test('47.8 the locked-tab line: the default sentence is unchanged; after a click on a locked tab it adds one action that sets None and opens that tab (k113)', () => {
+    const f = fn47('rrtModeNoteHTML');
+    assert(f('pd') === 'Not used on peritoneal dialysis. Set Renal replacement to None to use it.', f('pd'));
+    const labels = { initial: 'Initial dosing', level: 'Steady-state trough', twolevels: 'Two levels', randomlevel: 'Random level' };
+    for (const m of Object.keys(labels)) {
+      const h = f('crrt', m);
+      assert(h.indexOf('Not used on CRRT. Set Renal replacement to None to use it. ') === 0
+        && h.indexOf(`<button type="button" class="vx-act" data-onclick="k113" data-arg="${m}">Set Renal replacement to None and open ${labels[m]}</button>`) > 0, h);
+    }
+    assert(f('pd', 'pd') === f('pd') && f('pd', '<x>') === f('pd'), 'only a creatinine-based tab gets the action');
+    assert(/k113: \(el, ev, arg\) => \{[^}]*setRrt\('none'\)[^}]*setCalcMode\(arg\)/.test(src47), 'k113 sets None, then opens the tab');
+    assert(/if \(CREATININE_MODES\.indexOf\(mode\) >= 0 && currentRrt\(\) !== 'none'\) \{ syncRrtModeButtons\(mode\); return false; \}/.test(src47),
+      'a press on a locked tab passes the tab to the line (and still returns without switching)');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 720;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99)
+const EXPECTED_TOTAL = 728;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

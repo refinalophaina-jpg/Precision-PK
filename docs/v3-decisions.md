@@ -3311,3 +3311,58 @@ A patch with no engine change (parity against v3.16.0, `be3c4dd`: 0 differences)
   removed checkboxes.
 - **Tests.** Unit 720/720 (Auckland and UTC too); the version pins 42.15, 43.12 and 45.58 accept a patch number, and
   46.91 pins 3.16.1. Mutation gate 132/132. Browser 267/267, 0 console problems.
+
+## D29 — Hughes as a comparator from BMI 39, and the way back from a locked Trough tab (2026-11-17, v3.17.0)
+
+Not clinically validated. No engine change: parity against v3.16.1 (`93e22fe`), 225 calls, 0 differences.
+
+### The audit that led here
+
+The user asked for an implementation audit of a fictional patient: 41 years, female, 119 kg, 172.7 cm (BMI 39.9),
+SCr 0.7, no dialysis, no level. Cockcroft-Gault on adjusted body weight (85.9 kg) gives 143.4 mL/min. The priors:
+
+| Model | CL (L/h) | Daily dose for AUC₂₄ 500 |
+|---|---|---|
+| Goti 2018: 4.5 × (143.4/120)^0.8; Vc 58.4 × 119/70 = 99.3; Vp 38.4; Q 6.5 | 5.18 | 2.6 g |
+| Hughes 2024: FFM 59.6 kg (Janmahasatian), CrCl on FFM 99.5; 5.09 × (99.5/100)^0.887 | 5.07 | 2.5 g |
+| Buelga 2005: 1.08 × 143.4 × 0.06 | 9.27 | 4.6 g |
+
+- Every model is implemented as published: Goti's equations, its 150 mL/min truncation (Methods) and its
+  SCr floor (2019 erratum, age over 65) match `gotiPopPK`/`getGotiCrCl`; Hughes's nlmixr2 column, with no allometric
+  term on CL (removed by the authors), matches `hughesPopPK`; k10, k12, k21 and the terminal half-life (Goti 19.8 h,
+  Hughes 19.0 h) follow from the parameters exactly.
+- Goti and Hughes, built independently, agree within 2% on clearance. Buelga is the outlier: a haematological-
+  malignancy population (mean 65 kg, CLCR 89 ± 39), clearance linear in CrCl and above it (1.08 × CrCl). The long
+  half-lives come mostly from volume (Goti's Vc linear in total weight; Hughes's Vc and Vp on FFM), which moves the
+  interval and the trough, not AUC₂₄ at steady state.
+- Goti's clearance cannot exceed 4.5 × (150/120)^0.8 = 5.38 L/h off dialysis, whatever the CrCl: a structural
+  ceiling, worth knowing for augmented clearance.
+- Verdict recorded: plausible and expected model behaviour, not an implementation error; Buelga's prior is the one
+  that risks overexposure for this patient (about 4.5 g/day, the ceiling). An early level settles it.
+
+### The rulings
+
+- **U12 (the user):** offer Hughes 2024 as a comparator from BMI 39 ("39.9 to, let's even say, 39").
+  `HUGHES_COMPARATOR_MIN_BMI = 39`, PREFERENCE (rule 8).
+- **R113 (controller): a comparator is shown, never counted.** Between 39 and 40 the Hughes row is fitted to the same
+  course and levels, drawn in the table and the forest plot as "· comparator", with a note saying why, and left
+  out of the spread, the AUC range, `ag.n`, the "x of n" lead and the confidence sentence. Counting it would let a
+  model outside its validated population move a confidence label, and through ruling 3 (Low confidence keeps an
+  in-range regimen) a decision. Cost if wrong: the user may want it counted; that is one filter to remove, and a
+  clinical decision for the user. At 40 and above, or with Hughes in use, it is a peer as before. Goti stays the
+  recommendation; the BMI 30–40 advice still says Hughes is not recommended and, from 39, that it is shown.
+- **R114 (controller): the way back from a locked Trough tab.** The user's report: after pressing Peritoneal dialysis
+  the creatinine-based tabs showed a not-allowed cursor and could not be reached except through the selector further
+  down or Clear all fields. Pressing the PD tab sets Renal replacement to PD (D28, one writer); R64 keeps the
+  creatinine tabs locked so a dialysis patient is never moved back to a creatinine regimen by a stray click. Kept:
+  a press still changes nothing. Added: the press puts one action into the line under the tabs, focused, "Set
+  Renal replacement to None and open <tab>" (`k113`), which sets None in both modules and opens the tab pressed. The
+  not-allowed cursor is gone, since the press does something. Declined: letting the tab reset renal replacement by
+  itself (R64's reason stands). Cost if wrong: one extra press to leave PD.
+
+### Tests
+
+SUITE 47: 47.1 the constant and its PREFERENCE comment; 47.2–47.4 the comparator below 40, none below 39, a peer
+from 40 and when in use; 47.5 the advice; 47.6 the version; 47.7 the confidence sentence names counted priors only;
+47.8 the locked-tab line and `k113`. Mutants R4-H-1–5 and R4-P-1–3 (140/140). Browser: the audit patient's Models
+panel, and the PD way back by pointer and keyboard (270/270, 0 console problems). Unit 728/728 (Auckland, UTC too).
