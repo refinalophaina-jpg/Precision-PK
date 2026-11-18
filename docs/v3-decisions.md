@@ -3374,7 +3374,7 @@ Not clinically validated. No engine change: parity against v3.17.0 (`5ef43b3`), 
 
 The user's concern: "I just don't want to underdose obese patients due to the models." Two of the three options
 offered were chosen (U13): compare the models before a level, and add Crass 2018. The third, showing Rybak 2020
-Rec 12's 20–25 mg/kg loading range, stays open.
+Rec 12's 20–25 mg/kg loading range, the user declined (U15, 2026-11-17).
 
 ### Before a level
 
@@ -3430,3 +3430,9 @@ note and the out-of-range note. Mutants R5-1–R5-8. One browser check of the au
 - v3.18.0's note said the published model "gives no between-subject variance to fit a level with". That was wrong
   once the supplement was read: the note now says neither the paper nor its supplement publishes the residual-error
   model a fit needs. 48.7 asserts the corrected reason. No engine change; parity against v3.18.1 (`9e334ce`) 0.
+
+### U15 — the Rec 12 loading range, declined (2026-11-17)
+
+The user declined showing Rybak 2020 Rec 12's 20–25 mg/kg actual-body-weight loading range for obese patients ("nah
+no need"). Loading doses stay as they are: every one capped at Rec 11's 3,000 mg, with no mg/kg range shown. This
+closes the question left open since Release 1 (R11).
