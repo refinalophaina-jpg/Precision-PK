@@ -2032,6 +2032,25 @@ async function enterCourse(page) {
        m.rows.includes('Hughes 2-comp · FFM · comparator') && m.rows.some(r => /^Goti 2-comp · in use$/.test(r)) && /spread across 2$/.test(m.gist)
        && /Hughes 2-comp · FFM: validated at BMI ≥ 40; this patient is 39\.9, so it is shown as a comparator and not counted in the spread\./.test(m.notes)
        && !/Hughes/.test(m.conf), JSON.stringify(m).slice(0, 700));
+    // v3.18.0: the same patient before any level (the level row removed): Models compares each model's population
+    // estimate on the regimen, with the daily dose each gives for AUC₂₄ 500; confidence stays "Population estimate".
+    await q.locator('[data-onclick="k62"][data-arg="1"]').click();
+    await q.evaluate(() => { document.getElementById('b-results').innerHTML = ''; });
+    await q.locator('[data-onclick="k47"]').click();
+    await q.waitForSelector('#b-results #ev-models', { timeout: 20000 }); await q.waitForTimeout(300);
+    const pre = await q.evaluate(() => {
+      const heads = [...document.querySelectorAll('#ev-models .ev-table thead th')].map(e => e.textContent.trim());
+      const rows = [...document.querySelectorAll('#ev-models .ev-table tbody tr')].map(tr => [...tr.children].map(c => c.textContent.trim()));
+      return { heads, rows, gist: ((document.querySelector('#ev-models .ev-gist') || {}).textContent || '').trim(),
+        lead: ((document.querySelector('#ev-models .ev-lead') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        conf: ((document.querySelector('#b-results .vx-conf') || {}).textContent || '').replace(/\s+/g, ' ') };
+    });
+    const doseOf = (lab) => (pre.rows.find(r => r[0] === lab) || [])[3];
+    ok('v3.18.0: before any level, Models compares each model\'s population estimate: the daily dose for AUC₂₄ 500 is 2.6 g/day on Goti, 4.6 on Buelga, 3.2 on Crass 2018 and 2.5 on the Hughes comparator',
+       /^Before a level · \d+% spread across 3$/.test(pre.gist) && /^Before any level: /.test(pre.lead) && pre.heads[3] === 'Daily dose for AUC₂₄ 500'
+       && doseOf('Goti 2-comp · in use') === '2.6 g/day' && doseOf('Buelga 1-comp') === '4.6 g/day' && doseOf('Hughes 2-comp · FFM · comparator') === '2.5 g/day'
+       && doseOf('Crass 1-comp · obese') === '3.2 g/day'
+       && !/disagree/.test(pre.conf), JSON.stringify(pre).slice(0, 900));
     const qAttr = await attributeInjected(q, qProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + qAttr.injected;
     results.problems.push(...qAttr.kept);

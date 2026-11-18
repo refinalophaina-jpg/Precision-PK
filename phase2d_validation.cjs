@@ -5849,7 +5849,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[3-7]\.\d+';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[3-8]\.\d+';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6063,7 +6063,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[4-7]\.\d+';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[4-8]\.\d+';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -9424,7 +9424,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
   // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.1[5-7]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[5-8]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -11285,7 +11285,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
   // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
   test('46.91 the version', () => {
-    assert(/const APP_VERSION = '3\.1[67]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
+    assert(/const APP_VERSION = '3\.1[6-8]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
   });
 
   // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
@@ -11493,7 +11493,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('47.6 the version', () => {
-    assert(/const APP_VERSION = '3\.17\.0';/.test(src47), 'v3.17.0');
+    assert(/const APP_VERSION = '3\.1[78]\.\d+';/.test(src47), 'v3.17.0 or its successor');
   });
 
   test('47.7 the confidence reason names the counted priors only: a comparator\'s AUC₂₄ never appears in the disagreement sentence', () => {
@@ -11523,10 +11523,109 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SUITE 48 — v3.18.0: every applicable model before the first level (the user's ask, 2026-11-17)
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 48 — v3.18.0: the models compared before a level');
+  console.log(`${'─'.repeat(60)}`);
+  const fn48 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const src48 = fs.readFileSync(htmlPath, 'utf8');
+  // The audit patient, fictional: 41 F, 119 kg, 172.7 cm (BMI 39.9), SCr 0.7; CrCl 143.4 (AdjBW), on FFM 99.5; FFM 59.6.
+  const ctx48 = { activeModel: 'goti', crcl: 143.4, crclGoti: 143.4, tbw: 119, htCm: 172.7, dial: false, crclHughes: 99.5, ffm: 59.6 };
+  const doses48 = [{ mg: 2500, timeH: 0, tinfH: 2.5 }];
+  const ag48 = () => fn48('modelAgreement')(ctx48, doses48, [], 2500);
+
+  test('48.1 with no level each model\'s row is its population estimate exactly: Goti 5.19, Buelga 9.29, Hughes 5.07 as a comparator', () => {
+    const ag = ag48(), row = (k) => ag.rows.find(r => r.key === k);
+    const goti = fn48('gotiPopPK')(143.4, 119, false).TVCL, buel = fn48('buelgaPopPK')(143.4, 119).CL_pop, hug = fn48('hughesPopPK')(99.5, 59.6).TVCL;
+    assert(row('goti').CL === goti && row('buelga').CL === buel && row('hughes').CL === hug, JSON.stringify(ag.rows.map(r => [r.key, r.CL])));
+    assert(Math.abs(goti - 5.189) < 0.005 && Math.abs(buel - 9.292) < 0.005 && Math.abs(hug - 5.07) < 0.01, `${goti} ${buel} ${hug}`);
+    assert(row('hughes').comparator === true && ag.n === 2, 'BMI 39.9: Hughes is the comparator, two counted');
+  });
+
+  test('48.2 the before-a-level Models body: a lead that says no level yet, the forest plot, CL, AUC₂₄ on the regimen and the daily dose each model gives for the middle of the target; the comparator marked', () => {
+    const out = fn48('priorComparisonHTML')(ag48(), 'the recommended 1.25 g IV q12h', 400, 600);
+    assert(/^Before a level · \d+% spread across 2$/.test(out.gist), out.gist);
+    const h = out.body, t = h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    assert(/Before any level/.test(t) && /on the recommended 1\.25 g IV q12h/.test(t) && /<svg/.test(h), t.slice(0, 300));
+    assert(/<th scope="col">Daily dose for AUC₂₄ 500<\/th>/.test(h), 'the daily-dose column names the target middle');
+    const cells = (label) => { const m = h.match(new RegExp(`<th scope="row">${label}[^<]*</th><td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>`)); return m ? m.slice(1) : null; };
+    const g = cells('Goti 2-comp · in use'), b = cells('Buelga 1-comp'), hu = cells('Hughes 2-comp · FFM · comparator');
+    assert(g && g[2] === '2.6 g/day' && b && b[2] === '4.6 g/day' && hu && hu[2] === '2.5 g/day', JSON.stringify({ g, b, hu }));
+    assert(/no level/i.test(t) && !/fitted to the same levels/.test(t) && /comparator/.test(t), t.slice(-700));
+    assert(/AUC₂₄ \d+–\d+ mg·h\/L on the same regimen, and 2\.6–4\.6 g\/day for AUC₂₄ 500/.test(t), 'the dose range reads the counted models only (Goti 2.6, Buelga 4.6; the comparator\'s 2.5 is not in it)');
+  });
+
+  // Crass 2018 (J Antimicrob Chemother 73:3081, doi 10.1093/jac/dky310), read from the publisher's full text on
+  // 2026-11-17: 346 obese adults, BMI 30.1–85.7, a one-compartment nonparametric (Pmetrics) model. Table 2 footnote:
+  // CLV = 9.656 − 0.078 × AGE − 2.009 × SCR + 1.09 × SEX + 0.04 × TBW^0.75; no estimate below 0.5 L/h.
+  const K48 = require('./harness_constants.cjs').extract();
+  const ctxC48 = (o) => Object.assign({}, ctx48, { age: 41, sex: 'F', scr: 0.7 }, o || {});
+  const agC48 = (o, levels) => fn48('modelAgreement')(ctxC48(o), doses48, levels || [], 2500);
+
+  test('48.5 every Crass 2018 constant is parsed from index.html with the paper\'s value and names its table on its line', () => {
+    const want = { CRASS_THETA_CON: 9.656, CRASS_THETA_AGE: 0.078, CRASS_THETA_SCR: 2.009, CRASS_THETA_SEX: 1.09, CRASS_THETA_WT: 0.04, CRASS_WT_EXP: 0.75,
+      CRASS_MIN_CL_LH: 0.5, CRASS_MIN_BMI: 30, CRASS_MAX_BMI: 85.7, CRASS_MIN_AGE_Y: 19, CRASS_MAX_AGE_Y: 88, CRASS_MIN_WT_KG: 69.6, CRASS_MAX_WT_KG: 293.6,
+      CRASS_MIN_HT_CM: 132.1, CRASS_MAX_HT_CM: 198.1, CRASS_MIN_SCR: 0.3, CRASS_MAX_SCR: 2.5, CRASS_MIN_CRCL_ADJ: 30 };
+    for (const [k, v] of Object.entries(want)) {
+      assert(K48[k] === v, `${k}: ${K48[k]}`);
+      const line = (src48.match(new RegExp(`^const ${k} = [^\\n]*`, 'm')) || [''])[0];
+      assert(/Crass 2018/.test(line) && /Table [12]|Methods|Results/.test(line), `${k}: ${line}`);
+    }
+  });
+
+  test('48.6 crassPopCL is the Table 2 footnote equation: 41 F, 0.7 mg/dL, 119 kg gives 6.49 L/h; male adds 1.09', () => {
+    const f = fn48('crassPopCL'), want = 9.656 - 0.078 * 41 - 2.009 * 0.7 + 0.04 * Math.pow(119, 0.75);
+    assertClose(f(41, 'F', 0.7, 119), want, 1e-12, 'female');
+    assertClose(f(41, 'M', 0.7, 119), want + 1.09, 1e-12, 'male');
+    assert(Math.abs(want - 6.49) < 0.01, want);
+  });
+
+  test('48.7 before a level, an obese patient gets a Crass row, counted, with its daily dose and no simulated band (none is published); never once a level is in', () => {
+    const ag = agC48(), c = ag.rows.find(r => r.key === 'crass');
+    assert(c && !c.comparator && c.noBand === true && c.label === 'Crass 1-comp · obese' && ag.n === 3, JSON.stringify(ag.rows.map(r => [r.key, r.comparator, r.noBand])));
+    assertClose(c.CL, fn48('crassPopCL')(41, 'F', 0.7, 119), 1e-12, 'its population clearance');
+    const out = fn48('priorComparisonHTML')(ag, 'the recommended 1.25 g IV q12h', 400, 600), t = out.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    assert(/Crass 1-comp · obese 6\.49 \d+ 3\.2 g\/day/.test(t) && /spread across 3$/.test(out.gist), t.slice(0, 900));
+    assert(/Crass 2018 is compared before a level only/.test(t) && /nonparametric/.test(t), 'says why it is not fitted to levels');
+    assert(!agC48({}, [{ conc: 15, timeH: 12 }]).rows.some(r => r.key === 'crass'), 'no Crass row once a level is in');
+  });
+
+  test('48.8 no Crass row below BMI 30, on dialysis, without age, sex or creatinine, or under CrCl 30 on adjusted weight (excluded from its population); below 0.5 L/h it says so instead of a dose', () => {
+    const none = (o) => { const ag = agC48(o); return !ag || !ag.rows.some(r => r.key === 'crass'); };   // null: no comparison at all (on dialysis only Goti-HD applies)
+    assert(none({ tbw: 85 }) && none({ dial: true }) && none({ age: null }) && none({ sex: null }) && none({ scr: null }) && none({ scr: 4 }), 'excluded cases');
+    // CrCl 29.2 on AdjBW (excluded from its population) while its own CL would be 0.66 L/h: only the CrCl rule hides it.
+    const ex = { age: 88, sex: 'M', scr: 2.5, tbw: 160, htCm: 165 };
+    assert(fn48('crassPopCL')(88, 'M', 2.5, 160) > 0.5 && none(ex), 'the CrCl < 30 exclusion alone');
+    const low = agC48({ age: 88, scr: 2.4, tbw: 195, htCm: 175 });   // CrCl on AdjBW 30.1, inside; Crass CL 0.06 L/h
+    assert(!low.rows.some(r => r.key === 'crass') && low.notes.some(n => /Crass 2018/.test(n) && /below 0\.5 L\/h/.test(n)), JSON.stringify(low.notes));
+  });
+
+  test('48.9 a covariate outside the range Crass 2018 was built in is named on its row', () => {
+    const ag = agC48({ age: 92, scr: 0.5 }), c = ag.rows.find(r => r.key === 'crass');
+    assert(c && /built in patients aged 19–88/.test(c.note) && /92/.test(c.note), c && c.note);
+    assert(!agC48().rows.find(r => r.key === 'crass').note, 'the audit patient is inside every range');
+  });
+
+  test('48.3 the comparison before a level is display only: it is computed apart from agAll, and confidence, the decision and the summary never read it', () => {
+    assert(/const agAll  = nLev \? agRun : null;/.test(src48) && /const agPrior = nLev \? null : agRun;/.test(src48), 'agPrior exists only with no level, agAll only with one');
+    assert(/const conf\s+= confidenceAssessment\(r, fdAll, agAll\);/.test(src48), 'confidence still reads agAll');
+    const uses = src48.split('\n').filter(l => /agPrior/.test(l) && !/^\s*\/\//.test(l));
+    assert(uses.length === 3 && uses.every(l => /const agPrior = nLev \? null : agRun;|else if \(agPrior && isFinite\(agPrior\.diffPct\)\)|priorComparisonHTML\(agPrior, /.test(l)),
+      `agPrior is read only by the Models panel: ${JSON.stringify(uses)}`);
+  });
+
+  test('48.4 the version', () => {
+    assert(/const APP_VERSION = '3\.18\.0';/.test(src48), 'v3.18.0');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 728;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8)
+const EXPECTED_TOTAL = 737;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

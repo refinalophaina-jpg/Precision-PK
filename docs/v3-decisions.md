@@ -3323,15 +3323,16 @@ SCr 0.7, no dialysis, no level. Cockcroft-Gault on adjusted body weight (85.9 kg
 
 | Model | CL (L/h) | Daily dose for AUC₂₄ 500 |
 |---|---|---|
-| Goti 2018: 4.5 × (143.4/120)^0.8; Vc 58.4 × 119/70 = 99.3; Vp 38.4; Q 6.5 | 5.18 | 2.6 g |
+| Goti 2018: 4.5 × (143.4/120)^0.8; Vc 58.4 × 119/70 = 99.3; Vp 38.4; Q 6.5 | 5.19 | 2.6 g |
 | Hughes 2024: FFM 59.6 kg (Janmahasatian), CrCl on FFM 99.5; 5.09 × (99.5/100)^0.887 | 5.07 | 2.5 g |
-| Buelga 2005: 1.08 × 143.4 × 0.06 | 9.27 | 4.6 g |
+| Buelga 2005: 1.08 × 143.4 × 0.06 | 9.29 | 4.6 g |
 
 - Every model is implemented as published: Goti's equations, its 150 mL/min truncation (Methods) and its
   SCr floor (2019 erratum, age over 65) match `gotiPopPK`/`getGotiCrCl`; Hughes's nlmixr2 column, with no allometric
   term on CL (removed by the authors), matches `hughesPopPK`; k10, k12, k21 and the terminal half-life (Goti 19.8 h,
   Hughes 19.0 h) follow from the parameters exactly.
-- Goti and Hughes, built independently, agree within 2% on clearance. Buelga is the outlier: a haematological-
+- Goti and Hughes, built independently, agree within 3% on clearance (5.19 and 5.07 L/h; v3.18.0 corrected the
+  first figures, 5.18 and 9.27, which were computed at CrCl 143, not 143.4). Buelga is the outlier: a haematological-
   malignancy population (mean 65 kg, CLCR 89 ± 39), clearance linear in CrCl and above it (1.08 × CrCl). The long
   half-lives come mostly from volume (Goti's Vc linear in total weight; Hughes's Vc and Vp on FFM), which moves the
   interval and the trough, not AUC₂₄ at steady state.
@@ -3366,3 +3367,44 @@ SUITE 47: 47.1 the constant and its PREFERENCE comment; 47.2–47.4 the comparat
 from 40 and when in use; 47.5 the advice; 47.6 the version; 47.7 the confidence sentence names counted priors only;
 47.8 the locked-tab line and `k113`. Mutants R4-H-1–5 and R4-P-1–3 (140/140). Browser: the audit patient's Models
 panel, and the PD way back by pointer and keyboard (270/270, 0 console problems). Unit 728/728 (Auckland, UTC too).
+
+## D30 — Every model before the first level, and Crass 2018 for obese adults (2026-11-17, v3.18.0)
+
+Not clinically validated. No engine change: parity against v3.17.0 (`5ef43b3`), 225 calls, 0 differences.
+
+The user's concern: "I just don't want to underdose obese patients due to the models." Two of the three options
+offered were chosen (U13): compare the models before a level, and add Crass 2018. The third, showing Rybak 2020
+Rec 12's 20–25 mg/kg loading range, stays open.
+
+### Before a level
+
+- With no level, AUC Precision's Models panel now compares every applicable model's population estimate for the
+  patient on the same course (`priorComparisonHTML`): CL, the AUC₂₄ each predicts on the regimen, and the daily dose
+  each gives for the middle of the target. The forest plot draws each model's own simulated range with no level.
+- **R115: display only.** One `modelAgreement` call serves both cases (`agRun`): with a level it is `agAll`, which
+  confidence reads as before; without one it is `agPrior`, which only the Models panel reads. The confidence label
+  stays "Population estimate", and the decision, summary and print are unchanged. Cost if wrong: none to a dose.
+- With no level every row is the model's population clearance exactly (the MAP fit with no data returns η = 0).
+
+### Crass 2018
+
+- Crass RL, Dunn R, Hong J, Krop LC, Pai MP, J Antimicrob Chemother 2018;73:3081–6 (doi 10.1093/jac/dky310), the
+  model Rybak 2020 names in its obesity section. 346 obese adults (BMI 30.1–85.7), IDMS creatinine, a
+  one-compartment nonparametric model. CL = 9.656 − 0.078·age − 2.009·SCr + 1.09·(male) + 0.04·TBW^0.75 (Table 2
+  footnote), no dose below 0.5 L/h; excluded CrCl < 30 on adjusted weight. Verified against the publisher's full
+  text and the PDF the user obtained (kept private in `Literature/`, with a source note).
+- **R116: before a level only, counted, no bar.** It is shown for BMI ≥ 30 off dialysis, with CrCl ≥ 30 on
+  adjusted weight, counted in the before-a-level spread (it is inside its own population), with no simulated
+  band and a note saying why. It is never fitted to a level: the text gives no parametric between-subject
+  variance or residual error (its support points are in supplementary tables), so a MAP fit would approximate
+  the model. Cost if wrong: a Bayesian Crass fit could be added from Tables S2–S5 if the user obtains them.
+- **R117:** below 0.5 L/h the paper gives no dose, so there is no row, and one note says so. A covariate outside
+  its ranges (age 19–88, 69.6–293.6 kg, 132.1–198.1 cm, SCr 0.3–2.5, BMI 30.1–85.7) is named on its row.
+- For the audit patient (41 F, 119 kg, 172.7 cm, SCr 0.7): Crass 6.49 L/h, 3.2 g/day for AUC₂₄ 500, between
+  Goti/Hughes (2.6/2.5) and Buelga (4.6), and close to Rybak 2020's "approximately 6 L/h" for obese adults.
+
+### Tests
+
+SUITE 48 (48.1–48.9): population rows exact; the before-a-level body; display only (`agPrior` read by the Models
+panel alone); the version; the Crass constants and their tables; the equation; the row, its exclusions, the 0.5 L/h
+note and the out-of-range note. Mutants R5-1–R5-8. One browser check of the audit patient before a level.
