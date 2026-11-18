@@ -2051,6 +2051,8 @@ async function enterCourse(page) {
        && doseOf('Goti 2-comp · in use') === '2.6 g/day' && doseOf('Buelga 1-comp') === '4.6 g/day' && doseOf('Hughes 2-comp · FFM · comparator') === '2.5 g/day'
        && doseOf('Crass 1-comp · obese') === '3.2 g/day'
        && !/disagree/.test(pre.conf), JSON.stringify(pre).slice(0, 900));
+    const clipped = await q.evaluate(() => [...document.querySelectorAll('#ev-models svg.forest text.lbl')].map(e => ({ t: e.textContent, x: e.getBBox().x })).filter(l => l.x < 0));
+    ok('v3.18.1: no forest-plot label is cut off at the left edge', clipped.length === 0, JSON.stringify(clipped));
     const qAttr = await attributeInjected(q, qProblems);
     results.cloudflareInjected = (results.cloudflareInjected || 0) + qAttr.injected;
     results.problems.push(...qAttr.kept);

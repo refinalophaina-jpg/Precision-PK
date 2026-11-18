@@ -2840,7 +2840,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.18.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.18.1</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2871,7 +2871,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.18.0</div>
+  <div class="header-tag">Vancomycin TDM v3.18.1</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4276,7 +4276,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.18.0';
+const APP_VERSION = '3.18.1';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -15055,7 +15055,7 @@ function getModelRecommendation(nLevels, isICU, tbw, htCm, onHD) {
     advisory = `No vancomycin population model is validated specifically for BMI 30–${HUGHES_MIN_BMI}. `
       + `Hughes 2024 was developed only in class 3 obesity (BMI ≥ ${HUGHES_MIN_BMI}, median 46.3) and is NOT recommended here; `
       + (bmi >= HUGHES_COMPARATOR_MIN_BMI
-        ? `At BMI ${bmi.toFixed(1)} it is shown in Models as a comparator, not counted in the spread. `
+        ? `at BMI ${bmi.toFixed(1)} it is shown in Models as a comparator, not counted in the spread. `
         : '')
       + `Buelga 2005 came from a lean population (mean weight 64.7 kg). Obtain levels early and let the Bayesian fit do the work.`;
   } else if (isICU) {
@@ -16247,17 +16247,20 @@ function forestPlotSVG(ag, nLev, bandMin, bandMax, early) {
   });
   const d0 = Math.min(bandMin * 0.7, ...rows.map(r => r.lo)) * 0.95;
   const d1 = Math.max(bandMax * 1.3, ...rows.map(r => r.hi)) * 1.03;
-  const W = 520, L = 150, R = 16, H = 26 * rows.length + 28;
+  // The label column fits the longest label (12 px Outfit, about 6.6 px a character, v3.18.1: "Hughes 2-comp · FFM ·
+  // comparator" was cut off at 150); the plot area keeps its 354 width, so the viewBox grows with the column.
+  const labelOf = (m) => `${m.label}${m.active ? ' · in use' : ''}${m.comparator ? ' · comparator' : ''}`;
+  const L = Math.max(150, Math.ceil(6.6 * Math.max(...rows.map(r => labelOf(r.m).length))) + 10), R = 16, W = L + 354 + R, H = 26 * rows.length + 28;
   const x = v => L + (v - d0) / (d1 - d0) * (W - L - R);
   const body = rows.map((r, i) => {
     const y = 18 + i * 26;
-    return `<text x="${L - 10}" y="${y + 4}" class="lbl${r.m.active ? ' act' : ''}" text-anchor="end">${escHtml(r.m.label)}${r.m.active ? ' · in use' : ''}${r.m.comparator ? ' · comparator' : ''}</text>
+    return `<text x="${L - 10}" y="${y + 4}" class="lbl${r.m.active ? ' act' : ''}" text-anchor="end">${escHtml(labelOf(r.m))}</text>
       <line x1="${x(r.lo).toFixed(1)}" x2="${x(r.hi).toFixed(1)}" y1="${y}" y2="${y}" class="rng${r.m.active ? ' act' : ''}"/>
       <circle cx="${x(r.m.auc24).toFixed(1)}" cy="${y}" r="4" class="pt${r.m.active ? ' act' : ''}"/>
       <text x="${Math.min(W - R, x(r.hi) + 6).toFixed(1)}" y="${y + 4}" class="num">${r.m.auc24.toFixed(0)}</text>`;
   }).join('');
   const axisY = 18 + rows.length * 26 - 8;
-  const label = rows.map(r => `${r.m.label}${r.m.active ? ' (in use)' : ''}: AUC24 ${r.m.auc24.toFixed(0)}, 80% range ${r.lo.toFixed(0)} to ${r.hi.toFixed(0)}`).join('; ');
+  const label = rows.map(r => `${r.m.label}${r.m.active ? ' (in use)' : ''}${r.m.comparator ? ' (comparator)' : ''}: AUC24 ${r.m.auc24.toFixed(0)}, 80% range ${r.lo.toFixed(0)} to ${r.hi.toFixed(0)}`).join('; ');
   return `<svg class="forest" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escHtml('Model comparison. ' + label)}">
     <rect x="${x(bandMin).toFixed(1)}" y="4" width="${(x(bandMax) - x(bandMin)).toFixed(1)}" height="${axisY - 4}" class="band"/>
     ${body}
