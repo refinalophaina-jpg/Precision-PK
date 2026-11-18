@@ -412,6 +412,24 @@ const MUTANTS = [
     find: "if (CREATININE_MODES.indexOf(arg) < 0) return; setRrt('none'); setCalcMode(arg);", replace: "if (CREATININE_MODES.indexOf(arg) < 0) return; setCalcMode(arg);" },
   { id: 'R4-P-3', what: 'the action is offered for a non-creatinine tab too [47.8]',
     find: 'if (CREATININE_MODES.indexOf(tried) < 0) return line;', replace: 'if (!tried) return line;' },
+
+  // ── v3.18.0: the models before a level, display only ──
+  { id: 'R5-1', what: 'confidence reads the before-a-level comparison [48.3]',
+    find: 'const agAll  = nLev ? agRun : null;', replace: 'const agAll  = agRun;' },
+  { id: 'R5-2', what: 'the daily dose is sized for the bottom of the target, not its middle [48.2]',
+    find: 'const mid = (bandMin + bandMax) / 2, perDay', replace: 'const mid = bandMin, perDay' },
+  { id: 'R5-3', what: 'the before-a-level dose range counts the comparator [48.2]',
+    find: 'const counted = ag.rows.filter(m => !m.comparator);\n  const doses = counted', replace: 'const counted = ag.rows;\n  const doses = counted' },
+  { id: 'R5-4', what: 'Crass 2018 credits the sex term to women [48.6]',
+    find: "+ (sex === 'M' ? CRASS_THETA_SEX : 0)", replace: "+ (sex === 'F' ? CRASS_THETA_SEX : 0)" },
+  { id: 'R5-5', what: 'Crass 2018 is shown after a level too [48.7]',
+    find: 'if (!(levels && levels.length) && !ctx.dial && isFinite(bmi) && bmi >= CRASS_MIN_BMI', replace: 'if (!ctx.dial && isFinite(bmi) && bmi >= CRASS_MIN_BMI' },
+  { id: 'R5-6', what: 'Crass 2018 is shown below CrCl 30, outside its population [48.8]',
+    find: '>= CRASS_MIN_CRCL_ADJ) {', replace: '>= 0) {' },
+  { id: 'R5-7', what: 'the Crass row is drawn with a simulated band it does not have [48.7]',
+    find: 'crassOutsideNote(ctx, bmi), false, true);', replace: 'crassOutsideNote(ctx, bmi), false, false);' },
+  { id: 'R5-8', what: 'the 0.5 L/h floor is ignored [48.8]',
+    find: 'if (cl >= CRASS_MIN_CL_LH) push(', replace: 'if (cl > 0) push(' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

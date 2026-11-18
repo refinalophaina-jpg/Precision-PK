@@ -2840,7 +2840,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.17.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.18.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2871,7 +2871,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.17.0</div>
+  <div class="header-tag">Vancomycin TDM v3.18.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4276,7 +4276,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.17.0';
+const APP_VERSION = '3.18.0';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -6478,6 +6478,54 @@ const AGREEMENT_BMI_HUGHES = 40;   // Hughes 2024 validation floor, BMI kg/m^2
 // "lean"). PREFERENCE (rule 8): no paper sets 39; it orders which rows the Models panel shows.
 const HUGHES_COMPARATOR_MIN_BMI = 39;
 
+// CRASS 2018 (v3.18.0, the user's ask: a model built in obese adults, for the band no model here was validated in).
+// Crass RL, Dunn R, Hong J, Krop LC, Pai MP. Dosing vancomycin in the super obese: less is more. J Antimicrob
+// Chemother 2018;73(11):3081-6, doi 10.1093/jac/dky310; read from the publisher's full text 2026-11-17. 346 obese
+// adults (BMI >= 30) at four US hospitals, IDMS-traceable creatinine, peak and trough TDM; a one-compartment
+// NONPARAMETRIC model (Pmetrics). Its clearance is a linear combination of the Cockcroft-Gault covariates (Results),
+// which fitted better than any estimated CrCl; the equation is the Table 2 footnote. Rybak 2020 names this model in
+// its obesity section. Shown BEFORE A LEVEL ONLY: the paper publishes no parametric between-subject variance or
+// residual error in its text (its support points are in supplementary tables), so fitting a level to it here would
+// approximate the model; it is compared on its population clearance alone, and never moves a dose.
+const CRASS_THETA_CON = 9.656;   // L/h, Crass 2018 Table 2 footnote: CLV = 9.656 − 0.078 AGE − 2.009 SCR + 1.09 SEX + 0.04 TBW^0.75
+const CRASS_THETA_AGE = 0.078;   // L/h per year, Crass 2018 Table 2 footnote
+const CRASS_THETA_SCR = 2.009;   // L/h per mg/dL (IDMS-traceable), Crass 2018 Table 2 footnote
+const CRASS_THETA_SEX = 1.09;    // L/h, male (SEX = 1; 0 if female), Crass 2018 Table 2 footnote
+const CRASS_THETA_WT = 0.04;     // L/h per kg^0.75 of total body weight, Crass 2018 Table 2 footnote
+const CRASS_WT_EXP = 0.75;       // allometric exponent on total body weight, Crass 2018 Table 2 footnote and Results
+const CRASS_MIN_CL_LH = 0.5;     // L/h, Crass 2018 Table 2 footnote b: below it, extrapolation; no dose is given
+const CRASS_MIN_BMI = 30;        // kg/m^2, Crass 2018 Methods: obese (BMI >= 30) adults were eligible
+const CRASS_MAX_BMI = 85.7;      // kg/m^2, Crass 2018 Results and Table 1: BMI 30.1-85.7
+const CRASS_MIN_AGE_Y = 19;      // years, Crass 2018 Results: age range 19-88
+const CRASS_MAX_AGE_Y = 88;      // years, Crass 2018 Results: age range 19-88
+const CRASS_MIN_WT_KG = 69.6;    // kg, Crass 2018 Results: total body weight 69.6-293.6
+const CRASS_MAX_WT_KG = 293.6;   // kg, Crass 2018 Results: total body weight 69.6-293.6
+const CRASS_MIN_HT_CM = 132.1;   // cm, Crass 2018 Results: height 132.1-198.1
+const CRASS_MAX_HT_CM = 198.1;   // cm, Crass 2018 Results: height 132.1-198.1
+const CRASS_MIN_SCR = 0.3;       // mg/dL, Crass 2018 Results: baseline SCr 0.3-2.5
+const CRASS_MAX_SCR = 2.5;       // mg/dL, Crass 2018 Results: baseline SCr 0.3-2.5
+const CRASS_MIN_CRCL_ADJ = 30;   // mL/min, Crass 2018 Methods: excluded below CrCl 30 (Cockcroft-Gault on adjusted body weight)
+
+// Crass 2018's population clearance, L/h, from the measured creatinine (rule 4). sex 'M' | 'F'.
+function crassPopCL(age, sex, scr, tbw) {
+  return CRASS_THETA_CON - CRASS_THETA_AGE * age - CRASS_THETA_SCR * scr
+    + (sex === 'M' ? CRASS_THETA_SEX : 0) + CRASS_THETA_WT * Math.pow(tbw, CRASS_WT_EXP);
+}
+
+// The covariates outside the ranges Crass 2018 was built in, as one sentence, or null.
+function crassOutsideNote(ctx, bmi) {
+  const out = [];
+  const chk = (v, lo, hi, words) => { if (isFinite(v) && (v < lo || v > hi)) out.push(words(v)); };
+  chk(ctx.age, CRASS_MIN_AGE_Y, CRASS_MAX_AGE_Y, v => `age ${+v.toFixed(1)}`);
+  chk(ctx.tbw, CRASS_MIN_WT_KG, CRASS_MAX_WT_KG, v => `weight ${+v.toFixed(1)} kg`);
+  chk(ctx.htCm, CRASS_MIN_HT_CM, CRASS_MAX_HT_CM, v => `height ${+v.toFixed(1)} cm`);
+  chk(ctx.scr, CRASS_MIN_SCR, CRASS_MAX_SCR, v => `serum creatinine ${+v.toFixed(2)} mg/dL`);
+  chk(bmi, CRASS_MIN_BMI, CRASS_MAX_BMI, v => `BMI ${+v.toFixed(1)}`);
+  if (!out.length) return null;
+  return `built in patients aged ${CRASS_MIN_AGE_Y}–${CRASS_MAX_AGE_Y}, ${CRASS_MIN_WT_KG}–${CRASS_MAX_WT_KG} kg, ${CRASS_MIN_HT_CM}–${CRASS_MAX_HT_CM} cm, `
+    + `serum creatinine ${CRASS_MIN_SCR}–${CRASS_MAX_SCR} mg/dL and BMI ${CRASS_MIN_BMI}–${CRASS_MAX_BMI}; this patient's ${out.join(', ')} ${out.length === 1 ? 'is' : 'are'} outside that`;
+}
+
 function modelAgreement(ctx, doses, levels, dailyDose) {
   try {
     if (!doses || !doses.length || !(dailyDose > 0)) return null;
@@ -6487,10 +6535,11 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     const active = (ctx.activeModel === 'goti' && ctx.dial) ? 'goti-hd' : (ctx.activeModel || 'buelga');
     const rows = [];
 
-    const push = (key, label, struct, CL, note, comparator) => {
+    const notes = [];
+    const push = (key, label, struct, CL, note, comparator, noBand) => {
       if (!(CL > 0) || !isFinite(CL)) return;
       rows.push({ key, label, struct, CL, auc24: dailyDose / CL,
-                  active: key === active, note: note || null, comparator: !!comparator });
+                  active: key === active, note: note || null, comparator: !!comparator, noBand: !!noBand });
     };
 
     // ── Buelga, 1-compartment ── Not a peer on dialysis: a non-dialysis
@@ -6535,6 +6584,17 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
            hughesComparator);
     }
 
+    // ── Crass 2018, 1-compartment, obese adults: before a level only, on its population clearance (v3.18.0) ──
+    if (!(levels && levels.length) && !ctx.dial && isFinite(bmi) && bmi >= CRASS_MIN_BMI
+        && ctx.age > 0 && (ctx.sex === 'M' || ctx.sex === 'F') && ctx.scr > 0 && ctx.tbw > 0 && ctx.htCm > 0) {
+      const adj = calcAdjBW(ctx.tbw, calcIBW(ctx.sex, ctx.htCm));
+      if (calcCrClRaw(ctx.age, ctx.sex, ctx.scr, adj, SCR_POLICY.ACTUAL) >= CRASS_MIN_CRCL_ADJ) {
+        const cl = crassPopCL(ctx.age, ctx.sex, ctx.scr, ctx.tbw);
+        if (cl >= CRASS_MIN_CL_LH) push('crass', 'Crass 1-comp · obese', '1-compartment', cl, crassOutsideNote(ctx, bmi), false, true);
+        else notes.push(`Crass 2018 gives ${cl.toFixed(2)} L/h for this patient, below 0.5 L/h, where the paper gives no dose, so it is not shown`);
+      }
+    }
+
     // The spread, range and count read the applicable priors only; a comparator row is shown beside them.
     const peers = rows.filter(r => !r.comparator);
     if (peers.length < 2) return null;
@@ -6547,7 +6607,7 @@ function modelAgreement(ctx, doses, levels, dailyDose) {
     const band = MODEL_AGREEMENT_BANDS.find(x => diffPct < x.max) || MODEL_AGREEMENT_BANDS[2];
     const activeRow = rows.find(r => r.active) || null;
 
-    return { rows, lo, hi, mean, diffPct, band, activeRow,
+    return { rows, lo, hi, mean, diffPct, band, activeRow, notes,
              n: peers.length,
              // kept so older render paths that read these still work
              aucBuelga: (rows.find(r => r.key === 'buelga') || {}).auc24,
@@ -16139,6 +16199,39 @@ function aucRangeSVG(auc, row, bandMin, bandMax) {
   };
 }
 
+// BEFORE A LEVEL (v3.18.0, the user's ask 2026-11-17: "I just don't want to underdose obese patients due to the
+// models"). With no level there is no fit to compare, but the starting dose still depends on the prior chosen, and
+// for an obese patient the priors can differ by 80%. This shows each applicable model's population estimate for the
+// patient on the same course (modelAgreement with no levels: every row is the model's own population clearance),
+// the AUC₂₄ each predicts on the regimen, and the daily dose each gives for the middle of the target. Display only:
+// it is never passed to confidence, the decision, the summary or print (agAll stays null without a level).
+function priorComparisonHTML(ag, onReg, bandMin, bandMax) {
+  const mid = (bandMin + bandMax) / 2, perDay = (m) => `${(m.CL * mid / 1000).toFixed(1)} g/day`;
+  const counted = ag.rows.filter(m => !m.comparator);
+  const doses = counted.map(m => m.CL * mid / 1000);
+  const inTarget = counted.filter(m => m.auc24 >= bandMin && m.auc24 <= bandMax).length;
+  const caveats = ag.rows.filter(m => m.note)
+    .map(m => `<p class="ev-note vx-muted">${escHtml(m.label)}: ${escHtml(m.note)}.</p>`).join('')
+    + (ag.notes || []).map(n => `<p class="ev-note vx-muted">${escHtml(n)}.</p>`).join('')
+    + (ag.rows.some(m => m.key === 'crass')
+      ? `<p class="ev-note vx-muted">Crass 2018 is compared before a level only, and has no bar: built in 346 obese adults (BMI 30.1–85.7), its published model is nonparametric and gives no between-subject variance to fit a level with, or a simulated range.</p>`
+      : '');
+  const body = `
+        <p class="ev-lead">Before any level: ${inTarget} of ${ag.n} applicable model${ag.n === 1 ? '' : 's'} place AUC₂₄ within ${bandMin}–${bandMax} on ${escHtml(onReg)}.</p>
+        ${forestPlotSVG(ag, 0, bandMin, bandMax, false)}
+        <table class="ev-table">
+          <thead><tr><th scope="col">Prior</th><th scope="col">CL (L/h)</th><th scope="col">AUC₂₄</th><th scope="col">Daily dose for AUC₂₄ ${mid.toFixed(0)}</th></tr></thead>
+          <tbody>${ag.rows.map(m => `<tr${m.active ? ' class="is-active"' : ''}><th scope="row">${escHtml(m.label)}${m.active ? ' · in use' : ''}${m.comparator ? ' · comparator' : ''}</th><td>${m.CL.toFixed(2)}</td><td>${m.auc24.toFixed(0)}</td><td>${perDay(m)}</td></tr>`).join('')}</tbody>
+        </table>
+        <p class="ev-note">Each applicable model's population estimate for this patient, with no level yet: AUC₂₄
+          ${ag.lo.toFixed(0)}–${ag.hi.toFixed(0)} mg·h/L on the same regimen, and ${Math.min(...doses).toFixed(1)}–${Math.max(...doses).toFixed(1)} g/day
+          for AUC₂₄ ${mid.toFixed(0)}. Bars are each model's own simulated 80% range before a level. The spread is the
+          uncertainty in the starting dose that comes from the choice of model; the first level shows which is closer,
+          and Rybak 2020 asks for early levels in obese patients (Rec 12, B-II).</p>
+        ${caveats}`;
+  return { gist: `Before a level · ${ag.diffPct.toFixed(0)}% spread across ${ag.n}`, body };
+}
+
 // Model comparison as a forest plot: one row per applicable prior on a shared
 // AUC axis, each with its OWN simulated 80% range (AUC_UNCERTAINTY), against
 // the target band. The active model is marked in words, not only colour.
@@ -16148,6 +16241,7 @@ function aucRangeSVG(auc, row, bandMin, bandMax) {
 // to ask (presentation only).
 function forestPlotSVG(ag, nLev, bandMin, bandMax, early) {
   const rows = ag.rows.map(m => {
+    if (m.noBand) return { m, lo: m.auc24, hi: m.auc24 };   // no simulated range is published for this model (Crass 2018)
     const row = aucUncertaintyRow(nLev, m.key === 'goti-hd' ? 'goti' : m.key, early);
     return { m, lo: m.auc24 * (1 - row.lo), hi: m.auc24 * (1 + row.hi) };
   });
@@ -16522,9 +16616,13 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
   const agDD   = curTDD || (!isHD && fitRec && !fitRec.noSolution && fitRec.dose && fitRec.tau ? fitRec.dose * (24 / fitRec.tau) : null);
   const agOn   = curTDD ? 'detected' : 'recommended';
   const fdAll  = fitDiagnostics(Object.assign({}, r, { regimen: cur2 }));
-  const agAll  = (nLev && agDD) ? modelAgreement(
+  // One comparison: fitted to the levels when there are any (agAll, which confidence reads), otherwise each
+  // model's population estimate (agPrior, v3.18.0), which only the Models panel shows.
+  const agRun  = agDD ? modelAgreement(
       r.agCtx || { activeModel: r.model, crcl: r.crcl, tbw: r.tbw, dial: r.dial },
-      doses, levels, agDD) : null;
+      doses, nLev ? levels : [], agDD) : null;
+  const agAll  = nLev ? agRun : null;
+  const agPrior = nLev ? null : agRun;
   const conf   = confidenceAssessment(r, fdAll, agAll);
   // The user's ruling 3: under Low or Very low an in-range, safe current regimen is kept. Applied
   // here, once, before the verdict, Next line, summary, announcement and print read the answer.
@@ -17099,6 +17197,11 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
               : '<strong>The models differ widely on exposure.</strong> The answer depends on which model is right for this patient; whether a further level is worth drawing is the Next line at the top of the answer.'}
           The spread shows model dependence, not the accuracy of the model in use; cut-points (10%, 20%) are this calculator's preference.</p>
         ${caveats}`;
+    } else if (agPrior && isFinite(agPrior.diffPct)) {
+      const onReg = agOn === 'detected' ? `the detected ${fmtRegimen(cur2.dose, cur2.tau)}`
+        : isHD ? `a steady-state reference ${fmtRegimen(rec.dose, rec.tau)}` : `the recommended ${fmtRegimen(rec.dose, rec.tau)}`;
+      const pc = priorComparisonHTML(agPrior, onReg, bandMin, bandMax);
+      gist = pc.gist; body += pc.body;
     }
     const suggested = p2c.modelRec ? modelSuggestedName(p2c.modelRec, isHD ? 'gotihd' : r.model) : null;
     if (suggested) gist = `Suggested: ${suggested} · ${gist}`;
