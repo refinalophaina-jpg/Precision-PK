@@ -2840,7 +2840,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.18.1</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.18.2</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2871,7 +2871,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.18.1</div>
+  <div class="header-tag">Vancomycin TDM v3.18.2</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4276,7 +4276,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.18.1';
+const APP_VERSION = '3.18.2';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -6484,9 +6484,10 @@ const HUGHES_COMPARATOR_MIN_BMI = 39;
 // adults (BMI >= 30) at four US hospitals, IDMS-traceable creatinine, peak and trough TDM; a one-compartment
 // NONPARAMETRIC model (Pmetrics). Its clearance is a linear combination of the Cockcroft-Gault covariates (Results),
 // which fitted better than any estimated CrCl; the equation is the Table 2 footnote. Rybak 2020 names this model in
-// its obesity section. Shown BEFORE A LEVEL ONLY: the paper publishes no parametric between-subject variance or
-// residual error in its text (its support points are in supplementary tables), so fitting a level to it here would
-// approximate the model; it is compared on its population clearance alone, and never moves a dose.
+// its obesity section. Shown BEFORE A LEVEL ONLY (the user's ruling U14, 2026-11-17): the supplement gives each
+// parameter's distribution and their covariance (Tables S2, S3; skewed, and the equation uses the medians), but neither
+// the paper nor the supplement publishes a residual-error model, which a fit to a level needs. Fitting one here would
+// rest on a borrowed error model, so it is compared on its population clearance alone, and never moves a dose.
 const CRASS_THETA_CON = 9.656;   // L/h, Crass 2018 Table 2 footnote: CLV = 9.656 − 0.078 AGE − 2.009 SCR + 1.09 SEX + 0.04 TBW^0.75
 const CRASS_THETA_AGE = 0.078;   // L/h per year, Crass 2018 Table 2 footnote
 const CRASS_THETA_SCR = 2.009;   // L/h per mg/dL (IDMS-traceable), Crass 2018 Table 2 footnote
@@ -16214,7 +16215,7 @@ function priorComparisonHTML(ag, onReg, bandMin, bandMax) {
     .map(m => `<p class="ev-note vx-muted">${escHtml(m.label)}: ${escHtml(m.note)}.</p>`).join('')
     + (ag.notes || []).map(n => `<p class="ev-note vx-muted">${escHtml(n)}.</p>`).join('')
     + (ag.rows.some(m => m.key === 'crass')
-      ? `<p class="ev-note vx-muted">Crass 2018 is compared before a level only, and has no bar: built in 346 obese adults (BMI 30.1–85.7), its published model is nonparametric and gives no between-subject variance to fit a level with, or a simulated range.</p>`
+      ? `<p class="ev-note vx-muted">Crass 2018 is compared before a level only, and has no bar: built in 346 obese adults (BMI 30.1–85.7), neither the paper nor its supplement publishes the residual-error model a fit to a level needs, and no simulated range is published.</p>`
       : '');
   const body = `
         <p class="ev-lead">Before any level: ${inTarget} of ${ag.n} applicable model${ag.n === 1 ? '' : 's'} place AUC₂₄ within ${bandMin}–${bandMax} on ${escHtml(onReg)}.</p>

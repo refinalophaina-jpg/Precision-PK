@@ -432,6 +432,8 @@ const MUTANTS = [
     find: 'if (cl >= CRASS_MIN_CL_LH) push(', replace: 'if (cl > 0) push(' },
   { id: 'R5-9', what: 'the forest label column is fixed at 150 again and cuts long labels [48.10]',
     find: 'const L = Math.max(150, Math.ceil(6.6 * Math.max(...rows.map(r => labelOf(r.m).length))) + 10), R = 16', replace: 'const L = 150, R = 16' },
+  { id: 'R5-10', what: 'the Crass note gives the old, wrong reason (no between-subject variance) [48.7]',
+    find: 'neither the paper nor its supplement publishes the residual-error model a fit to a level needs', replace: 'its published model is nonparametric and gives no between-subject variance to fit a level with' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];
