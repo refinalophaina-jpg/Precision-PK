@@ -11489,6 +11489,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const rec = (tbw) => fn47('getModelRecommendation')(1, false, tbw, ht47, false);
     const r39 = rec(119), r35 = rec(35 * Math.pow(ht47 / 100, 2));
     assert(r39.recommended === 'goti' && /NOT recommended/.test(r39.advisory) && /comparator/.test(r39.advisory) && /not counted/.test(r39.advisory), r39.advisory);
+    assert(/recommended here; at BMI 39\.9 it is shown in Models/.test(r39.advisory), 'v3.18.1: one sentence, no capital after the semicolon');
     assert(r35.recommended === 'goti' && /NOT recommended/.test(r35.advisory) && !/comparator/.test(r35.advisory), r35.advisory);
   });
 
@@ -11608,6 +11609,17 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(!agC48().rows.find(r => r.key === 'crass').note, 'the audit patient is inside every range');
   });
 
+  test('48.10 v3.18.1: the forest plot\'s label column is as wide as its longest label (12 px text, about 6.6 px a character), so "Hughes 2-comp · FFM · comparator" is not cut off; the plot keeps its width', () => {
+    const svg = fn48('forestPlotSVG')(agC48(), 0, 400, 600, false);
+    const W = +(svg.match(/viewBox="0 0 ([\d.]+) /) || [])[1];
+    const labels = [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" class="lbl[^"]*" text-anchor="end">([^<]*)<\/text>/g)].map(m => ({ x: +m[1], s: m[2].replace(/&[^;]+;/g, 'x') }));
+    assert(labels.length === 4 && labels.some(l => l.s === 'Hughes 2-comp · FFM · comparator'), JSON.stringify(labels));
+    assert(labels.every(l => l.x >= 6.6 * l.s.length), JSON.stringify(labels.map(l => [l.s, l.x, 6.6 * l.s.length])));
+    const L = labels[0].x + 10;
+    assert(Math.abs((W - L - 16) - 354) < 1e-9, `plot width ${W - L - 16}`);
+    assert(/Hughes 2-comp · FFM \(comparator\): AUC24/.test(svg), 'the accessible label says comparator too');
+  });
+
   test('48.3 the comparison before a level is display only: it is computed apart from agAll, and confidence, the decision and the summary never read it', () => {
     assert(/const agAll  = nLev \? agRun : null;/.test(src48) && /const agPrior = nLev \? null : agRun;/.test(src48), 'agPrior exists only with no level, agAll only with one');
     assert(/const conf\s+= confidenceAssessment\(r, fdAll, agAll\);/.test(src48), 'confidence still reads agAll');
@@ -11617,7 +11629,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('48.4 the version', () => {
-    assert(/const APP_VERSION = '3\.18\.0';/.test(src48), 'v3.18.0');
+    assert(/const APP_VERSION = '3\.18\.1';/.test(src48), 'v3.18.1');
   });
 }
 
@@ -11625,7 +11637,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 737;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9)
+const EXPECTED_TOTAL = 738;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9; v3.18.1: + 48.10)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

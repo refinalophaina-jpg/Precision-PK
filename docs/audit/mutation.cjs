@@ -430,6 +430,8 @@ const MUTANTS = [
     find: 'crassOutsideNote(ctx, bmi), false, true);', replace: 'crassOutsideNote(ctx, bmi), false, false);' },
   { id: 'R5-8', what: 'the 0.5 L/h floor is ignored [48.8]',
     find: 'if (cl >= CRASS_MIN_CL_LH) push(', replace: 'if (cl > 0) push(' },
+  { id: 'R5-9', what: 'the forest label column is fixed at 150 again and cuts long labels [48.10]',
+    find: 'const L = Math.max(150, Math.ceil(6.6 * Math.max(...rows.map(r => labelOf(r.m).length))) + 10), R = 16', replace: 'const L = 150, R = 16' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

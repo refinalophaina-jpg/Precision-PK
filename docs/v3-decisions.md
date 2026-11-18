@@ -3408,3 +3408,12 @@ Rec 12's 20–25 mg/kg loading range, stays open.
 SUITE 48 (48.1–48.9): population rows exact; the before-a-level body; display only (`agPrior` read by the Models
 panel alone); the version; the Crass constants and their tables; the equation; the row, its exclusions, the 0.5 L/h
 note and the out-of-range note. Mutants R5-1–R5-8. One browser check of the audit patient before a level.
+
+### v3.18.1 — two presentation fixes found on the v3.18.0 screen (2026-11-17)
+
+- The forest plot's label column was fixed at 150 units, so "Hughes 2-comp · FFM · comparator" (32 characters at
+  12 px) ran off the left edge. The column now fits the longest label (about 6.6 px a character, plus 10) and the
+  viewBox grows with it, so the plot area keeps its 354 width. The accessible label names the comparator too.
+- The BMI 30–40 advice read "…NOT recommended here; At BMI 39.9…": the v3.17.0 clause now starts in lower case.
+- 48.10 and mutant R5-9; one browser check that no label's box starts left of 0. Unit 738/738, mutation 149/149,
+  browser 272/272, parity against v3.18.0 (`74d366c`) 0.
