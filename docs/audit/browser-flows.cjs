@@ -3475,6 +3475,19 @@ async function enterCourse(page) {
        !!soonHead && soonHead.word === 'Too soon after the previous session' && soonHead.color === soonHead.ink && !soonHead.hold, JSON.stringify(soonHead));
     await h.locator('#hd-prev-date').fill(day(-2)); await typeInto(h, '#hd-prev-time', '1600');
     await run();
+    // v3.19.0 (U16): a morning level before an afternoon session (04:00 → 17:00, 13 h) is read; one drawn the day before
+    // (07:00 → next day 11:00, 28 h) is refused as not this session's pre-dialysis level.
+    await typeInto(h, '#hd-pre-time', '0400'); await typeInto(h, '#hd-start-time', '1700');
+    await run();
+    const amPm = await h.evaluate(() => (document.querySelector('[data-hd-reading]') || { dataset: {} }).dataset.hdReading);
+    await h.locator('#hd-pre-date').fill(day(-1)); await typeInto(h, '#hd-pre-time', '0700'); await typeInto(h, '#hd-start-time', '1100');
+    await run();
+    const stale = await txt('#results-content');
+    ok('v3.19.0: a 04:00 level before a 17:00 session gives a reading; a level drawn 28 h before the session is refused as "Not a pre-dialysis level", naming the 24 h window and the morning labs',
+       amPm === 'dose' && /Not a pre-dialysis level/.test(stale) && /28 h before this session's start/.test(stale) && /more than 24 h before it/.test(stale) && /morning labs/.test(stale) && !/mg after the session/.test(stale),
+       JSON.stringify({ amPm, stale: stale.slice(0, 500) }));
+    await h.locator('#hd-pre-date').fill(day(0));
+    await run();
     // Review: a malformed form shows its errors by real click, with the Goti 2018 · HD pointer still visible above them.
     await typeInto(h, '#hd-pre', '200');
     await h.locator('[data-onclick="k31"]:visible').first().click(); await h.waitForTimeout(250);

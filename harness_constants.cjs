@@ -219,6 +219,10 @@ function extract() {
     // and the default next-draw time, a PREFERENCE (rule 8, controller ruling R65)
     POST_DISTRIBUTION_MIN_H:   num(src, 'POST_DISTRIBUTION_MIN_H'),
     CRRT_NEXT_DRAW_DEFAULT_H:  num(src, 'CRRT_NEXT_DRAW_DEFAULT_H'),
+    // v3.19.0 (D31) — PREFERENCES (rule 8), the user's rulings: the pre-HD window (U16, 24 h, was 12) and the oldest
+    // CRRT starting level projected from (U17, 72 h)
+    HD_PRE_LABEL_H:            num(src, 'HD_PRE_LABEL_H'),
+    CRRT_LEVEL_MAX_AGE_H:      num(src, 'CRRT_LEVEL_MAX_AGE_H'),
     // v3.16.0 (D28, Task 29, ruling R95a) — the one future-level tolerance (one minute, D26), read by AUC Precision,
     // CRRT and the haemodialysis reading through levelAfterNow
     FUTURE_LEVEL_TOLERANCE_H:  num(src, 'FUTURE_LEVEL_TOLERANCE_H'),
