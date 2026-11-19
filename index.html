@@ -2840,7 +2840,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.18.2</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.19.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2871,7 +2871,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.18.2</div>
+  <div class="header-tag">Vancomycin TDM v3.19.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4276,7 +4276,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.18.2';
+const APP_VERSION = '3.19.0';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -5787,7 +5787,7 @@ function crrtResultsHTML(a, input, nowH) {
   const basis = inp.vBasis === 'matzke3' ? 'Matzke 1984 group III 0.90' : 'Bauer 0.70';
   const method = txEvHTML('crrt-method', 'How this works', 'Level-based, not a model', `
     <p class="ev-note">Every level is read against the one before it: the elimination rate that carries the earlier level, plus every dose in between, onto the measured one, one-compartment with V = ${basis} L/kg × the weight now. An interval is used only when the circuit ran throughout it at one effluent rate and modality, and neither level was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end (Rybak 2020, Rec 2a: the post-distributional level is drawn 1 to 2 h after the infusion).</p>
-    <p class="ev-note">The projection holds only while the circuit still runs as it did when the decline was measured: a stop, a restart or a change of rate or modality since means a new level. No dose is scaled from the effluent rate, and no creatinine or population model is used.</p>
+    <p class="ev-note">The projection holds only while the circuit still runs as it did when the decline was measured: a stop, a restart or a change of rate or modality since means a new level, and so does a starting level more than ${CRRT_LEVEL_MAX_AGE_H} h old. No dose is scaled from the effluent rate, and no creatinine or population model is used.</p>
     <p class="ev-note">A redose is sized by where it puts the next level you will draw, inside your goal: the step whose expected level lands closest to the goal's middle, ties to the smaller. With no time entered, the next level is judged ${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose (a preference you can change); Rybak 2020, Rec 16 asks for a first level within ${CRRT_FIRST_LEVEL_WITHIN_H} h.</p>`, false);
   const t12 = (k) => halfLife(k).toFixed(0);
   const decline = (a.intervals || []).length ? txEvHTML('crrt-decline', 'The decline', a.rate ? `${a.rate.n} interval${a.rate.n === 1 ? '' : 's'} used · half-life ${t12(a.rate.kMax)}–${t12(a.rate.kMin)} h` : 'no interval used', `
@@ -5800,7 +5800,8 @@ function crrtResultsHTML(a, input, nowH) {
   const drawNote = a.nextDrawDefault ? `${CRRT_NEXT_DRAW_DEFAULT_H} h after the dose (default)` : 'as entered';
   // Controller ruling R107: with one level there is no decline yet, so the guideline's reference still follows, under the
   // same lead as before any level ("Until two levels … the guideline's reference follows"), beside "Draw a level".
-  const oneLevel = a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length;
+  // The user's ruling U17 (D31): a level too old to project from shows the reference too.
+  const oneLevel = a.state === 'need-level' && (a.reason === 'stale' || (a.reason === 'no-interval' && !(a.intervals || []).length));
   const oneLevelRef = oneLevel ? `<div class="tx-ld crrt-reference"${ml ? ` data-effluent="${ml}"` : ''}>${crrtReferenceLeadHTML()}${refSlot()}</div>` : '';
   if (a.state === 'need-level') return wrap(`
     <section class="tx-verdict crrt-verdict" aria-labelledby="tx-regimen">
@@ -10592,10 +10593,10 @@ const HD_PREDIALYSIS_MIN = 15;  // mg/L, Rybak 2020 Rec 14 (C-III)
 const HD_PREDIALYSIS_MAX = 20;  // mg/L, Rybak 2020 Rec 14 (C-III)
 // PREFERENCE (rule 8) — label and caution windows; never a fit. Since D17 the
 // "pre-HD" label also gates the one-time hold (pre-HD > 20: no dose, recheck)
-// and the scheduled caution: 23 mg/L drawn 11.9 h before a session holds, 12.1 h
-// before stays predictive (docs/v3-decisions.md D17).
-// A level drawn within this many hours before a session reads as "pre-HD".
-const HD_PRE_LABEL_H = 12;
+// and the scheduled caution (D17). A level drawn within this many hours before a
+// session reads as "pre-HD". 24 h since v3.19.0 (12 before; the user's ruling U16,
+// D31): the level is drawn with the morning labs and the session time varies.
+const HD_PRE_LABEL_H = 24;
 // "Soon after a session" = within this many distribution half-lives (ln2/α) of
 // the model's own distribution phase: drug is still returning from the tissues.
 const HD_POSTSESSION_HALF_LIVES = 3;
@@ -11362,6 +11363,10 @@ const POST_DISTRIBUTION_MIN_H = 1;
 // beside Rybak 2020 Rec 16's first level "within the first 24 hours" (CRRT_FIRST_LEVEL_WITHIN_H) and is not
 // derived from it.
 const CRRT_NEXT_DRAW_DEFAULT_H = 24;
+// PREFERENCE (rule 8, the user's ruling U17, D31): the projection starts from a level no older than this at the time
+// of the analysis; an older one gives "Draw a level" with the Rec 16 reference. It follows the local practice of
+// rechecking a CRRT trough every 3 days while in range; no paper sets it. It can withhold a dose answer, never size one.
+const CRRT_LEVEL_MAX_AGE_H = 72;
 const CRRT_MODALITY_LABEL = { cvvh: 'CVVH', cvvhd: 'CVVHD', cvvhdf: 'CVVHDF' };
 // The two volume bases PD offers, and only those (controller ruling R62: no CRRT-specific volume is sourced):
 // Bauer 0.70 L/kg (calcVd) and Matzke 1984 group III (MATZKE_VD_GROUP3). null otherwise: no basis, no answer.
@@ -11513,6 +11518,9 @@ function crrtAnswer(input, nowH) {
   const startLevel = levels.slice().reverse().find(l => !crrtDistributing(l.timeH, doses));
   const newest = levels[levels.length - 1];
   if (startLevel !== newest) cautions.push({ tier: 'info', word: 'Newest level not the starting point', html: escHtml(`The level at ${fmtClock(newest.timeH)} was drawn within ${POST_DISTRIBUTION_MIN_H} h of an infusion's end, so the projection starts at the level at ${fmtClock(startLevel.timeH)}.`) });
+  // The user's ruling U17 (D31): no projection from a level older than CRRT_LEVEL_MAX_AGE_H.
+  if (nowH - startLevel.timeH > CRRT_LEVEL_MAX_AGE_H)
+    return needLevel('stale', `Draw a level: the level the projection would start from (${fmtDT(startLevel.timeH, true)}) is ${fmtGapHM(nowH - startLevel.timeH)} old, more than ${CRRT_LEVEL_MAX_AGE_H} h. A CRRT level is rechecked at least every ${CRRT_LEVEL_MAX_AGE_H / 24} days.`, { rate });
   // Projection: only while one recorded circuit run covers the whole span from the end of the last used interval to
   // the next draw (controller ruling R91, revised: the same span the setting check reads), and the setting in force
   // over it is the one every used interval was measured at.
@@ -11647,7 +11655,8 @@ function levelAfterNow(timeH, nowH) { return timeH > nowH + FUTURE_LEVEL_TOLERAN
 //   dose = peakEquationDose(V, target peak (your setting), post-session level, cap), the one V × ΔC (Task 26)
 //   cap = the lower of DOSE_MAX_PER_DOSE_MG and the local maximum (rrtLocalSettings, shared with CRRT and hybrid)
 //   hold when the pre-dialysis level is at or above the hold level (your setting, U11)
-// Refused: a level drawn at or after this session's start (it reads falsely low), or within RRT_NO_SAMPLE_AFTER_SESSION_H
+// Refused: a level drawn at or after this session's start (it reads falsely low), more than HD_PRE_LABEL_H before it
+// (not this session's pre-dialysis level: the user's ruling U16, D31), or within RRT_NO_SAMPLE_AFTER_SESSION_H
 // of the previous session's end (R67: the Rybak 2020 text, not hdRedistributionWindowH, which needs a fit), or dated
 // after now (R96). No previous session entered: read, with a caution that the check was not made. No number here is the
 // app's own: each is the user's or a named constant (46.73 holds this function to the literals 0 and 1).
@@ -11665,6 +11674,10 @@ function hdReading(input) {
     return refuse('The level is dated in the future', escHtml(`The level at ${fmtDT(inp.preAtH, true)} is dated after the time of this analysis. A level cannot be drawn in the future; check the date and time.`));
   if (inp.preAtH >= inp.sessionStartH)
     return refuse('Drawn during the session', escHtml(`The level at ${fmtClock(inp.preAtH)} was drawn at or after this session's start (${fmtClock(inp.sessionStartH)}). A level drawn during a session reads falsely low; this reading needs one drawn before the session.`));
+  // The user's ruling U16 (D31): the pre-dialysis level is the one drawn within HD_PRE_LABEL_H before this session, the
+  // AUC Precision label's own window, one constant for both. An earlier level is not this session's pre-dialysis level.
+  if (inp.sessionStartH - inp.preAtH > HD_PRE_LABEL_H)
+    return refuse('Not a pre-dialysis level', escHtml(`The level at ${fmtDT(inp.preAtH, true)} was drawn ${fmtGapHM(inp.sessionStartH - inp.preAtH)} before this session's start (${fmtDT(inp.sessionStartH, true)}), more than ${HD_PRE_LABEL_H} h before it. The pre-dialysis level is the one drawn with the morning labs before the session; draw it then.`));
   const cautions = [], prev = inp.prevSessionEndH;
   if (prev == null) {
     cautions.push({ tier: 'caution', word: `The ${RRT_NO_SAMPLE_AFTER_SESSION_H} h check was not made`, html:

@@ -5849,7 +5849,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[3-8]\.\d+';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[3-9]\.\d+';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6063,7 +6063,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[4-8]\.\d+';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[4-9]\.\d+';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -9424,7 +9424,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
   // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.1[5-8]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[5-9]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -11285,7 +11285,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
   // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
   test('46.91 the version', () => {
-    assert(/const APP_VERSION = '3\.1[6-8]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
+    assert(/const APP_VERSION = '3\.1[6-9]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
   });
 
   // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
@@ -11494,7 +11494,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('47.6 the version', () => {
-    assert(/const APP_VERSION = '3\.1[78]\.\d+';/.test(src47), 'v3.17.0 or its successor');
+    assert(/const APP_VERSION = '3\.1[789]\.\d+';/.test(src47), 'v3.17.0 or its successor');
   });
 
   test('47.7 the confidence reason names the counted priors only: a comparator\'s AUC₂₄ never appears in the disagreement sentence', () => {
@@ -11630,7 +11630,97 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('48.4 the version', () => {
-    assert(/const APP_VERSION = '3\.18\.2';/.test(src48), 'v3.18.2');
+    assert(/const APP_VERSION = '3\.1[89]\.\d+';/.test(src48), 'v3.18.2 or its successor');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 49 — v3.19.0: the dialysis rulings U16–U18 (the user, 2026-11-18)
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 49 — v3.19.0: the pre-HD window, the CRRT level age and spacing');
+  console.log(`${'─'.repeat(60)}`);
+  const fn49 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const src49 = fs.readFileSync(htmlPath, 'utf8');
+  const text49 = (h) => String(h).replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim();
+  const C49 = __extractConsts();
+
+  test('49.1 U16: a level drawn within 24 h before a session is pre-HD (a 04:00 level before a 17:00 session, 13 h, was interdialytic under 12 h); 23.9 h is pre-HD, 24.1 h is not', () => {
+    assert(C49.HD_PRE_LABEL_H === 24 && /PREFERENCE \(rule 8\)[\s\S]{0,400}U16[\s\S]{0,120}const HD_PRE_LABEL_H = 24;/.test(src49), 'the constant is 24, a preference naming U16');
+    const S = [{ n: 1, startH: 0, endH: 4 }, { n: 2, startH: 61, endH: 65 }], timing = fn49('hdLevelTiming');
+    for (const [toH, kind] of [[13, 'pre'], [23.9, 'pre'], [24.1, 'interdialytic']]) {
+      const t = timing(61 - toH, S, 0);
+      assert(t.kind === kind && (kind !== 'pre' || (t.n === 2 && Math.abs(t.toH - toH) < 1e-9)), `${toH} h before: ${JSON.stringify(t)}`);
+    }
+  });
+
+  test('49.2 U16: a measured 23 mg/L drawn 13 h and 23.9 h before the session is the one-time "no dose now, recheck"; 24.1 h before stays predictive', () => {
+    const pk = fn49('gotiPopPK')(10, 70, true);
+    const r = (startH) => ({ model: 'goti', dial: true, CL_ind: pk.TVCL, V_ind: pk.TVVc, tbw: 70, goti: { Vc_ind: pk.TVVc, Vp_ind: pk.TVVp, Q: pk.Q },
+      levels: [{ conc: 23, timeH: 3 }], doses: [{ mg: 1750, tinfH: 2, timeH: 0 }], hdSessions: [{ n: 1, startH, endH: startH + 4 }], fitNowH: startH + 5 });
+    for (const [toH, held] of [[13, true], [23.9, true], [24.1, false]]) {
+      const rec = fn49('hdOneTimeDose')(r(3 + toH), 3 + toH + 5, 48);
+      assert((rec.reason === 'pre-above') === held && (!held || (rec.mg === 0 && rec.preAbove.n === 1)), `${toH} h: ${JSON.stringify(rec).slice(0, 240)}`);
+    }
+  });
+
+  test('49.3 U16: on Goti-HD the morning SCr drawn 13 h before the session is pre-dialysis and used as measured; one drawn 25 h before is still replaced by the higher pre-dialysis reading', () => {
+    const S = [{ n: 1, startH: 0, endH: 4 }, { n: 2, startH: 61, endH: 65 }], pre = fn49('hdPreDialysisScr');
+    assert(pre([{ scr: 8, timeH: -2 }, { scr: 7, timeH: 48 }], S) === null, 'the 13 h reading stands as measured');
+    const old = pre([{ scr: 8, timeH: -2 }, { scr: 7, timeH: 36 }], S);
+    assert(old && old.use && old.use.scr === 8 && old.n === 1, JSON.stringify(old));
+  });
+
+  // The Trough haemodialysis reading. The four settings are TEST FIXTURES (the repository ships none, 46.73). Fictional 80 kg.
+  const S49 = { fractionRemaining: 0.65, targetPeak: 25, vdPerKg: 0.7, holdPreMgL: 25 };
+  const B49 = new Date(2026, 5, 15, 0, 0).getTime() / 3600000;   // 15 Jun 2026 00:00, local
+  const hd49 = (o) => fn49('hdReading')(Object.assign({ kg: 80, pre: 18, preAtH: B49 + 4, sessionStartH: B49 + 17, prevSessionEndH: B49 - 40,
+    settings: S49, localMaxMg: null, nowH: B49 + 5 }, o || {}));
+
+  test('49.4 U16: the Trough haemodialysis reading reads a 04:00 level before a 17:00 session, and at exactly 24 h; it refuses one more than 24 h before, naming the gap and the morning labs', () => {
+    assert(hd49().state === 'dose', JSON.stringify(hd49()).slice(0, 200));
+    assert(hd49({ preAtH: B49 - 7 }).state === 'dose', 'exactly 24 h before still reads');
+    const r = hd49({ preAtH: B49 - 7.5 });
+    assert(r.state === 'refuse' && r.word === 'Not a pre-dialysis level' && r.mg == null, JSON.stringify(r).slice(0, 300));
+    const t = text49(fn49('hdReadingHTML')(r));
+    assert(/24 h 30 min before this session/.test(t) && /more than 24 h before it/.test(t) && /morning labs before the session/.test(t), t.slice(0, 600));
+    assert(/inp\.sessionStartH - inp\.preAtH > HD_PRE_LABEL_H/.test(fn49('hdReading').toString()), 'one window: the reading reads HD_PRE_LABEL_H');
+  });
+
+  // CRRT. Fictional: 70 kg, Bauer 0.70 L/kg (V 49 L), goal 15–20 mg/L, CVVHDF at 2000 mL/h, a true half-life of 23 h.
+  const B49c = new Date(2026, 5, 10, 0, 0).getTime() / 3600000, K49 = 0.03, V49 = 49;
+  const inf49 = (mg, tinf, start, t, k, V) => t <= start ? 0
+    : t <= start + tinf ? mg / tinf / (k * V) * (1 - Math.exp(-k * (t - start)))
+    : mg / tinf / (k * V) * (1 - Math.exp(-k * tinf)) * Math.exp(-k * (t - start - tinf));
+  const c2_49 = 10 * Math.exp(-K49 * 24) + inf49(750, 1, B49c + 24, B49c + 36, K49, V49);
+  const inp49 = (o) => Object.assign({
+    course: { doses: [{ mg: 750, tinfH: 1, timeH: B49c + 24 }], levels: [{ conc: 10, timeH: B49c + 12 }, { conc: c2_49, timeH: B49c + 36 }], nowKg: 70 },
+    circuit: [{ onH: B49c - 24, offH: null }], effluent: [{ fromH: B49c - 24, mlPerH: 2000 }], modality: 'cvvhdf',
+    urine: 'anuric', vBasis: 'bauer', goal: { min: 15, max: 20 }, giveAtH: null, nextDrawH: null, settings: { maxDoseMg: null },
+  }, o || {});
+  const crrt49 = (nowH) => fn49('crrtAnswer')(inp49(), nowH);
+
+  test('49.5 U17: CRRT projects from a starting level up to 72 h old; at 72.1 h it is "Draw a level" naming the age, with the rate kept and the Rec 16 reference shown', () => {
+    assert(C49.CRRT_LEVEL_MAX_AGE_H === 72 && /PREFERENCE \(rule 8, the user's ruling U17[\s\S]{0,400}const CRRT_LEVEL_MAX_AGE_H = 72;/.test(src49), 'the constant is 72, a preference naming U17');
+    for (const age of [1, 72]) { const a = crrt49(B49c + 36 + age); assert(a.state === 'dose' || a.state === 'no-dose', `${age} h: ${JSON.stringify(a).slice(0, 200)}`); }
+    const now = B49c + 36 + 72.1, a = crrt49(now);
+    assert(a.state === 'need-level' && a.reason === 'stale' && a.rate && a.rate.n === 1 && !a.rows, JSON.stringify(a).slice(0, 300));
+    assert(/is 72 h 6 min old, more than 72 h/.test(a.message) && /at least every 3 days/.test(a.message), a.message);
+    const t = text49(fn49('crrtResultsHTML')(a, inp49(), now));
+    assert(/Draw a level/.test(t) && /Rybak 2020, Rec 16 \(B-II\), for 70 kg actual body weight/.test(t), t.slice(0, 900));
+    assert(/a starting level more than 72 h old/.test(t), 'How this works says so');
+  });
+
+  test('49.6 U18: CRRT levels under 12 h apart still measure no decline (R103 stands as the user\'s ruling): one interval of 11 h is too short and the answer is "Draw a level"', () => {
+    assert(C49.PD_MIN_INTERVAL_H === 12, 'twelve hours');
+    const inp = inp49({ course: { doses: [], levels: [{ conc: 18, timeH: B49c + 12 }, { conc: 17, timeH: B49c + 23 }], nowKg: 70 } });
+    const a = fn49('crrtAnswer')(inp, B49c + 24);
+    assert(a.state === 'need-level' && a.reason === 'no-interval' && a.intervals.length === 1 && a.intervals[0].flags.includes('too-short'), JSON.stringify(a).slice(0, 300));
+  });
+
+  test('49.7 the version', () => {
+    assert(/const APP_VERSION = '3\.19\.0';/.test(src49), 'v3.19.0');
   });
 }
 
@@ -11638,7 +11728,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 738;   // bump with every added or removed unit test (v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9; v3.18.1: + 48.10)
+const EXPECTED_TOTAL = 745;   // bump with every added or removed unit test (v3.19.0: + 49.1-49.7; v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9; v3.18.1: + 48.10)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

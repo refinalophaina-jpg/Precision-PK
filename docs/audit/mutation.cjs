@@ -375,7 +375,7 @@ const MUTANTS = [
   { id: 'R3-F-5', what: 'the CRRT "Draw a level" sentence loses the words for unexplained-high [46.96]',
     find: "  'unexplained-high': 'higher than the doses could make at the volume used", replace: "  'unexplained-hi': 'higher than the doses could make at the volume used" },
   { id: 'R3-F-6', what: 'the CRRT one-level "Draw a level" state drops the Rec 16 reference (R107) [46.97]',
-    find: "const oneLevel = a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length;", replace: 'const oneLevel = false;' },
+    find: "(a.reason === 'no-interval' && !(a.intervals || []).length)", replace: '(false)' },   // v3.19.0: the line also takes U17's stale level
   { id: 'R3-F-7', what: 'the CRRT "Draw a level" sentence drops the too-short reason again (R103) [46.54]',
     find: 'const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags))]', replace: "const why = intervals.length ? [...new Set(intervals.flatMap(i => i.flags).filter(f => f !== 'too-short'))]" },
 
@@ -434,6 +434,19 @@ const MUTANTS = [
     find: 'const L = Math.max(150, Math.ceil(6.6 * Math.max(...rows.map(r => labelOf(r.m).length))) + 10), R = 16', replace: 'const L = 150, R = 16' },
   { id: 'R5-10', what: 'the Crass note gives the old, wrong reason (no between-subject variance) [48.7]',
     find: 'neither the paper nor its supplement publishes the residual-error model a fit to a level needs', replace: 'its published model is nonparametric and gives no between-subject variance to fit a level with' },
+  // v3.19.0 (D31): the user's dialysis rulings U16 (the 24 h pre-HD window) and U17 (the 72 h CRRT level age)
+  { id: 'R6-1', what: 'the pre-HD window is 12 h again: a morning level before an afternoon session reads interdialytic [49.1-49.3]',
+    find: 'const HD_PRE_LABEL_H = 24;', replace: 'const HD_PRE_LABEL_H = 12;' },
+  { id: 'R6-2', what: 'the Trough haemodialysis reading reads a level of any age before the session [49.4]',
+    find: 'if (inp.sessionStartH - inp.preAtH > HD_PRE_LABEL_H)', replace: 'if (false)' },
+  { id: 'R6-3', what: 'the reading\'s age check uses >= (a level exactly 24 h before is refused) [49.4]',
+    find: 'if (inp.sessionStartH - inp.preAtH > HD_PRE_LABEL_H)', replace: 'if (inp.sessionStartH - inp.preAtH >= HD_PRE_LABEL_H)' },
+  { id: 'R6-4', what: 'CRRT projects from a starting level of any age [49.5]',
+    find: 'if (nowH - startLevel.timeH > CRRT_LEVEL_MAX_AGE_H)', replace: 'if (false)' },
+  { id: 'R6-5', what: 'a stale CRRT level no longer shows the Rec 16 reference [49.5]',
+    find: "a.state === 'need-level' && (a.reason === 'stale' || (a.reason === 'no-interval' && !(a.intervals || []).length))", replace: "a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length" },
+  { id: 'R6-6', what: 'the CRRT level age is 96 h [49.5]',
+    find: 'const CRRT_LEVEL_MAX_AGE_H = 72;', replace: 'const CRRT_LEVEL_MAX_AGE_H = 96;' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

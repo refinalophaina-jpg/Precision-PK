@@ -3210,6 +3210,9 @@ the corpus reaches none of them on a changed path.
 
 ### Open questions for the user (R109)
 
+*Answered 2026-11-18 (D31): the user's rulings U16 (the haemodialysis window, 24 h), U17 (a CRRT starting level, 72 h)
+and U18 (CRRT levels under 12 h apart, unchanged). The questions are kept as they were asked.*
+
 - **A CRRT starting level has no age limit.** The answer projects from the newest usable level however old it is,
   provided the circuit and its setting are recorded unchanged since. Should a level older than some span be refused
   or flagged? Any span would be a PREFERENCE (rule 8) for the user to set.
@@ -3436,3 +3439,47 @@ note and the out-of-range note. Mutants R5-1–R5-8. One browser check of the au
 The user declined showing Rybak 2020 Rec 12's 20–25 mg/kg actual-body-weight loading range for obese patients ("nah
 no need"). Loading doses stay as they are: every one capped at Rec 11's 3,000 mg, with no mg/kg range shown. This
 closes the question left open since Release 1 (R11).
+
+## D31 — The dialysis rulings: the pre-HD window, the CRRT level age and spacing (2026-11-18, v3.19.0)
+
+Not clinically validated. The user answered D28's open questions (R109) on 2026-11-18: the haemodialysis level is
+drawn with the morning labs, about 03:00–05:00, and the session's time of day is not fixed; for the two CRRT
+questions, follow the institutions' protocols more closely. The two protocols were read from the private extract
+outside this repository; no protocol text, table or name enters it. What they agree on, in general terms: the pre-HD
+level is the one drawn with the morning labs before that day's session; a CRRT trough is drawn before a dose, so two
+troughs are at least one interval apart (the shortest CRRT interval either gives is q12h), and while in range one is
+rechecked every 3 days (one protocol; the other gives no interval).
+
+### The rulings
+
+- **U16: "pre-HD" means within 24 h before a session (`HD_PRE_LABEL_H` 12 → 24, still a PREFERENCE).** At 12 h a
+  04:00 level before a 17:00 session (13 h) read "interdialytic". The label decides three things in AUC Precision on
+  Goti-HD: the one-time "measured pre-HD level above 20: no dose now, recheck" (D17), the 15–20 in-range check, and
+  which SCr is the pre-dialysis reading (`hdPreDialysisScr`, D19). All three now read the morning level as pre-HD. 24 h
+  takes any morning level before any session the same day and no level from the morning before. The size of what
+  the wider window ignores: on Goti-HD's population at CrCl 10 and 70 kg the terminal half-life is about 100 h, so 12
+  extra hours is about 7% of the level; residual function shortens it.
+- **U16, the Trough haemodialysis reading:** a level drawn more than `HD_PRE_LABEL_H` before the session start is
+  refused, "Not a pre-dialysis level", naming the gap, the window and the morning labs. One constant for both modules
+  (rule 2). Exactly 24 h is read.
+- **U17: a CRRT starting level more than 72 h old is not projected from (`CRRT_LEVEL_MAX_AGE_H`, a PREFERENCE).** The
+  answer is "Draw a level", naming the level's age, with the measured decline kept and the Rec 16 reference shown as
+  it is with one level (R107). The age is the starting level's (the newest not drawn while an infusion was
+  distributing) at the time of the analysis. It can withhold a dose answer, never size one.
+- **U18: CRRT levels under 12 h apart stay unused (R103 stands).** Both protocols draw CRRT troughs at least one q12h
+  interval apart, so a pair closer than `PD_MIN_INTERVAL_H` is a recheck, not a decline. No code change.
+
+### Tests
+
+- SUITE 49 (49.1–49.7): the window at 13, 23.9 and 24.1 h; the one-time hold at the same three; the morning SCr used
+  as measured; the reading at 13 h and exactly 24 h and refused at 24.5 h; CRRT at 1 h, exactly 72 h and 72.1 h, with
+  the reference on screen; U18's 11 h pair; the version. Against v3.18.2 with only the new constant's name added,
+  49.1–49.5 and 49.7 fail; 49.6 passes, as a ruling that changes nothing should. `EXPECTED_TOTAL` 745.
+- Mutants R6-1–R6-6 (the window back to 12 h; the reading's check removed or made `>=`; the CRRT age check removed;
+  the reference dropped; 96 h): all killed. 156 of 156.
+- One browser check: a 04:00 level before a 17:00 session reads; one drawn 28 h before is refused. 273 of 273.
+- Engine parity against v3.18.2 (`0e81a23`): 225 calls, 0 differences. The corpus reaches no dialysis path; SUITE 49
+  is the record. Also: phase2d 745/745 under `TZ=Pacific/Auckland` and `TZ=UTC`; phase3 21/21; phase4 49/49; the
+  comprehensive suite fails only scenarios 3 and 4, by design. Mutant R3-F-6 now removes only the one-level clause of the
+  line that also takes the stale level.
+
