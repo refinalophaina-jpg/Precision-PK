@@ -3528,6 +3528,48 @@ async function enterCourse(page) {
     await hctx.close();
   }
   // ── end Release 3 Task 28
+  // ── v3.20.0 (D32): U19, AUC Precision offers 2.25 g and 2.5 g; U20, the Tinkerer's course figure. Real clicks under
+  // the CSP. A fictional obese patient (56 F, 130 kg, 172 cm, SCr 0.8) on Hughes with the standard course.
+  {
+    const uctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const u = await uctx.newPage();
+    const uProblems = watch(u, 'v3.20.0');
+    await u.goto(BASE + '?v=pw320-' + Date.now(), { waitUntil: 'networkidle' });
+    await u.locator('[data-onclick="k2"]').click();
+    await typeInto(u, '#b-age', '56'); await typeInto(u, '#b-tbw', '130'); await typeInto(u, '#b-height', '172'); await typeInto(u, '#b-scr', '0.8');
+    await u.locator('[data-onclick="k40"]').click();
+    await u.locator('#b-model-btn-hughes').click();
+    await enterCourse(u);
+    await u.locator('[data-onclick="k47"]').click();
+    await u.waitForSelector('#b-results .vx-conf', { timeout: 20000 }); await u.waitForTimeout(300);
+    if (!(await u.evaluate(() => document.getElementById('ev-regimens').open))) await u.locator('#ev-regimens > summary').click();
+    const grid = await u.evaluate(() => [...document.querySelectorAll('#b-results .mx-cell')].map(c => c.getAttribute('aria-label') || ''));
+    const offerable = await u.evaluate(() => [...document.querySelectorAll('#b-results button.mx-cell')].map(c => c.getAttribute('aria-label') || ''));
+    const pick = offerable.find(l => /^2\.25 g every \d+ hours, steady-state AUC24 \d+/.test(l));
+    ok('v3.20.0 (U19): the Regimens grid offers 2.25 g and 2.5 g, and nothing above 2.5 g', !!pick && grid.some(l => /^2\.5 g every/.test(l)) && !grid.some(l => /^(2\.75|3) g every/.test(l)), grid.filter(l => /^2/.test(l)).join(' | '));
+    if (pick) {
+      const cell = u.locator(`#b-results button.mx-cell[aria-label="${pick}"]`);
+      await cell.scrollIntoViewIfNeeded(); await cell.click(); await u.waitForTimeout(500);
+      const t1 = await u.evaluate(() => ({ dose: document.getElementById('b-tink-dose').value, n: (document.getElementById('b-tink-n') || {}).value,
+        course: ((document.querySelector('#b-tink-result .tink-course') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        tile: ((document.querySelector('#b-tink-result') || {}).textContent || '').replace(/\s+/g, ' ') }));
+      ok('v3.20.0 (U20): a picked 2.25 g cell previews in the Tinkerer with the course figure over 3 doses beside steady state',
+        t1.dose === '2250' && t1.n === '3' && /^Over 3 doses from .+: the last \d+ h gives AUC₂₄ \d+ mg·h\/L, peak [\d.]+, trough [\d.]+ mg\/L, with the drug already on board\. This is the figure a DoseMeRx Custom Dose of 3 doses reports; the tiles above are steady state\.$/.test(t1.course)
+        && /AUC₂₄ SS/.test(t1.tile), JSON.stringify(t1).slice(0, 600));
+      await typeInto(u, '#b-tink-n', '1'); await u.keyboard.press('Enter'); await u.waitForTimeout(400);
+      const one = ((await u.locator('#b-tink-result .tink-course').textContent()) || '').replace(/\s+/g, ' ');
+      ok('v3.20.0 (U20): the course length is typed and Enter previews it (1 dose)', /^Over 1 dose from /.test(one.trim()) && /Custom Dose of 1 dose reports/.test(one), one.slice(0, 300));
+      await u.setViewportSize({ width: 375, height: 812 }); await u.waitForTimeout(400);
+      const fit = await u.evaluate(() => { const row = document.querySelector('#b-results .tinkerer-row'); const r = row && row.getBoundingClientRect();
+        return { page: document.scrollingElement.scrollWidth, row: r ? Math.round(r.right) : null }; });
+      ok('v3.20.0: at 375 px the Tinkerer row with the course length fits (no horizontal scroll)', fit.page <= 375 && fit.row !== null && fit.row <= 375, JSON.stringify(fit));
+      await u.screenshot({ path: path.join(OUT, 'v320-tinkerer-375.png'), fullPage: false });
+    }
+    const uAttr = await attributeInjected(u, uProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + uAttr.injected;
+    results.problems.push(...uAttr.kept);
+    await uctx.close();
+  }
   await browser.close();
 
   results.checks = checks;

@@ -5730,7 +5730,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/#results-content, #b-results, \.profile-section/.test(hb), 'nothing in a result or the profiles recalculates');
     assert(/class="profile-section" data-enter-scope/.test(trough42) && /class="profile-section" data-enter-scope/.test(auc42), 'both profile sections are enter scopes');
     assert((body42 + code42).match(/data-onclick="k37"[^>]*data-enter-default|data-enter-default[^>]*data-onclick="k37"/g).length === 2, 'Save is the default in both');
-    assert(/class="tinkerer-row" data-enter-scope[\s\S]{0,900}data-onclick="k66" data-enter-default/.test(code42), 'Explore: Enter previews');
+    assert(/class="tinkerer-row" data-enter-scope[\s\S]{0,1300}data-onclick="k66" data-enter-default/.test(code42), 'Explore: Enter previews');   // 1300: v3.20.0 adds the course-length field (U20)
     assert(/class="tinkerer-row" data-enter-scope[\s\S]{0,900}data-onclick="k59" data-arg="\$\{suffix\}" data-enter-default/.test(code42), 'Try another regimen: Enter predicts');
     assert(!/k58/.test(code42.slice(code42.indexOf('function tinkererHTML'), code42.indexOf('function tinkererHTML') + 1200)), 'the old per-field Enter handler is gone, so Enter predicts once');
   });
@@ -5849,7 +5849,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/tb\.querySelectorAll\('input, select, textarea'\)/.test(sn), 'row fields without ids (serial SCr) are kept by position');
   });
   test('42.15 the version', () => {
-    assert(/const APP_VERSION = '3\.1[3-9]\.\d+';/.test(src42), 'v3.13.0 or its successor');
+    assert(/const APP_VERSION = '3\.(1[3-9]|20)\.\d+';/.test(src42), 'v3.13.0 or its successor');
   });
 }
 
@@ -6063,7 +6063,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(n > 100, `exercised ${n} changes from an in-range regimen`);
   });
   test('43.12 the version', () => {
-    assert(/const APP_VERSION = '3\.1[4-9]\.\d+';/.test(src43), 'v3.14.0 or its successor');
+    assert(/const APP_VERSION = '3\.(1[4-9]|20)\.\d+';/.test(src43), 'v3.14.0 or its successor');
   });
 }
 
@@ -7325,26 +7325,27 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const i = src44.indexOf('const CONFIDENCE_SIGMA'), before = src44.slice(Math.max(0, i - 1500), i);
     assert(/PREFERENCE/.test(before) && /ruling 3/.test(before) && /finalizeDecision/.test(before), 'the comment names ruling 3 and finalizeDecision');
   });
-  test('44.21 a charted dose above a ceiling is not recommendable but not unsafe (D-a): 2.25 g q48h in range, trough under 20, is continued with the ceiling caution', () => {
+  test('44.21 a charted dose above a ceiling is not recommendable but not unsafe (D-a): 2.75 g q48h in range, trough under 20, is continued with the ceiling caution', () => {
+    // v3.20.0 (U19, D32): AUC Precision's per-dose ceiling is 2.5 g, so the fixtures sit above it (2.25 g q48h before).
     const row = fn44('aucUncertaintyRow')(2, 'buelga');
     const h = (mg, tau) => Array.from({ length: 4 }, (_, i) => ({ mg, tinfH: fn44('autoTinf')(mg), timeH: i * tau }));
-    const r = fn44('regimenDecision')(2.25, 70, 450, null, 1, h(2250, 48), row);
-    assert(r.action === 'continue' && r.continueReason === 'in-range' && r.dose === 2250 && r.tau === 48, `${r.action} / ${r.continueReason || r.decisionReason}: ${r.dose} q${r.tau}h`);
+    const r = fn44('regimenDecision')(2.75, 70, 450, null, 1, h(2750, 48), row);
+    assert(r.action === 'continue' && r.continueReason === 'in-range' && r.dose === 2750 && r.tau === 48, `${r.action} / ${r.continueReason || r.decisionReason}: ${r.dose} q${r.tau}h`);
     assert(Math.round(r.auc24) === 500 && r.Ctrough < K44.TROUGH_HIGH_MGL && !r.unsafe && r.unsafeReasons.length === 0, `AUC ${r.auc24}, trough ${r.Ctrough}, ${r.unsafeReasons}`);
-    assert(r.notRecommendable.length === 1 && /single dose 2250 mg exceeds 2000 mg/.test(r.notRecommendable[0]), JSON.stringify(r.notRecommendable));
+    assert(r.notRecommendable.length === 1 && /single dose 2750 mg exceeds 2500 mg/.test(r.notRecommendable[0]), JSON.stringify(r.notRecommendable));
     const why = fn44('regimenActionHTML')(r, 450);
     assert(/Within 400–600/.test(why) && /above the conventional ceiling/.test(why) && why.indexOf(r.notRecommendable[0]) >= 0
       && /not a regimen this tool would recommend/.test(why) && /does not by itself make it unsafe/.test(why), why);
-    // Above both ceilings, in range (CL 10: 2.5 g q12h, AUC24 500): continued, both named.
-    const both = fn44('regimenDecision')(10, 60, 450, null, 1, h(2500, 12), row);
+    // Above both ceilings, in range (CL 11: 2.75 g q12h, AUC24 500): continued, both named.
+    const both = fn44('regimenDecision')(11, 60, 450, null, 1, h(2750, 12), row);
     assert(both.action === 'continue' && both.notRecommendable.length === 2, `${both.action} / ${both.continueReason || both.decisionReason} ${JSON.stringify(both.notRecommendable)}`);
-    assert(/total daily dose 5000 mg exceeds 4500 mg/.test(fn44('regimenActionHTML')(both, 450)), 'the daily ceiling is named');
+    assert(/total daily dose 5500 mg exceeds 4500 mg/.test(fn44('regimenActionHTML')(both, 450)), 'the daily ceiling is named');
     // Unsafe stays unsafe: AUC24 above 700, or a trough of 20 or more, still changes for safety.
-    const hot = fn44('regimenDecision')(3.0, 70, 450, null, 1, h(2250, 24), row);   // AUC24 750
-    assert(hot.action === 'change' && hot.decisionReason === 'safety' && hot.current.unsafeReasons.some(x => /AUC24 750 exceeds the absolute ceiling 700/.test(x))
+    const hot = fn44('regimenDecision')(3.0, 70, 450, null, 1, h(2750, 24), row);   // AUC24 917
+    assert(hot.action === 'change' && hot.decisionReason === 'safety' && hot.current.unsafeReasons.some(x => /AUC24 917 exceeds the absolute ceiling 700/.test(x))
       && hot.current.notRecommendable.length === 1, `${hot.action} / ${hot.decisionReason} ${JSON.stringify(hot.current && hot.current.unsafeReasons)}`);
     // The change's reason names only what is unsafe; the ceiling alone is not a reason.
-    assert(!/single dose 2250 mg exceeds/.test(fn44('regimenActionHTML')(hot, 450)), fn44('regimenActionHTML')(hot, 450));
+    assert(!/single dose 2750 mg exceeds/.test(fn44('regimenActionHTML')(hot, 450)), fn44('regimenActionHTML')(hot, 450));
     const tr = fn44('regimenDecision')(3.8, 300, 450, null, 1, h(2250, 24), row);    // AUC24 592, a long half-life: trough 21.4
     assert(tr.current ? (tr.action === 'change' && tr.decisionReason === 'safety' && tr.current.unsafeReasons.some(x => /trough/.test(x))) : false,
       `${tr.action} / ${tr.decisionReason}: trough ${tr.current && tr.current.Ctrough}`);
@@ -8090,18 +8091,19 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('44.33 I6: an over-ceiling continue leads with the ceiling caution, names the limit, and the summary and announcement carry it', () => {
     const row = fn44('aucUncertaintyRow')(2, 'buelga');
     const h = (mg, tau) => Array.from({ length: 4 }, (_, i) => ({ mg, tinfH: fn44('autoTinf')(mg), timeH: i * tau }));
-    const rec = fn44('regimenDecision')(2.25, 70, 450, null, 1, h(2250, 48), row);
-    assert(rec.action === 'continue' && rec.dose === 2250 && rec.tau === 48, `the action is unchanged: ${rec.action}`);
+    // v3.20.0 (U19, D32): above AUC Precision's 2.5 g ceiling (2.25 g q48h at CL 2.25 before).
+    const rec = fn44('regimenDecision')(2.75, 70, 450, null, 1, h(2750, 48), row);
+    assert(rec.action === 'continue' && rec.dose === 2750 && rec.tau === 48, `the action is unchanged: ${rec.action}`);
     const head = fn44('regimenActionHTML')(rec, 450, 'head'), why = fn44('regimenActionHTML')(rec, 450, 'why');
     assert(/class="vx-ceiling-head tone-caution"/.test(head) && /<svg class="ic"/.test(head), head);
-    assert(head.indexOf('above the conventional ceiling (single dose 2250 mg exceeds 2000 mg)') > 0, head);
+    assert(head.indexOf('above the conventional ceiling (single dose 2750 mg exceeds 2500 mg)') > 0, head);
     assert(head.indexOf('vx-ceiling-head') < head.indexOf('Continue the current regimen'), 'the caution leads the answer');
     assert(!/conventional ceiling/.test(why), 'said once, ahead of the why line: ' + why);
-    const r = { model: 'buelga', CL_ind: 2.25, V_ind: 70, doses: h(2250, 48), levels: [{ conc: 10, timeH: 190 }], fitNowH: 192, rec };
+    const r = { model: 'buelga', CL_ind: 2.75, V_ind: 70, doses: h(2750, 48), levels: [{ conc: 10, timeH: 190 }], fitNowH: 192, rec };
     const s = fn44('resultSummary')(r, rec, null, row, { level: 'High' }, null);
-    assert(/Caution: the current dose is above the conventional ceiling \(single dose 2250 mg exceeds 2000 mg\)\./.test(s), s);
+    assert(/Caution: the current dose is above the conventional ceiling \(single dose 2750 mg exceeds 2500 mg\)\./.test(s), s);
     const said = fn44('bayesAnnouncement')(r, rec, { level: 'High' }, null);
-    assert(/^Result: continue 2\.25 g IV q48h, AUC24 \d+, High confidence\./.test(said) && /Caution: the current dose is above the conventional ceiling/.test(said), said);
+    assert(/^Result: continue 2\.75 g IV q48h, AUC24 \d+, High confidence\./.test(said) && /Caution: the current dose is above the conventional ceiling/.test(said), said);
     // Within the ceilings: no caution anywhere.
     const ok = fn44('regimenDecision')(4.58, 61.8, 450, null, 1, h(1250, 12).map(d => Object.assign(d, { tinfH: 1.5 })), row);
     assert(!/ceiling/.test(fn44('regimenActionHTML')(ok, 450)) && !/ceiling/.test(fn44('bayesAnnouncement')(r, ok, { level: 'High' }, null)), 'in range, within the ceilings');
@@ -9424,7 +9426,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   // The release that ships SUITE 45 pins its version here, as 43.12 did for v3.14.0; 42.15 and 43.12 accept a successor,
   // and since v3.16.0 (46.91) so does this one.
   test('45.58 the version', () => {
-    assert(/const APP_VERSION = '3\.1[5-9]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
+    assert(/const APP_VERSION = '3\.(1[5-9]|20)\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.15.0 or its successor');
   });
 
   // ── R2 final review (the single fix wave). Ruling R59 (C1, replacing R55's Goti half): when BOTH the fitted pre-dose level
@@ -11285,7 +11287,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 
   // The release that ships SUITE 46 pins its version here, as 45.58 did for v3.15.0; 42.15, 43.12 and 45.58 accept it.
   test('46.91 the version', () => {
-    assert(/const APP_VERSION = '3\.1[6-9]\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
+    assert(/const APP_VERSION = '3\.(1[6-9]|20)\.\d+';/.test(fs.readFileSync(htmlPath, 'utf8')), 'v3.16.1 or its successor');
   });
 
   // ── The final review's fix wave (controller rulings R103–R107). Fictional throughout.
@@ -11494,7 +11496,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('47.6 the version', () => {
-    assert(/const APP_VERSION = '3\.1[789]\.\d+';/.test(src47), 'v3.17.0 or its successor');
+    assert(/const APP_VERSION = '3\.(1[789]|20)\.\d+';/.test(src47), 'v3.17.0 or its successor');
   });
 
   test('47.7 the confidence reason names the counted priors only: a comparator\'s AUC₂₄ never appears in the disagreement sentence', () => {
@@ -11630,7 +11632,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('48.4 the version', () => {
-    assert(/const APP_VERSION = '3\.1[89]\.\d+';/.test(src48), 'v3.18.2 or its successor');
+    assert(/const APP_VERSION = '3\.(1[89]|20)\.\d+';/.test(src48), 'v3.18.2 or its successor');
   });
 }
 
@@ -11720,7 +11722,104 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('49.7 the version', () => {
-    assert(/const APP_VERSION = '3\.19\.0';/.test(src49), 'v3.19.0');
+    assert(/const APP_VERSION = '3\.(19|20)\.\d+';/.test(src49), 'v3.19.0 or its successor');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SUITE 50 — v3.20.0: the DoseMeRx comparison rulings U19–U20 (the user, 2026-11-23)
+// ════════════════════════════════════════════════════════════════════
+{
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log('  SUITE 50 — v3.20.0: the AUC module\'s 2.5 g dose ceiling, the course AUC');
+  console.log(`${'─'.repeat(60)}`);
+  const fn50 = (n) => { const f = sandbox[n]; if (typeof f !== 'function') throw new Error(`${n}() is missing`); return f; };
+  const src50 = fs.readFileSync(htmlPath, 'utf8');
+  const C50 = __extractConsts();
+
+  test('50.1 U19: AUC Precision\'s per-dose ceiling is 2,500 mg, naming U19 and the MHHS maximum; the conventional 2,000 mg ceiling stays for the Trough module and dialysis', () => {
+    assert(C50.AUC_DOSE_MAX_PER_DOSE_MG === 2500 && /U19[\s\S]{0,900}const AUC_DOSE_MAX_PER_DOSE_MG = 2500;/.test(src50), 'the AUC ceiling is 2500, naming U19');
+    assert(C50.DOSE_MAX_PER_DOSE_MG === 2000 && C50.DOSE_MAX_TDD_MG === 4500 && C50.AUC24_ABSOLUTE_MAX === 700, 'the other ceilings are unchanged');
+  });
+
+  test('50.2 U19: the exposure matrix offers 2.25 g and 2.5 g (an obese fit at CL 3.77 L/h: 2.25 g q24h is AUC 597, in band; 2.5 g q12h breaches 4.5 g a day)', () => {
+    const mx = fn50('exposureMatrix')(3.77, 92.6, null, 450, 1);
+    const doses = mx.rows.map(r => r.dose);
+    assert(doses.includes(2250) && doses.includes(2500) && Math.max(...doses) === 2500, doses.join(','));
+    const cell = (d, t) => mx.rows.find(r => r.dose === d).cells.find(c => c.tau === t);
+    assert(Math.round(cell(2250, 24).auc24) === 597 && cell(2250, 24).band === 'in', JSON.stringify(cell(2250, 24)));
+    assert(cell(2500, 12).blocked && cell(2500, 24).band === 'supra', 'TDD 5 g blocked; 2.5 g q24h AUC 663 above band');
+    // Dialysis keeps 2 g: the Goti-HD steady-state reference is drawn with the conventional ceiling.
+    const hd = fn50('exposureMatrix')(3.77, 92.6, null, 450, 1, C50.DOSE_MAX_PER_DOSE_MG);
+    assert(Math.max(...hd.rows.map(r => r.dose)) === 2000, 'the ceiling passed is the one used');
+    assert(/targetAUC, mic, isHD \? DOSE_MAX_PER_DOSE_MG : AUC_DOSE_MAX_PER_DOSE_MG\)/.test(src50), 'the render passes 2 g on Goti-HD');
+  });
+
+  test('50.3 U19: evalRegimen judges a dose against the ceiling it is given — 2.25 g passes AUC Precision\'s, fails the Trough module\'s 2 g default — and the explorer\'s short words name that ceiling', () => {
+    const ev = fn50('evalRegimen');
+    assert(ev(2250, 24, 2.5, 3.77, 92.6, null, 1, C50.AUC_DOSE_MAX_PER_DOSE_MG).hardFail.length === 0, 'AUC Precision admits 2.25 g');
+    const tr = ev(2250, 24, 2.5, 3.77, 92.6, null).hardFail;
+    assert(tr.length === 1 && /single dose 2250 mg exceeds 2000 mg/.test(tr[0]), JSON.stringify(tr));
+    assert(fn50('hardFailShort')(tr[0]) === 'over 2 g a dose', fn50('hardFailShort')(tr[0]));
+    assert(fn50('hardFailShort')('single dose 2750 mg exceeds 2500 mg') === 'over 2.5 g a dose', 'the AUC ceiling is named when it is the one breached');
+    assert(fn50('doseCeilingBreaches')(2250, 2250).length === 1 && fn50('doseCeilingBreaches')(2250, 2250, 2500).length === 0, 'the default is the 2 g ceiling');
+  });
+
+  test('50.4 U19: a charted 2.25 g q24h in band is no longer "above the conventional ceiling" in AUC Precision (it was continued with that caution)', () => {
+    const doses = [0, 24, 48].map(t => ({ mg: 2250, tinfH: 2.5, timeH: t }));
+    const c = fn50('currentRegimenOf')(doses, 3.77, 92.6, null, 1, null, 60);
+    assert(c && c.dose === 2250 && c.tau === 24 && c.notRecommendable.length === 0 && !c.unsafe, JSON.stringify(c && { n: c.notRecommendable, u: c.unsafeReasons }));
+  });
+
+  test('50.5 U19: the ceiling-bound alarm quotes 2,500 mg in AUC Precision and still 2,000 mg in the Trough module', () => {
+    const r = fn50('bayesDoseOptimizer')(12, 80, 450, null, 1);
+    const t = (r.flags || []).map(f => f.text).join(' ');
+    assert(r.capBound && /\(2500 mg per dose, 4500 mg per day\)/.test(t), t.slice(0, 300));
+    const tr = fn50('troughCapBoundHTML')({ capBound: true, tau: 24, highest: { dose: 2000, auc: 300 }, others: [{ tau: 12 }] });
+    assert(/\(2000 mg per dose, 4500 mg per day\)/.test(tr), tr.slice(0, 300));
+  });
+
+  test('50.6 U19 conventional first: at CL 10 L/h 2.25 g q12h reaches AUC 450 exactly, but 1.5 g q8h (also 450) is in band at the conventional 2 g, so it is recommended and 2.25 g stays a grid option; a 48 mg/L-type low clearance keeps its sub-2 g answer', () => {
+    const r = fn50('bayesDoseOptimizer')(10, 80, 450, null, 1);
+    assert(r.dose === 1500 && r.tau === 8 && !(r.tiedWith || []).some(x => x.dose > 2000), `${r.dose} q${r.tau} ${JSON.stringify(r.tiedWith)}`);
+    const mx = fn50('exposureMatrix')(10, 80, null, 450, 1);
+    const c = mx.rows.find(x => x.dose === 2250).cells.find(x => x.tau === 12);
+    assert(c && Math.round(c.auc24) === 450 && c.band === 'in', 'the grid still offers it');
+    // CL 2.25, target 500: 2.25 g q48h is exactly 500 but 1.25 g q24h (556) is in band at or below 2 g.
+    const low = fn50('bayesDoseOptimizer')(2.25, 55, 500, null, 1);
+    assert(low.dose === 1250 && low.tau === 24, `${low.dose} q${low.tau}`);
+    // Only where nothing at or below 2 g reaches the band does a larger dose stay in play (none at CL 15.75: the cap binds).
+    assert(fn50('conventionalFirst')([{ dose: 2250 }, { dose: 2500 }]).length === 2 && fn50('conventionalFirst')([{ dose: 2000 }, { dose: 2250 }]).length === 1, 'conventionalFirst');
+  });
+
+  // U20. DoseMeRx's "Predicted AUC24" for a Custom Dose of N doses is the last interval of that course with every
+  // earlier dose still on board, not steady state. FICTIONAL timings (hours from an arbitrary start); the parameters
+  // are a 1-comp fit, CL 1.21 L/h and V 35.5 L. DoseMeRx printed 428.84 mg·h/L, peak 25.74, trough 11.78 for
+  // 500 mg over 1 h q24h x 3 from the next dose; steady state is 500 / 1.21 = 413.
+  const r50 = { model: 'buelga', CL_ind: 1.21, V_ind: 35.5, fitNowH: 50, levels: [],
+    doses: [{ mg: 1000, tinfH: 1, timeH: 0 }, { mg: 500, tinfH: 0.5, timeH: 9.85 }, { mg: 750, tinfH: 1, timeH: 33.917 }] };
+  test('50.7 U20: courseFinalIntervalExposure reproduces DoseMeRx\'s Custom Dose figure (500 mg q24h x 3: AUC24 429, peak 25.7, trough 11.7), and approaches steady state as the course lengthens', () => {
+    const f = fn50('courseFinalIntervalExposure');
+    const e = f(r50, 500, 24, 1, 3, { firstH: 57.917 }, null);
+    assert(e && e.n === 3 && Math.abs(e.auc24 - 428.9) < 1 && Math.abs(e.peak - 25.7) < 0.2 && Math.abs(e.trough - 11.7) < 0.2, JSON.stringify(e));
+    assert(Math.abs(e.firstH - 57.917) < 1e-9 && Math.abs(e.lastH - (57.917 + 48)) < 1e-9, 'the course runs from the first dose time');
+    const long = f(r50, 500, 24, 8, 8, { firstH: 57.917 }, null);
+    assert(long.auc24 > 413 && long.auc24 < 420, `8 doses: ${long.auc24}`);
+    // q12h: the final interval's AUC scaled to 24 h (DoseMeRx prints AUC24 = 2 x AUC12)
+    const q12 = f(r50, 250, 12, 0.5, 6, { firstH: 57.917 }, null);
+    assert(q12.auc24 > 413 && q12.auc24 < 440 && q12.tau === 12, JSON.stringify(q12));
+  });
+
+  test('50.8 U20: under a hold with no time the course figure is refused, as the projection is; with no dose or course it is null', () => {
+    const f = fn50('courseFinalIntervalExposure');
+    const h = f(r50, 500, 24, 1, 3, { holdNoTime: true }, null);
+    assert(h && h.refused === true && h.auc24 === undefined, JSON.stringify(h));
+    assert(f(r50, 0, 24, 1, 3, { firstH: 58 }, null) === null && f(Object.assign({}, r50, { doses: [] }), 500, 24, 1, 3, { firstH: 58 }, null) === null, 'null');
+    assert(/id="b-tink-n"[^>]*value="\$\{COURSE_DOSES_DEFAULT\}"/.test(src50) && /const COURSE_DOSES_DEFAULT = 3;/.test(src50), 'the Tinkerer asks how many doses, three by default');
+  });
+
+  test('50.9 the version', () => {
+    assert(/const APP_VERSION = '3\.20\.0';/.test(src50), 'v3.20.0');
   });
 }
 
@@ -11728,7 +11827,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(60)}`);
-const EXPECTED_TOTAL = 745;   // bump with every added or removed unit test (v3.19.0: + 49.1-49.7; v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9; v3.18.1: + 48.10)
+const EXPECTED_TOTAL = 754;   // bump with every added or removed unit test (v3.20.0: + 50.1-50.9; v3.19.0: + 49.1-49.7; v3.15.0: 554 + 45.1 + 45.2 + 45.3 + 45.4a-e + 45.5-45.62 + D27 redraw; v3.16.0: + 46.1-46.91, + 46.92-46.98 the final review's fix wave; v3.16.1: + 46.99; v3.17.0: + 47.1-47.8; v3.18.0: + 48.1-48.9; v3.18.1: + 48.10)
 console.log('  PHASE 2D VALIDATION SUMMARY');
 console.log(`${'─'.repeat(60)}`);
 console.log(`  Passed : ${pass}`);

@@ -4,7 +4,7 @@ AUC-guided vancomycin therapeutic drug monitoring, per the 2020 ASHP/IDSA/PIDS/S
 consensus guideline. A single self-contained HTML file: vanilla JS, no build step, no
 JavaScript dependencies, runs offline apart from the Google Fonts stylesheet.
 
-**Status: Live · v3.19.0** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
+**Status: Live · v3.19.0; v3.20.0 in review** (see [Version history](#version-history)) — results redesigned 2026-09-29 (answer first, read off the patient's
 course; see [`DESIGN.md`](DESIGN.md) and [`PRODUCT.md`](PRODUCT.md)). The canonical home is now
 **[pharmacy.ainadara.com/vancomycin](https://pharmacy.ainadara.com/vancomycin)**, with an
 in-depth guide to the tool and its mathematics at
@@ -107,15 +107,15 @@ node phase2d_validation.cjs
 Each script extracts the math out of `index.html` in a Node `vm` sandbox, so it tests the
 shipped file rather than a copy.
 
-| Suite | Result (2026-11-18, v3.19.0) |
+| Suite | Result (2026-11-23, v3.20.0) |
 |---|---|
-| `phase2d_validation.cjs` | **745 / 745 pass**, also under `TZ=Pacific/Auckland` and `TZ=UTC`; the run fails if the count differs from `EXPECTED_TOTAL` |
+| `phase2d_validation.cjs` | **754 / 754 pass**, also under `TZ=Pacific/Auckland` and `TZ=UTC`; the run fails if the count differs from `EXPECTED_TOTAL` |
 | `phase3_simulation.cjs` | **21 / 21 pass** |
 | `phase4_regimen_validation.cjs` | **49 / 49 pass** — regimen detection |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass (dose attainment 75.2%); **scenarios 3 and 4 miss four thresholds by design** |
-| `docs/audit/mutation.cjs` | **156 of 156 mutants killed**, exit 0 — each mutation of `index.html`, made in memory, must fail phase2d, phase3 or phase4. Part of the release gate for clinical releases |
-| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72 (D26); v3.15.0 against v3.14.0 (`b410477`) reads 23 (D27); v3.16.0 against v3.15.0 (`bcee5dd`) reads 0 (D28); v3.16.1 against v3.16.0 (`be3c4dd`) reads 0; v3.17.0 against v3.16.1 (`93e22fe`) reads 0; v3.18.0 against v3.17.0 (`5ef43b3`) reads 0; v3.18.1 against v3.18.0 (`74d366c`) reads 0; v3.18.2 against v3.18.1 (`9e334ce`) reads 0; v3.19.0 against v3.18.2 (`0e81a23`) reads 0 (the corpus reaches no dialysis path). Every one is a deliberate change listed in the decision record |
-| `docs/audit/browser-flows.cjs` | **273 / 273** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
+| `docs/audit/mutation.cjs` | **164 of 164 mutants killed**, exit 0 — each mutation of `index.html`, made in memory, must fail phase2d, phase3 or phase4. Part of the release gate for clinical releases |
+| `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for a presentation change — proves the engine was left untouched. v3.14.0 against v3.13.0 (`edc5b53`) reads 72 (D26); v3.15.0 against v3.14.0 (`b410477`) reads 23 (D27); v3.16.0 against v3.15.0 (`bcee5dd`) reads 0 (D28); v3.16.1 against v3.16.0 (`be3c4dd`) reads 0; v3.17.0 against v3.16.1 (`93e22fe`) reads 0; v3.18.0 against v3.17.0 (`5ef43b3`) reads 0; v3.18.1 against v3.18.0 (`74d366c`) reads 0; v3.18.2 against v3.18.1 (`9e334ce`) reads 0; v3.19.0 against v3.18.2 (`0e81a23`) reads 0 (the corpus reaches no dialysis path); v3.20.0 against v3.19.0 (`4475020`) reads 167, all in the exposure grid's dose range (2 calls; D32). Every one is a deliberate change listed in the decision record |
+| `docs/audit/browser-flows.cjs` | **277 / 277** — real clicks and keystrokes under the production CSP (`docs/audit/serve-csp.py`), desktop and 375px. Needs Playwright, which this repo does not install |
 
 The comprehensive suite fails **scenarios 3 and 4 by design** — an accepted, documented
 limitation of two-compartment fitting from troughs alone (three parameters, one or two
@@ -204,4 +204,5 @@ the six releases after it; the table below reconstructs them from git (2026-10-0
 | 3.18.0 | 2026-11-17 | Before any level, Models compares every applicable model's population estimate for the patient: clearance, AUC₂₄ on the regimen and the daily dose each gives for the middle of the target, display only. Crass 2018, built in 346 obese adults (BMI 30.1–85.7), joins that comparison for BMI 30 and above; it is never fitted to a level, because its published model gives no parametric variance to fit with. Not clinically validated (D30) | `74d366c` |
 | 3.18.1 | 2026-11-17 | The model comparison's forest plot no longer cuts off a long model name ("Hughes 2-comp · FFM · comparator"), and the BMI 30–40 advice reads as one sentence. No engine change (D30, v3.18.1) | `9e334ce` |
 | 3.18.2 | 2026-11-17 | The Crass 2018 note gives the right reason it is compared before a level only: its supplement publishes the parameter variances, but no residual-error model. No engine change (D30, v3.18.2, the user's ruling U14) | `0e81a23` |
-| 3.19.0 | 2026-11-18 | The dialysis rulings. A haemodialysis level drawn with the morning labs counts as pre-HD for that day's session whatever time it starts: the window is 24 h, not 12, so a morning level above 20 gives "no dose now, recheck" and the morning SCr is the pre-dialysis one; the Trough haemodialysis reading refuses a level drawn more than 24 h before the session. A CRRT answer no longer projects from a starting level more than 72 h old: it says "Draw a level" with the Rec 16 reference. CRRT levels under 12 h apart stay unused. Not clinically validated (D31, the user's rulings U16–U18) | pending |
+| 3.19.0 | 2026-11-18 | The dialysis rulings. A haemodialysis level drawn with the morning labs counts as pre-HD for that day's session whatever time it starts: the window is 24 h, not 12, so a morning level above 20 gives "no dose now, recheck" and the morning SCr is the pre-dialysis one; the Trough haemodialysis reading refuses a level drawn more than 24 h before the session. A CRRT answer no longer projects from a starting level more than 72 h old: it says "Draw a level" with the Rec 16 reference. CRRT levels under 12 h apart stay unused. Not clinically validated (D31, the user's rulings U16–U18) | `4475020` |
+| 3.20.0 | 2026-11-23 | The DoseMeRx comparison. AUC Precision now offers single doses up to 2.5 g (the user's protocol maximum; it was 2 g): the Regimens grid and the Dose Tinkerer show 2.25 g and 2.5 g, and a charted 2.25 g is no longer "above the conventional ceiling". The answer still picks a dose at or below 2 g whenever one reaches 400–600, so no earlier recommendation moves; the Trough module and dialysis keep 2 g. The Dose Tinkerer adds the course figure: the AUC₂₄ over the last of N doses with the drug already on board, the figure a DoseMeRx Custom Dose reports, beside steady state. Not clinically validated (D32, the user's rulings U19–U20) | pending |

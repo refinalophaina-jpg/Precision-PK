@@ -15,7 +15,7 @@ central pharmacy), desktop first — not at the bedside.
 
 `index.html` — the entire application. Vanilla JS, no framework, no build step, **no
 JavaScript dependencies**. The only external reference is a Google Fonts stylesheet.
-~20,460 lines / ~1.26 MB (2026-11-18, v3.19.0).
+~20,525 lines / ~1.27 MB (2026-11-23, v3.20.0).
 
 `index.html` is both the canonical source **and** what GitHub Pages serves. They cannot
 diverge. After any change, confirm the deployed blob still matches:
@@ -344,6 +344,22 @@ level-based CRRT answer and a haemodialysis reading from your settings. Not clin
   None (`RESULTS_PLACEHOLDER`, `syncResultsPlaceholder`, R106).
 - **Parity against v3.15.0 (`bcee5dd`): 0 differences.** The corpus reaches no dialysis path; SUITE 46 is the record.
 
+**v3.20.0 (D32): the DoseMeRx comparison (the user, 2026-11-23).** Not clinically validated. The user compared three of their
+patients with DoseMeRx (kept privately, never in this repo). Our Buelga fit reproduces DoseMeRx's individualized Buelga
+to three figures; the differences were a dose ceiling, an AUC definition and a model choice.
+- **U19:** AUC Precision's per-dose ceiling is `AUC_DOSE_MAX_PER_DOSE_MG` (2,500 mg, the user's protocol maximum); the
+  conventional `DOSE_MAX_PER_DOSE_MG` (2,000) stays for the Trough module and every dialysis path (and the Goti-HD
+  reference grid). `doseCeilingBreaches`, `evalRegimen`, `capBoundFlag` and `exposureMatrix` take the ceiling as an
+  argument; the 2 g default is the Trough module's. **`conventionalFirst` (controller ruling, rule 8):** among in-band
+  regimens a dose above 2 g is chosen only when none at or below 2 g is in band, and an exposure tie yields to the smaller
+  dose before the rounding grace. So no earlier recommendation moves; 2.25 g and 2.5 g appear in the grid, the Tinkerer
+  and a charted regimen (no longer "above the conventional ceiling"), and in the answer only when the cap binds.
+- **U20:** the Dose Tinkerer shows the course figure (`courseFinalIntervalExposure`): the last interval of N doses
+  (`COURSE_DOSES_DEFAULT` 3, field `b-tink-n`) from the projection's first dose, drug on board included: what a DoseMeRx
+  Custom Dose of N reports (500 mg q24h x 3: 428.9 vs steady state 413). Display only; not on dialysis.
+- SUITE 50 (50.1–50.9), mutants R7-1–R7-8, four browser checks. Parity against v3.19.0 (`4475020`): 167 differences, all
+  in `exposureMatrix`'s dose range (2 calls); no optimiser or decision call differs.
+
 **v3.19.0 (D31): the dialysis rulings (the user, 2026-11-18).** Not clinically validated. D28's open questions, answered
 from the user's practice (the HD level is drawn with the morning labs, the session time varies) and their institutions'
 protocols, read privately (no protocol text enters this repo).
@@ -427,8 +443,8 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
 8. **A preference weight is not a clinical constant, and must say so.** Rule 1 forbids
    shipping a clinical number without provenance. A number no paper sets is a preference: its
    source comment says "PREFERENCE (rule 8)", what it orders, and whether it can change a dose.
-   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-18 (v3.19.0) they are:
-   - **Wording and display only (never a dose):** `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
+   `grep -n PREFERENCE index.html` is the authoritative list. As of 2026-11-23 (v3.20.0) they are:
+   - **Wording and display only (never a dose):** `COURSE_DOSES_DEFAULT` (3, v3.20.0, U20's course length); `NEXT_LEVEL_MIN_GAIN` (0.15); the 1 and 2 sigma
      splits in `FIT_BANDS`; `MODEL_AGREEMENT_BANDS` (10% / 20%); `SS_FRACTION_NOTE` (0.9, the Trough
      module's "three doses is not steady state" wording only; AUC Precision reads `SS_FRACTION_EARLY`);
      `AUC24_MODEST_BELOW_MIN` (325); the Trough AUC band (±22% / ±30%); `MAP_TIE_OBJ` /
@@ -446,7 +462,9 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
      since R103, so it decides whether an interval is used for a CRRT dose); the
      PD AM-labs default (06:00); and the level-timing narrative's 0.5 h "immediate post-infusion"
      boundary (`interpretLevelTiming`), which U1 also reuses.
-   - **Preferences that order or time a dose:** `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
+   - **Preferences that order or time a dose:** `conventionalFirst` (v3.20.0, controller ruling R118: in AUC Precision a dose
+     above the conventional 2 g is chosen only when none at or below it is in band, or out of band at equal exposure, so U19's
+     2.5 g ceiling moves no earlier answer); `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
      regimen is changed); `CONFIDENCE_SIGMA` (2/3/4, which since D26's ruling 3 gates one decision,
      `finalizeDecision`); `INTERVAL_PREFERENCE` (24, 12, 48, 8, ties only); the CrCl → interval
      cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the
@@ -485,14 +503,14 @@ node phase2d_validation.cjs
 
 | Suite | Expected |
 |---|---|
-| `phase2d_validation.cjs` | **745/745 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
+| `phase2d_validation.cjs` | **754/754 pass** (`EXPECTED_TOTAL`; the run fails if the count differs). Also under `TZ=Pacific/Auckland` and `TZ=UTC` |
 | `phase3_simulation.cjs` | **21/21 pass** (count pinned) |
 | `phase4_regimen_validation.cjs` | **49/49 pass** (count pinned) — regimen detection: the real q12h→q8h case, ten spec scenarios, nine spec defects, dose change at a fixed interval |
-| `docs/audit/mutation.cjs` | **156 of 156 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
+| `docs/audit/mutation.cjs` | **164 of 164 killed, exit 0** — one textual mutation at a time, in memory, against phase2d, phase3 and phase4. Joins the release gate for clinical releases. Exit 1 on a survivor or a timeout, 2 on a setup error. Do not run it beside the browser flows (they time out on a shared machine) |
 | `phase2d_comprehensive_validation.cjs` | Scenarios 1, 2, 5, 6 pass; **3 and 4 fail by design** — the accepted Goti 2-comp limitation, see `docs/validation-threshold-decisions.md` |
 | `docs/audit/engine-parity.cjs --ref <sha>` | **0 differences** for any presentation change — 225 engine calls compared value by value against the file at `<sha>`. A clinical change lists and explains every difference in its decision record: v3.14.0 against `edc5b53` reads 72 (D26); v3.15.0 against `b410477` reads 23 (D27); v3.16.0 against `bcee5dd` reads 0 (D28: the corpus reaches no dialysis path). The script prints the first 40 |
 | `docs/audit/pd-parity/` | The PD parity guard's scripts (D28, R87): `capture.cjs`, `replay.cjs`, `encode.cjs`, `load.cjs` and `fixtures58.json` regenerate SUITE 46.44's digests (58 PD calls at 9 significant digits) from any commit, e.g. the released `bcee5dd` |
-| `docs/audit/browser-flows.cjs` | **273/273** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
+| `docs/audit/browser-flows.cjs` | **277/277** — real clicks and keystrokes under the production CSP, desktop and 375px. Needs Playwright (not a dependency of this repo): `python3 docs/audit/serve-csp.py &` then `PLAYWRIGHT=<path>/node_modules/playwright node docs/audit/browser-flows.cjs` |
 
 **Version.** `APP_VERSION` (and the header and print-header markup, SUITE 36) is bumped every
 release: minor for a clinical behaviour change or a new feature, patch for fixes and wording, major
