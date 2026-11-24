@@ -350,15 +350,15 @@ to three figures; the differences were a dose ceiling, an AUC definition and a m
 - **U19:** AUC Precision's per-dose ceiling is `AUC_DOSE_MAX_PER_DOSE_MG` (2,500 mg, the user's protocol maximum); the
   conventional `DOSE_MAX_PER_DOSE_MG` (2,000) stays for the Trough module and every dialysis path (and the Goti-HD
   reference grid). `doseCeilingBreaches`, `evalRegimen`, `capBoundFlag` and `exposureMatrix` take the ceiling as an
-  argument; the 2 g default is the Trough module's. **`conventionalFirst` (controller ruling, rule 8):** among in-band
-  regimens a dose above 2 g is chosen only when none at or below 2 g is in band, and an exposure tie yields to the smaller
-  dose before the rounding grace. So no earlier recommendation moves; 2.25 g and 2.5 g appear in the grid, the Tinkerer
-  and a charted regimen (no longer "above the conventional ceiling"), and in the answer only when the cap binds.
+  argument; the 2 g default is the Trough module's. **U21:** 2.25 g and 2.5 g are recommended as DoseMeRx does (a
+  "conventional first" draft, R118, was removed at the user's word). **U22:** on an exact tie only the 2.5 g ceiling yields
+  (the 76 M rule read at the new ceiling), so 2 g q24h now beats 1 g q12h and 2.25 g q24h beats 750 mg q8h. 174 of 729 grid
+  answers move (D32).
 - **U20:** the Dose Tinkerer shows the course figure (`courseFinalIntervalExposure`): the last interval of N doses
   (`COURSE_DOSES_DEFAULT` 3, field `b-tink-n`) from the projection's first dose, drug on board included: what a DoseMeRx
   Custom Dose of N reports (500 mg q24h x 3: 428.9 vs steady state 413). Display only; not on dialysis.
-- SUITE 50 (50.1–50.9), mutants R7-1–R7-8, four browser checks. Parity against v3.19.0 (`4475020`): 167 differences, all
-  in `exposureMatrix`'s dose range (2 calls); no optimiser or decision call differs.
+- SUITE 50 (50.1–50.9), mutants R7-1–R7-8, four browser checks. Parity against v3.19.0 (`4475020`): 195 differences: 167
+  in `exposureMatrix`'s dose range, 28 in four `bayesDoseOptimizer` answers at the same exposure (U21/U22).
 
 **v3.19.0 (D31): the dialysis rulings (the user, 2026-11-18).** Not clinically validated. D28's open questions, answered
 from the user's practice (the HD level is drawn with the morning labs, the session time varies) and their institutions'
@@ -462,9 +462,7 @@ Bayesian dosing for peritoneal dialysis, paediatrics, neonates.
      since R103, so it decides whether an interval is used for a CRRT dose); the
      PD AM-labs default (06:00); and the level-timing narrative's 0.5 h "immediate post-infusion"
      boundary (`interpretLevelTiming`), which U1 also reuses.
-   - **Preferences that order or time a dose:** `conventionalFirst` (v3.20.0, controller ruling R118: in AUC Precision a dose
-     above the conventional 2 g is chosen only when none at or below it is in band, or out of band at equal exposure, so U19's
-     2.5 g ceiling moves no earlier answer); `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
+   - **Preferences that order or time a dose:** `CONTINUE_MARGIN_DOTS` (2 of 20, when an in-range
      regimen is changed); `CONFIDENCE_SIGMA` (2/3/4, which since D26's ruling 3 gates one decision,
      `finalizeDecision`); `INTERVAL_PREFERENCE` (24, 12, 48, 8, ties only); the CrCl → interval
      cut-points (`suggestInterval`); the HD and PD 250 mg step nearest the goal's middle; the

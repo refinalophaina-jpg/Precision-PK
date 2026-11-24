@@ -3520,21 +3520,28 @@ model figures only, on fictional timings. What the comparison showed:
   over the last interval of N doses (default `COURSE_DOSES_DEFAULT` 3, the `b-tink-n` field, 1–8), with peak and
   trough, labelled as the figure a DoseMeRx Custom Dose of N reports. The steady-state tiles are relabelled
   "AUC₂₄ SS". Display only: no dose reads it. It is not shown on dialysis.
-- **R118 (controller): conventional first (`conventionalFirst`, a PREFERENCE).** Without it, U19 moved answers the
-  user did not ask about. The optimiser's distance to target inside the band is 250 mg rounding (`exposureMatrix`'s
-  note), so the finer q48h and q24h lattice above 2 g won on rounding alone:
-  - the reported 48 mg/L patient got 2.25 g q48h instead of 500 mg q12h;
-  - a 1.75 g q24h patient got 2.25 g q24h instead of 1.25 g q12h;
-  - the equidistant-choice fixture got 2.25 g q48h instead of 1.25 g q24h.
+- **U21 (the user, 2026-11-23): 2.25 g and 2.5 g are recommended as DoseMeRx does.** A first draft (controller
+  ruling R118, "conventional first") had the answer use them only when nothing at or below 2 g was in band. It was put
+  to the user, who chose DoseMeRx's behaviour, and R118 was removed. The optimiser, the decision lattice and the
+  out-of-band exposure tie-break treat every dose up to 2.5 g alike.
+- **U22 (the user, 2026-11-23): on an exact tie only the 2.5 g ceiling yields.** The pharmacist's 76 M ruling
+  (2 g q24h yields to 1 g q12h at the same AUC₂₄) is now read at the new ceiling. Without this, DoseMeRx's own case
+  (CL 4.95 L/h) would still answer 750 mg q8h, which ties with 2.25 g q24h at 455. The user chose it knowing it
+  reverses the 76 M answer: 2 g q24h is now chosen over 1 g q12h, and 2.5 g q24h still yields to 1.25 g q12h.
+  `rankRegimenCandidates`' `belowCeiling` and `regimenDecision`'s last sort key both read `AUC_DOSE_MAX_PER_DOSE_MG`.
+  Detected intervals cannot reach the decision layer's key in practice (an 18 h course is nearer q24h than q12h), so
+  50.6 pins its source.
+- **What U21 and U22 move.** On a CL 1–9 L/h × target 400–600 grid (729 first recommendations), 174 change (24%):
+  - 126 move to 2.25 g or 2.5 g;
+  - 22 move to q48h, for example CL 2.0 at target 550: 1 g q24h becomes 2.25 g q48h. Within the band the optimiser's
+    distance to target is 250 mg rounding, finer at q48h (`exposureMatrix`'s note), so this is a consequence, not
+    pharmacology;
+  - the rest move to 2 g q24h instead of 1 g q12h.
 
-  Now a dose above the conventional 2 g is chosen only when no regimen at or below 2 g is in band (optimiser and
-  lattice). Out of band, at equal exposure, the dose above 2 g yields before the rounding grace is tested. Otherwise
-  q12h's smaller grace let 2.25 g q12h replace a continued 1.4 g q8h at CL 15.75 (44.14e). This extends the
-  pharmacist's earlier ruling that a maximal single dose yields. Because 1.5 g q8h reaches the 4.5 g daily ceiling,
-  some regimen at or below 2 g is in band whenever any is. So the answer uses 2.25 g or 2.5 g only when the cap binds,
-  and 2.25 g q12h then ties 1.5 g q8h and yields to it.
-  - Cost if wrong: the answer never proposes DoseMeRx-style 2.25 g q24h where a q8h or q12h regimen is in band. The
-    user reaches it from the grid or the Tinkerer.
+  In the decision layer, a below-range 1.75 g q24h changes to 2.25 g q24h (1.25 g q12h before). The reported 48 mg/L
+  case's answer is 2.25 g q48h (500 mg q12h before). At high clearance the cap-bound change from q12h is 2.25 g q12h
+  (1.5 g q8h before, the same 4.5 g a day). A continued 1.4 g q8h at CL 15.75 now changes to 2.25 g q12h, 19 mg·h/L
+  nearer the band and outside q12h's rounding grace of 16.
 - **R119 (controller): dialysis keeps 2 g.** The Goti-HD steady-state reference grid, the HD, PD and CRRT dose steps,
   the HD empiric table and the CRRT and hybrid references are unchanged. The ruling was asked about the AUC answer, and
   the dialysis answers have their own parity guards.
@@ -3552,31 +3559,44 @@ model figures only, on fictional timings. What the comparison showed:
   - `evalRegimen` against each module's ceiling, and the explorer's words;
   - a charted 2.25 g q24h no longer above the ceiling, and the alarm quoting 2,500 in AUC Precision and 2,000 in the
     Trough module;
-  - conventional first at CL 10 and CL 2.25;
+  - U21/U22: DoseMeRx's CL 4.95 gives 2.25 g q24h; CL 10 gives 2.25 g q12h; the 2.5 g ceiling yields;
   - the DoseMeRx reproduction, its approach to steady state, and q12h scaling;
   - the hold refusal, and the version.
-  On v3.19.0 all nine fail. Without R118 (mutant R7-4) the earlier equidistant-choice test fails. `EXPECTED_TOTAL` 754.
-- Fixtures moved, not weakened (rule 9):
+  On v3.19.0 all nine fail. `EXPECTED_TOTAL` 754.
+- Fixtures moved, not weakened (rule 9). Under U21/U22 the following now assert the new answers, each with a comment:
+  - the 76 M test (2 g q24h, and the 2.5 g ceiling yielding);
+  - the equidistant-choice test (CL 2.75, 1.5 g q24h, where 2.5 g q48h ties and yields);
+  - 43.1, 43.4, 43.6, 43.11 and 43.19 (2.25 g q24h; the target box alone gives 2 g q24h);
+  - 44.2 (the answer is 2.25 g q48h; the Hold is tested on the reported 500 mg q12h, given as the answer);
+  - 44.14c and 44.14d (2.25 g q12h);
+  - 44.14e (the tie fixture moves to 2.15 g q12h; the old 1.4 g q8h now changes);
+  - 44.16 (its level is 4 mg/L, so the answer still moves q24h to q12h);
+  - the young-patient hard tier (2.5 g).
+  The browser flows: D26's q24h-to-q12h check uses a 4 mg/L level; the high-clearance change reads 2.25 g q12h; D27's
+  first-day caution uses SCr 0.8 (1.5 g q12h, first day 384). Also moved:
   - 44.21 and 44.33 sat at 2.25 g, now inside the ceiling. They move to 2.75 g q48h (CL 2.75, AUC 500, trough about
     7.5), 2.75 g q12h (CL 11, both ceilings named) and 2.75 g q24h (CL 3.0, AUC 917).
   - 42.3's markup window is 1300 characters (the course-length field sits in the Explore row).
   - The version pins accept 3.20.
 - Mutants R7-1–R7-8 cover: the ceiling back to 2 g; the matrix ignoring the ceiling it is given; the charted check on
-  2 g; conventional first dropped; the grace tested first; the course's first interval; no q12h scaling; the hold
-  ignored. R7-2 survived the first run and 50.2 gained the Goti-HD assertion. 164 of 164 killed.
+  2 g; the optimiser's and the decision layer's tie-breaks yielding at 2 g again; the course's first interval; no q12h
+  scaling; the hold ignored. R7-2 and R7-5 survived a first run, and 50.2 and 50.6 gained assertions. 164 of 164 killed.
 - Four browser checks with real clicks under the CSP (fictional 56 F, 130 kg, Hughes):
   - the grid offers 2.25 g and 2.5 g and nothing above;
   - a picked 2.25 g cell shows the course over 3 doses;
   - a typed 1 with Enter shows 1 dose;
   - the row fits at 375 px.
-  277 of 277, 0 console problems.
-- Engine parity against v3.19.0 (`4475020`): 225 calls, 167 differences, all in `exposureMatrix`'s dose range on two
-  calls. At CL 4.2 two rows (2.25 g, 2.5 g) are added; at CL 9.7 the padded ladder now runs 1.25–2.5 g, not
-  0.75–2 g. No optimiser, decision, Hold or dialysis call differs. Also: phase2d 754/754 under `TZ=Pacific/Auckland`
+  277 of 277, 0 console problems, after the three moved flows.
+- Engine parity against v3.19.0 (`4475020`): 225 calls, 195 differences.
+  - 167 are `exposureMatrix`'s dose range. At CL 4.2 two rows (2.25 g, 2.5 g) are added; at CL 9.7 the padded
+    ladder runs 1.25–2.5 g, not 0.75–2 g.
+  - 28 are four `bayesDoseOptimizer` answers at the same exposure (U21/U22). At CL 4.2, 1 g q12h becomes 2 g q24h,
+    on Buelga and on Goti. At CL 9.7, 1.5 g q8h becomes 2.25 g q12h.
+  - No Hold or dialysis call differs. Also: phase2d 754/754 under `TZ=Pacific/Auckland`
   and `TZ=UTC`; phase3 21/21; phase4 49/49.
 
-### Open for the user
+### Answered (2026-11-23)
 
-- Should dialysis (HD, PD, CRRT and hybrid steps and references) also go to 2.5 g (R119)?
-- Should a 2.25 g or 2.5 g regimen be recommendable when a q8h or q12h regimen at or below 2 g is also in band (R118)?
-  DoseMeRx proposes 2.25 g q24h there.
+- Dialysis stays at 2 g (R119 confirmed by the user).
+- 2.25 g and 2.5 g are recommendable as DoseMeRx's are (U21, R118 removed), and only the 2.5 g ceiling yields on a
+  tie (U22).

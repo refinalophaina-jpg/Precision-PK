@@ -13290,16 +13290,6 @@ function roundingGraceAUC(tau, CLind) {
 // The dose ceilings a regimen breaks (per dose, per day), in evalRegimen's hard-reject wording.
 // One implementation (rule 2): evalRegimen rejects on them, and currentRegimenOf reads the same
 // breaches as "not recommendable" rather than unsafe on a charted regimen (D26, plan default D-a).
-// PREFERENCE (rule 8, controller ruling R118, D32): it orders a dose, and no paper sets it.
-// U19 (D32) admits 2.25 g and 2.5 g to AUC Precision. Among in-band regimens they are chosen only when no regimen at or
-// below the conventional 2 g is in band: within the band the optimiser's distance to target is rounding (exposureMatrix's
-// note), and the pharmacist's ruling already has a maximal single dose yield. Without this, 2.25 g q48h replaced 500 mg
-// q12h for the reported 48 mg/L case, and 2.25 g q24h replaced 1.25 g q12h for a 1.75 g q24h patient (SUITE 50.6a).
-// No new number: DOSE_MAX_PER_DOSE_MG. Out of band (the cap-bound alarm) every admissible dose stays in play.
-function conventionalFirst(inBand) {
-  const conv = inBand.filter(c => c.dose <= DOSE_MAX_PER_DOSE_MG);
-  return conv.length ? conv : inBand;
-}
 // perDoseMax: the module's per-dose ceiling, AUC_DOSE_MAX_PER_DOSE_MG in AUC Precision (U19); the 2 g default elsewhere.
 function doseCeilingBreaches(dose, tdd, perDoseMax) {
   const out = [], cap = perDoseMax > 0 ? perDoseMax : DOSE_MAX_PER_DOSE_MG;
@@ -13382,7 +13372,7 @@ function rankRegimenCandidates(results, targetAUC) {
   // Now a recommendation leaves the band only when nothing admissible is inside it,
   // and then it says so (below).
   const admissible = results.filter(r => !r.hardFail.length);
-  const inBand = conventionalFirst(admissible.filter(r => r.auc24 >= AUC24_TARGET_MIN && r.auc24 <= AUC24_TARGET_MAX));
+  const inBand = admissible.filter(r => r.auc24 >= AUC24_TARGET_MIN && r.auc24 <= AUC24_TARGET_MAX);
   const pool = inBand.length ? inBand : admissible;
 
   // THE FALLBACK IS GONE. It used to be `viable.length ? viable : results`, which
@@ -13448,12 +13438,12 @@ function rankRegimenCandidates(results, targetAUC) {
   // a whole day. Reported 76 M case, AUC24 434 either way:
   //      2000 mg Q24H  trough 11.3  peak 26.8   <- the preference alone picked this
   //      1000 mg Q12H  trough 14.4  peak 22.2   <- chosen now
-  // Uses the existing sourced cap (DOSE_MAX_PER_DOSE_MG); no new number. Chosen
-  // by the pharmacist over "keep Q24H first always". Since U19 (D32) AUC Precision admits
-  // doses to 2.5 g, but this stays the conventional 2 g: a dose at or above it yields, so
-  // no regimen this rule chose before moves; 2.25 g and 2.5 g win only where nothing ties.
+  // Uses the existing sourced cap; no new number. Chosen by the pharmacist over "keep Q24H
+  // first always". Since the user's rulings U19 and U21 (D32) the ceiling is AUC Precision's
+  // 2.5 g, and 2.25 g and 2.5 g compete as DoseMeRx's do: 2 g q24h no longer yields to 1 g q12h,
+  // and 2.25 g q24h is chosen over 750 mg q8h at the same exposure; 2.5 g yields.
   const safe = nonDanger.length ? nonDanger : tied;
-  const belowCeiling = safe.filter(r => r.dose < DOSE_MAX_PER_DOSE_MG);
+  const belowCeiling = safe.filter(r => r.dose < AUC_DOSE_MAX_PER_DOSE_MG);
   const rankOf = t => { const i = INTERVAL_PREFERENCE.indexOf(t); return i < 0 ? INTERVAL_PREFERENCE.length : i; };
   const best = (belowCeiling.length ? belowCeiling : safe)
     .slice().sort((a, b) => rankOf(a.tau) - rankOf(b.tau))[0];
@@ -13641,10 +13631,6 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
       lattice.push(c);
     }
   }
-  // U19 (D32): 2.25 g and 2.5 g join the lattice only when no regimen at or below 2 g is in band (conventionalFirst),
-  // so an in-range regimen is never dislodged, nor a change chosen, by a dose the 2 g lattice did not have.
-  const conv = lattice.filter(c => c.dose <= DOSE_MAX_PER_DOSE_MG);
-  if (conv.some(c => c.inBand)) { lattice.length = 0; lattice.push(...conv); }
   const safe = lattice.filter(c => !c.danger);
   const best = safe.reduce((m, c) => Math.max(m, c.dots), 0);
   // Out of reach within the ceilings: the alarm stays whatever the answer (review, D25).
@@ -13692,10 +13678,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
     const off = a => Math.max(0, AUC24_TARGET_MIN - a, a - AUC24_TARGET_MAX);
     const even = open.filter(c => c.dots >= cur.dots);
     const least = even.reduce((m, c) => Math.min(m, off(c.auc24)), Infinity);
-    // U19: at the same exposure a dose above the conventional 2 g yields (2.25 g q12h = 1.5 g q8h = 4.5 g a day), and
-    // before the grace test: q12h's smaller grace must not let 2.25 g through where 1.5 g q8h is within its own.
-    pool = conventionalFirst(even.filter(c => off(c.auc24) - least < 1e-9))
-      .filter(c => off(c.auc24) < off(cur.auc24) - roundingGraceAUC(c.tau, CLind));
+    pool = even.filter(c => off(c.auc24) - least < 1e-9 && off(c.auc24) < off(cur.auc24) - roundingGraceAUC(c.tau, CLind));
     onExposure = pool.length > 0;
   }
   // Nothing admissible at all while the current regimen is unsafe: never keep it —
@@ -13708,7 +13691,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
        Math.abs(intervalPosition(a.tau) - pos) - Math.abs(intervalPosition(b.tau) - pos)
     || Math.abs(a.tdd - cur.tdd) - Math.abs(b.tdd - cur.tdd)
     || Math.abs(a.auc24 - targetAUC) - Math.abs(b.auc24 - targetAUC)
-    || (a.dose >= DOSE_MAX_PER_DOSE_MG) - (b.dose >= DOSE_MAX_PER_DOSE_MG)
+    || (a.dose >= AUC_DOSE_MAX_PER_DOSE_MG) - (b.dose >= AUC_DOSE_MAX_PER_DOSE_MG)   // the ceiling yields (U21)
     || rankOf(a.tau) - rankOf(b.tau))[0];
   // Ruling 3: under Low or Very low confidence this change — more dots, away from an
   // in-range, safe regimen — is not made. The regimen is continued, with the change it set
@@ -17143,7 +17126,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       tied = `<p class="ev-note"><strong>Same exposure, different shape.</strong>
         ${alts} reach an identical AUC₂₄ — at steady state that is total daily dose ÷ clearance, which
         carries no interval term. Exposure cannot choose between them, so a trough in the danger band is
-        set aside, a dose of ${DOSE_MAX_PER_DOSE_MG} mg or more yields to a smaller one, and the
+        set aside, a dose at the ${AUC_DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling yields to one below it, and the
         rest are ordered by a stated practicality preference (q24h, then q12h, q48h, q8h). It is a
         preference, not a ranking the model earned — the matrix under "Regimens" shows every option.</p>`;
     }

@@ -2485,12 +2485,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     // 76 M: 2000 mg Q24H and 1000 mg Q12H both give AUC24 434. The Q24H
     // preference alone picked the 2000 mg per-dose ceiling. Option B: the
     // ceiling yields to an exposure-identical dose below it.
+    // v3.20.0 (U21/U22, D32): the ceiling is AUC Precision's 2.5 g, and only it yields: 2 g q24h now
+    // wins the 76 M tie (1 g q12h named beside it), and 2.5 g q24h yields to 1.25 g q12h.
     const { bayesDoseOptimizer } = sandbox;
     const r = bayesDoseOptimizer(4.61, 117.6, 450, null, 1);
     assert(r.regimen, 'should solve');
-    assert(r.dose === 1000 && r.tau === 12, `expected 1000 mg Q12H, got ${r.dose} mg Q${r.tau}H`);
-    assert(r.tiedWith && r.tiedWith.some(x => x.dose === K.DOSE_MAX_PER_DOSE_MG),
-      'the ceiling dose must still be disclosed as an alternative');
+    assert(r.dose === 2000 && r.tau === 24, `expected 2000 mg Q24H, got ${r.dose} mg Q${r.tau}H`);
+    assert(r.tiedWith && r.tiedWith.some(x => x.dose === 1000 && x.tau === 12), 'the q12h tie is disclosed');
+    const c = bayesDoseOptimizer(2500 / 450, 80, 450, null, 1);
+    assert(c.dose === 1250 && c.tau === 12 && c.tiedWith && c.tiedWith.some(x => x.dose === K.AUC_DOSE_MAX_PER_DOSE_MG && x.tau === 24),
+      `the 2.5 g ceiling yields: ${c.dose} mg Q${c.tau}H`);
   });
 
   test('INTERVAL_PREFERENCE is labelled as preference, not pharmacokinetics', ()=>{
@@ -2882,7 +2886,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     for (const t of [525, 550, 575, 600]) {
       const r = bayesDoseOptimizer(9.72, 80, t, null, 1);
       assert(!r.noSolution, `target ${t} was refused at CL 9.72: ${r.reason || ''}`);
-      assert(r.dose <= K.DOSE_MAX_PER_DOSE_MG && r.auc24 <= K.AUC24_ABSOLUTE_MAX, 'must still respect the hard tier');
+      assert(r.dose <= K.AUC_DOSE_MAX_PER_DOSE_MG && r.auc24 <= K.AUC24_ABSOLUTE_MAX, 'must still respect the hard tier');   // AUC Precision's 2.5 g since U19
     }
   });
 
@@ -2898,10 +2902,12 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
 
   test('offering both dose steps preserves the historical equidistant choice', ()=>{
-    // 1000 mg Q24H (AUC 444) and 1250 mg Q24H (AUC 556) are both 56 from 500.
-    // Math.round chose 1250; the fix must not silently change that.
-    const r = sandbox.bayesDoseOptimizer(2.25, 55, 500, null, 1);
-    assert(r.dose === 1250 && r.tau === 24, `expected 1250 mg Q24H, got ${r.dose} mg Q${r.tau}H`);
+    // 1250 mg Q24H (AUC 455) and 1500 mg Q24H (AUC 545) are both 45 from 500.
+    // Math.round chose 1500; the fix must not silently change that. v3.20.0 (U21/U22, D32): the fixture
+    // was CL 2.25 (1000 / 1250 mg Q24H), where 2.25 g Q48H now hits 500 exactly; at CL 2.75
+    // 2.5 g Q48H (455) ties too and yields as the ceiling dose.
+    const r = sandbox.bayesDoseOptimizer(2.75, 55, 500, null, 1);
+    assert(r.dose === 1500 && r.tau === 24, `expected 1500 mg Q24H, got ${r.dose} mg Q${r.tau}H`);
   });
 
   test('an entered level with no usable draw time is refused, never replaced by population', ()=>{
@@ -5891,7 +5897,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(r.dose === 1250 && r.tau === 12 && r.tinfH === 1.5, `continued ${r.dose} mg q${r.tau}h over ${r.tinfH} h`);
     assertClose(r.auc24, 545.9, 1, 'AUC24'); assertClose(r.Ctrough, 14.9, 0.2, 'trough');
     assert(r.dots === 14, `dots ${r.dots}`);
-    assert(r.nearestTarget && r.nearestTarget.dose === 1000 && r.nearestTarget.tau === 12,
+    assert(r.nearestTarget && r.nearestTarget.dose === 2000 && r.nearestTarget.tau === 24,   // 1 g q12h before U22 (D32)
       `what the target box alone gives is disclosed: ${JSON.stringify(r.nearestTarget)}`);
     assert(!r.noSolution && r.regimen === r, 'keeps the rec contract (rec.regimen, rec.noSolution)');
   });
@@ -5911,7 +5917,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(r.action === 'change', `action ${r.action}`);
     assert(r.auc24 >= K43.AUC24_TARGET_MIN && r.auc24 <= K43.AUC24_TARGET_MAX, `AUC ${r.auc24.toFixed(0)}`);
     assert(r.dots > r.current.dots && r.current.dots === 7, `dots ${r.current.dots} -> ${r.dots}`);
-    assert(r.dose === 1250 && r.tau === 12, `chose ${r.dose} mg q${r.tau}h (q12h is one interval step from q24h; q8h is two)`);
+    // v3.20.0 (U21/U22, D32): 2.25 g q24h is admissible, so the change keeps q24h itself (1.25 g q12h before).
+    assert(r.dose === 2250 && r.tau === 24, `chose ${r.dose} mg q${r.tau}h (the same interval, q24h)`);
     assert(r.decisionReason === 'attainment', r.decisionReason);
   });
   // Task 9 (ruling 3): every decision is also taken as Low confidence takes it (protectInRange).
@@ -5949,7 +5956,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   });
   test('43.6 strict band: no recommendation below 400 or above 600 while an in-range one exists', () => {
     const r0 = decide(400, null);
-    assert(r0.action === 'start' && r0.dose === 1000 && r0.tau === 12, `first regimen at target 400: ${r0.dose} mg q${r0.tau}h AUC ${r0.auc24.toFixed(0)}`);
+    assert(r0.action === 'start' && r0.dose === 2000 && r0.tau === 24, `first regimen at target 400: ${r0.dose} mg q${r0.tau}h AUC ${r0.auc24.toFixed(0)}`);   // 1 g q12h before U22
     let bad = 0, n = 0;
     for (let cl = 1.0; cl <= 9.0001; cl += 0.1) for (let t = 400; t <= 600; t += 10) {
       const r = sandbox.bayesDoseOptimizer(cl, cl * 12, t, null, 1); if (!r || r.noSolution) continue; n++;
@@ -6037,16 +6044,16 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('43.19 the copy summary says what changes', () => {
     const r = decide(400, hist(1750, 24, 2));
     const s = fn43('resultSummary')({ levels: [{}] }, r, null, fn43('aucUncertaintyRow')(1, 'buelga'), { level: 'Moderate' });
-    assert(/Change from 1\.75 g IV q24h to 1\.25 g IV q12h/.test(s), s);
+    assert(/Change from 1\.75 g IV q24h to 2\.25 g IV q24h/.test(s), s);   // 1.25 g q12h before U21
   });
   test('43.11 the answer says continue, or why it changes', () => {
     const html = fn43('regimenActionHTML');
     const c = decide(400, q12);
     const h = html(c, 400);
     assert(/Continue the current regimen/.test(h) && /14 of 20/.test(h), h);
-    assert(/target of 400 alone would give 1 g IV q12h/.test(h), 'the target box choice is disclosed: ' + h);
+    assert(/target of 400 alone would give 2 g IV q24h/.test(h), 'the target box choice is disclosed: ' + h);   // 1 g q12h before U22
     const ch = html(decide(400, hist(1750, 24, 2)), 400);
-    assert(/Change from 1\.75 g IV q24h/.test(ch) && /7 of 20/.test(ch) && /14 of 20/.test(ch), ch);
+    assert(/Change from 1\.75 g IV q24h/.test(ch) && /7 of 20/.test(ch) && /15 of 20/.test(ch), ch);   // 2.25 g q24h, 15 of 20, since U21
     assert(html(decide(450, null), 450) === '', 'a first regimen carries no action line');
   });
   test('43.13 a change away from an in-range regimen delivers the whole margin, not just the trigger', () => {
@@ -6163,8 +6170,11 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
   test('44.2 a 48 mg/L level holds the first dose until the fitted level is below 20 mg/L', () => {
     assert(!K44._err, K44._err);
     assert(K44.TROUGH_HIGH_MGL === 20, `TROUGH_HIGH_MGL is ${K44.TROUGH_HIGH_MGL}`);
-    const { r, rec, nowH, cur } = c1Case();
-    assert(rec && !rec.noSolution && rec.dose === 500 && rec.tau === 12, `the reported regimen: ${rec && rec.dose} mg q${rec && rec.tau}h`);
+    const { r: r1, rec: ans, nowH, cur } = c1Case();
+    // v3.20.0 (U21, D32): the answer is now 2.25 g q48h (AUC exactly on target); the hold is tested, as reported,
+    // on the v3.13.0 answer 500 mg q12h, given here as the answered regimen.
+    assert(ans && !ans.noSolution && ans.dose === 2250 && ans.tau === 48, `the answer: ${ans && ans.dose} mg q${ans && ans.tau}h`);
+    const rec = Object.assign({}, ans, { dose: 500, tau: 12, tinfH: fn44('autoTinf')(500) }), r = Object.assign({}, r1, { rec });
     assertClose(at44(r, 40 + rec.tau), 43.3, 0.1, 'the reported level when due (v3.13.0 said "level by then 43.3")');
     const plan = fn44('firstDosePlan')(r, rec, nowH, null, cur);
     assert(plan.hold === true, `hold: ${plan.hold}`);
@@ -6875,9 +6885,10 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       `${r.action} / ${r.continueReason || r.decisionReason}: ${r.dose} mg q${r.tau}h AUC ${r.auc24.toFixed(0)}`);
     assert(r.current && r.current.dose === 250 && r.current.tau === 24 && r.current.dots === 0 && !r.current.inBand,
       `changes from the current regimen: ${JSON.stringify(r.current && { dose: r.current.dose, tau: r.current.tau, dots: r.current.dots })}`);
-    assert(r.dose === 1500 && r.tau === 8 && Math.round(r.auc24) === 286, `the highest admissible exposure: ${r.dose} mg q${r.tau}h AUC ${r.auc24.toFixed(0)}`);
+    // v3.20.0 (U19/U21, D32): 2.25 g q12h reaches the same 4.5 g a day as 1.5 g q8h and is the nearer interval to q24h.
+    assert(r.dose === 2250 && r.tau === 12 && Math.round(r.auc24) === 286, `the highest admissible exposure: ${r.dose} mg q${r.tau}h AUC ${r.auc24.toFixed(0)}`);
     const grace = fn44('roundingGraceAUC')(r.tau, capCL);
-    assertClose(grace, 250 * (24 / 8) / capCL / 2, 1e-9, 'the grace is half of one 250 mg step at q8h');
+    assertClose(grace, 250 * (24 / 12) / capCL / 2, 1e-9, 'the grace is half of one 250 mg step at q12h');
     assert(off44(r.auc24) < off44(r.current.auc24) - grace,
       `nearer the band by more than the grace: ${off44(r.auc24).toFixed(0)} vs ${off44(r.current.auc24).toFixed(0)} - ${grace.toFixed(1)}`);
     assert(r.dots >= r.current.dots, `never worse: ${r.current.dots} -> ${r.dots}`);
@@ -6898,7 +6909,7 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     const rec = r.rec;
     assert(rec.action === 'change' && rec.decisionReason === 'attainment' && rec.current.dose === 1000 && rec.current.tau === 12,
       `${rec.action} / ${rec.continueReason || rec.decisionReason}: ${rec.dose} mg q${rec.tau}h AUC ${rec.auc24.toFixed(0)}`);
-    assert(rec.dose === 1500 && rec.tau === 8 && Math.round(rec.auc24) === 299, `${rec.dose} mg q${rec.tau}h AUC ${rec.auc24.toFixed(0)}`);
+    assert(rec.dose === 2250 && rec.tau === 12 && Math.round(rec.auc24) === 299, `${rec.dose} mg q${rec.tau}h AUC ${rec.auc24.toFixed(0)}`);   // 1.5 g q8h before U21: same 4.5 g a day, the current q12h
     assert(!/Continue the current regimen/.test(text), 'the verdict still says continue');
     assert(para44(html, 'vx-action') === 'Change from 1 g IV q12h', para44(html, 'vx-action'));
     assert(/cannot be reached within the conventional ceilings/.test(text), 'the cap-bound alarm is shown');
@@ -6933,10 +6944,13 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(fn44('nextLevelValue')(change.auc24, 1, 'buelga', change.tau, capCL, Object.assign({}, fc, { confRank: 2, reason: 'x' })).kind === 'conflict', 'conflict first');
   });
   test('44.14e a genuine tie still continues; an in-range regimen is untouched by the exposure tie-break', () => {
-    // 1.4 g q8h (AUC24 267) against 1.5 g q8h (286): 19 mg·h/L nearer, inside the grace of 24.
-    const t = capDecide(1400, 8), grace = fn44('roundingGraceAUC')(8, capCL);
+    // 2.15 g q12h (AUC24 273) against 2.25 g q12h and 1.5 g q8h (both 286): 13 mg·h/L nearer, inside q12h's grace of 16.
+    // v3.20.0 (U19, D32): the fixture was 1.4 g q8h (267), but 2.25 g q12h, 19 nearer, is outside q12h's grace and now
+    // changes it, as an admissible regimen nearer the band by more than its rounding should.
+    const t = capDecide(2150, 12), grace = fn44('roundingGraceAUC')(12, capCL);
     assert(off44(t.auc24) - off44(4500 / capCL) < grace && off44(t.auc24) > off44(4500 / capCL), 'the fixture is nearer, inside the grace');
-    assert(t.action === 'continue' && t.continueReason === 'no-better' && t.dose === 1400 && t.tau === 8,
+    assert(capDecide(1400, 8).action === 'change' && capDecide(1400, 8).dose === 2250, 'the old fixture now changes, to 2.25 g q12h');
+    assert(t.action === 'continue' && t.continueReason === 'no-better' && t.dose === 2150 && t.tau === 12,
       `${t.action} / ${t.continueReason || t.decisionReason}: ${t.dose} mg q${t.tau}h`);
     assert((t.flags || []).some(fn44('isCapBoundFlag')), 'the cap-bound alarm stays on the continue');
     // At the ceiling itself nothing is nearer: SUITE 44.14's 1.5 g q8h at CL 12.34 is still continued.
@@ -7018,7 +7032,8 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
       fn44('calcCrCl')(55, 'M', 1.0, wt, vm.runInContext('SCR_POLICY.ACTUAL', sandbox))));
     const bk = fn44('buelgaPopPK')(crcl, 72);
     const doses = times.map(s => ({ mg: 1750, tinfH: 2, timeH: at44h(s) }));
-    const nowH = at44h('2026-11-13T10:00'), levels = [{ conc: 6, timeH: at44h('2026-11-13T07:30') }];
+    // v3.20.0 (U19, D32): 4 mg/L, was 6 — at 6 the answer is now 2.5 g q24h, and these tests need a q24h -> q12h change.
+    const nowH = at44h('2026-11-13T10:00'), levels = [{ conc: 4, timeH: at44h('2026-11-13T07:30') }];
     const mf = fn44('mapFit')((a, b) => fn44('burtonObjective')(a, b, bk.CL_pop, bk.V_pop, doses, levels),
       2, K44.OMEGA2_CL_BUELGA, K44.OMEGA2_V_BUELGA, 300);
     const CL_ind = bk.CL_pop * Math.exp(mf.eta[0]), V_ind = bk.V_pop * Math.exp(mf.eta[1]);
@@ -11779,17 +11794,21 @@ section('BONUS · aucUncertaintyText() — model-aware dynamic labels');
     assert(/\(2000 mg per dose, 4500 mg per day\)/.test(tr), tr.slice(0, 300));
   });
 
-  test('50.6 U19 conventional first: at CL 10 L/h 2.25 g q12h reaches AUC 450 exactly, but 1.5 g q8h (also 450) is in band at the conventional 2 g, so it is recommended and 2.25 g stays a grid option; a 48 mg/L-type low clearance keeps its sub-2 g answer', () => {
-    const r = fn50('bayesDoseOptimizer')(10, 80, 450, null, 1);
-    assert(r.dose === 1500 && r.tau === 8 && !(r.tiedWith || []).some(x => x.dose > 2000), `${r.dose} q${r.tau} ${JSON.stringify(r.tiedWith)}`);
-    const mx = fn50('exposureMatrix')(10, 80, null, 450, 1);
-    const c = mx.rows.find(x => x.dose === 2250).cells.find(x => x.tau === 12);
-    assert(c && Math.round(c.auc24) === 450 && c.band === 'in', 'the grid still offers it');
-    // CL 2.25, target 500: 2.25 g q48h is exactly 500 but 1.25 g q24h (556) is in band at or below 2 g.
-    const low = fn50('bayesDoseOptimizer')(2.25, 55, 500, null, 1);
-    assert(low.dose === 1250 && low.tau === 24, `${low.dose} q${low.tau}`);
-    // Only where nothing at or below 2 g reaches the band does a larger dose stay in play (none at CL 15.75: the cap binds).
-    assert(fn50('conventionalFirst')([{ dose: 2250 }, { dose: 2500 }]).length === 2 && fn50('conventionalFirst')([{ dose: 2000 }, { dose: 2250 }]).length === 1, 'conventionalFirst');
+  test('50.6 U21/U22 (the user): 2.25 g and 2.5 g are recommended as DoseMeRx does, and only the 2.5 g ceiling yields on an exact tie', () => {
+    const opt = fn50('bayesDoseOptimizer');
+    // DoseMeRx's own fit of the obese case (CL 4.95 L/h): 2.25 g q24h and 750 mg q8h are both AUC 455; q24h is chosen, as DoseMeRx's answer.
+    const d = opt(4.95, 92.6, 450, null, 1);
+    assert(d.dose === 2250 && d.tau === 24 && d.tiedWith && d.tiedWith.some(x => x.dose === 750 && x.tau === 8), `${d.dose} q${d.tau} ${JSON.stringify(d.tiedWith)}`);
+    // CL 10: 2.25 g q12h and 1.5 g q8h are both AUC 450; q12h before q8h by the stated preference.
+    const r = opt(10, 80, 450, null, 1);
+    assert(r.dose === 2250 && r.tau === 12 && r.tiedWith.some(x => x.dose === 1500 && x.tau === 8), `${r.dose} q${r.tau}`);
+    // The ceiling yields: 2.5 g q24h and 1.25 g q12h are both 450, and 1.25 g q12h is chosen.
+    const c = opt(2500 / 450, 80, 450, null, 1);
+    assert(c.dose === 1250 && c.tau === 12, `${c.dose} q${c.tau}`);
+    assert(typeof sandbox.conventionalFirst === 'undefined', 'the conventional-first rule (R118) is gone');
+    // The decision layer's last tie key reads the same ceiling. Detected intervals cannot reach it in practice (an 18 h
+    // course is nearer q24h than q12h), so the source is pinned (mutant R7-5).
+    assert(/\|\| \(a\.dose >= AUC_DOSE_MAX_PER_DOSE_MG\) - \(b\.dose >= AUC_DOSE_MAX_PER_DOSE_MG\)/.test(src50), 'regimenDecision yields at the 2.5 g ceiling');
   });
 
   // U20. DoseMeRx's "Predicted AUC24" for a Custom Dose of N doses is the last interval of that course with every

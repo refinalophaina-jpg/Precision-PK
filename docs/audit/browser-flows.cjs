@@ -820,7 +820,8 @@ async function enterCourse(page) {
     await c.locator('[data-onclick="k2"]').click();
     await typeInto(c, '#b-age', '55'); await typeInto(c, '#b-tbw', '72'); await typeInto(c, '#b-height', '176'); await typeInto(c, '#b-scr', '1.0');
     await c.locator('[data-onclick="k39"]').click();
-    const q24 = await course(1750, [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']], 6);
+    // v3.20.0 (U19/U21, D32): a 4 mg/L level (was 6): at 6 the answer is now 2.5 g q24h, and this flow needs a q24h -> q12h change.
+    const q24 = await course(1750, [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']], 4);
     ok('D25: a below-range 1.75 g q24h changes, naming what it changes from and the in-range gain',
        /^Change from 1\.75 g IV q24h$/.test(q24.act) && q24.actFirst && q24.delta
        && /^The current regimen gives AUC₂₄ (3\d\d) with (\d+) of 20 plausible AUCs in 400–600; this one puts (\d+) of 20 in range\./.test(q24.why)
@@ -1275,7 +1276,7 @@ async function enterCourse(page) {
     });
     const printedL = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
     ok('D26: a 0-of-20 regimen at high clearance is changed, not continued',
-       lo.act === 'Change from 1 g IV q12h' && lo.reg === '1.5 g IV q8h' && /^High confidence/.test(lo.conf)
+       lo.act === 'Change from 1 g IV q12h' && lo.reg === '2.25 g IV q12h'   /* 1.5 g q8h before U19/U21 (D32): the same 4.5 g a day, the current q12h */ && /^High confidence/.test(lo.conf)
        && /^The current regimen gives AUC₂₄ 133 with 0 of 20 plausible AUCs in 400–600, and no admissible regimen puts more in range; this one brings AUC₂₄ nearer the band, to 299, with 0 of 20 in range\./.test(lo.why)
        && /cannot be reached within the conventional ceilings/.test(lo.all)
        && !/Continue the current regimen/.test(lo.all + printedL) && /Change from 1 g IV q12h/.test(printedL)
@@ -2284,9 +2285,10 @@ async function enterCourse(page) {
     await typeInto(x, '#mic', '2');
     const mic2 = await troughVerdict();
     ok('D27: the Trough verdict shows AUC/MIC only when MIC is not 1', !/AUC\/MIC/.test(mic1) && /AUC\/MIC \d+/.test(mic2), JSON.stringify({ mic1: mic1.slice(0, 160), mic2: (mic2.match(/.{20}AUC\/MIC.{10}/) || [''])[0] }));
-    // AUC Precision: a change from 1.75 g q24h (below range) to 1.25 g q12h.
+    // AUC Precision: a change from 1.75 g q24h (below range). v3.20.0 (U19/U21, D32): at SCr 1.0 the change is now to a
+    // 2.25-2.5 g q24h whose first day is in band, so SCr 0.8: the change is to 1.5 g q12h, first day AUC 384 (below).
     await x.locator('[data-onclick="k2"]').click();
-    await typeInto(x, '#b-age', '55'); await typeInto(x, '#b-tbw', '72'); await typeInto(x, '#b-height', '176'); await typeInto(x, '#b-scr', '1.0');
+    await typeInto(x, '#b-age', '55'); await typeInto(x, '#b-tbw', '72'); await typeInto(x, '#b-height', '176'); await typeInto(x, '#b-scr', '0.8');
     await x.locator('[data-onclick="k39"]').click();
     const qtimes = [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']];
     for (let n = 1; n <= qtimes.length; n++) {
