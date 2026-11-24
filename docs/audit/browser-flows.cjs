@@ -820,7 +820,8 @@ async function enterCourse(page) {
     await c.locator('[data-onclick="k2"]').click();
     await typeInto(c, '#b-age', '55'); await typeInto(c, '#b-tbw', '72'); await typeInto(c, '#b-height', '176'); await typeInto(c, '#b-scr', '1.0');
     await c.locator('[data-onclick="k39"]').click();
-    const q24 = await course(1750, [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']], 6);
+    // v3.20.0 (U19/U21, D32): a 4 mg/L level (was 6): at 6 the answer is now 2.5 g q24h, and this flow needs a q24h -> q12h change.
+    const q24 = await course(1750, [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']], 4);
     ok('D25: a below-range 1.75 g q24h changes, naming what it changes from and the in-range gain',
        /^Change from 1\.75 g IV q24h$/.test(q24.act) && q24.actFirst && q24.delta
        && /^The current regimen gives AUC₂₄ (3\d\d) with (\d+) of 20 plausible AUCs in 400–600; this one puts (\d+) of 20 in range\./.test(q24.why)
@@ -1275,7 +1276,7 @@ async function enterCourse(page) {
     });
     const printedL = await n.evaluate(() => { window.dispatchEvent(new Event('beforeprint')); return (document.getElementById('print-report') || {}).textContent.replace(/\s+/g, ' '); });
     ok('D26: a 0-of-20 regimen at high clearance is changed, not continued',
-       lo.act === 'Change from 1 g IV q12h' && lo.reg === '1.5 g IV q8h' && /^High confidence/.test(lo.conf)
+       lo.act === 'Change from 1 g IV q12h' && lo.reg === '2.25 g IV q12h'   /* 1.5 g q8h before U19/U21 (D32): the same 4.5 g a day, the current q12h */ && /^High confidence/.test(lo.conf)
        && /^The current regimen gives AUC₂₄ 133 with 0 of 20 plausible AUCs in 400–600, and no admissible regimen puts more in range; this one brings AUC₂₄ nearer the band, to 299, with 0 of 20 in range\./.test(lo.why)
        && /cannot be reached within the conventional ceilings/.test(lo.all)
        && !/Continue the current regimen/.test(lo.all + printedL) && /Change from 1 g IV q12h/.test(printedL)
@@ -2284,9 +2285,10 @@ async function enterCourse(page) {
     await typeInto(x, '#mic', '2');
     const mic2 = await troughVerdict();
     ok('D27: the Trough verdict shows AUC/MIC only when MIC is not 1', !/AUC\/MIC/.test(mic1) && /AUC\/MIC \d+/.test(mic2), JSON.stringify({ mic1: mic1.slice(0, 160), mic2: (mic2.match(/.{20}AUC\/MIC.{10}/) || [''])[0] }));
-    // AUC Precision: a change from 1.75 g q24h (below range) to 1.25 g q12h.
+    // AUC Precision: a change from 1.75 g q24h (below range). v3.20.0 (U19/U21, D32): at SCr 1.0 the change is now to a
+    // 2.25-2.5 g q24h whose first day is in band, so SCr 0.8: the change is to 1.5 g q12h, first day AUC 384 (below).
     await x.locator('[data-onclick="k2"]').click();
-    await typeInto(x, '#b-age', '55'); await typeInto(x, '#b-tbw', '72'); await typeInto(x, '#b-height', '176'); await typeInto(x, '#b-scr', '1.0');
+    await typeInto(x, '#b-age', '55'); await typeInto(x, '#b-tbw', '72'); await typeInto(x, '#b-height', '176'); await typeInto(x, '#b-scr', '0.8');
     await x.locator('[data-onclick="k39"]').click();
     const qtimes = [[day(-3), '08:00'], [D1, '08:00'], [D2, '08:00']];
     for (let n = 1; n <= qtimes.length; n++) {
@@ -3528,6 +3530,48 @@ async function enterCourse(page) {
     await hctx.close();
   }
   // ── end Release 3 Task 28
+  // ── v3.20.0 (D32): U19, AUC Precision offers 2.25 g and 2.5 g; U20, the Tinkerer's course figure. Real clicks under
+  // the CSP. A fictional obese patient (56 F, 130 kg, 172 cm, SCr 0.8) on Hughes with the standard course.
+  {
+    const uctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const u = await uctx.newPage();
+    const uProblems = watch(u, 'v3.20.0');
+    await u.goto(BASE + '?v=pw320-' + Date.now(), { waitUntil: 'networkidle' });
+    await u.locator('[data-onclick="k2"]').click();
+    await typeInto(u, '#b-age', '56'); await typeInto(u, '#b-tbw', '130'); await typeInto(u, '#b-height', '172'); await typeInto(u, '#b-scr', '0.8');
+    await u.locator('[data-onclick="k40"]').click();
+    await u.locator('#b-model-btn-hughes').click();
+    await enterCourse(u);
+    await u.locator('[data-onclick="k47"]').click();
+    await u.waitForSelector('#b-results .vx-conf', { timeout: 20000 }); await u.waitForTimeout(300);
+    if (!(await u.evaluate(() => document.getElementById('ev-regimens').open))) await u.locator('#ev-regimens > summary').click();
+    const grid = await u.evaluate(() => [...document.querySelectorAll('#b-results .mx-cell')].map(c => c.getAttribute('aria-label') || ''));
+    const offerable = await u.evaluate(() => [...document.querySelectorAll('#b-results button.mx-cell')].map(c => c.getAttribute('aria-label') || ''));
+    const pick = offerable.find(l => /^2\.25 g every \d+ hours, steady-state AUC24 \d+/.test(l));
+    ok('v3.20.0 (U19): the Regimens grid offers 2.25 g and 2.5 g, and nothing above 2.5 g', !!pick && grid.some(l => /^2\.5 g every/.test(l)) && !grid.some(l => /^(2\.75|3) g every/.test(l)), grid.filter(l => /^2/.test(l)).join(' | '));
+    if (pick) {
+      const cell = u.locator(`#b-results button.mx-cell[aria-label="${pick}"]`);
+      await cell.scrollIntoViewIfNeeded(); await cell.click(); await u.waitForTimeout(500);
+      const t1 = await u.evaluate(() => ({ dose: document.getElementById('b-tink-dose').value, n: (document.getElementById('b-tink-n') || {}).value,
+        course: ((document.querySelector('#b-tink-result .tink-course') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+        tile: ((document.querySelector('#b-tink-result') || {}).textContent || '').replace(/\s+/g, ' ') }));
+      ok('v3.20.0 (U20): a picked 2.25 g cell previews in the Tinkerer with the course figure over 3 doses beside steady state',
+        t1.dose === '2250' && t1.n === '3' && /^Over 3 doses from .+: the last \d+ h gives AUC₂₄ \d+ mg·h\/L, peak [\d.]+, trough [\d.]+ mg\/L, with the drug already on board\. This is the figure a DoseMeRx Custom Dose of 3 doses reports; the tiles above are steady state\.$/.test(t1.course)
+        && /AUC₂₄ SS/.test(t1.tile), JSON.stringify(t1).slice(0, 600));
+      await typeInto(u, '#b-tink-n', '1'); await u.keyboard.press('Enter'); await u.waitForTimeout(400);
+      const one = ((await u.locator('#b-tink-result .tink-course').textContent()) || '').replace(/\s+/g, ' ');
+      ok('v3.20.0 (U20): the course length is typed and Enter previews it (1 dose)', /^Over 1 dose from /.test(one.trim()) && /Custom Dose of 1 dose reports/.test(one), one.slice(0, 300));
+      await u.setViewportSize({ width: 375, height: 812 }); await u.waitForTimeout(400);
+      const fit = await u.evaluate(() => { const row = document.querySelector('#b-results .tinkerer-row'); const r = row && row.getBoundingClientRect();
+        return { page: document.scrollingElement.scrollWidth, row: r ? Math.round(r.right) : null }; });
+      ok('v3.20.0: at 375 px the Tinkerer row with the course length fits (no horizontal scroll)', fit.page <= 375 && fit.row !== null && fit.row <= 375, JSON.stringify(fit));
+      await u.screenshot({ path: path.join(OUT, 'v320-tinkerer-375.png'), fullPage: false });
+    }
+    const uAttr = await attributeInjected(u, uProblems);
+    results.cloudflareInjected = (results.cloudflareInjected || 0) + uAttr.injected;
+    results.problems.push(...uAttr.kept);
+    await uctx.close();
+  }
   await browser.close();
 
   results.checks = checks;

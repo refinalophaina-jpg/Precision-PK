@@ -223,6 +223,8 @@ function extract() {
     // CRRT starting level projected from (U17, 72 h)
     HD_PRE_LABEL_H:            num(src, 'HD_PRE_LABEL_H'),
     CRRT_LEVEL_MAX_AGE_H:      num(src, 'CRRT_LEVEL_MAX_AGE_H'),
+    // v3.20.0 (D32) — the user's ruling U19: AUC Precision's per-dose ceiling (the MHHS 2,500 mg maximum)
+    AUC_DOSE_MAX_PER_DOSE_MG:  num(src, 'AUC_DOSE_MAX_PER_DOSE_MG'),
     // v3.16.0 (D28, Task 29, ruling R95a) — the one future-level tolerance (one minute, D26), read by AUC Precision,
     // CRRT and the haemodialysis reading through levelAfterNow
     FUTURE_LEVEL_TOLERANCE_H:  num(src, 'FUTURE_LEVEL_TOLERANCE_H'),

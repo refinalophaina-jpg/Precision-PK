@@ -447,6 +447,23 @@ const MUTANTS = [
     find: "a.state === 'need-level' && (a.reason === 'stale' || (a.reason === 'no-interval' && !(a.intervals || []).length))", replace: "a.state === 'need-level' && a.reason === 'no-interval' && !(a.intervals || []).length" },
   { id: 'R6-6', what: 'the CRRT level age is 96 h [49.5]',
     find: 'const CRRT_LEVEL_MAX_AGE_H = 72;', replace: 'const CRRT_LEVEL_MAX_AGE_H = 96;' },
+  // v3.20.0 (D32): the user's rulings U19 (AUC Precision's 2.5 g per-dose ceiling) and U20 (the course figure)
+  { id: 'R7-1', what: 'AUC Precision\'s per-dose ceiling is 2 g again: no 2.25 g or 2.5 g row [50.1, 50.2]',
+    find: 'const AUC_DOSE_MAX_PER_DOSE_MG = 2500;', replace: 'const AUC_DOSE_MAX_PER_DOSE_MG = 2000;' },
+  { id: 'R7-2', what: 'the matrix ignores the ceiling it is given (the Goti-HD reference reaches 2.5 g) [50.2]',
+    find: 'const capMg = perDoseMax > 0 ? perDoseMax : AUC_DOSE_MAX_PER_DOSE_MG;', replace: 'const capMg = AUC_DOSE_MAX_PER_DOSE_MG;' },
+  { id: 'R7-3', what: 'the charted-regimen check reads the 2 g ceiling: 2.25 g q24h is "above the conventional ceiling" [50.4]',
+    find: 'c.notRecommendable = doseCeilingBreaches(c.dose, c.tdd, AUC_DOSE_MAX_PER_DOSE_MG);', replace: 'c.notRecommendable = doseCeilingBreaches(c.dose, c.tdd);' },
+  { id: 'R7-4', what: 'the optimiser\'s tie-break yields at 2 g again: 750 mg q8h beats 2.25 g q24h (U22) [50.6; the 76 M test]',
+    find: 'const belowCeiling = safe.filter(r => r.dose < AUC_DOSE_MAX_PER_DOSE_MG);', replace: 'const belowCeiling = safe.filter(r => r.dose < DOSE_MAX_PER_DOSE_MG);' },
+  { id: 'R7-5', what: 'the decision layer\'s tie-break yields at 2 g again (U22)',
+    find: '|| (a.dose >= AUC_DOSE_MAX_PER_DOSE_MG) - (b.dose >= AUC_DOSE_MAX_PER_DOSE_MG)', replace: '|| (a.dose >= DOSE_MAX_PER_DOSE_MG) - (b.dose >= DOSE_MAX_PER_DOSE_MG)' },
+  { id: 'R7-6', what: 'the course figure is the first interval of the course, not the last [50.7]',
+    find: 'const t0 = proj.doses[proj.doses.length - 1].timeH, t1 = t0 + tau;', replace: 'const t0 = proj.doses[0].timeH, t1 = t0 + tau;' },
+  { id: 'R7-7', what: 'the course figure is not scaled to 24 h at q12h [50.7]',
+    find: 'auc24: fittedAUC(rr, t0, t1) * 24 / tau,', replace: 'auc24: fittedAUC(rr, t0, t1),' },
+  { id: 'R7-8', what: 'the course figure ignores a hold with no time [50.8]',
+    find: "  if (proj.refused) return { refused: true, n: Math.floor(n) };", replace: '' },
 ];
 
 const SUITES = ['phase2d_validation.cjs', 'phase3_simulation.cjs', 'phase4_regimen_validation.cjs'];

@@ -2395,6 +2395,9 @@
   #b-results .tinkerer-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: var(--fs-sm); color: var(--ink-soft); }
   #b-results .tinkerer-input { font-size: var(--fs-md); min-height: 40px; width: 6em; }
   #b-results select.tinkerer-input { width: auto; }
+  #b-results .tinkerer-input.tinkerer-n { width: 4em; }
+  #b-results .tink-course { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--ink-soft); line-height: 1.5; }
+  #b-results .tink-course strong { color: var(--text-primary); font-weight: 500; }
   #b-results .compare-section { border: 0; background: none; padding: 0; }
   #b-results .bayes-pk-wrap { border: 0; border-radius: 0; background: none; }
   .guideline-line .ev-note { color: var(--ink-soft); }
@@ -2840,7 +2843,7 @@
 
 <div class="print-header">
   <div class="ph-brand">AinaDara</div>
-  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.19.0</div>
+  <div class="ph-tag">Vancomycin TDM Report · Clinical Pharmacist Tool · v3.20.0</div>
   <div class="ph-meta" id="print-meta">Generated —</div>
 </div>
 
@@ -2871,7 +2874,7 @@
     <button class="module-tab active" type="button" aria-label="Trough-Based" aria-pressed="true" data-onclick="k1">Trough<span class="mt-more">-Based</span></button>
     <button class="module-tab" type="button" aria-label="AUC Precision" aria-pressed="false" data-onclick="k2">AUC<span class="mt-more"> Precision</span></button>
   </nav>
-  <div class="header-tag">Vancomycin TDM v3.19.0</div>
+  <div class="header-tag">Vancomycin TDM v3.20.0</div>
   <button class="theme-toggle" type="button" data-onclick="k4" aria-label="Switch between light and dark" title="Light / dark">
     <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4.5"/>
@@ -4276,7 +4279,7 @@
 // behaviour or a new feature, patch for fixes and wording, major for an engine or
 // model overhaul. The static header and print-header markup carry the same string
 // (SUITE 36). History: README "Version history".
-const APP_VERSION = '3.19.0';
+const APP_VERSION = '3.20.0';
 
 // The disclaimer for print (v3.14.0, UI report I4): the footer of every printed report (Trough and
 // Peritoneal dialysis, AUC and Haemodialysis, the empty report) reads it. The two on-screen
@@ -7849,7 +7852,7 @@ function doseExplorerRows(o) {
 
 // evalRegimen's hard-reject sentence, short, for an explorer row (its wording is the key).
 function hardFailShort(text) {
-  if (/^single dose/.test(text))      return `over ${fmtDose(DOSE_MAX_PER_DOSE_MG)} a dose`;
+  if (/^single dose/.test(text))      return `over ${fmtDose(+((/exceeds (\d+) mg/.exec(text) || [])[1] || DOSE_MAX_PER_DOSE_MG))} a dose`;   // the ceiling breached (U19)
   if (/^total daily dose/.test(text)) return `over ${fmtDose(DOSE_MAX_TDD_MG)} a day`;
   if (/^AUC24/.test(text))            return `AUC₂₄ over ${AUC24_ABSOLUTE_MAX}`;
   return text;
@@ -13201,6 +13204,13 @@ const AUC24_ABSOLUTE_MAX = 700;   // hard reject; AKI risk rises above ~650-1300
                                   // (Rybak 2020, Toxicodynamics), Zasowski 2018
 const DOSE_MAX_PER_DOSE_MG = 2000; // conventional adult per-dose ceiling
 const DOSE_MAX_TDD_MG      = 4500; // adult empiric maintenance ceiling
+// AUC Precision's per-dose ceiling: the user's ruling U19 (D32, 2026-11-23). 2,500 mg, the maximum single dose in the
+// user's institutional protocol (MHHS 2024: loading 25 mg/kg, at most 2,500 mg); Rybak 2020 sets no per-dose limit. Under
+// 2 g an obese patient's 2.25 g q24h (AUC 597 on Hughes, CL 3.77 L/h) could not be offered. It bounds the optimiser, the regimen
+// lattice, the exposure matrix and the charted-regimen check; 4.5 g a day and AUC 700 still bind. The conventional
+// 2,000 mg above stays for the Trough module (its AUC Precision limits, D26) and the dialysis paths, and a dose at or
+// above it still yields to an exposure-identical one below it (rankRegimenCandidates, regimenDecision).
+const AUC_DOSE_MAX_PER_DOSE_MG = 2500;
 const TROUGH_WARN_MGL      = 15;   // AKI inflection stated as 15-20 (Rybak 2020)
 const TROUGH_HIGH_MGL      = 20;   // upper end of that inflection band
 // PREFERENCE, not a literature constant (CLAUDE.md rule 8). A level drawn within this many
@@ -13259,10 +13269,10 @@ function bayesDoseOptimizer(CLind, Vind, targetAUC, goti2comp, micMgL) {
     // 463, in band) is admissible two steps down. It is farther from target
     // than any admissible neighbour, so it is chosen only when both neighbours
     // breach a cap — i.e. only where there would otherwise be a refusal.
-    const capped  = Math.floor(Math.min(DOSE_MAX_PER_DOSE_MG, DOSE_MAX_TDD_MG * tau / 24) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
+    const capped  = Math.floor(Math.min(AUC_DOSE_MAX_PER_DOSE_MG, DOSE_MAX_TDD_MG * tau / 24) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
     const steps = [...new Set([nearest, other, capped])].filter(d => d >= MATRIX_DOSE_MIN);
     for (const dose of steps) {
-      const c = evalRegimen(dose, tau, autoTinf(dose), CLind, Vind, goti2comp, mic);
+      const c = evalRegimen(dose, tau, autoTinf(dose), CLind, Vind, goti2comp, mic, AUC_DOSE_MAX_PER_DOSE_MG);
       if (c) results.push(c);
     }
   }
@@ -13280,9 +13290,10 @@ function roundingGraceAUC(tau, CLind) {
 // The dose ceilings a regimen breaks (per dose, per day), in evalRegimen's hard-reject wording.
 // One implementation (rule 2): evalRegimen rejects on them, and currentRegimenOf reads the same
 // breaches as "not recommendable" rather than unsafe on a charted regimen (D26, plan default D-a).
-function doseCeilingBreaches(dose, tdd) {
-  const out = [];
-  if (dose > DOSE_MAX_PER_DOSE_MG) out.push(`single dose ${dose} mg exceeds ${DOSE_MAX_PER_DOSE_MG} mg`);
+// perDoseMax: the module's per-dose ceiling, AUC_DOSE_MAX_PER_DOSE_MG in AUC Precision (U19); the 2 g default elsewhere.
+function doseCeilingBreaches(dose, tdd, perDoseMax) {
+  const out = [], cap = perDoseMax > 0 ? perDoseMax : DOSE_MAX_PER_DOSE_MG;
+  if (dose > cap) out.push(`single dose ${dose} mg exceeds ${cap} mg`);
   if (tdd  > DOSE_MAX_TDD_MG)      out.push(`total daily dose ${tdd.toFixed(0)} mg exceeds ${DOSE_MAX_TDD_MG} mg`);
   return out;
 }
@@ -13292,7 +13303,8 @@ function doseCeilingBreaches(dose, tdd) {
 // the CURRENT regimen and every lattice candidate with the same arithmetic (rule 2).
 // tinfH is the infusion actually used: autoTinf(dose) for a new regimen, the charted
 // infusion for the current one. Returns null where a 1-comp interval is degenerate.
-function evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL) {
+// perDoseMax (U19): AUC Precision passes AUC_DOSE_MAX_PER_DOSE_MG; the Trough module's explorer leaves the 2 g default.
+function evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL, perDoseMax) {
     const mic   = (Number.isFinite(micMgL) && micMgL > 0) ? micMgL : 1;   // guideline assumption
     const kel   = CLind / Vind;
     const auc24 = dose * (24/tau) / CLind;   // exact at SS, model-independent
@@ -13315,7 +13327,7 @@ function evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL) {
 
     // ── Tier 1: hard rejects. Dose-domain only; no clinical judgement needed,
     // so these cannot be wrong for a clinical reason.
-    const hardFail = doseCeilingBreaches(dose, tdd);
+    const hardFail = doseCeilingBreaches(dose, tdd, perDoseMax);
     if (auc24 > AUC24_ABSOLUTE_MAX)  hardFail.push(`AUC24 ${auc24.toFixed(0)} exceeds the absolute ceiling ${AUC24_ABSOLUTE_MAX}`);
 
     // ── Tier 3: flags. Attached to the regimen, never used to exclude it.
@@ -13426,10 +13438,12 @@ function rankRegimenCandidates(results, targetAUC) {
   // a whole day. Reported 76 M case, AUC24 434 either way:
   //      2000 mg Q24H  trough 11.3  peak 26.8   <- the preference alone picked this
   //      1000 mg Q12H  trough 14.4  peak 22.2   <- chosen now
-  // Uses the existing sourced cap (DOSE_MAX_PER_DOSE_MG); no new number. Chosen
-  // by the pharmacist over "keep Q24H first always".
+  // Uses the existing sourced cap; no new number. Chosen by the pharmacist over "keep Q24H
+  // first always". Since the user's rulings U19 and U21 (D32) the ceiling is AUC Precision's
+  // 2.5 g, and 2.25 g and 2.5 g compete as DoseMeRx's do: 2 g q24h no longer yields to 1 g q12h,
+  // and 2.25 g q24h is chosen over 750 mg q8h at the same exposure; 2.5 g yields.
   const safe = nonDanger.length ? nonDanger : tied;
-  const belowCeiling = safe.filter(r => r.dose < DOSE_MAX_PER_DOSE_MG);
+  const belowCeiling = safe.filter(r => r.dose < AUC_DOSE_MAX_PER_DOSE_MG);
   const rankOf = t => { const i = INTERVAL_PREFERENCE.indexOf(t); return i < 0 ? INTERVAL_PREFERENCE.length : i; };
   const best = (belowCeiling.length ? belowCeiling : safe)
     .slice().sort((a, b) => rankOf(a.tau) - rankOf(b.tau))[0];
@@ -13448,9 +13462,9 @@ function rankRegimenCandidates(results, targetAUC) {
     // was the useful part. They now get the highest admissible regimen AND that
     // guidance, instead of either a bare refusal or a quiet number.
     const capBound = best.auc24 < AUC24_TARGET_MIN &&
-      (best.dose >= DOSE_MAX_PER_DOSE_MG || best.tdd >= DOSE_MAX_TDD_MG - 1e-6);
+      (best.dose >= AUC_DOSE_MAX_PER_DOSE_MG || best.tdd >= DOSE_MAX_TDD_MG - 1e-6);
     best.flags = (best.flags || []).concat([capBound
-      ? capBoundFlag(best.auc24, true)
+      ? capBoundFlag(best.auc24, true, null, AUC_DOSE_MAX_PER_DOSE_MG)
       : { level:'warning',
           text:`No candidate reached the ${AUC24_TARGET_MIN}-${AUC24_TARGET_MAX} mg·h/L band. This is the closest admissible regimen; review before use.` }]);
     best.outsideTargetBand = true;
@@ -13466,9 +13480,10 @@ function rankRegimenCandidates(results, targetAUC) {
 // highest admissible one when the answer is another regimen (D25: a current regimen
 // continued or changed at high clearance kept only a caution until the review).
 // regimen (optional, Task 21b): the regimen whose AUC is quoted, named when it is not the one shown.
-function capBoundFlag(highestAuc24, isThis, regimen) {
+// perDoseMax (U19): the module's per-dose ceiling, quoted as the one that binds; the 2 g default is the Trough module's.
+function capBoundFlag(highestAuc24, isThis, regimen, perDoseMax) {
   return { level:'danger',
-    text:`The target cannot be reached within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. ${isThis ? 'This is the highest admissible regimen and it falls' : `The highest admissible regimen${regimen ? `, ${regimen},` : ''} falls`} short at AUC₂₄ ${highestAuc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` };
+    text:`The target cannot be reached within the conventional ceilings (${perDoseMax > 0 ? perDoseMax : DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day) at this clearance. ${isThis ? 'This is the highest admissible regimen and it falls' : `The highest admissible regimen${regimen ? `, ${regimen},` : ''} falls`} short at AUC₂₄ ${highestAuc24.toFixed(0)}. Confirm the clearance with a level before acting on it; then consider whether exceeding the conventional ceiling is appropriate under specialist guidance, or whether an alternative agent is better suited.` };
 }
 // Whether a flag is that alarm. One test, read by regimenDecision (which keeps one copy of it)
 // and by nextLevelFit (which reads it off the answer rather than judging the ceiling again).
@@ -13577,11 +13592,11 @@ function currentRegimenOf(doses, CLind, Vind, goti2comp, micMgL, row, nowH) {
   const from = reg.regimenStartIndex != null ? reg.regimenStartIndex : (reg.loadingDoseDetected ? 1 : 0);
   if (!sorted.slice(from).some(d => d.mg === dose && d.timeH <= now)) return null;
   if (!(tau > 0) || !(dose > 0) || !(tinfH > 0) || tau <= tinfH) return null;
-  const c = evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL);
+  const c = evalRegimen(dose, tau, tinfH, CLind, Vind, goti2comp, micMgL, AUC_DOSE_MAX_PER_DOSE_MG);
   if (!c || !Number.isFinite(c.Ctrough)) return null;   // a trough that cannot be computed cannot be judged safe
   c.dots = attainmentDots(c.auc24, row);
   c.inBand = c.auc24 >= AUC24_TARGET_MIN && c.auc24 <= AUC24_TARGET_MAX;
-  c.notRecommendable = doseCeilingBreaches(c.dose, c.tdd);                    // D-a
+  c.notRecommendable = doseCeilingBreaches(c.dose, c.tdd, AUC_DOSE_MAX_PER_DOSE_MG);   // D-a; the AUC ceiling (U19)
   c.unsafeReasons = c.hardFail.filter(x => c.notRecommendable.indexOf(x) < 0); // AUC24 above the ceiling
   if (Number.isFinite(c.Ctrough) && c.Ctrough >= TROUGH_HIGH_MGL)
     c.unsafeReasons.push(`its predicted trough of ${c.Ctrough.toFixed(1)} mg/L is at or above ${TROUGH_HIGH_MGL}`);
@@ -13607,8 +13622,8 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
 
   const lattice = [];
   for (const tau of MATRIX_INTERVALS) {
-    for (let d = MATRIX_DOSE_MIN; d <= DOSE_MAX_PER_DOSE_MG; d += MATRIX_DOSE_STEP) {
-      const c = evalRegimen(d, tau, autoTinf(d), CLind, Vind, goti2comp, micMgL);
+    for (let d = MATRIX_DOSE_MIN; d <= AUC_DOSE_MAX_PER_DOSE_MG; d += MATRIX_DOSE_STEP) {
+      const c = evalRegimen(d, tau, autoTinf(d), CLind, Vind, goti2comp, micMgL, AUC_DOSE_MAX_PER_DOSE_MG);
       if (!c || c.hardFail.length || !Number.isFinite(c.Ctrough)) continue;
       c.dots = attainmentDots(c.auc24, row);
       c.inBand = c.auc24 >= AUC24_TARGET_MIN && c.auc24 <= AUC24_TARGET_MAX;
@@ -13619,7 +13634,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
   const safe = lattice.filter(c => !c.danger);
   const best = safe.reduce((m, c) => Math.max(m, c.dots), 0);
   // Out of reach within the ceilings: the alarm stays whatever the answer (review, D25).
-  const capNote = nearest && nearest.capBound ? capBoundFlag(nearest.auc24, false) : null;
+  const capNote = nearest && nearest.capBound ? capBoundFlag(nearest.auc24, false, null, AUC_DOSE_MAX_PER_DOSE_MG) : null;
   const withCap = (x) => { if (capNote) x.flags = (x.flags || []).filter(f => !isCapBoundFlag(f)).concat([capNote]); return x; };
   // A change changes the dose or the interval. The current regimen's lattice twin differs
   // only in infusion time, and was "the change" for a trough of 20.05 (review, D25).
@@ -13676,7 +13691,7 @@ function regimenDecision(CLind, Vind, targetAUC, goti2comp, micMgL, doses, row, 
        Math.abs(intervalPosition(a.tau) - pos) - Math.abs(intervalPosition(b.tau) - pos)
     || Math.abs(a.tdd - cur.tdd) - Math.abs(b.tdd - cur.tdd)
     || Math.abs(a.auc24 - targetAUC) - Math.abs(b.auc24 - targetAUC)
-    || (a.dose >= DOSE_MAX_PER_DOSE_MG) - (b.dose >= DOSE_MAX_PER_DOSE_MG)
+    || (a.dose >= AUC_DOSE_MAX_PER_DOSE_MG) - (b.dose >= AUC_DOSE_MAX_PER_DOSE_MG)   // the ceiling yields (U21)
     || rankOf(a.tau) - rankOf(b.tau))[0];
   // Ruling 3: under Low or Very low confidence this change — more dots, away from an
   // in-range, safe regimen — is not made. The regimen is continued, with the change it set
@@ -13787,7 +13802,7 @@ function regimenActionHTML(rec, targetAUC, part) {
   const h = `${ceilHTML}<p class="vx-action">${escHtml(head)}</p>`, w = `<p class="vx-why">${escHtml(why)}</p>`;
   return part === 'head' ? h : part === 'why' ? w : h + w;
 }
-// The ceiling caution on a continued regimen above 2 g a dose or 4.5 g a day (D-a; final
+// The ceiling caution on a continued regimen above 2.5 g a dose (U19; 2 g in the Trough module) or 4.5 g a day (D-a; final
 // review I6), one sentence for the answer, Copy summary and the announcement. '' otherwise.
 function ceilingCautionText(rec) {
   return ceilingCautionOf(rec && !rec.noSolution && rec.action === 'continue' ? (rec.notRecommendable || []) : []);
@@ -13834,12 +13849,14 @@ function ceilingCautionOf(over) {
 const MATRIX_INTERVALS = [8, 12, 24, 48];   // same set bayesDoseOptimizer ranks
 const MATRIX_ROWS      = 6;                 // dose steps shown, centred on target
 // The dispensing increment. Every 250 mg step in the file reads it, in both modules (code report
-// M5, Task 21); the ceiling is DOSE_MAX_PER_DOSE_MG, read directly (MATRIX_DOSE_MAX duplicated it).
+// M5, Task 21); the ceiling is AUC_DOSE_MAX_PER_DOSE_MG (U19, D32), read directly (MATRIX_DOSE_MAX duplicated it),
+// or the 2 g DOSE_MAX_PER_DOSE_MG passed for the Goti-HD steady-state reference (dialysis keeps 2 g).
 const MATRIX_DOSE_STEP = 250;
 const MATRIX_DOSE_MIN  = 250;               // the smallest dose offered: one step
 
-function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
+function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL, perDoseMax) {
   if (!(CLind > 0) || !(targetAUC > 0)) return null;
+  const capMg = perDoseMax > 0 ? perDoseMax : AUC_DOSE_MAX_PER_DOSE_MG;
 
   // The ladder must span the dose that reaches the target AT EVERY INTERVAL,
   // not just at Q24H. Centring on Q24H looks reasonable and is not: the target
@@ -13852,10 +13869,10 @@ function exposureMatrix(CLind, Vind, goti2comp, targetAUC, micMgL) {
   let lo = Math.floor(Math.min.apply(null, targetDoses) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
   let hi = Math.ceil (Math.max.apply(null, targetDoses) / MATRIX_DOSE_STEP) * MATRIX_DOSE_STEP;
   lo = Math.max(MATRIX_DOSE_MIN, lo);
-  hi = Math.min(DOSE_MAX_PER_DOSE_MG, Math.max(hi, lo + MATRIX_DOSE_STEP));
+  hi = Math.min(capMg, Math.max(hi, lo + MATRIX_DOSE_STEP));
   // Pad a thin ladder outwards so there is room to move around the target.
   while (((hi - lo) / MATRIX_DOSE_STEP) + 1 < MATRIX_ROWS) {
-    const grewLo = lo > MATRIX_DOSE_MIN, grewHi = hi < DOSE_MAX_PER_DOSE_MG;
+    const grewLo = lo > MATRIX_DOSE_MIN, grewHi = hi < capMg;
     if (!grewLo && !grewHi) break;
     if (grewLo) lo -= MATRIX_DOSE_STEP;
     if (grewHi && ((hi - lo) / MATRIX_DOSE_STEP) + 1 < MATRIX_ROWS) hi += MATRIX_DOSE_STEP;
@@ -14157,7 +14174,7 @@ function nextLevelValue(auc24, nLevels, model, tau, CLind, fit) {
   } else if (f.capBound) {
     kind = 'management';
     headline = 'Confirm the clearance with a level';
-    const ceilings = `within the conventional ceilings (${DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day)`;
+    const ceilings = `within the conventional ceilings (${AUC_DOSE_MAX_PER_DOSE_MG} mg per dose, ${DOSE_MAX_TDD_MG} mg per day)`;
     detail = f.action === 'continue'
       ? `The estimate sits outside ${AUC24_TARGET_MIN}–${AUC24_TARGET_MAX} mg·h/L, and at this clearance no regimen `
         + `${ceilings} reaches the band: the ceiling binds, and no admissible regimen puts more of its plausible AUCs in range `
@@ -17109,7 +17126,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
       tied = `<p class="ev-note"><strong>Same exposure, different shape.</strong>
         ${alts} reach an identical AUC₂₄ — at steady state that is total daily dose ÷ clearance, which
         carries no interval term. Exposure cannot choose between them, so a trough in the danger band is
-        set aside, a dose at the ${DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling yields to one below it, and the
+        set aside, a dose at the ${AUC_DOSE_MAX_PER_DOSE_MG} mg per-dose ceiling yields to one below it, and the
         rest are ordered by a stated practicality preference (q24h, then q12h, q48h, q8h). It is a
         preference, not a ranking the model earned — the matrix under "Regimens" shows every option.</p>`;
     }
@@ -17317,7 +17334,7 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
     // makes with the numbers in front of them. See exposureMatrix() for why.
     const mx = exposureMatrix(CL_ind, V_ind,
       (isGotiRes && r.goti) ? { Vc: r.goti.Vc_ind, Vp: r.goti.Vp_ind, Q: r.goti.Q } : null,
-      targetAUC, mic);
+      targetAUC, mic, isHD ? DOSE_MAX_PER_DOSE_MG : AUC_DOSE_MAX_PER_DOSE_MG);
     if (mx) {
       const recDose = !isHD && rec && !rec.noSolution ? rec.dose : null;
       const recTau  = !isHD && rec && !rec.noSolution ? rec.tau  : null;
@@ -17444,6 +17461,10 @@ function renderBayesianResults(r, divergeMsg, levelWarnings, mic, p2c) {
         <select id="b-tink-int" class="tinkerer-input">
           ${regimenIntervalChoices(rec && !rec.noSolution ? rec.tau : null).map(t => `<option value="${t}">${t} h</option>`).join('')}
         </select>
+        <span class="vx-muted" aria-hidden="true">×</span>
+        <label class="sr-only" for="b-tink-n">Number of doses in the course</label>
+        <input type="number" class="tinkerer-input tinkerer-n" id="b-tink-n" value="${COURSE_DOSES_DEFAULT}" min="1" max="8" step="1" inputmode="numeric">
+        <span class="vx-muted">doses</span>
         <button type="button" class="tinkerer-btn" data-onclick="k66" data-enter-default>Preview</button>
       </div>
       <div id="b-tink-result" style="margin-top:12px;display:none"></div>
@@ -17778,6 +17799,25 @@ function answerHoldPlanOf(r) {
   const h = typeof bState !== 'undefined' && bState ? bState.holdFor : null;
   return h && h.r === r ? h.plan : null;
 }
+// The course figure (the user's ruling U20, D32, 2026-11-23). DoseMeRx's "Predicted AUC24" for a Custom Dose of N doses
+// is the LAST dosing interval of that course with every earlier dose still on board, not steady state: 500 mg q24h x 3
+// printed 428.84 mg·h/L, peak 25.74, trough 11.78 where steady state is 413 (SUITE 50.7 reproduces it). The Dose Tinkerer
+// shows this beside steady state so the two tools can be read side by side. Display only: no dose reads it.
+//   The course starts where the projection does (fp = firstDosePlan for this regimen) and runs on the doses the curve
+//   draws (profileCourseDoses: held planned rows left out). auc24 = AUC over [last dose, last dose + tau] x 24 / tau;
+//   peak at the end of the last infusion, trough at the end of its interval. Refused, as the projection is, when a hold
+//   has no time (fp.holdNoTime). null for no course or no dose.
+const COURSE_DOSES_DEFAULT = 3;   // PREFERENCE (rule 8), display only: DoseMeRx's Custom Dose default course length; editable (1–8)
+function courseFinalIntervalExposure(r, dose, tau, tinfH, n, fp, holdPlan) {
+  if (!(r && (r.doses || []).length && dose > 0 && tau > 0 && tinfH > 0 && n >= 1)) return null;
+  const last = r.doses.reduce((a, b) => (b.timeH >= a.timeH ? b : a));
+  const proj = projectedDoses(fp, dose, tau, Math.floor(n), tinfH, last.timeH + tau);
+  if (proj.refused) return { refused: true, n: Math.floor(n) };
+  const rr = Object.assign({}, r, { doses: profileCourseDoses(r, holdPlan, proj.doses).doses });
+  const t0 = proj.doses[proj.doses.length - 1].timeH, t1 = t0 + tau;
+  return { n: proj.doses.length, tau, firstH: proj.doses[0].timeH, lastH: t0,
+           auc24: fittedAUC(rr, t0, t1) * 24 / tau, peak: predictFittedAt(rr, t0 + tinfH), trough: predictFittedAt(rr, t1) };
+}
 // What the curve and the strip draw as doses (every row not held, then any projection), and the held rows.
 function profileCourseDoses(r, plan, projDoses) {
   const held = heldPlannedDoses(r, plan);
@@ -18067,13 +18107,26 @@ function runBayesTinkerer() {
   const colTr  = Ctrough >= TROUGH_HIGH_MGL ? 'var(--danger)'
                : Ctrough >= TROUGH_WARN_MGL ? 'var(--warning)' : 'var(--success)';
   const colAMIC= parseFloat(aucMIC) >= 400 ? 'var(--success)' : 'var(--warning)';
+  // The course figure (U20, D32): the last of N doses from the projection's first dose, drug on board included: what a
+  // DoseMeRx Custom Dose of N doses reports. Not on dialysis: the sessions are not in the curve it reads.
+  let courseHTML = '';
+  if (!tinkR.dial && !(tinkR.hdSessions || []).length && (typeof bState.rrt !== 'string' || bState.rrt === 'none')) {
+    const nEl = document.getElementById('b-tink-n');
+    const nIn = parseInt(nEl && nEl.value, 10);
+    const n = Number.isFinite(nIn) ? Math.min(8, Math.max(1, nIn)) : COURSE_DOSES_DEFAULT;
+    const fp = firstDosePlan(tinkR, { dose, tau, tinfH }, tinkR.fitNowH, bState.firstDoseAtH, bState.curRegimen);
+    const e = courseFinalIntervalExposure(tinkR, dose, tau, tinfH, n, fp, answerHoldPlanOf(tinkR));
+    if (e && e.refused) courseHTML = `<p class="tink-course">No course figure: the level stays at or above ${TROUGH_HIGH_MGL} mg/L until ${escHtml(holdHorizonText(fp))}. Recheck a level.</p>`;
+    else if (e) courseHTML = `<p class="tink-course"><strong>Over ${e.n} dose${e.n === 1 ? '' : 's'}</strong> from ${escHtml(fmtDT(e.firstH, true))}: the last ${tau} h gives AUC₂₄ <strong>${e.auc24.toFixed(0)}</strong> mg·h/L, peak ${e.peak.toFixed(1)}, trough ${e.trough.toFixed(1)} mg/L, with the drug already on board. `
+      + `This is the figure a DoseMeRx Custom Dose of ${e.n} dose${e.n === 1 ? '' : 's'} reports; the tiles above are steady state.</p>`;
+  }
 
   const res = document.getElementById('b-tink-result');
   res.style.display = 'block';
   res.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:10px 12px;border:1px solid var(--border)">
-        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:3px">AUC₂₄</div>
+        <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:3px">AUC₂₄ SS</div>
         <div style="font-family:var(--font-num);font-size:var(--fs-md);color:${colAUC};font-weight:500">${auc24.toFixed(0)}</div>
         <div style="font-size:var(--fs-xs);color:var(--text-muted)">mg·h/L</div>
       </div>
@@ -18098,6 +18151,7 @@ function runBayesTinkerer() {
         : auc24 < AUC24_TARGET_MIN ? '↑ Below target — consider higher dose or shorter interval'
         : '↓ Above target — consider lower dose or longer interval'}
     </div>
+    ${courseHTML}
     <div class="tink-ss-wrap">
       <div class="tink-ss-header">
         <span>Steady state on this patient's fit — ${fmtRegimen(dose, tau)}</span>
